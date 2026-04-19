@@ -110,13 +110,15 @@ Cada task segue este schema:
 
 ## T-020: Criar pyproject.toml + estrutura src/tests/
 - phase: 1
-- agent: codex
+- agent: copilot
+- model: GPT-4.1
 - status: open
 - branch: feat/phase-1-docker-infra
 
 ## T-021: Escrever docker-compose.yml com profiles gpu/cpu
 - phase: 1
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - spec: prometheus-context-detection-crossplatform.md:324-381
 - branch: feat/phase-1-docker-infra
@@ -124,7 +126,8 @@ Cada task segue este schema:
 
 ## T-022: Escrever setup.sh cross-platform
 - phase: 1
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - spec: prometheus-context-detection-crossplatform.md:395-433
 - branch: feat/phase-1-docker-infra
@@ -132,11 +135,13 @@ Cada task segue este schema:
 
 ## T-023: Escrever src/config/platform.py
 - phase: 1
-- agent: codex
+- agent: copilot
+- model: Gemini 2.5 Pro
 - status: open
 - spec: prometheus-context-detection-crossplatform.md:271-318
 - branch: feat/phase-1-docker-infra
 - depends_on: [T-020]
+- notes: lê spec inteira + detecta plataforma — Gemini context window ajuda
 
 ## T-024: Subir stack + validar acesso aos serviços
 - phase: 1
@@ -157,21 +162,24 @@ Cada task segue este schema:
 
 ## T-030: src/store/vector_store.py (Qdrant, collections por ctx)
 - phase: 2
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - spec: prometheus-context-engine.md:114-139
 - branch: feat/phase-2-store-layer
 
 ## T-031: src/store/graph_store.py (Redis, deps de código)
 - phase: 2
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - spec: prometheus-context-engine.md:143-154
 - branch: feat/phase-2-store-layer
 
 ## T-032: src/store/session_store.py (SQLite: adr, session_memory, code_change)
 - phase: 2
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - spec: prometheus-context-engine.md:158-187
 - branch: feat/phase-2-store-layer
@@ -186,7 +194,8 @@ Cada task segue este schema:
 
 ## T-034: Testes unitários dos stores
 - phase: 2
-- agent: codex
+- agent: copilot
+- model: GPT-5.2-Codex
 - status: open
 - branch: feat/phase-2-store-layer
 - depends_on: [T-030, T-031, T-032, T-033]
@@ -218,6 +227,16 @@ Cada task segue este schema:
 - branch: feat/phase-3a-chunker-java
 - depends_on: [T-041]
 
+## T-042b: [PARALELO] src/embedder/chunker.py via Copilot — comparar com T-042
+- phase: 3
+- agent: copilot
+- model: Claude Opus 4.6
+- status: open
+- spec: prometheus-context-engine.md:94-102
+- branch: feat/phase-3a-chunker-java-copilot
+- depends_on: [T-041]
+- notes: corre em paralelo com T-042. Ao final comparar diffs; pegar o melhor ou fazer cherry-pick. Merge apenas da versão escolhida.
+
 ---
 
 # Fase 3b — Embedder + Watcher
@@ -231,7 +250,8 @@ Cada task segue este schema:
 
 ## T-051: src/embedder/engine.py (fastembed + platform-aware providers)
 - phase: 3
-- agent: codex
+- agent: copilot
+- model: Claude Sonnet 4.6
 - status: open
 - spec: prometheus-context-engine.md:83-106
 - branch: feat/phase-3b-embedder-watcher
@@ -239,7 +259,8 @@ Cada task segue este schema:
 
 ## T-052: src/watcher/main.py (watchdog + fila async)
 - phase: 3
-- agent: codex
+- agent: copilot
+- model: Gemini 3 Flash
 - status: open
 - spec: prometheus-context-engine.md:51-70
 - branch: feat/phase-3b-embedder-watcher
@@ -247,14 +268,16 @@ Cada task segue este schema:
 
 ## T-053: Pipeline de ingest watcher→chunker→embedder→vector_store
 - phase: 3
-- agent: codex
+- agent: copilot
+- model: Claude Sonnet 4.6
 - status: open
 - branch: feat/phase-3b-embedder-watcher
 - depends_on: [T-052]
 
 ## T-054: Script one-shot de indexação inicial
 - phase: 3
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - branch: feat/phase-3b-embedder-watcher
 - depends_on: [T-053]
@@ -326,7 +349,8 @@ Cada task segue este schema:
 
 ## T-080: src/cli/pb.py (typer, comandos base)
 - phase: 5
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - spec: prometheus-context-isolation.md:386-412, prometheus-vault-final.md:386-402
 - branch: feat/phase-5b-cli-pb
@@ -345,14 +369,16 @@ Cada task segue este schema:
 
 ## T-090: src/vault/til_promoter.py
 - phase: 6
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - spec: prometheus-vault-final.md:237-352
 - branch: feat/phase-6-knowledge-automation
 
 ## T-091: Git hook post-commit no vault
 - phase: 6
-- agent: codex
+- agent: copilot
+- model: Gemini 3 Flash
 - status: open
 - spec: prometheus-vault-final.md:358-379
 - branch: feat/phase-6-knowledge-automation
@@ -360,7 +386,8 @@ Cada task segue este schema:
 
 ## T-092: Comandos CLI pb til/howto/til --promote-today
 - phase: 6
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - spec: prometheus-vault-final.md:386-402
 - branch: feat/phase-6-knowledge-automation
@@ -368,14 +395,17 @@ Cada task segue este schema:
 
 ## T-093: src/vault/deep_suggester.py
 - phase: 6
-- agent: codex
+- agent: copilot
+- model: Gemini 2.5 Pro
 - status: open
 - spec: prometheus-knowledge-split.md:128-188
 - branch: feat/phase-6-knowledge-automation
+- notes: precisa ler muitas notas de uma vez — janela 1M do Gemini ideal
 
 ## T-094: Comandos CLI pb deep --suggest / --list
 - phase: 6
-- agent: codex
+- agent: copilot
+- model: GPT-5.3-Codex
 - status: open
 - branch: feat/phase-6-knowledge-automation
 - depends_on: [T-093]
@@ -420,6 +450,27 @@ Cada task segue este schema:
 | Agente | Open | In-progress | Done |
 |---|---|---|---|
 | claude-code | T-033, T-040..T-042, T-050, T-060, T-061, T-070..T-073, T-100..T-103 | — | — |
-| codex | T-020..T-023, T-030..T-032, T-034, T-051..T-054, T-080, T-090..T-094 | — | — |
+| copilot | T-020..T-023, T-030..T-032, T-034, T-042b, T-051..T-054, T-080, T-090..T-094 | — | — |
 | manual | T-010..T-014, T-006, T-024, T-025, T-062, T-081 | T-005 | T-001..T-004 |
-| copilot | passivo, sem tasks próprias | — | — |
+
+## Roteamento de modelo por task (Copilot)
+
+| Task | Modelo | Motivo |
+|---|---|---|
+| T-020 pyproject.toml | GPT-4.1 (0x) | Config trivial, grátis |
+| T-021 docker-compose | GPT-5.3-Codex | Especializado em YAML/infra |
+| T-022 setup.sh | GPT-5.3-Codex | Script bash estruturado |
+| T-023 platform.py | Gemini 2.5 Pro | Lê spec inteira, detecta hardware |
+| T-030..032 stores | GPT-5.3-Codex | CRUD Python, boilerplate |
+| T-034 testes stores | GPT-5.2-Codex | Boilerplate de testes |
+| T-042b chunker (paralelo) | Claude Opus 4.6 | Qualidade máxima para gate crítico |
+| T-051 embedder engine | Claude Sonnet 4.6 | Lógica de providers dinâmicos |
+| T-052 watcher | Gemini 3 Flash | Watchdog simples, rápido |
+| T-053 pipeline ingest | Claude Sonnet 4.6 | Integração multi-módulo |
+| T-054 indexação one-shot | GPT-5.3-Codex | Script sequencial simples |
+| T-080 CLI pb | GPT-5.3-Codex | Typer scaffolding |
+| T-090 til_promoter | GPT-5.3-Codex | Tradução direta da spec |
+| T-091 git hook | Gemini 3 Flash | Bash hook simples |
+| T-092 pb til/howto CLI | GPT-5.3-Codex | Extensão do CLI |
+| T-093 deep_suggester | Gemini 2.5 Pro | Lê muitas notas de uma vez |
+| T-094 pb deep CLI | GPT-5.3-Codex | Extensão do CLI |
