@@ -1,0 +1,425 @@
+# Prometheus — Backlog de Tasks
+
+Fonte da verdade para atribuição de trabalho entre Claude Code, Codex e Copilot.
+
+## Formato
+
+Cada task segue este schema:
+
+```
+## T-NNN: <título>
+- phase: <0|0.5|1|...|7>
+- agent: claude-code | codex | copilot | manual
+- status: open | in-progress | done | blocked
+- spec: <arquivo>:<linhas> (referência na spec original)
+- branch: feat/phase-N-<slug>
+- depends_on: [T-XXX, T-YYY]
+- notes: (opcional)
+```
+
+## Regras de consumo
+
+1. Agente pega próxima task com `agent:` igual ao seu tipo E `status: open` E `depends_on:` todas `done`.
+2. Ao começar, troca `status` para `in-progress`, cria a branch indicada.
+3. Ao concluir, troca para `done`, atualiza esta tabela, commita, abre PR.
+4. Dois agentes nunca pegam a mesma task. Se `in-progress` já existe, pular para próxima.
+
+---
+
+# Fase 0.5 — Bootstrap de contexto (em curso)
+
+## T-001: Copiar EXECUTION_PLAN.md para projeto
+- phase: 0.5
+- agent: manual
+- status: done
+- branch: main
+
+## T-002: Criar CLAUDE.md canônico
+- phase: 0.5
+- agent: manual
+- status: done
+- branch: main
+
+## T-003: Criar AGENTS.md symlink para CLAUDE.md
+- phase: 0.5
+- agent: manual
+- status: done
+- branch: main
+
+## T-004: Criar .github/copilot-instructions.md
+- phase: 0.5
+- agent: manual
+- status: done
+- branch: main
+
+## T-005: Criar TASKS.md (este arquivo)
+- phase: 0.5
+- agent: manual
+- status: in-progress
+- branch: main
+
+## T-006: Criar .gitignore e git init
+- phase: 0.5
+- agent: manual
+- status: open
+- branch: main
+- depends_on: [T-005]
+
+---
+
+# Fase 0 — Fundação do vault (~/vault/)
+
+## T-010: Criar estrutura de pastas do vault
+- phase: 0
+- agent: manual
+- status: open
+- spec: prometheus-context-isolation.md:7-66
+- branch: N/A (vault tem seu próprio git)
+- notes: criar personal/{aerus-rpg,rpg-master-ai,linkedin-tool}, career/{interviews,targets,applications,linkedin}, knowledge/daily/<tech>, knowledge/deep/<tech>, work/avangrid, daily/, adrs/
+
+## T-011: Escrever CLAUDE.md global do vault
+- phase: 0
+- agent: manual
+- status: open
+- spec: prometheus-vault-final.md:7-70
+- depends_on: [T-010]
+
+## T-012: Escrever .ctx e .ctxguard por contexto
+- phase: 0
+- agent: manual
+- status: open
+- spec: prometheus-context-isolation.md:7-66
+- depends_on: [T-010]
+
+## T-013: Escrever CONTEXT.md template + preenchidos
+- phase: 0
+- agent: manual
+- status: open
+- spec: prometheus-vault-final.md:78-162
+- depends_on: [T-010]
+
+## T-014: git init + commit inicial do vault
+- phase: 0
+- agent: manual
+- status: open
+- depends_on: [T-011, T-012, T-013]
+
+---
+
+# Fase 1 — Infra Docker + bootstrap do engine
+
+## T-020: Criar pyproject.toml + estrutura src/tests/
+- phase: 1
+- agent: codex
+- status: open
+- branch: feat/phase-1-docker-infra
+
+## T-021: Escrever docker-compose.yml com profiles gpu/cpu
+- phase: 1
+- agent: codex
+- status: open
+- spec: prometheus-context-detection-crossplatform.md:324-381
+- branch: feat/phase-1-docker-infra
+- depends_on: [T-020]
+
+## T-022: Escrever setup.sh cross-platform
+- phase: 1
+- agent: codex
+- status: open
+- spec: prometheus-context-detection-crossplatform.md:395-433
+- branch: feat/phase-1-docker-infra
+- depends_on: [T-021]
+
+## T-023: Escrever src/config/platform.py
+- phase: 1
+- agent: codex
+- status: open
+- spec: prometheus-context-detection-crossplatform.md:271-318
+- branch: feat/phase-1-docker-infra
+- depends_on: [T-020]
+
+## T-024: Subir stack + validar acesso aos serviços
+- phase: 1
+- agent: manual
+- status: open
+- branch: feat/phase-1-docker-infra
+- depends_on: [T-022, T-023]
+
+## T-025: Puxar modelos Ollama (gemma4:e4b, phi3:mini, gemma4:26b no PC)
+- phase: 1
+- agent: manual
+- status: open
+- depends_on: [T-024]
+
+---
+
+# Fase 2 — Store layer
+
+## T-030: src/store/vector_store.py (Qdrant, collections por ctx)
+- phase: 2
+- agent: codex
+- status: open
+- spec: prometheus-context-engine.md:114-139
+- branch: feat/phase-2-store-layer
+
+## T-031: src/store/graph_store.py (Redis, deps de código)
+- phase: 2
+- agent: codex
+- status: open
+- spec: prometheus-context-engine.md:143-154
+- branch: feat/phase-2-store-layer
+
+## T-032: src/store/session_store.py (SQLite: adr, session_memory, code_change)
+- phase: 2
+- agent: codex
+- status: open
+- spec: prometheus-context-engine.md:158-187
+- branch: feat/phase-2-store-layer
+
+## T-033: src/store/collections.py com barreira work
+- phase: 2
+- agent: claude-code
+- status: open
+- spec: prometheus-context-isolation.md:154-171
+- branch: feat/phase-2-store-layer
+- notes: barreira é crítica — só Claude Code edita
+
+## T-034: Testes unitários dos stores
+- phase: 2
+- agent: codex
+- status: open
+- branch: feat/phase-2-store-layer
+- depends_on: [T-030, T-031, T-032, T-033]
+
+---
+
+# Fase 3a — Chunker Java (TDD crítico, gate bloqueante)
+
+## T-040: Montar tests/embedder/fixtures/spring/ com 30+ arquivos reais
+- phase: 3
+- agent: claude-code
+- status: open
+- spec: CLAUDE.md D5
+- branch: feat/phase-3a-chunker-java
+- notes: catálogo em D5 — inner classes, records, generics, lambdas, self-invocation, etc.
+
+## T-041: Escrever tests/embedder/test_chunker_java.py com assertions por fixture
+- phase: 3
+- agent: claude-code
+- status: open
+- branch: feat/phase-3a-chunker-java
+- depends_on: [T-040]
+
+## T-042: src/embedder/chunker.py (Java via tree-sitter) — iterar até 100% green
+- phase: 3
+- agent: claude-code
+- status: open
+- spec: prometheus-context-engine.md:94-102
+- branch: feat/phase-3a-chunker-java
+- depends_on: [T-041]
+
+---
+
+# Fase 3b — Embedder + Watcher
+
+## T-050: Estender chunker para Python e TypeScript
+- phase: 3
+- agent: claude-code
+- status: open
+- branch: feat/phase-3b-embedder-watcher
+- depends_on: [T-042]
+
+## T-051: src/embedder/engine.py (fastembed + platform-aware providers)
+- phase: 3
+- agent: codex
+- status: open
+- spec: prometheus-context-engine.md:83-106
+- branch: feat/phase-3b-embedder-watcher
+- depends_on: [T-042]
+
+## T-052: src/watcher/main.py (watchdog + fila async)
+- phase: 3
+- agent: codex
+- status: open
+- spec: prometheus-context-engine.md:51-70
+- branch: feat/phase-3b-embedder-watcher
+- depends_on: [T-051]
+
+## T-053: Pipeline de ingest watcher→chunker→embedder→vector_store
+- phase: 3
+- agent: codex
+- status: open
+- branch: feat/phase-3b-embedder-watcher
+- depends_on: [T-052]
+
+## T-054: Script one-shot de indexação inicial
+- phase: 3
+- agent: codex
+- status: open
+- branch: feat/phase-3b-embedder-watcher
+- depends_on: [T-053]
+
+---
+
+# Fase 4 — MCP Gateway
+
+## T-060: src/mcp/server.py (FastMCP + tools base)
+- phase: 4
+- agent: claude-code
+- status: open
+- spec: prometheus-context-engine.md:242-275, prometheus-context-isolation.md:178-228
+- branch: feat/phase-4-mcp-gateway
+- notes: tools search_code, get_adrs, save_adr, get_session_memory, get_dependencies
+
+## T-061: Aplicar CONTEXT_BUDGETS (claude-code 8k, copilot 2k)
+- phase: 4
+- agent: claude-code
+- status: open
+- spec: prometheus-context-engine.md:279-284
+- branch: feat/phase-4-mcp-gateway
+- depends_on: [T-060]
+
+## T-062: Registrar MCP no Claude Code + smoke test
+- phase: 4
+- agent: manual
+- status: open
+- branch: feat/phase-4-mcp-gateway
+- depends_on: [T-061]
+
+---
+
+# Fase 5a — Context Detector + Router
+
+## T-070: src/context/detector.py (scoring cwd/content/session)
+- phase: 5
+- agent: claude-code
+- status: open
+- spec: prometheus-context-detection-crossplatform.md:32-163
+- branch: feat/phase-5a-detector-router
+
+## T-071: src/router/classifier.py (phi3:mini local)
+- phase: 5
+- agent: claude-code
+- status: open
+- spec: prometheus-context-engine.md:202-207
+- branch: feat/phase-5a-detector-router
+
+## T-072: src/router/engine.py (LiteLLM + budget gate + Langfuse)
+- phase: 5
+- agent: claude-code
+- status: open
+- spec: prometheus-context-engine.md:209-231 (+ D2 para IDs atuais)
+- branch: feat/phase-5a-detector-router
+- depends_on: [T-071]
+
+## T-073: Tool MCP ask(query, cwd, ctx?) integrando detector+router
+- phase: 5
+- agent: claude-code
+- status: open
+- spec: prometheus-context-detection-crossplatform.md:171-207
+- branch: feat/phase-5a-detector-router
+- depends_on: [T-070, T-072]
+
+---
+
+# Fase 5b — CLI pb
+
+## T-080: src/cli/pb.py (typer, comandos base)
+- phase: 5
+- agent: codex
+- status: open
+- spec: prometheus-context-isolation.md:386-412, prometheus-vault-final.md:386-402
+- branch: feat/phase-5b-cli-pb
+- notes: pb ask, search, adr, session, cost
+
+## T-081: Instalar pb como entry_point (pipx)
+- phase: 5
+- agent: manual
+- status: open
+- branch: feat/phase-5b-cli-pb
+- depends_on: [T-080]
+
+---
+
+# Fase 6 — Knowledge automation
+
+## T-090: src/vault/til_promoter.py
+- phase: 6
+- agent: codex
+- status: open
+- spec: prometheus-vault-final.md:237-352
+- branch: feat/phase-6-knowledge-automation
+
+## T-091: Git hook post-commit no vault
+- phase: 6
+- agent: codex
+- status: open
+- spec: prometheus-vault-final.md:358-379
+- branch: feat/phase-6-knowledge-automation
+- depends_on: [T-090]
+
+## T-092: Comandos CLI pb til/howto/til --promote-today
+- phase: 6
+- agent: codex
+- status: open
+- spec: prometheus-vault-final.md:386-402
+- branch: feat/phase-6-knowledge-automation
+- depends_on: [T-080]
+
+## T-093: src/vault/deep_suggester.py
+- phase: 6
+- agent: codex
+- status: open
+- spec: prometheus-knowledge-split.md:128-188
+- branch: feat/phase-6-knowledge-automation
+
+## T-094: Comandos CLI pb deep --suggest / --list
+- phase: 6
+- agent: codex
+- status: open
+- branch: feat/phase-6-knowledge-automation
+- depends_on: [T-093]
+
+---
+
+# Fase 7 — Mem0 + memória de sessão
+
+## T-100: Configurar Mem0 self-hosted (Qdrant + Neo4j)
+- phase: 7
+- agent: claude-code
+- status: open
+- spec: prometheus-context-isolation.md:256-287
+- branch: feat/phase-7-mem0-compressor
+
+## T-101: Tool MCP get_memory(query, ctx) com filtro work
+- phase: 7
+- agent: claude-code
+- status: open
+- spec: prometheus-context-isolation.md:201-211
+- branch: feat/phase-7-mem0-compressor
+- depends_on: [T-100]
+
+## T-102: Session memory compressor (Haiku a cada 10 turns)
+- phase: 7
+- agent: claude-code
+- status: open
+- spec: prometheus-context-engine.md:303-314
+- branch: feat/phase-7-mem0-compressor
+
+## T-103: Hook fim-de-sessão → resumo no daily note
+- phase: 7
+- agent: claude-code
+- status: open
+- branch: feat/phase-7-mem0-compressor
+- depends_on: [T-102]
+
+---
+
+# Quadro resumo por agente
+
+| Agente | Open | In-progress | Done |
+|---|---|---|---|
+| claude-code | T-033, T-040..T-042, T-050, T-060, T-061, T-070..T-073, T-100..T-103 | — | — |
+| codex | T-020..T-023, T-030..T-032, T-034, T-051..T-054, T-080, T-090..T-094 | — | — |
+| manual | T-010..T-014, T-006, T-024, T-025, T-062, T-081 | T-005 | T-001..T-004 |
+| copilot | passivo, sem tasks próprias | — | — |
