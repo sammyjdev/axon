@@ -71,27 +71,42 @@ O chunker é o componente com maior risco técnico. Antes de qualquer outra cois
 
 ## Regras de navegação por agente
 
-### Claude Code (principal, raciocínio profundo)
-Responsável por: Chunker Java (D5 / Fase 3a), MCP Gateway (Fase 4), Context Detector (Fase 5), Router + classifier (Fase 5), Session Memory compressor (Fase 7), integrações multi-módulo.
+### Claude Code (raciocínio profundo, MCP nativo)
+Responsável por: Chunker Java D5 (gate crítico), MCP Gateway (Fase 4), Context Detector (Fase 5), Router + classifier (Fase 5), Session Memory compressor (Fase 7), qualquer integração multi-módulo, qualquer coisa que toque a barreira `work/`.
 
 Protocolo:
-1. Ler `CLAUDE.md` + `EXECUTION_PLAN.md` + `TASKS.md`.
+1. Ler `CLAUDE.md` + `TASKS.md`.
 2. Pegar próxima task com `agent: claude-code AND status: open`.
 3. Criar branch `feat/phase-N-<slug>`.
 4. Implementar com TDD quando há suite (Fase 3a especialmente).
 5. Atualizar `status: done` no TASKS.md, commit, abrir PR interno.
 
-### Codex CLI (boilerplate estrutural)
-Responsável por: `docker-compose.yml` + `setup.sh` (Fase 1), `platform.py` (Fase 1), stores (Fase 2), watcher (Fase 3 dia 6), CLI `pb` scaffolding (Fase 5), git hooks (Fase 6), `til_promoter.py` (Fase 6).
+### Copilot Agent Mode (roteamento por modelo — substitui Codex)
 
-Protocolo: lê `AGENTS.md` (symlink → `CLAUDE.md`), segue o mesmo fluxo de branches.
+Copilot com agent mode ativo cria/edita múltiplos arquivos e roda comandos. Cada task tem `model:` recomendado. Regra: modelo mais barato que entrega a qualidade necessária.
 
-### Copilot (passivo, inline no editor)
-Nunca abre branch próprio. Nunca edita `CLAUDE.md`, `AGENTS.md`, `EXECUTION_PLAN.md`, `TASKS.md`, ou qualquer `prometheus-*.md` (specs). Config em `.github/copilot-instructions.md`.
+| Modelo | Custo | Usar para |
+|---|---|---|
+| **GPT-4.1 / GPT-4o** | 0x (grátis) | pyproject.toml, Dockerfile, .env.example, scripts triviais |
+| **Grok Code Fast 1** | 0.25x | CRUD repetitivo, import organization, patterns simples |
+| **Gemini 3 Flash** | 0.33x | Watcher, git hooks, type annotations pass |
+| **GPT-5.3-Codex** | 1x | docker-compose.yml, setup.sh, stores CRUD, CLI typer scaffolding |
+| **GPT-5.2-Codex** | 1x | Alternativa ao 5.3-Codex para boilerplate Python |
+| **Gemini 2.5 Pro** | 1x | Tasks que lêem muitos arquivos (suggester, indexação) — janela 1M tokens |
+| **Claude Sonnet 4.6** | 1x | Lógica de contexto, session compressor, integrações médias |
+| **Claude Opus 4.6** | 3x | Chunker Java (paralelo com Claude Code), arquitetura crítica |
 
-Regras estritas:
-- Não aceitar sugestão que invente dependência/import inexistente.
-- Não sugerir código que contradiz D1-D5.
+Protocolo:
+1. Ler `AGENTS.md` + `TASKS.md`.
+2. Pegar próxima task com `agent: copilot AND status: open`.
+3. Selecionar o `model:` indicado na task.
+4. Criar branch `feat/phase-N-<slug>`.
+5. Atualizar `status: done`, commit, PR.
+
+Proibições:
+- Nunca editar `CLAUDE.md`, `AGENTS.md`, `TASKS.md`, `prometheus-*.md`, `EXECUTION_PLAN.md`.
+- Nunca inventar import/lib não listada no `pyproject.toml`.
+- Nunca tocar collections `work` ou `.ctxguard` sem ctx explícito.
 
 ## Proibições universais (qualquer agente)
 
