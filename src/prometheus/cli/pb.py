@@ -128,7 +128,7 @@ def adr_list(
     ctx: Annotated[Optional[str], typer.Option("--ctx")] = None,
 ) -> None:
     """Lista ADRs de um projeto."""
-    resolved_ctx = _resolve_ctx(ctx)
+    _resolve_ctx(ctx)
 
     async def _list() -> None:
         from prometheus.store.session_store import SessionStore
@@ -158,7 +158,7 @@ def adr_add(
     from prometheus.store.session_store import ADR, SessionStore
     import datetime
 
-    resolved_ctx = _resolve_ctx(ctx)
+    _resolve_ctx(ctx)
 
     if title is None:
         title = typer.prompt("Título do ADR")
@@ -380,7 +380,7 @@ def deep_suggest() -> None:
             for i, s in enumerate(suggestions, 1):
                 typer.echo(f"{i}. {s['suggested_title']}")
                 typer.echo(f"   Por quê: {s['why']}")
-                typer.echo(f"   Perguntas:")
+                typer.echo("   Perguntas:")
                 for q in s.get("starting_questions", []):
                     typer.echo(f"     - {q}")
                 typer.echo()
@@ -420,7 +420,37 @@ def index(
     resolved_ctx = _resolve_ctx(ctx)
     target = Path(path) if path else Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
     typer.echo(f"Indexando: {target} (ctx={resolved_ctx or 'auto'})")
-    typer.echo("[index] Pipeline de ingest não disponível — fase 3b ainda não deployada.")
+
+    if not target.exists():
+        typer.echo(f"Path não encontrado: {target}")
+        raise typer.Exit(1)
+
+    async def _index() -> None:
+        from prometheus.embedder.engine import EmbedderEngine
+        from prometheus.embedder.pipeline import index_path
+        from prometheus.store.vector_store import VectorStore
+
+        engine = EmbedderEngine()
+        store = VectorStore(url=os.environ.get("QDRANT_URL", "http://localhost:6333"))
+
+        try:
+            await store.ensure_collections()
+            vault_root = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+            indexed_files, total_chunks = await index_path(
+                target,
+                engine=engine,
+                store=store,
+                vault_root=vault_root,
+                forced_ctx=resolved_ctx,
+            )
+        finally:
+            await store.close()
+
+        typer.echo(f"Indexação concluída: {indexed_files} arquivo(s), {total_chunks} chunk(s)")
+        if indexed_files == 0:
+            typer.echo("Nenhum arquivo suportado encontrado (.java/.py/.ts/.md/.txt)")
+
+    asyncio.run(_index())
 
 
 # ---------------------------------------------------------------------------
