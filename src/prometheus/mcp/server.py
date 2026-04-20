@@ -5,6 +5,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from prometheus.embedder.engine import EmbedderEngine
 from prometheus.store.collections import get_search_collections
 from prometheus.store.session_store import ADR, SessionStore
 from prometheus.store.vector_store import VectorStore
@@ -30,6 +31,14 @@ mcp = FastMCP("prometheus-context-engine")
 _vector_store: VectorStore | None = None
 _graph_store: GraphStore | None = None
 _session_store: SessionStore | None = None
+_embedder: EmbedderEngine | None = None
+
+
+def _get_embedder() -> EmbedderEngine:
+    global _embedder
+    if _embedder is None:
+        _embedder = EmbedderEngine()
+    return _embedder
 
 
 def _get_vector_store() -> VectorStore:
@@ -83,8 +92,9 @@ async def search_code(
     """
     collections = get_search_collections(ctx)
     store = _get_vector_store()
+    query_vector = _get_embedder().embed_one(query)
     results = await store.search(
-        query=query,
+        query_vector=query_vector,
         collections=collections,
         language=language,
         top_k=10,

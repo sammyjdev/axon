@@ -13,8 +13,8 @@ class GraphStore:
     Busca O(1) por símbolo — não usa vetor, evita ruído semântico.
     """
 
-    def __init__(self, host: str = "localhost", port: int = 6379) -> None:
-        self._redis = aioredis.Redis(host=host, port=port, decode_responses=True)
+    def __init__(self, url: str = "redis://localhost:6379") -> None:
+        self._redis = aioredis.Redis.from_url(url, decode_responses=True)
 
     async def set_calls(self, symbol: str, calls: list[str]) -> None:
         await self._redis.hset(f"dep:{symbol}", "calls", json.dumps(calls))

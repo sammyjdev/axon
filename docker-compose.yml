@@ -38,7 +38,7 @@ services:
     restart: unless-stopped
 
   langfuse:
-    image: langfuse/langfuse:latest
+    image: langfuse/langfuse:2
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-prometheus}:${POSTGRES_PASSWORD:-local}@postgres:5432/${POSTGRES_DB:-langfuse}
       NEXTAUTH_SECRET: local-secret-change-in-prod

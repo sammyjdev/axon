@@ -33,8 +33,8 @@ class Chunk:
 
 
 class VectorStore:
-    def __init__(self, host: str = "localhost", port: int = 6333) -> None:
-        self._client = AsyncQdrantClient(host=host, port=port)
+    def __init__(self, url: str = "http://localhost:6333") -> None:
+        self._client = AsyncQdrantClient(url=url)
 
     async def ensure_collections(self) -> None:
         existing = {c.name for c in (await self._client.get_collections()).collections}
@@ -103,13 +103,13 @@ class VectorStore:
 
         results: list[dict] = []
         for col in collections:
-            hits = await self._client.search(
+            response = await self._client.query_points(
                 collection_name=col,
-                query_vector=query_vector,
+                query=query_vector,
                 query_filter=query_filter,
                 limit=top_k,
             )
-            for hit in hits:
+            for hit in response.points:
                 results.append({"score": hit.score, "payload": hit.payload, "id": hit.id})
 
         results.sort(key=lambda r: r["score"], reverse=True)
