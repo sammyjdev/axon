@@ -79,40 +79,34 @@ Cada task segue este schema:
 
 - phase: 0
 - agent: manual
-- status: open
-- spec: prometheus-context-isolation.md:7-66
-- branch: N/A (vault tem seu próprio git)
-- notes: criar personal/{aerus-rpg,rpg-master-ai,linkedin-tool}, career/{interviews,targets,applications,linkedin}, knowledge/daily/<tech>, knowledge/deep/<tech>, work/avangrid, daily/, adrs/
+- status: done
 
 ## T-011: Escrever CLAUDE.md global do vault
 
 - phase: 0
 - agent: manual
-- status: open
-- spec: prometheus-vault-final.md:7-70
+- status: done
 - depends_on: [T-010]
 
 ## T-012: Escrever .ctx e .ctxguard por contexto
 
 - phase: 0
 - agent: manual
-- status: open
-- spec: prometheus-context-isolation.md:7-66
+- status: done
 - depends_on: [T-010]
 
 ## T-013: Escrever CONTEXT.md template + preenchidos
 
 - phase: 0
 - agent: manual
-- status: open
-- spec: prometheus-vault-final.md:78-162
+- status: done
 - depends_on: [T-010]
 
 ## T-014: git init + commit inicial do vault
 
 - phase: 0
 - agent: manual
-- status: open
+- status: done
 - depends_on: [T-011, T-012, T-013]
 
 ---
@@ -162,8 +156,8 @@ Cada task segue este schema:
 
 - phase: 1
 - agent: manual
-- status: open
-- branch: feat/phase-1-docker-infra
+- status: done
+- notes: Colima como runtime, docker-compose v2.30.3 instalado manualmente, langfuse pinado em :2
 - depends_on: [T-022, T-023]
 
 ## T-025: Puxar modelos Ollama (gemma4:e4b, phi3:mini, gemma4:26b no PC)
@@ -171,6 +165,7 @@ Cada task segue este schema:
 - phase: 1
 - agent: manual
 - status: open
+- notes: phi3:mini ok. gemma4:e4b e gemma4:26b bloqueados por Ollama 0.18.2 (precisa upgrade)
 - depends_on: [T-024]
 
 ---
@@ -339,8 +334,8 @@ Cada task segue este schema:
 
 - phase: 4
 - agent: manual
-- status: open
-- branch: feat/phase-4-mcp-gateway
+- status: done
+- notes: smoke test ok (infra ok, coleções Qdrant serão criadas na primeira indexação via pb index)
 - depends_on: [T-061]
 
 ---
@@ -399,8 +394,8 @@ Cada task segue este schema:
 
 - phase: 5
 - agent: manual
-- status: open
-- branch: feat/phase-5b-cli-pb
+- status: done
+- notes: pipx install --editable . com Python 3.11 (requires-python baixado para >=3.11)
 - depends_on: [T-080]
 
 ---
