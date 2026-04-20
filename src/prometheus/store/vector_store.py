@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -12,7 +13,7 @@ from qdrant_client.models import (
 )
 
 
-VECTOR_SIZE = 1024  # snowflake-arctic-embed-l-v2.0
+VECTOR_SIZE = int(os.environ.get("PROMETHEUS_VECTOR_SIZE", "384"))
 
 COLLECTIONS = ["personal", "career", "knowledge", "work"]
 
@@ -40,6 +41,24 @@ class VectorStore:
         existing = {c.name for c in (await self._client.get_collections()).collections}
         for name in COLLECTIONS:
             if name not in existing:
+                await self._client.create_collection(
+                    collection_name=name,
+                    vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+                )
+                continue
+
+            info = await self._client.get_collection(name)
+            vectors_cfg = info.config.params.vectors
+            current_size: int | None = None
+
+            if isinstance(vectors_cfg, dict):
+                default_cfg = vectors_cfg.get("") or next(iter(vectors_cfg.values()), None)
+                current_size = getattr(default_cfg, "size", None)
+            else:
+                current_size = getattr(vectors_cfg, "size", None)
+
+            if current_size != VECTOR_SIZE:
+                await self._client.delete_collection(collection_name=name)
                 await self._client.create_collection(
                     collection_name=name,
                     vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
