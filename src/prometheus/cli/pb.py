@@ -48,6 +48,32 @@ def _resolve_ctx(ctx: str | None, require_work_confirmation: bool = True) -> str
     return ctx
 
 
+async def _semantic_search_hits(
+    query: str,
+    *,
+    collections: list[str],
+    language: str | None = None,
+    top_k: int = 5,
+) -> list[dict]:
+    from prometheus.embedder.engine import EmbedderEngine
+    from prometheus.store.vector_store import VectorStore
+
+    store = VectorStore(url=os.environ.get("QDRANT_URL", QDRANT_DEFAULT_URL))
+    engine = EmbedderEngine()
+    try:
+        query_vector = engine.embed_one(query)
+        hits = await store.search(
+            query_vector=query_vector,
+            collections=collections,
+            language=language,
+            top_k=top_k,
+        )
+    finally:
+        await store.close()
+
+    return hits
+
+
 # ---------------------------------------------------------------------------
 # pb ask
 # ---------------------------------------------------------------------------
@@ -60,6 +86,7 @@ def ask(
 ) -> None:
     """Consulta ao segundo cérebro — detecta contexto e roteia para o modelo adequado."""
     from prometheus.context.detector import ContextDetector
+    from prometheus.store.collections import get_search_collections
     from prometheus.store.session_store import SessionStore
 
     resolved_ctx = _resolve_ctx(ctx)
@@ -67,14 +94,38 @@ def ask(
     async def _ask() -> None:
         db = _get_db_path()
         db.parent.mkdir(parents=True, exist_ok=True)
-        async with SessionStore(db) as store:
-            detector = ContextDetector(store)
-            result = detector.detect(query, cwd=cwd or os.getcwd())
-            effective_ctx = resolved_ctx or result.context
-            typer.echo(f"Contexto detectado: {result.display}")
-            typer.echo(f"Roteando query para ctx={effective_ctx}...")
-            # Router + MCP são resolvidos em runtime quando infra está up
-            typer.echo("[ask] Infra MCP não iniciada — rode `docker compose up -d` primeiro.")
+        store = SessionStore(db)
+        await store.init()
+
+        detector = ContextDetector(store)
+        result = detector.detect(query, cwd=cwd or os.getcwd())
+        effective_ctx = resolved_ctx or result.context
+        collections = get_search_collections(effective_ctx)
+        hits = await _semantic_search_hits(query, collections=collections, top_k=5)
+
+        typer.echo(f"Contexto detectado: {result.display}")
+        typer.echo(f"Busca em ctx={effective_ctx} ({collections})")
+
+        if not hits:
+            typer.echo("\nNenhum contexto relevante encontrado.")
+            return
+
+        typer.echo("\nContexto relevante:")
+        snippets: list[str] = []
+        for i, hit in enumerate(hits[:5], start=1):
+            payload = hit.get("payload", {})
+            file_path = payload.get("file_path", "<sem arquivo>")
+            symbol = payload.get("symbol", "<sem símbolo>")
+            score = hit.get("score", 0.0)
+            content = str(payload.get("content", "")).strip().replace("\n", " ")
+            preview = (content[:200] + "...") if len(content) > 200 else content
+            snippets.append(preview)
+            typer.echo(f"{i}. [{score:.4f}] {file_path} :: {symbol}")
+
+        typer.echo("\nSíntese inicial:")
+        typer.echo("Baseado nos trechos recuperados, estes parecem ser os pontos mais relevantes para sua pergunta:")
+        for i, text in enumerate(snippets[:3], start=1):
+            typer.echo(f"{i}) {text}")
 
     asyncio.run(_ask())
 
@@ -98,21 +149,12 @@ def search(
     typer.echo(f"Buscando em: {collections}")
 
     async def _search() -> None:
-        from prometheus.embedder.engine import EmbedderEngine
-        from prometheus.store.vector_store import VectorStore
-
-        store = VectorStore(url=os.environ.get("QDRANT_URL", QDRANT_DEFAULT_URL))
-        engine = EmbedderEngine()
-        try:
-            query_vector = engine.embed_one(query)
-            hits = await store.search(
-                query_vector=query_vector,
-                collections=collections,
-                language=language,
-                top_k=top_k,
-            )
-        finally:
-            await store.close()
+        hits = await _semantic_search_hits(
+            query,
+            collections=collections,
+            language=language,
+            top_k=top_k,
+        )
 
         if not hits:
             typer.echo("Nenhum resultado encontrado.")
@@ -172,16 +214,17 @@ def adr_list(
         from prometheus.store.session_store import SessionStore
 
         db = _get_db_path()
-        async with SessionStore(db) as store:
-            adrs = await store.get_adrs(project)
-            if not adrs:
-                typer.echo(f"Nenhum ADR encontrado para projeto '{project}'.")
-                return
-            for adr in adrs:
-                typer.echo(f"\n# {adr.title}")
-                typer.echo(f"  Decisão:   {adr.decision}")
-                typer.echo(f"  Racional:  {adr.rationale}")
-                typer.echo(f"  Data:      {adr.created_at}")
+        store = SessionStore(db)
+        await store.init()
+        adrs = await store.get_adrs(project)
+        if not adrs:
+            typer.echo(f"Nenhum ADR encontrado para projeto '{project}'.")
+            return
+        for adr in adrs:
+            typer.echo(f"\n# {adr.title}")
+            typer.echo(f"  Decisão:   {adr.decision}")
+            typer.echo(f"  Racional:  {adr.rationale}")
+            typer.echo(f"  Data:      {adr.created_at}")
 
     asyncio.run(_list())
 
@@ -208,17 +251,18 @@ def adr_add(
     async def _add() -> None:
         db = _get_db_path()
         db.parent.mkdir(parents=True, exist_ok=True)
-        async with SessionStore(db) as store:
-            adr = ADR(
-                project=project,
-                title=title,
-                context=context_text,
-                decision=decision,
-                rationale=rationale,
-                created_at=datetime.datetime.now(datetime.UTC),
-            )
-            await store.save_adr(adr)
-            typer.echo(f"ADR salvo: {title}")
+        store = SessionStore(db)
+        await store.init()
+        adr = ADR(
+            project=project,
+            title=title,
+            context=context_text,
+            decision=decision,
+            rationale=rationale,
+            created_at=datetime.datetime.now(datetime.UTC),
+        )
+        await store.save_adr(adr)
+        typer.echo(f"ADR salvo: {title}")
 
     asyncio.run(_add())
 

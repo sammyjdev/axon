@@ -10,7 +10,7 @@ from watchdog.observers import Observer
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_EXTENSIONS = {".java", ".py", ".ts"}
+_SUPPORTED_EXTENSIONS = {".java", ".py", ".ts", ".md", ".txt"}
 
 
 def _is_supported(path: str) -> bool:
@@ -26,17 +26,18 @@ class _Handler(FileSystemEventHandler):
         if _is_supported(path):
             self._loop.call_soon_threadsafe(self._queue.put_nowait, Path(path))
 
-    def on_created(self, event: FileSystemEvent) -> None:
+    def _handle_file_event(self, event: FileSystemEvent, path: str) -> None:
         if not event.is_directory:
-            self._enqueue(event.src_path)
+            self._enqueue(path)
+
+    def on_created(self, event: FileSystemEvent) -> None:
+        self._handle_file_event(event, event.src_path)
 
     def on_modified(self, event: FileSystemEvent) -> None:
-        if not event.is_directory:
-            self._enqueue(event.src_path)
+        self._handle_file_event(event, event.src_path)
 
     def on_moved(self, event: FileSystemEvent) -> None:
-        if not event.is_directory:
-            self._enqueue(event.dest_path)
+        self._handle_file_event(event, event.dest_path)
 
 
 @dataclass
