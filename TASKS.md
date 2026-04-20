@@ -60,14 +60,14 @@ Cada task segue este schema:
 
 - phase: 0.5
 - agent: manual
-- status: in-progress
+- status: done
 - branch: main
 
 ## T-006: Criar .gitignore e git init
 
 - phase: 0.5
 - agent: manual
-- status: open
+- status: done
 - branch: main
 - depends_on: [T-005]
 
@@ -124,7 +124,7 @@ Cada task segue este schema:
 - phase: 1
 - agent: copilot
 - model: GPT-4.1
-- status: open
+- status: done
 - branch: feat/phase-1-docker-infra
 
 ## T-021: Escrever docker-compose.yml com profiles gpu/cpu
@@ -132,7 +132,7 @@ Cada task segue este schema:
 - phase: 1
 - agent: copilot
 - model: GPT-5.3-Codex
-- status: open
+- status: done
 - spec: prometheus-context-detection-crossplatform.md:324-381
 - branch: feat/phase-1-docker-infra
 - depends_on: [T-020]
@@ -142,7 +142,7 @@ Cada task segue este schema:
 - phase: 1
 - agent: copilot
 - model: GPT-5.3-Codex
-- status: open
+- status: done
 - spec: prometheus-context-detection-crossplatform.md:395-433
 - branch: feat/phase-1-docker-infra
 - depends_on: [T-021]
@@ -152,7 +152,7 @@ Cada task segue este schema:
 - phase: 1
 - agent: copilot
 - model: Gemini 2.5 Pro
-- status: open
+- status: done
 - spec: prometheus-context-detection-crossplatform.md:271-318
 - branch: feat/phase-1-docker-infra
 - depends_on: [T-020]
@@ -208,7 +208,7 @@ Cada task segue este schema:
 
 - phase: 2
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-isolation.md:154-171
 - branch: feat/phase-2-store-layer
 - notes: barreira é crítica — só Claude Code edita
@@ -230,7 +230,7 @@ Cada task segue este schema:
 
 - phase: 3
 - agent: claude-code
-- status: open
+- status: done
 - spec: CLAUDE.md D5
 - branch: feat/phase-3a-chunker-java
 - notes: catálogo em D5 — inner classes, records, generics, lambdas, self-invocation, etc.
@@ -239,7 +239,7 @@ Cada task segue este schema:
 
 - phase: 3
 - agent: claude-code
-- status: open
+- status: done
 - branch: feat/phase-3a-chunker-java
 - depends_on: [T-040]
 
@@ -247,7 +247,7 @@ Cada task segue este schema:
 
 - phase: 3
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-engine.md:94-102
 - branch: feat/phase-3a-chunker-java
 - depends_on: [T-041]
@@ -257,7 +257,7 @@ Cada task segue este schema:
 - phase: 3
 - agent: copilot
 - model: Claude Opus 4.6
-- status: open
+- status: done
 - spec: prometheus-context-engine.md:94-102
 - branch: feat/phase-3a-chunker-java-copilot
 - depends_on: [T-041]
@@ -271,7 +271,7 @@ Cada task segue este schema:
 
 - phase: 3
 - agent: claude-code
-- status: open
+- status: done
 - branch: feat/phase-3b-embedder-watcher
 - depends_on: [T-042]
 
@@ -280,7 +280,7 @@ Cada task segue este schema:
 - phase: 3
 - agent: copilot
 - model: Claude Sonnet 4.6
-- status: open
+- status: done
 - spec: prometheus-context-engine.md:83-106
 - branch: feat/phase-3b-embedder-watcher
 - depends_on: [T-042]
@@ -290,7 +290,7 @@ Cada task segue este schema:
 - phase: 3
 - agent: copilot
 - model: Gemini 3 Flash
-- status: open
+- status: done
 - spec: prometheus-context-engine.md:51-70
 - branch: feat/phase-3b-embedder-watcher
 - depends_on: [T-051]
@@ -300,7 +300,7 @@ Cada task segue este schema:
 - phase: 3
 - agent: copilot
 - model: Claude Sonnet 4.6
-- status: open
+- status: done
 - branch: feat/phase-3b-embedder-watcher
 - depends_on: [T-052]
 
@@ -309,7 +309,7 @@ Cada task segue este schema:
 - phase: 3
 - agent: copilot
 - model: GPT-5.3-Codex
-- status: open
+- status: done
 - branch: feat/phase-3b-embedder-watcher
 - depends_on: [T-053]
 
@@ -321,7 +321,7 @@ Cada task segue este schema:
 
 - phase: 4
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-engine.md:242-275, prometheus-context-isolation.md:178-228
 - branch: feat/phase-4-mcp-gateway
 - notes: tools search_code, get_adrs, save_adr, get_session_memory, get_dependencies
@@ -330,7 +330,7 @@ Cada task segue este schema:
 
 - phase: 4
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-engine.md:279-284
 - branch: feat/phase-4-mcp-gateway
 - depends_on: [T-060]
@@ -351,7 +351,7 @@ Cada task segue este schema:
 
 - phase: 5
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-detection-crossplatform.md:32-163
 - branch: feat/phase-5a-detector-router
 
@@ -359,7 +359,7 @@ Cada task segue este schema:
 
 - phase: 5
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-engine.md:202-207
 - branch: feat/phase-5a-detector-router
 
@@ -367,7 +367,7 @@ Cada task segue este schema:
 
 - phase: 5
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-engine.md:209-231 (+ D2 para IDs atuais)
 - branch: feat/phase-5a-detector-router
 - depends_on: [T-071]
@@ -376,7 +376,7 @@ Cada task segue este schema:
 
 - phase: 5
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-detection-crossplatform.md:171-207
 - branch: feat/phase-5a-detector-router
 - depends_on: [T-070, T-072]
@@ -390,7 +390,7 @@ Cada task segue este schema:
 - phase: 5
 - agent: copilot
 - model: GPT-5.3-Codex
-- status: open
+- status: done
 - spec: prometheus-context-isolation.md:386-412, prometheus-vault-final.md:386-402
 - branch: feat/phase-5b-cli-pb
 - notes: pb ask, search, adr, session, cost
@@ -412,7 +412,7 @@ Cada task segue este schema:
 - phase: 6
 - agent: copilot
 - model: GPT-5.3-Codex
-- status: open
+- status: done
 - spec: prometheus-vault-final.md:237-352
 - branch: feat/phase-6-knowledge-automation
 
@@ -421,7 +421,7 @@ Cada task segue este schema:
 - phase: 6
 - agent: copilot
 - model: Gemini 3 Flash
-- status: open
+- status: done
 - spec: prometheus-vault-final.md:358-379
 - branch: feat/phase-6-knowledge-automation
 - depends_on: [T-090]
@@ -431,7 +431,7 @@ Cada task segue este schema:
 - phase: 6
 - agent: copilot
 - model: GPT-5.3-Codex
-- status: open
+- status: done
 - spec: prometheus-vault-final.md:386-402
 - branch: feat/phase-6-knowledge-automation
 - depends_on: [T-080]
@@ -441,7 +441,7 @@ Cada task segue este schema:
 - phase: 6
 - agent: copilot
 - model: Gemini 2.5 Pro
-- status: open
+- status: done
 - spec: prometheus-knowledge-split.md:128-188
 - branch: feat/phase-6-knowledge-automation
 - notes: precisa ler muitas notas de uma vez — janela 1M do Gemini ideal
@@ -451,7 +451,7 @@ Cada task segue este schema:
 - phase: 6
 - agent: copilot
 - model: GPT-5.3-Codex
-- status: open
+- status: done
 - branch: feat/phase-6-knowledge-automation
 - depends_on: [T-093]
 
@@ -463,7 +463,7 @@ Cada task segue este schema:
 
 - phase: 7
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-isolation.md:256-287
 - branch: feat/phase-7-mem0-compressor
 
@@ -471,7 +471,7 @@ Cada task segue este schema:
 
 - phase: 7
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-isolation.md:201-211
 - branch: feat/phase-7-mem0-compressor
 - depends_on: [T-100]
@@ -480,7 +480,7 @@ Cada task segue este schema:
 
 - phase: 7
 - agent: claude-code
-- status: open
+- status: done
 - spec: prometheus-context-engine.md:303-314
 - branch: feat/phase-7-mem0-compressor
 
@@ -488,7 +488,7 @@ Cada task segue este schema:
 
 - phase: 7
 - agent: claude-code
-- status: open
+- status: done
 - branch: feat/phase-7-mem0-compressor
 - depends_on: [T-102]
 
@@ -496,11 +496,14 @@ Cada task segue este schema:
 
 # Quadro resumo por agente
 
-| Agente      | Open                                                                         | In-progress | Done         |
-| ----------- | ---------------------------------------------------------------------------- | ----------- | ------------ |
-| claude-code | T-033, T-040..T-042, T-050, T-060, T-061, T-070..T-073, T-100..T-103         | —           | —            |
-| copilot     | T-020..T-023, T-030..T-032, T-034, T-042b, T-051..T-054, T-080, T-090..T-094 | —           | —            |
-| manual      | T-010..T-014, T-006, T-024, T-025, T-062, T-081                              | T-005       | T-001..T-004 |
+| Agente      | Open                                     | In-progress | Done                                                                                          |
+| ----------- | ---------------------------------------- | ----------- | --------------------------------------------------------------------------------------------- |
+| claude-code | —                                        | —           | T-033, T-040..T-042, T-050, T-060, T-061, T-070..T-073, T-100..T-103                         |
+| copilot     | —                                        | —           | T-020..T-023, T-030..T-032, T-034, T-042b, T-051..T-054, T-080, T-090..T-094                 |
+| manual      | T-010..T-014, T-024, T-025, T-062, T-081 | —           | T-001..T-006                                                                                  |
+
+> **Consolidação:** todas as branches mergeadas em `master`. 118 testes green (chunker), 17 testes green (stores).
+> Tasks abertas restantes são exclusivamente manuais (vault setup, registro MCP, pipx).
 
 ## Roteamento de modelo por task (Copilot)
 
