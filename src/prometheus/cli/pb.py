@@ -29,6 +29,8 @@ app.add_typer(cost_app, name="cost")
 app.add_typer(til_app, name="til")
 app.add_typer(deep_app, name="deep")
 
+QDRANT_DEFAULT_URL = "http://localhost:6333"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -94,7 +96,43 @@ def search(
     resolved_ctx = _resolve_ctx(ctx)
     collections = get_search_collections(resolved_ctx)
     typer.echo(f"Buscando em: {collections}")
-    typer.echo("[search] Qdrant não iniciado — rode `docker compose up -d` primeiro.")
+
+    async def _search() -> None:
+        from prometheus.embedder.engine import EmbedderEngine
+        from prometheus.store.vector_store import VectorStore
+
+        store = VectorStore(url=os.environ.get("QDRANT_URL", QDRANT_DEFAULT_URL))
+        engine = EmbedderEngine()
+        try:
+            query_vector = engine.embed_one(query)
+            hits = await store.search(
+                query_vector=query_vector,
+                collections=collections,
+                language=language,
+                top_k=top_k,
+            )
+        finally:
+            await store.close()
+
+        if not hits:
+            typer.echo("Nenhum resultado encontrado.")
+            return
+
+        for i, hit in enumerate(hits, start=1):
+            payload = hit.get("payload", {})
+            file_path = payload.get("file_path", "<sem arquivo>")
+            symbol = payload.get("symbol", "<sem símbolo>")
+            chunk_type = payload.get("chunk_type", "<sem tipo>")
+            score = hit.get("score", 0.0)
+            content = str(payload.get("content", "")).strip().replace("\n", " ")
+            preview = (content[:180] + "...") if len(content) > 180 else content
+
+            typer.echo(f"\n{i}. score={score:.4f} | {file_path}")
+            typer.echo(f"   symbol={symbol} | type={chunk_type}")
+            if preview:
+                typer.echo(f"   preview: {preview}")
+
+    asyncio.run(_search())
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +469,7 @@ def index(
         from prometheus.store.vector_store import VectorStore
 
         engine = EmbedderEngine()
-        store = VectorStore(url=os.environ.get("QDRANT_URL", "http://localhost:6333"))
+        store = VectorStore(url=os.environ.get("QDRANT_URL", QDRANT_DEFAULT_URL))
 
         try:
             await store.ensure_collections()
@@ -451,6 +489,55 @@ def index(
             typer.echo("Nenhum arquivo suportado encontrado (.java/.py/.ts/.md/.txt)")
 
     asyncio.run(_index())
+
+
+@app.command()
+def watch(
+    path: Annotated[Optional[str], typer.Argument(help="Caminho para observar (default: vault inteiro)")] = None,
+    ctx: Annotated[Optional[str], typer.Option("--ctx")] = None,
+) -> None:
+    """Observa mudanças e reindexa arquivos suportados em tempo real."""
+    resolved_ctx = _resolve_ctx(ctx)
+    vault_root = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+    target = Path(path) if path else vault_root
+
+    if not target.exists():
+        typer.echo(f"Path não encontrado: {target}")
+        raise typer.Exit(1)
+
+    typer.echo(f"Watcher ativo em: {target} (ctx={resolved_ctx or 'auto'})")
+    typer.echo("Pressione Ctrl+C para encerrar.")
+
+    async def _watch() -> None:
+        from prometheus.embedder.engine import EmbedderEngine
+        from prometheus.embedder.pipeline import index_path
+        from prometheus.store.vector_store import VectorStore
+        from prometheus.watcher.main import run_watcher
+
+        engine = EmbedderEngine()
+        store = VectorStore(url=os.environ.get("QDRANT_URL", QDRANT_DEFAULT_URL))
+
+        async def _on_file(changed_path: Path) -> None:
+            indexed_files, total_chunks = await index_path(
+                changed_path,
+                engine=engine,
+                store=store,
+                vault_root=vault_root,
+                forced_ctx=resolved_ctx,
+            )
+            if indexed_files > 0:
+                typer.echo(f"[watch] Reindexado: {changed_path} ({total_chunks} chunk(s))")
+
+        try:
+            await store.ensure_collections()
+            await run_watcher(target, _on_file)
+        finally:
+            await store.close()
+
+    try:
+        asyncio.run(_watch())
+    except KeyboardInterrupt:
+        typer.echo("Watcher encerrado.")
 
 
 # ---------------------------------------------------------------------------
