@@ -10,12 +10,14 @@ Hardware alvo: Ryzen 7 5800X3D + RTX 4070 Ti + 32GB (PC) e Mac M1 16GB. O sistem
 
 ## Estado atual
 
-**Greenfield.** O diretório contém apenas as 6 especificações em markdown (`prometheus-*.md`) e estes arquivos de contexto de agentes. Nenhum código Python, nenhum Docker rodando, nenhum vault criado.
+**MVP completo (abril 2026).** Todas as fases 0–7 estão implementadas e mergeadas em `master`. 139 testes green. Infra Docker rodando (Colima + 6 containers). MCP conectado ao Claude Code. CLI `pb` instalado via pipx.
+
+O sistema está em uso operacional — o vault cresce organicamente com o uso diário.
 
 ## Entry points para agentes
 
-- **Plano de execução passo a passo:** [EXECUTION_PLAN.md](EXECUTION_PLAN.md) — leia antes de pegar qualquer task.
-- **Backlog com atribuição por agente:** [TASKS.md](TASKS.md) — pegue a próxima task com `agent:` igual ao seu tipo e `status: open`.
+- **README:** [README.md](README.md) — visão geral do sistema, instalação e uso.
+- **Backlog:** [TASKS.md](TASKS.md) — todas as tasks estão `done`. Novas tasks futuras entram aqui.
 - **Specs originais:** arquivos `prometheus-*.md` na raiz. Nunca edite estes.
 
 ## Decisões fixadas (D1-D5)
@@ -57,56 +59,40 @@ O chunker é o componente com maior risco técnico. Antes de qualquer outra cois
 
 ## Stack técnica
 
-- **Linguagem:** Python 3.12 (engine), Bash (setup), Markdown (vault).
-- **Infra local:** Docker Compose com Qdrant, Redis, Neo4j, Postgres, Langfuse, Ollama (profiles `gpu`/`cpu`).
-- **Libs-chave:** `fastembed`, `qdrant-client`, `redis`, `watchdog`, `tree-sitter-java/python/typescript`, `litellm`, `mcp` (FastMCP), `typer` (CLI), `ollama`.
+- **Linguagem:** Python 3.11+ (engine), Bash (setup), Markdown (vault).
+- **Runtime local:** Colima (macOS) + Docker Compose com Qdrant, Redis, Neo4j, Postgres, Langfuse, Ollama (profiles `gpu`/`cpu`).
+- **Libs-chave:** `fastembed`, `qdrant-client`, `redis`, `watchdog`, `tree-sitter-java/python/typescript`, `litellm`, `mcp` (FastMCP), `typer` (CLI), `ollama`, `aiosqlite`.
+- **Embedding model:** `BAAI/bge-small-en-v1.5` — 384 dimensões (Apple Silicon M-series).
+- **IDs Qdrant:** `uuid.uuid5(uuid.NAMESPACE_URL, key)` — SHA1 hex é rejeitado pelo Qdrant.
 
 ## Convenções de código
 
-- Type hints sempre (Python 3.12).
-- `dataclass` > dict; records Java > classes anêmicas; virtual threads para I/O.
-- Sem Lombok. Sem comentários óbvios — código autodocumentado.
+- Type hints sempre (Python 3.11+).
+- `dataclass` > dict.
+- Async por padrão em I/O.
+- Sem comentários óbvios — código autodocumentado. Comente só "porquê" não-óbvio.
 - Testes: Testcontainers para integração, sem mocks de repositório.
-- Sem comentários explicando o "quê" (o nome do símbolo já faz isso). Comente só "porquê" não-óbvio.
+- `SessionStore`: chamar `.init()` explicitamente — não implementa `__aenter__`/`__aexit__`.
+- `pytest-asyncio` com `asyncio_mode = "auto"` e `asyncio_default_fixture_loop_scope = "function"`.
 
 ## Regras de navegação por agente
 
-### Claude Code (raciocínio profundo, MCP nativo)
-Responsável por: Chunker Java D5 (gate crítico), MCP Gateway (Fase 4), Context Detector (Fase 5), Router + classifier (Fase 5), Session Memory compressor (Fase 7), qualquer integração multi-módulo, qualquer coisa que toque a barreira `work/`.
+**MVP completo — todas as tasks estão `done`.** Novos agentes que chegarem devem apenas manter o sistema funcional, corrigir bugs pontuais, ou implementar novas tasks adicionadas ao TASKS.md.
+
+### Claude Code
+Responsável por: qualquer integração multi-módulo, qualquer coisa que toque a barreira `work/`, lógica de contexto e router.
 
 Protocolo:
 1. Ler `CLAUDE.md` + `TASKS.md`.
-2. Pegar próxima task com `agent: claude-code AND status: open`.
-3. Criar branch `feat/phase-N-<slug>`.
-4. Implementar com TDD quando há suite (Fase 3a especialmente).
-5. Atualizar `status: done` no TASKS.md, commit, abrir PR interno.
+2. Se não houver task `status: open`, só atue se o usuário pedir explicitamente.
+3. Implementar com TDD. Nunca silenciar falha de teste.
 
-### Copilot Agent Mode (roteamento por modelo — substitui Codex)
-
-Copilot com agent mode ativo cria/edita múltiplos arquivos e roda comandos. Cada task tem `model:` recomendado. Regra: modelo mais barato que entrega a qualidade necessária.
-
-| Modelo | Custo | Usar para |
-|---|---|---|
-| **GPT-4.1 / GPT-4o** | 0x (grátis) | pyproject.toml, Dockerfile, .env.example, scripts triviais |
-| **Grok Code Fast 1** | 0.25x | CRUD repetitivo, import organization, patterns simples |
-| **Gemini 3 Flash** | 0.33x | Watcher, git hooks, type annotations pass |
-| **GPT-5.3-Codex** | 1x | docker-compose.yml, setup.sh, stores CRUD, CLI typer scaffolding |
-| **GPT-5.2-Codex** | 1x | Alternativa ao 5.3-Codex para boilerplate Python |
-| **Gemini 2.5 Pro** | 1x | Tasks que lêem muitos arquivos (suggester, indexação) — janela 1M tokens |
-| **Claude Sonnet 4.6** | 1x | Lógica de contexto, session compressor, integrações médias |
-| **Claude Opus 4.6** | 3x | Chunker Java (paralelo com Claude Code), arquitetura crítica |
-
+### Copilot Agent Mode
 Protocolo:
-1. Ler `AGENTS.md` + `TASKS.md`.
-2. Pegar próxima task com `agent: copilot AND status: open`.
-3. Selecionar o `model:` indicado na task.
-4. Criar branch `feat/phase-N-<slug>`.
-5. Atualizar `status: done`, commit, PR.
-
-Proibições:
-- Nunca editar `CLAUDE.md`, `AGENTS.md`, `TASKS.md`, `prometheus-*.md`, `EXECUTION_PLAN.md`.
-- Nunca inventar import/lib não listada no `pyproject.toml`.
-- Nunca tocar collections `work` ou `.ctxguard` sem ctx explícito.
+1. Ler `CLAUDE.md` + `TASKS.md`.
+2. Se não houver task `status: open`, só atue se o usuário pedir explicitamente.
+3. Nunca inventar import/lib não listada no `pyproject.toml`.
+4. Nunca tocar collections `work` ou `.ctxguard` sem ctx explícito.
 
 ## Proibições universais (qualquer agente)
 
@@ -119,30 +105,25 @@ Proibições:
 
 ## Workflow de branches
 
+Todas as fases foram mergeadas em `master`. Novas features entram em `feat/<slug>`. Cada PR roda `pytest` + `ruff check` localmente antes do merge.
+
 ```
-main
-├── feat/phase-0-vault-bootstrap
-├── feat/phase-1-docker-infra
-├── feat/phase-2-store-layer
-├── feat/phase-3a-chunker-java     (Claude Code, TDD crítico)
-├── feat/phase-3b-embedder-watcher
-├── feat/phase-4-mcp-gateway       (Claude Code)
-├── feat/phase-5a-detector-router  (Claude Code)
-├── feat/phase-5b-cli-pb
-├── feat/phase-6-knowledge-automation
-└── feat/phase-7-mem0-compressor   (Claude Code)
+master  ← estado atual (MVP completo)
 ```
 
-Cada PR roda `pytest` + `ruff check` localmente via pre-push hook antes do merge.
-
-## Gate especial da Fase 3a
-
-Branch `feat/phase-3a-chunker-java` **só merge** se `pytest tests/embedder/` estiver 100% verde nas 30+ fixtures Java. Este é o único gate bloqueante do MVP.
+Histórico de commits relevantes:
+```
+1e0fb81 test(cli): adiciona cobertura para pb ask/search/index/watch
+ca23e68 feat(cli): melhora pb ask e amplia watcher para markdown/text
+361a887 feat(cli): habilita pb search semântico e pb watch
+2598fec feat(cli): habilita pb index com pipeline de ingest e upsert
+63ea4cc fix(store): VECTOR_SIZE=384 (bge-small Apple Silicon)
+```
 
 ## Referências rápidas
 
-- Plano completo: [EXECUTION_PLAN.md](EXECUTION_PLAN.md)
-- Backlog: [TASKS.md](TASKS.md)
+- README e uso: [README.md](README.md)
+- Backlog: [TASKS.md](TASKS.md) — todas `done` (MVP completo)
 - Arquitetura 5-layer: [prometheus-context-engine.md](prometheus-context-engine.md)
 - Estrutura do vault + barreira work: [prometheus-context-isolation.md](prometheus-context-isolation.md)
 - Context detector + cross-platform: [prometheus-context-detection-crossplatform.md](prometheus-context-detection-crossplatform.md)
