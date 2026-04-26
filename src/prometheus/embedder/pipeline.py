@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 from pathlib import Path
 from typing import Iterable
 
@@ -21,6 +22,8 @@ _LANGUAGE_MAP = {
 
 
 _CTX_ROOTS = {"personal", "career", "knowledge", "work"}
+_FILE_HASH_CACHE: dict[str, str] = {}
+_BATCH_SIZE = 400
 
 
 def iter_supported_files(target: Path) -> Iterable[Path]:
@@ -94,6 +97,15 @@ async def index_path(
     files = list(iter_supported_files(target))
     total_chunks = 0
     indexed_files = 0
+    pending_batch: list[VectorChunk] = []
+
+    async def _flush_batch() -> int:
+        if not pending_batch:
+            return 0
+        batch_size = len(pending_batch)
+        await store.upsert_batch(list(pending_batch))
+        pending_batch.clear()
+        return batch_size
 
     for file_path in files:
         file_ctx = forced_ctx or infer_ctx_from_path(file_path, vault_root)
@@ -105,6 +117,11 @@ async def index_path(
             continue
 
         source = file_path.read_text(encoding="utf-8", errors="replace")
+        source_hash = hashlib.sha1(source.encode("utf-8")).hexdigest()
+        cache_key = str(file_path.resolve())
+        if _FILE_HASH_CACHE.get(cache_key) == source_hash:
+            continue
+
         chunks: list[Chunk] = chunk_source(source, language, str(file_path))
         if not chunks:
             continue
@@ -125,10 +142,15 @@ async def index_path(
             for c, vec in zip(chunks, vectors)
         ]
 
-        await store.upsert_batch(vector_chunks)
+        pending_batch.extend(vector_chunks)
+        if len(pending_batch) >= _BATCH_SIZE:
+            await _flush_batch()
+
+        _FILE_HASH_CACHE[cache_key] = source_hash
         indexed_files += 1
         total_chunks += len(vector_chunks)
 
+    await _flush_batch()
     return indexed_files, total_chunks
 
 

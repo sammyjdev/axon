@@ -6,8 +6,10 @@ from pathlib import Path
 
 import litellm
 
-VAULT_PATH = Path.home() / "vault"
-KNOWLEDGE_PATH = VAULT_PATH / "knowledge"
+from prometheus.config.runtime import load_runtime_config
+
+_RUNTIME = load_runtime_config()
+KNOWLEDGE_PATH = _RUNTIME.vault_context_root("knowledge")
 TODAY = date.today().isoformat()
 
 _PROMOTION_CRITERIA = """
