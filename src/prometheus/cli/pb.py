@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 import subprocess
-import sys
 from pathlib import Path
+from typing import Annotated
 from typing import Optional
 
 import typer
-from typing_extensions import Annotated
+
+from prometheus.config.runtime import load_runtime_config
+from prometheus.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
 
 app = typer.Typer(
     name="pb",
@@ -21,6 +24,7 @@ career_app = typer.Typer(help="Comandos de carreira")
 cost_app = typer.Typer(help="Exibe custo de uso de LLMs")
 til_app = typer.Typer(help="TIL e HOW-TO — knowledge automation")
 deep_app = typer.Typer(help="Sugestões de aprofundamento técnico")
+expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -28,8 +32,10 @@ app.add_typer(career_app, name="career")
 app.add_typer(cost_app, name="cost")
 app.add_typer(til_app, name="til")
 app.add_typer(deep_app, name="deep")
+app.add_typer(expand_app, name="expand")
 
 QDRANT_DEFAULT_URL = "http://localhost:6333"
+_RUNTIME = load_runtime_config()
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +43,7 @@ QDRANT_DEFAULT_URL = "http://localhost:6333"
 # ---------------------------------------------------------------------------
 
 def _get_db_path() -> Path:
-    return Path(os.environ.get("PROMETHEUS_ENGINE", Path.home() / "dev/Prometheus")) / "data" / "prometheus.db"
+    return _RUNTIME.db_path
 
 
 def _resolve_ctx(ctx: str | None, require_work_confirmation: bool = True) -> str | None:
@@ -46,6 +52,116 @@ def _resolve_ctx(ctx: str | None, require_work_confirmation: bool = True) -> str
         if not confirmed:
             raise typer.Abort()
     return ctx
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, len(text) // 4)
+
+
+def _rtk_binary_path() -> str | None:
+    return rtk_binary_path()
+
+
+def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
+    try:
+        return compress_text_with_rtk(text, max_tokens=max_tokens), None
+    except RTKError as exc:
+        return text, str(exc)
+
+
+async def _compress_context_pipeline(
+    text: str,
+    *,
+    max_tokens: int,
+    caller: str,
+    ctx: str | None,
+) -> tuple[str, str, str | None, str | None, int, int, float]:
+    from datetime import UTC, datetime
+
+    from prometheus.observability.compression_telemetry import (
+        CompressionRecord,
+        CompressionTelemetryStore,
+    )
+    from prometheus.router.compressor import caveman_compress
+
+    before_tokens = _estimate_tokens(text)
+    caveman_out, caveman_note = await caveman_compress(text, max_tokens=max_tokens)
+    compressed_context, rtk_note = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
+
+    engines: list[str] = []
+    if caveman_note is None:
+        engines.append("caveman/phi3")
+    if rtk_note is None:
+        engines.append("rtk")
+    engine_name = "+".join(engines) if engines else "fallback"
+
+    after_tokens = _estimate_tokens(compressed_context)
+    reduction = max(0, before_tokens - after_tokens)
+    reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
+
+    CompressionTelemetryStore().append(
+        CompressionRecord(
+            ts=datetime.now(UTC).isoformat(),
+            engine=engine_name,
+            caller=caller,
+            ctx=ctx,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            reduction_tokens=reduction,
+            reduction_pct=round(reduction_pct, 1),
+        )
+    )
+
+    return (
+        compressed_context,
+        engine_name,
+        caveman_note,
+        rtk_note,
+        before_tokens,
+        after_tokens,
+        reduction_pct,
+    )
+
+
+def _handle_expand_expected_error(exc: FileNotFoundError | ValueError) -> None:
+    if isinstance(exc, FileNotFoundError):
+        typer.echo(f"Arquivo não encontrado: {exc}", err=True)
+    else:
+        typer.echo(f"Não foi possível concluir a operação: {exc}", err=True)
+    raise typer.Exit(1)
+
+
+def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_name: str | None) -> tuple[str, str, str]:
+    ctx_label = ctx_name or "auto"
+
+    planner = (
+        "Você é o planner. Gere um plano executável para agentes Codex em paralelo.\n"
+        "Retorne JSON válido com campos: goal, assumptions, tasks[].\n"
+        "Cada task deve conter: task_id, objective, files, dependencies, acceptance_criteria, tests, risk, rollback.\n"
+        "Não execute código. Não omita riscos.\n\n"
+        f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
+        f"Solicitação do usuário: {query}"
+    )
+
+    executor = (
+        "Você é o executor Codex de uma tarefa do plano.\n"
+        "Execute APENAS task_id informado, respeitando acceptance_criteria e tests.\n"
+        "Saída obrigatória: resumo de mudanças, arquivos alterados, comandos executados, resultados de teste, próximos passos.\n"
+        "Se houver bloqueio, pare e reporte causa raiz com alternativa segura.\n\n"
+        "Contexto Prometheus comprimido:\n"
+        f"{compressed_context}\n\n"
+        "Task a executar: <COLE_A_TASK_JSON_AQUI>"
+    )
+
+    local_knowledge = (
+        "Você é um assistente local para preencher notas de knowledge com baixa alucinação.\n"
+        "Objetivo: criar rascunho objetivo para arquivo vazio (TIL/HOW-TO), sem decisões arquiteturais finais.\n"
+        "Formato: título, resumo, passos práticos, exemplos curtos, perguntas para aprofundamento.\n\n"
+        f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
+        f"Tema alvo: {query}"
+    )
+
+    return planner, executor, local_knowledge
 
 
 async def _semantic_search_hits(
@@ -58,7 +174,7 @@ async def _semantic_search_hits(
     from prometheus.embedder.engine import EmbedderEngine
     from prometheus.store.vector_store import VectorStore
 
-    store = VectorStore(url=os.environ.get("QDRANT_URL", QDRANT_DEFAULT_URL))
+    store = VectorStore(url=_RUNTIME.qdrant_url)
     engine = EmbedderEngine()
     try:
         query_vector = engine.embed_one(query)
@@ -83,6 +199,7 @@ def ask(
     query: Annotated[str, typer.Argument(help="Pergunta ou task")],
     ctx: Annotated[Optional[str], typer.Option("--ctx", help="Contexto: personal|career|knowledge|work")] = None,
     cwd: Annotated[Optional[str], typer.Option("--cwd", help="Diretório para detecção automática de contexto")] = None,
+    rtk_max_tokens: Annotated[int, typer.Option("--rtk-max-tokens", help="Budget de tokens para contexto comprimido")] = _RUNTIME.rtk_max_tokens,
 ) -> None:
     """Consulta ao segundo cérebro — detecta contexto e roteia para o modelo adequado."""
     from prometheus.context.detector import ContextDetector
@@ -112,6 +229,7 @@ def ask(
 
         typer.echo("\nContexto relevante:")
         snippets: list[str] = []
+        context_lines: list[str] = []
         for i, hit in enumerate(hits[:5], start=1):
             payload = hit.get("payload", {})
             file_path = payload.get("file_path", "<sem arquivo>")
@@ -120,6 +238,7 @@ def ask(
             content = str(payload.get("content", "")).strip().replace("\n", " ")
             preview = (content[:200] + "...") if len(content) > 200 else content
             snippets.append(preview)
+            context_lines.append(f"[{score:.4f}] {file_path} :: {symbol} :: {preview}")
             typer.echo(f"{i}. [{score:.4f}] {file_path} :: {symbol}")
 
         typer.echo("\nSíntese inicial:")
@@ -127,7 +246,158 @@ def ask(
         for i, text in enumerate(snippets[:3], start=1):
             typer.echo(f"{i}) {text}")
 
+        raw_context = "\n".join(context_lines)
+        (
+            compressed_context,
+            engine_name,
+            caveman_note,
+            rtk_note,
+            before_tokens,
+            after_tokens,
+            reduction_pct,
+        ) = await _compress_context_pipeline(
+            raw_context,
+            max_tokens=rtk_max_tokens,
+            caller="cli",
+            ctx=effective_ctx,
+        )
+
+        planner_prompt, executor_prompt, local_prompt = _build_planner_executor_prompts(
+            query=query,
+            compressed_context=compressed_context,
+            ctx_name=effective_ctx,
+        )
+
+        typer.echo("\ncompression:")
+        typer.echo(f"engine: {engine_name}")
+        if caveman_note:
+            typer.echo(f"caveman_note: {caveman_note}")
+        if rtk_note:
+            typer.echo(f"rtk_note: {rtk_note}")
+        typer.echo(f"tokens aprox: {before_tokens} -> {after_tokens} (-{reduction_pct:.1f}%)")
+
+        typer.echo("\nPrompt pronto — Claude (Planner):")
+        typer.echo(planner_prompt)
+
+        typer.echo("\nPrompt pronto — Codex (Executor):")
+        typer.echo(executor_prompt)
+
+        typer.echo("\nPrompt pronto — Local (Knowledge Draft):")
+        typer.echo(local_prompt)
+
     asyncio.run(_ask())
+
+
+@app.command()
+def rtk(
+    text: Annotated[str, typer.Argument(help="Texto a comprimir")],
+    max_tokens: Annotated[int, typer.Option("--max-tokens", help="Budget de tokens alvo")] = 350,
+) -> None:
+    """Comprime texto com RTK binário para reduzir consumo de tokens."""
+    compressed, rtk_note = _compress_with_rtk(text, max_tokens=max_tokens)
+    if rtk_note:
+        raise typer.BadParameter(f"RTK externo indisponível: {rtk_note}")
+    before_tokens = _estimate_tokens(text)
+    after_tokens = _estimate_tokens(compressed)
+    reduction = max(0, before_tokens - after_tokens)
+    reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
+
+    typer.echo("RTK engine: external")
+    typer.echo(f"RTK tokens aprox: {before_tokens} -> {after_tokens} (-{reduction_pct:.1f}%)")
+    typer.echo("\nTexto comprimido:")
+    typer.echo(compressed)
+
+
+@app.command("rtk-status")
+def rtk_status() -> None:
+    """Mostra status da instalação RTK oficial e integração local."""
+    rtk_path = _rtk_binary_path()
+    if not rtk_path:
+        typer.echo("RTK: não instalado")
+        typer.echo("Instale com: brew install rtk")
+        raise typer.Exit(1)
+
+    typer.echo(f"RTK: instalado em {rtk_path}")
+    version = subprocess.run([rtk_path, "--version"], capture_output=True, text=True)
+    typer.echo((version.stdout or version.stderr or "versão indisponível").strip())
+
+    show = subprocess.run([rtk_path, "init", "--show"], capture_output=True, text=True)
+    if show.returncode == 0 and (show.stdout or "").strip():
+        typer.echo("\nRTK init --show:")
+        typer.echo(show.stdout.strip())
+    else:
+        typer.echo("RTK init --show indisponível ou sem configuração.")
+
+
+@app.command("rtk-init")
+def rtk_init(
+    agent: Annotated[str, typer.Option("--agent", help="Agente alvo: claude|codex|copilot")] = "claude",
+    auto_patch: Annotated[bool, typer.Option("--auto-patch/--interactive", help="Executa init sem perguntas interativas")] = True,
+) -> None:
+    """Inicializa RTK oficial para o agente escolhido."""
+    rtk_path = _rtk_binary_path()
+    if not rtk_path:
+        typer.echo("RTK não instalado. Rode: brew install rtk")
+        raise typer.Exit(1)
+
+    agent_name = agent.lower()
+    cmd = [rtk_path, "init", "-g"]
+    if agent_name == "codex":
+        cmd.append("--codex")
+    elif agent_name == "copilot":
+        if auto_patch:
+            cmd.append("--auto-patch")
+        cmd.append("--copilot")
+    elif agent_name == "claude":
+        if auto_patch:
+            cmd.append("--auto-patch")
+    else:
+        raise typer.BadParameter("agent deve ser claude, codex ou copilot")
+
+    typer.echo(f"Executando: {' '.join(cmd)}")
+    result = subprocess.run(cmd, text=True)
+    if result.returncode != 0:
+        raise typer.Exit(result.returncode)
+    typer.echo("RTK inicializado com sucesso.")
+
+
+@app.command("rtk-proxy")
+def rtk_proxy(
+    command: Annotated[str, typer.Argument(help="Comando para executar via rtk proxy")],
+) -> None:
+    """Executa um comando via RTK proxy com saída compactada."""
+    rtk_path = _rtk_binary_path()
+    if not rtk_path:
+        typer.echo("RTK não instalado. Rode: brew install rtk")
+        raise typer.Exit(1)
+
+    parts = shlex.split(command)
+    if not parts:
+        raise typer.BadParameter("comando vazio")
+
+    cmd = [rtk_path, "proxy", *parts]
+    typer.echo(f"Executando: {' '.join(cmd)}")
+    result = subprocess.run(cmd, text=True)
+    if result.returncode != 0:
+        raise typer.Exit(result.returncode)
+
+
+@app.command("run")
+def run_proxy(
+    command: Annotated[str, typer.Argument(help="Comando shell para executar via RTK proxy")],
+) -> None:
+    """Atalho para executar qualquer comando shell com RTK proxy."""
+    rtk_proxy(command)
+
+
+@app.command("git")
+def git_proxy(
+    git_args: Annotated[list[str], typer.Argument(help="Argumentos do git (ex.: status, diff, log -n 5)")],
+) -> None:
+    """Atalho para `pb git ...` com saída filtrada por RTK."""
+    if not git_args:
+        raise typer.BadParameter("informe ao menos um argumento, ex.: pb git status")
+    rtk_proxy(f"git {' '.join(git_args)}")
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +463,7 @@ def session_root(
     resolved = _resolve_ctx(ctx_name)
     typer.echo(f"Sessão iniciada: {resolved}")
     # Persiste no env local ou em arquivo de estado
-    state_file = Path(os.environ.get("PROMETHEUS_ENGINE", ".")) / ".session_state"
+    state_file = _RUNTIME.engine_root / ".session_state"
     state_file.write_text(resolved or "")
     typer.echo(f"Contexto {resolved} ativo. Sessão salva em {state_file}")
 
@@ -274,7 +544,7 @@ def adr_add(
 @career_app.command("metrics")
 def career_metrics() -> None:
     """Exibe métricas de carreira compiladas do vault."""
-    vault = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+    vault = _RUNTIME.vault_root
     career_path = vault / "career"
     if not career_path.exists():
         typer.echo("Vault de carreira não encontrado. Configure PROMETHEUS_VAULT.")
@@ -335,6 +605,25 @@ def _show_cost(period: str, breakdown: bool = False) -> None:
         typer.echo("  work:       $0.00")
 
 
+@cost_app.command("compression")
+def cost_compression() -> None:
+    """Exibe tokens economizados pelo pipeline caveman+RTK."""
+    from prometheus.observability.compression_telemetry import CompressionTelemetryStore
+    store = CompressionTelemetryStore()
+    s = store.summary()
+    if s["total_calls"] == 0:
+        typer.echo("Sem dados de compressão ainda.")
+        return
+    typer.echo(f"Total de chamadas : {s['total_calls']}")
+    typer.echo(f"Tokens antes      : {s['total_before_tokens']:,}")
+    typer.echo(f"Tokens depois     : {s['total_after_tokens']:,}")
+    typer.echo(f"Tokens economizados: {s['total_saved_tokens']:,}")
+    typer.echo(f"Redução média     : {s['avg_reduction_pct']}%")
+    typer.echo("Por engine:")
+    for engine, count in s["by_engine"].items():
+        typer.echo(f"  {engine}: {count}x")
+
+
 # ---------------------------------------------------------------------------
 # pb til
 # ---------------------------------------------------------------------------
@@ -368,7 +657,7 @@ def til_capture(
 def _capture_til(text: str, tags_str: str | None) -> None:
     import datetime
 
-    vault = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+    vault = _RUNTIME.vault_root
     today = datetime.date.today().isoformat()
     tags = [t.strip() for t in (tags_str or "").split(",") if t.strip()]
     tags_yaml = f"[{', '.join(tags)}]" if tags else "[]"
@@ -397,7 +686,7 @@ promoted: false
 def _list_til_pending() -> None:
     import datetime
 
-    vault = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+    vault = _RUNTIME.vault_root
     knowledge = vault / "knowledge"
     if not knowledge.exists():
         typer.echo("Vault não encontrado.")
@@ -428,7 +717,7 @@ def til_to_howto(
     from_file: Annotated[str, typer.Option("--from", help="Arquivo TIL de origem")],
 ) -> None:
     """Converte um TIL específico em HOW-TO manualmente."""
-    vault = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+    vault = _RUNTIME.vault_root
     til_path = vault / from_file if not Path(from_file).is_absolute() else Path(from_file)
 
     if not til_path.exists():
@@ -475,7 +764,7 @@ def deep_suggest() -> None:
 @deep_app.command("list")
 def deep_list() -> None:
     """Lista notas deep existentes no vault."""
-    vault = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+    vault = _RUNTIME.vault_root
     deep_dir = vault / "knowledge" / "deep"
     if not deep_dir.exists():
         typer.echo("Diretório deep não encontrado no vault.")
@@ -490,6 +779,87 @@ def deep_list() -> None:
 
 
 # ---------------------------------------------------------------------------
+# pb expand
+# ---------------------------------------------------------------------------
+
+@expand_app.command("run")
+def expand_run(
+    ctx: Annotated[str, typer.Option("--ctx", help="Contexto alvo")] ,
+    topic: Annotated[str, typer.Option("--topic", help="Tema para expansão manual")] ,
+    fast: Annotated[bool, typer.Option("--fast", help="Limita coleta local para execução rápida")] = False,
+    allow_cloud: Annotated[bool, typer.Option("--allow-cloud", help="Permite uso cloud se policy e budget liberarem")] = False,
+) -> None:
+    """Executa expansão manual e grava apenas em staging."""
+    from prometheus.expansion.service import ExpansionService
+
+    resolved_ctx = _resolve_ctx(ctx)
+    if resolved_ctx is None:
+        raise typer.BadParameter("--ctx é obrigatório")
+
+    service = ExpansionService(_RUNTIME)
+    staging_path = service.run(
+        ctx=resolved_ctx,
+        topic=topic,
+        fast=fast,
+        allow_cloud=allow_cloud,
+    )
+    draft = service.review(staging_path)
+    typer.echo(f"Staging criado: {staging_path}")
+    typer.echo("Nenhuma escrita foi feita no vault final.")
+    typer.echo(ExpansionService.format_review(draft))
+
+
+@expand_app.command("review")
+def expand_review(
+    staging_file: Annotated[str, typer.Argument(help="Arquivo markdown de staging")],
+) -> None:
+    """Exibe gate de revisão e caminho de publicação."""
+    from prometheus.expansion.service import ExpansionService
+
+    service = ExpansionService(_RUNTIME)
+    try:
+        draft = service.review(Path(staging_file))
+    except (FileNotFoundError, ValueError) as exc:
+        _handle_expand_expected_error(exc)
+    typer.echo(ExpansionService.format_review(draft))
+
+
+@expand_app.command("approve")
+def expand_approve(
+    staging_file: Annotated[str, typer.Argument(help="Arquivo markdown de staging")],
+) -> None:
+    """Publica um draft aprovado e reindexa o arquivo final."""
+    from prometheus.expansion.service import ExpansionService
+
+    service = ExpansionService(_RUNTIME)
+    try:
+        publish_path, reindex_status = service.approve(Path(staging_file))
+    except (FileNotFoundError, ValueError) as exc:
+        _handle_expand_expected_error(exc)
+    typer.echo(f"Publicado: {publish_path}")
+    if reindex_status == "reindex_ok":
+        typer.echo("Reindex concluído para o arquivo publicado.")
+    else:
+        typer.echo("Reindex não executado; publicação concluída e pode ser indexada depois.")
+
+
+@expand_app.command("reject")
+def expand_reject(
+    staging_file: Annotated[str, typer.Argument(help="Arquivo markdown de staging")],
+) -> None:
+    """Rejeita um draft sem tocar o vault final."""
+    from prometheus.expansion.service import ExpansionService
+
+    service = ExpansionService(_RUNTIME)
+    try:
+        rejected_path = service.reject(Path(staging_file))
+    except (FileNotFoundError, ValueError) as exc:
+        _handle_expand_expected_error(exc)
+    typer.echo(f"Staging rejeitado: {rejected_path}")
+    typer.echo("Vault final preservado.")
+
+
+# ---------------------------------------------------------------------------
 # pb index
 # ---------------------------------------------------------------------------
 
@@ -500,7 +870,7 @@ def index(
 ) -> None:
     """Indexação one-shot do vault ou de um path específico."""
     resolved_ctx = _resolve_ctx(ctx)
-    target = Path(path) if path else Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+    target = Path(path) if path else _RUNTIME.vault_root
     typer.echo(f"Indexando: {target} (ctx={resolved_ctx or 'auto'})")
 
     if not target.exists():
@@ -513,11 +883,11 @@ def index(
         from prometheus.store.vector_store import VectorStore
 
         engine = EmbedderEngine()
-        store = VectorStore(url=os.environ.get("QDRANT_URL", QDRANT_DEFAULT_URL))
+        store = VectorStore(url=_RUNTIME.qdrant_url)
 
         try:
             await store.ensure_collections()
-            vault_root = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+            vault_root = _RUNTIME.vault_root
             indexed_files, total_chunks = await index_path(
                 target,
                 engine=engine,
@@ -542,7 +912,7 @@ def watch(
 ) -> None:
     """Observa mudanças e reindexa arquivos suportados em tempo real."""
     resolved_ctx = _resolve_ctx(ctx)
-    vault_root = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+    vault_root = _RUNTIME.vault_root
     target = Path(path) if path else vault_root
 
     if not target.exists():
@@ -559,7 +929,7 @@ def watch(
         from prometheus.watcher.main import run_watcher
 
         engine = EmbedderEngine()
-        store = VectorStore(url=os.environ.get("QDRANT_URL", QDRANT_DEFAULT_URL))
+        store = VectorStore(url=_RUNTIME.qdrant_url)
 
         async def _on_file(changed_path: Path) -> None:
             indexed_files, total_chunks = await index_path(
