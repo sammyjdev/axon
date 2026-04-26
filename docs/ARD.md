@@ -48,21 +48,62 @@ Historico detalhado de planejamento e specs antigas em `docs/archive/`.
 
 - O ambiente deve suportar monitoracao de custo/uso (Langfuse) e logs dos servicos principais.
 
+## ARD-007 - Budget gate final pre-envio
+
+- O router deve validar o custo estimado dos tokens montados apos compressao RTK e antes do envio ao provedor.
+- Nenhuma chamada ao provedor deve ocorrer quando o custo estimado supera o budget restante do dia.
+- Motivo: evitar estouro silencioso de budget em requests pesados pos-compressao.
+- Status: requisito identificado (2026-04-21); implementacao pendente.
+
+## ARD-008 - Circuit breaker distribuido por provider:model
+
+- O sistema deve manter estado de circuit breaker persistido em Redis por chave `breaker:<provider>:<model>`.
+- Transicoes de estado (CLOSED -> OPEN -> HALF_OPEN -> CLOSED) devem ser atomicas entre workers.
+- Retry com jitter exponencial e half-open controlado (max N tentativas antes de fechar ou reabrir).
+- Motivo: evitar cascata de falhas em provedores instáveis sem bloquear rotas alternativas.
+- Status: requisito identificado (2026-04-21); implementacao pendente.
+
+## ARD-009 - Observabilidade de compliance sem conteudo sensivel
+
+- Toda decisao de roteamento deve emitir evento com: decision_id, reason_code, policy_version, route, ctx.
+- Os eventos nao devem conter conteudo da mensagem, tokens ou dados do usuario.
+- Motivo: auditabilidade completa para compliance sem risco de vazamento de dados.
+- Status: requisito identificado (2026-04-21); implementacao pendente.
+
+## ARD-010 - Retrieval 2-step budget-aware
+
+- A busca vetorial deve suportar parametros: top_k, max_depth, max_nodes, max_tokens.
+- O grafo de dependencias deve suportar travessia multi-hop com controle de profundidade e orcamento.
+- Motivo: evitar recuperar contexto excessivo que supera budget ou piora qualidade do retrieval.
+- Status: requisito identificado (2026-04-21); implementacao pendente.
+
 ---
 
-## Estado atual (2026-04-19)
+## Estado atual (2026-04-21)
 
 ### Entregue
 
 - Fases 1 a 7 implementadas no codigo do engine e consolidadas em master.
 - Suite principal validada:
-  - tests/embedder/test_chunker_java.py: 118 passed
-  - tests/store/test_stores.py: 17 passed
-- Branches de feature limpas localmente; apenas master ativa.
+  - tests/embedder/test_chunker_java.py: 118 passed (Java + Python + TypeScript)
+  - tests/store/test_stores.py: 19 passed
+  - tests/cli/test_pb_cli.py: 10 passed
+  - tests/router/test_router.py: 2 passed
+  - Total: 149 passed
 
-### O que ainda falta (gaps reais)
+### Requisitos pendentes de implementacao
 
-Itens abertos em TASKS.md e operacao manual pendente:
+ARD-007, ARD-008, ARD-009, ARD-010 sao requisitos identificados e priorizados.
+Decisoes de produto e governanca registradas em ADR-011 a ADR-015.
+Implementacao entra como proximas tasks em TASKS.md.
+
+### Baseline operacional historico (2026-04-19)
+
+Os itens abaixo eram checklist de bootstrap/operacao manual na data de consolidacao.
+Nao representam gap de implementacao do engine.
+Para execucao atual, usar `docs/VAULT_SETUP.md`.
+
+Itens mapeados naquele baseline:
 
 1. Vault bootstrap manual
 
@@ -88,7 +129,7 @@ Itens abertos em TASKS.md e operacao manual pendente:
 
 ---
 
-## Linha de corte para MVP operacional completo
+## Linha de corte historica para MVP operacional completo
 
 1. Finalizar T-024 e T-025 (stack + modelos)
 2. Finalizar T-062 (MCP registrado e testado)

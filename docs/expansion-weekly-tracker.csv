@@ -1,0 +1,4 @@
+week_start,run_date,ctx,topic,mode,allow_cloud,status,risk_level,recommended_action,decision,total_time_seconds,cloud_cost_usd,staging_file,publish_file,notes
+2026-04-20,2026-04-23,knowledge,"python async testing patterns",fast,no,staged,high,reject,,,0.00,/Users/samdev/vault/knowledge/staging/python-async-testing-patterns.md,,"4 fontes coletadas; 0 keep e 4 discard. Tempo total nao foi medido nesta rodada."
+2026-04-20,2026-04-23,career,"staff engineer influence without authority",fast,no,staged,high,reject,,,0.00,/Users/samdev/vault/career/staging/staff-engineer-influence-without-authority.md,,"Nenhuma fonte registrada relevante foi encontrada. Tempo total nao foi medido nesta rodada."
+2026-04-20,2026-04-23,personal,"obsidian weekly review workflow",fast,no,staged,high,reject,,,0.00,/Users/samdev/vault/personal/staging/obsidian-weekly-review-workflow.md,,"Nenhuma fonte registrada relevante foi encontrada. Tempo total nao foi medido nesta rodada."

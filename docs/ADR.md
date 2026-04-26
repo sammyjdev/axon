@@ -82,6 +82,38 @@ Historico detalhado de planejamento e specs antigas em `docs/archive/`.
 - Decisao: compactor periodico de sessao + hook de fim de sessao para resumo no daily note.
 - Motivo: reduzir tokens e manter continuidade entre sessoes.
 
+## ADR-011 - Politica de sensibilidade de contexto para cloud
+
+- Decisao: classificar contexto em tres niveis — PUBLIC, CONFIDENTIAL, RESTRICTED.
+- Regra: PUBLIC pode ser enviado a provedores cloud. CONFIDENTIAL e RESTRICTED sao bloqueados por padrao.
+- INTERNAL permanece fora do escopo ate decisao explicita com validacao de compliance do provedor.
+- Motivo: proteger dados sensiveis sem bloquear uso do cloud para contexto publico.
+
+## ADR-012 - Owner de policy e versionamento
+
+- Decisao: Security aprova mudancas de provedor, ZDR e retention; Platform implementa.
+- Mecanismo: policy_version semantico com changelog obrigatorio por mudanca de regra.
+- Motivo: garantir rastreabilidade de quem aprovou cada decisao de roteamento sensivel.
+
+## ADR-013 - Estrategia de fallback oficial
+
+- Decisao: local-first strict — tenta local (phi3:mini), depois remoto Ollama, cloud somente quando policy permite explicitamente e metadados de compliance do provedor estao completos.
+- Fallback cloud bloqueado sempre para contexto corporativo, independente de disponibilidade local.
+- Motivo: minimizar exposicao de dados e custo, com controle explicito de cada escalada.
+
+## ADR-014 - Taxonomia de reason_code completa
+
+- Decisao: adotar taxonomia completa de reason_code (25-35 codigos) com semantica imutavel apos freeze.
+- Categorias: policy, budget, provider, retrieval, resilience.
+- Toda decisao deny/fallback deve emitir: decision_id, reason_code, policy_version, route.
+- Motivo: auditabilidade completa sem expor conteudo sensivel nos logs.
+
+## ADR-015 - Perfil de SLO por rota
+
+- Decisao: perfil balanceado — trade-off entre latencia e risco operacional.
+- Aplicacao: SLOs distintos por rota (local, remote, cloud) em vez de um unico SLO global.
+- Motivo: diferentes rotas tem diferentes expectativas de latencia e tolerancia a falha.
+
 ---
 
 ## Politica de manutencao
