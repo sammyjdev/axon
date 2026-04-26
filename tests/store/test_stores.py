@@ -5,6 +5,7 @@ collections.py é testado sem infra (lógica pura).
 vector_store requer Qdrant real — testa apenas a lógica de agrupamento/batch.
 """
 import json
+from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -40,6 +41,7 @@ class TestGetSearchCollections:
 @pytest.fixture
 def redis_mock():
     mock = AsyncMock()
+    mock.ping = AsyncMock()
     mock.hset = AsyncMock()
     mock.hget = AsyncMock()
     mock.hgetall = AsyncMock()
@@ -57,6 +59,10 @@ def graph_store(redis_mock):
 
 @pytest.mark.asyncio
 class TestGraphStore:
+    async def test_connect_pings_redis(self, graph_store, redis_mock) -> None:
+        await graph_store.connect()
+        redis_mock.ping.assert_awaited_once()
+
     async def test_upsert_deps_calls_hset(self, graph_store, redis_mock) -> None:
         await graph_store.upsert_deps(
             "OrderService",
@@ -94,18 +100,45 @@ class TestGraphStore:
         deps = await graph_store.get_deps("Unknown")
         assert deps == {"calls": [], "called_by": []}
 
+    async def test_get_subgraph_for_missing_symbol(self, graph_store, redis_mock) -> None:
+        redis_mock.hgetall.return_value = {}
+        subgraph = await graph_store.get_subgraph("Unknown")
+        assert subgraph["exists"] is False
+        assert subgraph["calls"] == []
+        assert subgraph["called_by"] == []
+
     async def test_delete_removes_key(self, graph_store, redis_mock) -> None:
         await graph_store.delete("OrderService")
         redis_mock.delete.assert_awaited_once_with("dep:OrderService")
+
+    async def test_traverse_respects_depth_and_nodes(self, graph_store, redis_mock) -> None:
+        calls_map = {
+            "dep:A": json.dumps(["B", "C"]),
+            "dep:B": json.dumps(["D"]),
+            "dep:C": json.dumps([]),
+            "dep:D": json.dumps([]),
+        }
+
+        def _fake_hget(key: str, field: str):
+            if field != "calls":
+                return None
+            return calls_map.get(key)
+
+        redis_mock.hget.side_effect = _fake_hget
+
+        traversal = await graph_store.traverse("A", max_depth=2, max_nodes=3)
+        assert traversal["root"] == "A"
+        assert len(traversal["nodes"]) <= 3
 
 
 # ── session_store.py ────────────────────────────────────────────────────────────
 
 @pytest.fixture
-async def session_store(tmp_path) -> SessionStore:
+async def session_store(tmp_path) -> AsyncGenerator[SessionStore, None]:
     store = SessionStore(db_path=tmp_path / "test.db")
     await store.init()
-    return store
+    yield store
+    await store.close()
 
 
 @pytest.mark.asyncio

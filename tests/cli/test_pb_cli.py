@@ -1,15 +1,46 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 from prometheus.cli import pb
 
 
 runner = CliRunner()
+
+
+def test_git_command_proxies_to_rtk(monkeypatch) -> None:
+    captured: list[str] = []
+
+    def fake_rtk_proxy(command: str) -> None:
+        captured.append(command)
+
+    monkeypatch.setattr(pb, "rtk_proxy", fake_rtk_proxy)
+
+    result = runner.invoke(pb.app, ["git", "status"])
+
+    assert result.exit_code == 0
+    assert captured == ["git status"]
+
+
+def test_run_command_proxies_raw_shell(monkeypatch) -> None:
+    captured: list[str] = []
+
+    def fake_rtk_proxy(command: str) -> None:
+        captured.append(command)
+
+    monkeypatch.setattr(pb, "rtk_proxy", fake_rtk_proxy)
+
+    result = runner.invoke(pb.app, ["run", "git status"])
+
+    assert result.exit_code == 0
+    assert captured == ["git status"]
 
 
 def test_search_shows_semantic_results(monkeypatch) -> None:
@@ -64,6 +95,15 @@ def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> 
     monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
     monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
+    monkeypatch.setattr(
+        "prometheus.router.compressor.caveman_compress",
+        lambda text, max_tokens: asyncio.sleep(0, result=(f"caveman::{text[:40]}", None)),
+    )
+    monkeypatch.setattr(
+        pb,
+        "_compress_with_rtk",
+        lambda text, max_tokens: (f"rtk::{text[:30]}", None),
+    )
 
     result = runner.invoke(
         pb.app,
@@ -81,6 +121,115 @@ def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> 
     assert "Contexto detectado: [knowledge 50%]" in result.stdout
     assert "Contexto relevante:" in result.stdout
     assert "Síntese inicial:" in result.stdout
+    assert "compression:" in result.stdout
+    assert "engine: caveman/phi3+rtk" in result.stdout
+    assert "Prompt pronto — Claude (Planner):" in result.stdout
+    assert "Prompt pronto — Codex (Executor):" in result.stdout
+    assert "Prompt pronto — Local (Knowledge Draft):" in result.stdout
+
+    stats_file = tmp_path / "data" / "compression" / "stats.jsonl"
+    record = json.loads(stats_file.read_text(encoding="utf-8").strip())
+    assert record["engine"] == "caveman/phi3+rtk"
+    assert record["caller"] == "cli"
+    assert record["ctx"] == "knowledge"
+
+
+def test_rtk_reduces_and_prints_summary() -> None:
+    text = (
+        "Prometheus indexa contexto técnico. "
+        "Prometheus indexa contexto técnico. "
+        "Use prompts curtos para reduzir custo sem perder precisão."
+    )
+
+    def fake_compress(_text: str, max_tokens: int) -> tuple[str, str | None]:
+        _ = max_tokens
+        return "texto comprimido", None
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pb, "_compress_with_rtk", fake_compress)
+    result = runner.invoke(pb.app, ["rtk", text, "--max-tokens", "20"])
+    monkeypatch.undo()
+
+    assert result.exit_code == 0
+    assert "RTK tokens aprox:" in result.stdout
+    assert "Texto comprimido:" in result.stdout
+
+
+def test_ask_falls_back_when_rtk_is_unavailable(monkeypatch, tmp_path) -> None:
+    class FakeDetector:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        def detect(self, *_args, **_kwargs):
+            return SimpleNamespace(context="knowledge", display="[knowledge 50%]")
+
+    async def fake_hits(*args, **kwargs):
+        _ = (args, kwargs)
+        await asyncio.sleep(0)
+        return [
+            {
+                "score": 0.77,
+                "payload": {
+                    "file_path": "/tmp/collections.py",
+                    "symbol": "get_search_collections",
+                    "content": "def get_search_collections(ctx): ...",
+                },
+            }
+        ]
+
+    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
+    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
+    monkeypatch.setattr(
+        "prometheus.router.compressor.caveman_compress",
+        lambda text, max_tokens: asyncio.sleep(0, result=(f"caveman::{text[:40]}", None)),
+    )
+    monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, "rtk missing"))
+
+    result = runner.invoke(
+        pb.app,
+        ["ask", "como funciona busca por contexto", "--ctx", "knowledge", "--cwd", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "engine: caveman/phi3" in result.stdout
+    assert "rtk_note: rtk missing" in result.stdout
+    assert "Prompt pronto — Claude (Planner):" in result.stdout
+
+
+def test_rtk_status_without_binary_exits(monkeypatch) -> None:
+    monkeypatch.setattr(pb, "_rtk_binary_path", lambda: None)
+
+    result = runner.invoke(pb.app, ["rtk-status"])
+
+    assert result.exit_code == 1
+    assert "RTK: não instalado" in result.stdout
+
+
+def test_rtk_proxy_without_binary_exits(monkeypatch) -> None:
+    monkeypatch.setattr(pb, "_rtk_binary_path", lambda: None)
+
+    result = runner.invoke(pb.app, ["rtk-proxy", "git status"])
+
+    assert result.exit_code == 1
+    assert "RTK não instalado" in result.stdout
+
+
+def test_rtk_init_codex_calls_expected_command(monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        _ = kwargs
+        commands.append(cmd)
+        return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+    monkeypatch.setattr(pb, "_rtk_binary_path", lambda: "/usr/local/bin/rtk")
+    monkeypatch.setattr(pb.subprocess, "run", fake_run)
+
+    result = runner.invoke(pb.app, ["rtk-init", "--agent", "codex"])
+
+    assert result.exit_code == 0
+    assert commands == [["/usr/local/bin/rtk", "init", "-g", "--codex"]]
 
 
 def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
