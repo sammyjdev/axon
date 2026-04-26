@@ -164,8 +164,8 @@ Cada task segue este schema:
 
 - phase: 1
 - agent: manual
-- status: open
-- notes: phi3:mini ok. gemma4:e4b e gemma4:26b bloqueados por Ollama 0.18.2 (precisa upgrade)
+- status: done
+- notes: phi3:mini ok. Ollama upgradeado 0.18.2→0.21.0 (fix de permissão /opt/homebrew). gemma4:e4b pulled (9.6GB). gemma4:26b pendente (Mac M1 16GB sem VRAM — baixar só no PC)
 - depends_on: [T-024]
 
 ---
@@ -491,11 +491,11 @@ Cada task segue este schema:
 
 # Quadro resumo por agente
 
-| Agente      | Open                                     | In-progress | Done                                                                                          |
-| ----------- | ---------------------------------------- | ----------- | --------------------------------------------------------------------------------------------- |
-| claude-code | —                                        | —           | T-033, T-040..T-042, T-050, T-060, T-061, T-070..T-073, T-100..T-103                         |
-| copilot     | —                                        | —           | T-020..T-023, T-030..T-032, T-034, T-042b, T-051..T-054, T-080, T-090..T-094                 |
-| manual      | T-010..T-014, T-024, T-025, T-062, T-081 | —           | T-001..T-006                                                                                  |
+| Agente      | Open                                     | In-progress | Done                                                                         |
+| ----------- | ---------------------------------------- | ----------- | ---------------------------------------------------------------------------- |
+| claude-code | —                                        | —           | T-033, T-040..T-042, T-050, T-060, T-061, T-070..T-073, T-100..T-103         |
+| copilot     | —                                        | —           | T-020..T-023, T-030..T-032, T-034, T-042b, T-051..T-054, T-080, T-090..T-094 |
+| manual      | T-010..T-014, T-024, T-025, T-062, T-081 | —           | T-001..T-006                                                                 |
 
 > **Consolidação:** todas as branches mergeadas em `master`. 118 testes green (chunker), 17 testes green (stores).
 > Tasks abertas restantes são exclusivamente manuais (vault setup, registro MCP, pipx).
