@@ -6,6 +6,8 @@ from pathlib import Path
 
 import litellm
 
+from prometheus.config.runtime import load_runtime_config
+
 _SUGGESTION_PROMPT = """
 Você é um mentor técnico analisando as notas diárias de um
 Senior Java Engineer.
@@ -32,6 +34,8 @@ Para cada gap, responda em JSON:
 Responda apenas com array JSON, sem texto extra.
 """
 
+_RUNTIME = load_runtime_config()
+
 
 def _created_after(path: Path, cutoff: date) -> bool:
     try:
@@ -50,7 +54,7 @@ def _created_after(path: Path, cutoff: date) -> bool:
 
 
 async def suggest_deep_topics() -> list[dict]:
-    vault = Path.home() / "vault" / "knowledge"
+    vault = _RUNTIME.vault_context_root("knowledge")
     week_ago = date.today() - timedelta(days=7)
 
     daily_notes = [
