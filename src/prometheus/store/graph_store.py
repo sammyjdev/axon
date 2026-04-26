@@ -1,4 +1,5 @@
 import json
+from collections import deque
 
 import redis.asyncio as aioredis
 
@@ -15,6 +16,10 @@ class GraphStore:
 
     def __init__(self, url: str = "redis://localhost:6379") -> None:
         self._redis = aioredis.Redis.from_url(url, decode_responses=True)
+
+    async def connect(self) -> None:
+        """Compatibility hook for callers that expect explicit connect."""
+        await self._redis.ping()
 
     async def set_calls(self, symbol: str, calls: list[str]) -> None:
         await self._redis.hset(f"dep:{symbol}", "calls", json.dumps(calls))
@@ -49,6 +54,47 @@ class GraphStore:
         return {
             "calls": json.loads(data["calls"]) if "calls" in data else [],
             "called_by": json.loads(data["called_by"]) if "called_by" in data else [],
+        }
+
+    async def get_subgraph(self, symbol: str) -> dict[str, object]:
+        deps = await self.get_deps(symbol)
+        return {
+            "symbol": symbol,
+            "exists": bool(deps["calls"] or deps["called_by"]),
+            "calls": deps["calls"],
+            "called_by": deps["called_by"],
+        }
+
+    async def traverse(
+        self,
+        symbol: str,
+        max_depth: int = 2,
+        max_nodes: int = 25,
+    ) -> dict[str, object]:
+        visited: set[str] = set()
+        edges: list[dict[str, str]] = []
+        queue: deque[tuple[str, int]] = deque([(symbol, 0)])
+
+        while queue and len(visited) < max_nodes:
+            current, depth = queue.popleft()
+            if current in visited:
+                continue
+            visited.add(current)
+            if depth >= max_depth:
+                continue
+
+            calls = await self.get_calls(current)
+            for target in calls:
+                edges.append({"from": current, "to": target})
+                if target not in visited and len(visited) + len(queue) < max_nodes:
+                    queue.append((target, depth + 1))
+
+        return {
+            "root": symbol,
+            "nodes": sorted(visited),
+            "edges": edges,
+            "max_depth": max_depth,
+            "max_nodes": max_nodes,
         }
 
     async def delete(self, symbol: str) -> None:

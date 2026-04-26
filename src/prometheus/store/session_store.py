@@ -1,5 +1,6 @@
+import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import aiosqlite
@@ -43,11 +44,11 @@ class ADR:
     decision: str
     rationale: str
     id: int = 0
-    created_at: datetime = None  # type: ignore[assignment]
+    created_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.created_at is None:
-            self.created_at = datetime.utcnow()
+            self.created_at = datetime.now(timezone.utc)
 
 
 @dataclass
@@ -56,11 +57,11 @@ class SessionMemory:
     summary: str
     raw_turns: int
     id: int = 0
-    created_at: datetime = None  # type: ignore[assignment]
+    created_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.created_at is None:
-            self.created_at = datetime.utcnow()
+            self.created_at = datetime.now(timezone.utc)
 
 
 @dataclass
@@ -69,27 +70,36 @@ class CodeChange:
     file_path: str
     diff_summary: str
     why: str = ""
-    changed_at: datetime = None  # type: ignore[assignment]
+    changed_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.changed_at is None:
-            self.changed_at = datetime.utcnow()
+            self.changed_at = datetime.now(timezone.utc)
 
 
 class SessionStore:
     def __init__(self, db_path: str | Path = "./data/prometheus.db") -> None:
         self._path = str(db_path)
+        self._conn: aiosqlite.Connection | None = None
+        self._lock = asyncio.Lock()
+
+    async def _connection(self) -> aiosqlite.Connection:
+        if self._conn is None:
+            self._conn = await aiosqlite.connect(self._path)
+        return self._conn
 
     async def init(self) -> None:
         Path(self._path).parent.mkdir(parents=True, exist_ok=True)
-        async with aiosqlite.connect(self._path) as db:
+        async with self._lock:
+            db = await self._connection()
             await db.executescript(DDL)
             await db.commit()
 
     # ── ADR ──────────────────────────────────────────────────────────────────
 
     async def save_adr(self, adr: ADR) -> int:
-        async with aiosqlite.connect(self._path) as db:
+        async with self._lock:
+            db = await self._connection()
             cursor = await db.execute(
                 "INSERT INTO adr (project, title, context, decision, rationale, created_at)"
                 " VALUES (?, ?, ?, ?, ?, ?)",
@@ -100,7 +110,8 @@ class SessionStore:
             return cursor.lastrowid  # type: ignore[return-value]
 
     async def get_adrs(self, project: str, limit: int = 10) -> list[ADR]:
-        async with aiosqlite.connect(self._path) as db:
+        async with self._lock:
+            db = await self._connection()
             db.row_factory = aiosqlite.Row
             rows = await db.execute_fetchall(
                 "SELECT * FROM adr WHERE project = ? ORDER BY created_at DESC LIMIT ?",
@@ -122,7 +133,8 @@ class SessionStore:
     # ── Session Memory ────────────────────────────────────────────────────────
 
     async def save_session_memory(self, mem: SessionMemory) -> int:
-        async with aiosqlite.connect(self._path) as db:
+        async with self._lock:
+            db = await self._connection()
             cursor = await db.execute(
                 "INSERT INTO session_memory (project, summary, raw_turns, created_at)"
                 " VALUES (?, ?, ?, ?)",
@@ -132,7 +144,8 @@ class SessionStore:
             return cursor.lastrowid  # type: ignore[return-value]
 
     async def get_session_memories(self, project: str, limit: int = 3) -> list[SessionMemory]:
-        async with aiosqlite.connect(self._path) as db:
+        async with self._lock:
+            db = await self._connection()
             db.row_factory = aiosqlite.Row
             rows = await db.execute_fetchall(
                 "SELECT * FROM session_memory WHERE project = ? ORDER BY created_at DESC LIMIT ?",
@@ -152,7 +165,8 @@ class SessionStore:
     # ── Code Change ───────────────────────────────────────────────────────────
 
     async def save_code_change(self, change: CodeChange) -> None:
-        async with aiosqlite.connect(self._path) as db:
+        async with self._lock:
+            db = await self._connection()
             await db.execute(
                 "INSERT OR REPLACE INTO code_change"
                 " (commit_hash, file_path, diff_summary, why, changed_at)"
@@ -163,7 +177,8 @@ class SessionStore:
             await db.commit()
 
     async def get_recent_changes(self, file_path: str, limit: int = 5) -> list[CodeChange]:
-        async with aiosqlite.connect(self._path) as db:
+        async with self._lock:
+            db = await self._connection()
             db.row_factory = aiosqlite.Row
             rows = await db.execute_fetchall(
                 "SELECT * FROM code_change WHERE file_path = ? ORDER BY changed_at DESC LIMIT ?",
@@ -179,3 +194,9 @@ class SessionStore:
             )
             for r in rows
         ]
+
+    async def close(self) -> None:
+        async with self._lock:
+            if self._conn is not None:
+                await self._conn.close()
+                self._conn = None

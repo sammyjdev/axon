@@ -111,7 +111,11 @@ class VectorStore:
         language: str | None = None,
         project: str | None = None,
         top_k: int = 5,
+        max_depth: int = 1,
+        max_nodes: int = 25,
+        max_tokens: int = 1200,
     ) -> list[dict]:
+        _ = max_depth
         conditions: list[FieldCondition] = []
         if language:
             conditions.append(FieldCondition(key="language", match=MatchValue(value=language)))
@@ -132,7 +136,20 @@ class VectorStore:
                 results.append({"score": hit.score, "payload": hit.payload, "id": hit.id})
 
         results.sort(key=lambda r: r["score"], reverse=True)
-        return results[:top_k]
+        limited: list[dict] = []
+        token_budget = max_tokens
+        for item in results:
+            payload = item.get("payload") or {}
+            content = str(payload.get("content", ""))
+            estimated = max(1, len(content) // 4)
+            if len(limited) >= max_nodes:
+                break
+            if token_budget - estimated < 0:
+                break
+            token_budget -= estimated
+            limited.append(item)
+
+        return limited[:top_k]
 
     async def delete_by_file(self, ctx: str, file_path: str) -> None:
         await self._client.delete(
