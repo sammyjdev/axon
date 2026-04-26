@@ -1,0 +1,91 @@
+{
+  "sources": [
+    {
+      "source_id": "openai_news",
+      "name": "OpenAI News",
+      "endpoint": "https://openai.com/news/rss.xml",
+      "format": "rss",
+      "allowed_contexts": [
+        "knowledge"
+      ],
+      "follow_links": true
+    },
+    {
+      "source_id": "python_insider",
+      "name": "Python Insider",
+      "endpoint": "https://blog.python.org/rss.xml",
+      "format": "rss",
+      "allowed_contexts": [
+        "knowledge",
+        "career"
+      ],
+      "follow_links": true
+    },
+    {
+      "source_id": "github_blog",
+      "name": "GitHub Blog",
+      "endpoint": "https://github.blog/feed/",
+      "format": "rss",
+      "allowed_contexts": [
+        "knowledge",
+        "career"
+      ],
+      "follow_links": true
+    },
+    {
+      "source_id": "martin_fowler",
+      "name": "Martin Fowler",
+      "endpoint": "https://martinfowler.com/feed.atom",
+      "format": "atom",
+      "allowed_contexts": [
+        "knowledge",
+        "career"
+      ],
+      "follow_links": true
+    },
+    {
+      "source_id": "jetbrains_blog",
+      "name": "JetBrains Blog",
+      "endpoint": "https://blog.jetbrains.com/feed/",
+      "format": "rss",
+      "allowed_contexts": [
+        "knowledge",
+        "career"
+      ],
+      "follow_links": true
+    },
+    {
+      "source_id": "stackoverflow_blog",
+      "name": "Stack Overflow Blog",
+      "endpoint": "https://stackoverflow.blog/feed/",
+      "format": "rss",
+      "allowed_contexts": [
+        "knowledge",
+        "career"
+      ],
+      "follow_links": true
+    },
+    {
+      "source_id": "obsidian_blog",
+      "name": "Obsidian Blog",
+      "endpoint": "https://obsidian.md/feed.xml",
+      "format": "rss",
+      "allowed_contexts": [
+        "knowledge",
+        "personal"
+      ],
+      "follow_links": true
+    },
+    {
+      "source_id": "obsidian_changelog",
+      "name": "Obsidian Changelog",
+      "endpoint": "https://obsidian.md/changelog.xml",
+      "format": "rss",
+      "allowed_contexts": [
+        "knowledge",
+        "personal"
+      ],
+      "follow_links": true
+    }
+  ]
+}
