@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import logging
 import hashlib
+import logging
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from prometheus.embedder.chunker import Chunk, chunk_source
 from prometheus.embedder.engine import EmbedderEngine
+from prometheus.embedder.graph_extractor import build_dependency_records
+from prometheus.store.graph_store import GraphStore
 from prometheus.store.vector_store import Chunk as VectorChunk
 from prometheus.store.vector_store import VectorStore
 
@@ -24,16 +26,45 @@ _LANGUAGE_MAP = {
 _CTX_ROOTS = {"personal", "career", "knowledge", "work"}
 _FILE_HASH_CACHE: dict[str, str] = {}
 _BATCH_SIZE = 400
+EXCLUDED_DIR_NAMES = {
+    ".git",
+    ".gradle",
+    ".mypy_cache",
+    ".next",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".turbo",
+    ".venv",
+    "__pycache__",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+    "target",
+    "venv",
+}
 
 
-def iter_supported_files(target: Path) -> Iterable[Path]:
+def _language_for_suffix(suffix: str) -> str | None:
+    return _LANGUAGE_MAP.get(suffix)
+
+
+def iter_supported_files(
+    target: Path,
+    *,
+    languages: set[str] | None = None,
+) -> Iterable[Path]:
     if target.is_file():
-        if target.suffix in _LANGUAGE_MAP:
+        language = _language_for_suffix(target.suffix)
+        if language and (languages is None or language in languages):
             yield target
         return
 
     for path in target.rglob("*"):
-        if path.is_file() and path.suffix in _LANGUAGE_MAP:
+        if any(part in EXCLUDED_DIR_NAMES for part in path.parts):
+            continue
+        language = _language_for_suffix(path.suffix)
+        if path.is_file() and language and (languages is None or language in languages):
             yield path
 
 
@@ -93,11 +124,14 @@ async def index_path(
     store: VectorStore,
     vault_root: Path,
     forced_ctx: str | None = None,
+    graph_store: GraphStore | None = None,
+    languages: set[str] | None = None,
 ) -> tuple[int, int]:
-    files = list(iter_supported_files(target))
+    files = list(iter_supported_files(target, languages=languages))
     total_chunks = 0
     indexed_files = 0
     pending_batch: list[VectorChunk] = []
+    graph_chunks: list[Chunk] = []
 
     async def _flush_batch() -> int:
         if not pending_batch:
@@ -143,6 +177,7 @@ async def index_path(
         ]
 
         pending_batch.extend(vector_chunks)
+        graph_chunks.extend(chunks)
         if len(pending_batch) >= _BATCH_SIZE:
             await _flush_batch()
 
@@ -151,6 +186,13 @@ async def index_path(
         total_chunks += len(vector_chunks)
 
     await _flush_batch()
+    if graph_store is not None and graph_chunks:
+        for record in build_dependency_records(graph_chunks):
+            await graph_store.upsert_deps(
+                record.symbol,
+                calls=record.calls,
+                called_by=record.called_by,
+            )
     return indexed_files, total_chunks
 
 

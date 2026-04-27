@@ -8,8 +8,11 @@ Ordem recomendada de setup em máquina nova:
 
 1. `./setup.sh`
 2. `pipx install --editable /Users/samdev/dev/Prometheus`
-3. bootstrap do vault em `docs/VAULT_SETUP.md`
-4. `pb index ~/vault/knowledge --ctx knowledge`
+3. carregar `.env.local` no shell atual
+4. bootstrap do vault em `docs/VAULT_SETUP.md`
+5. revisar `config/projects.json`
+6. `pb index ~/vault/knowledge --ctx knowledge`
+7. `pb index-dev --dry-run`
 
 Checklist rápido antes de iniciar qualquer sessão: veja a seção **Checklist antes de uma sessão** ao final deste guia.
 
@@ -26,6 +29,40 @@ pb --help
 
 Se o LaunchAgent estiver configurado em `~/Library/LaunchAgents/dev.samdev.colima.plist`, o Colima e os containers sobem no boot sem precisar de nenhum comando.
 
+### Infra local ou desktop remoto
+
+Por padrão, os serviços rodam localmente:
+
+```bash
+QDRANT_URL=http://localhost:6333
+REDIS_URL=redis://localhost:6379
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=local-password
+PROMETHEUS_OLLAMA_LOCAL_HOST=http://127.0.0.1:11434
+```
+
+Quando o Mac usa os serviços do desktop, aponte os hosts para o IP do desktop:
+
+```bash
+PROMETHEUS_DESKTOP_HOST=192.168.68.104
+QDRANT_URL=http://192.168.68.104:6333
+REDIS_URL=redis://192.168.68.104:6379
+NEO4J_URI=bolt://192.168.68.104:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=local-password
+PROMETHEUS_OLLAMA_LOCAL_HOST=http://192.168.68.104:11434
+```
+
+Após alterar o shell permanente, recarregue o terminal atual:
+
+```bash
+source ~/.zshrc
+python3 -c "from prometheus.config.runtime import load_runtime_config as l; c=l(); print(c.qdrant_url, c.redis_url, c.ollama_local_host)"
+```
+
+Redis e Neo4j têm papéis separados. Redis guarda o grafo de dependências de código usado por `get_dependencies` e pela expansão 2-step do `search_code`. Neo4j é exclusivo do Mem0 e só deve ser tratado como backend de memória, junto com Qdrant.
+
 ---
 
 ## Claude Code
@@ -39,10 +76,10 @@ Claude Code tem acesso total ao vault via MCP. Ele chama as tools do servidor di
 | `search_code`        | busca semântica no vault (código, HOW-TOs, notas)     |
 | `ask`                | query com detecção de contexto pelo cwd               |
 | `get_session_memory` | resumo comprimido de sessões anteriores de um projeto |
-| `get_dependencies`   | grafo de chamadas de uma classe ou função             |
+| `get_dependencies`   | grafo de chamadas de uma classe ou função via Redis   |
 | `get_adrs`           | lista ADRs do projeto                                 |
 | `save_adr`           | persiste uma nova decisão                             |
-| `get_memory`         | memória Mem0 filtrada por contexto                    |
+| `get_memory`         | memória Mem0 filtrada por contexto via Qdrant + Neo4j |
 
 O parâmetro `caller="claude-code"` é passado automaticamente. Isso libera 8000 tokens de retorno (vs. 2000 do Copilot), então Claude Code recebe respostas mais completas do vault.
 
@@ -98,7 +135,7 @@ Exemplo prático:
 
 ```bash
 # 1) Contexto via Prometheus (comando pb nativo)
-pb ask "implementar feature X" --cwd "$PWD" --rtk-engine auto
+pb ask "implementar feature X" --cwd "$PWD"
 
 # 2) Planner no Claude (ferramenta externa)
 claude --model claude-opus-4-7 -p "Gere plano em JSON com tasks paralelas, critérios de aceite e testes obrigatórios."
@@ -117,8 +154,8 @@ pytest -q
 # Detecta contexto pelo cwd automaticamente
 pb ask "como funciona Spring @Transactional com self-invocation"
 
-# Forçar engine RTK interna/externa
-pb ask "resumir contexto do módulo de autenticação" --rtk-engine external
+# Ajustar budget do pipeline Caveman + RTK
+pb ask "resumir contexto do módulo de autenticação" --rtk-max-tokens 600
 
 # Busca semântica direta
 pb search "UUID qdrant" --ctx knowledge
@@ -134,9 +171,35 @@ pb search "service layer" --ctx knowledge --lang java --top 10
 pb index ~/vault/knowledge --ctx knowledge
 pb index ~/dev/meu-projeto --ctx personal
 
+# Indexação de projetos de desenvolvimento cadastrados
+pb index-dev --dry-run
+pb index-dev
+pb index-dev --project prometheus
+pb index-dev --manifest config/projects.json
+
 # Watcher: reindexa automaticamente ao salvar
 pb watch ~/vault/knowledge --ctx knowledge
 ```
+
+`pb index-dev` lê o manifesto `config/projects.json` por padrão. O arquivo declara projetos habilitados, path absoluto, contexto e linguagens suportadas:
+
+```json
+{
+  "projects": [
+    {
+      "name": "prometheus",
+      "path": "/Users/samdev/dev/Prometheus",
+      "ctx": "personal",
+      "enabled": true,
+      "languages": ["python", "typescript", "java", "markdown", "text"]
+    }
+  ]
+}
+```
+
+Use `--dry-run` antes da indexação real para validar o manifesto e contar arquivos. Projetos com `ctx="work"` exigem confirmação explícita antes de qualquer escrita no índice.
+
+Durante a indexação, Qdrant recebe os chunks semânticos e Redis recebe o grafo de código (`dep:<symbol>`). Neo4j não participa da indexação de código.
 
 ### Knowledge (TIL e HOW-TO)
 
@@ -187,19 +250,31 @@ pb cost today
 pb cost week --breakdown          # detalha por contexto
 ```
 
-### RTK — compressão de contexto
-
-O Prometheus possui dois modos de compressão de contexto (RTK):
-
-#### RTK interno (sempre disponível, sem instalação)
-
-Heurística local do Prometheus. Ativo por padrão em `pb ask` com `--rtk-engine internal`.
+### Mem0 / Neo4j
 
 ```bash
-pb ask "resumir contexto do módulo de autenticação" --rtk-engine internal
+pb memory smoke --ctx knowledge
+pb memory smoke --ctx personal --text "lembrar decisão X"
 ```
 
-#### RTK externo (opcional — requer instalação prévia)
+O smoke test grava e recupera uma memória curta usando Mem0 com Qdrant como vector store e Neo4j como graph store. Use `NEO4J_PASSWORD=local-password` no ambiente local e no desktop, salvo se a senha do container tiver sido alterada de propósito.
+
+### Caveman + RTK — compressão de contexto
+
+O `pb ask` e o MCP usam o pipeline duplo:
+
+```text
+contexto recuperado -> Caveman semântico -> RTK token-level -> prompt final
+```
+
+O Caveman usa `PROMETHEUS_CAVEMAN_MODEL` via Ollama. O RTK roda depois e pode usar o binário externo quando instalado; se ele não estiver disponível, o Prometheus mantém fallback sem quebrar a consulta.
+
+```bash
+pb ask "resumir contexto do módulo de autenticação" --rtk-max-tokens 450
+pb cost compression
+```
+
+#### RTK externo opcional
 
 > **Pré-requisito:** `brew install rtk` — binário externo não incluído no Prometheus.
 

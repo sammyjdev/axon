@@ -25,6 +25,7 @@ cost_app = typer.Typer(help="Exibe custo de uso de LLMs")
 til_app = typer.Typer(help="TIL e HOW-TO — knowledge automation")
 deep_app = typer.Typer(help="Sugestões de aprofundamento técnico")
 expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
+memory_app = typer.Typer(help="Memória Mem0 / Neo4j")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -33,6 +34,7 @@ app.add_typer(cost_app, name="cost")
 app.add_typer(til_app, name="til")
 app.add_typer(deep_app, name="deep")
 app.add_typer(expand_app, name="expand")
+app.add_typer(memory_app, name="memory")
 
 QDRANT_DEFAULT_URL = "http://localhost:6333"
 _RUNTIME = load_runtime_config()
@@ -880,13 +882,16 @@ def index(
     async def _index() -> None:
         from prometheus.embedder.engine import EmbedderEngine
         from prometheus.embedder.pipeline import index_path
+        from prometheus.store.graph_store import GraphStore
         from prometheus.store.vector_store import VectorStore
 
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
+        graph_store = GraphStore(url=_RUNTIME.redis_url)
 
         try:
             await store.ensure_collections()
+            await graph_store.connect()
             vault_root = _RUNTIME.vault_root
             indexed_files, total_chunks = await index_path(
                 target,
@@ -894,15 +899,102 @@ def index(
                 store=store,
                 vault_root=vault_root,
                 forced_ctx=resolved_ctx,
+                graph_store=graph_store,
             )
         finally:
             await store.close()
+            await graph_store.close()
 
         typer.echo(f"Indexação concluída: {indexed_files} arquivo(s), {total_chunks} chunk(s)")
         if indexed_files == 0:
             typer.echo("Nenhum arquivo suportado encontrado (.java/.py/.ts/.md/.txt)")
 
     asyncio.run(_index())
+
+
+@app.command("index-dev")
+def index_dev(
+    project: Annotated[Optional[str], typer.Option("--project", help="Nome do projeto no manifesto")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Lista projetos/arquivos sem gravar")] = False,
+    manifest: Annotated[
+        Optional[str],
+        typer.Option("--manifest", help="Manifesto JSON de projetos"),
+    ] = None,
+) -> None:
+    """Indexa projetos de desenvolvimento cadastrados em manifesto explícito."""
+    from prometheus.config.projects import load_project_manifest
+    from prometheus.embedder.pipeline import iter_supported_files
+
+    manifest_path = Path(manifest) if manifest else _RUNTIME.engine_root / "config" / "projects.json"
+    try:
+        projects = load_project_manifest(manifest_path)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(f"Manifesto inválido: {exc}", err=True)
+        raise typer.Exit(1)
+
+    selected = [p for p in projects if p.enabled]
+    if project:
+        selected = [p for p in selected if p.name == project]
+        if not selected:
+            typer.echo(f"Projeto não encontrado ou desabilitado no manifesto: {project}", err=True)
+            raise typer.Exit(1)
+
+    if not selected:
+        typer.echo("Nenhum projeto habilitado no manifesto.")
+        return
+
+    for entry in selected:
+        if entry.ctx == "work":
+            _resolve_ctx("work")
+
+    if dry_run:
+        typer.echo(f"Manifesto: {manifest_path}")
+        for entry in selected:
+            files = list(iter_supported_files(entry.path, languages=set(entry.languages)))
+            typer.echo(
+                f"{entry.name}: ctx={entry.ctx} path={entry.path} "
+                f"languages={','.join(entry.languages)} files={len(files)}"
+            )
+        return
+
+    async def _index_dev() -> None:
+        from prometheus.embedder.engine import EmbedderEngine
+        from prometheus.embedder.pipeline import index_path
+        from prometheus.store.graph_store import GraphStore
+        from prometheus.store.vector_store import VectorStore
+
+        engine = EmbedderEngine()
+        store = VectorStore(url=_RUNTIME.qdrant_url)
+        graph_store = GraphStore(url=_RUNTIME.redis_url)
+
+        try:
+            await store.ensure_collections()
+            await graph_store.connect()
+            total_files = 0
+            total_chunks = 0
+            for entry in selected:
+                indexed_files, chunks = await index_path(
+                    entry.path,
+                    engine=engine,
+                    store=store,
+                    vault_root=_RUNTIME.vault_root,
+                    forced_ctx=entry.ctx,
+                    graph_store=graph_store,
+                    languages=set(entry.languages),
+                )
+                total_files += indexed_files
+                total_chunks += chunks
+                typer.echo(
+                    f"{entry.name}: {indexed_files} arquivo(s), {chunks} chunk(s) "
+                    f"(ctx={entry.ctx})"
+                )
+        finally:
+            await store.close()
+            await graph_store.close()
+
+        typer.echo(f"Indexação dev concluída: {total_files} arquivo(s), {total_chunks} chunk(s)")
+
+    asyncio.run(_index_dev())
 
 
 @app.command()
@@ -925,11 +1017,13 @@ def watch(
     async def _watch() -> None:
         from prometheus.embedder.engine import EmbedderEngine
         from prometheus.embedder.pipeline import index_path
+        from prometheus.store.graph_store import GraphStore
         from prometheus.store.vector_store import VectorStore
         from prometheus.watcher.main import run_watcher
 
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
+        graph_store = GraphStore(url=_RUNTIME.redis_url)
 
         async def _on_file(changed_path: Path) -> None:
             indexed_files, total_chunks = await index_path(
@@ -938,20 +1032,52 @@ def watch(
                 store=store,
                 vault_root=vault_root,
                 forced_ctx=resolved_ctx,
+                graph_store=graph_store,
             )
             if indexed_files > 0:
                 typer.echo(f"[watch] Reindexado: {changed_path} ({total_chunks} chunk(s))")
 
         try:
             await store.ensure_collections()
+            await graph_store.connect()
             await run_watcher(target, _on_file)
         finally:
             await store.close()
+            await graph_store.close()
 
     try:
         asyncio.run(_watch())
     except KeyboardInterrupt:
         typer.echo("Watcher encerrado.")
+
+
+# ---------------------------------------------------------------------------
+# pb memory
+# ---------------------------------------------------------------------------
+
+@memory_app.command("smoke")
+def memory_smoke(
+    ctx: Annotated[str, typer.Option("--ctx", help="Contexto da memória")] = "knowledge",
+    text: Annotated[
+        str,
+        typer.Option("--text", help="Texto curto para gravar e recuperar"),
+    ] = "Prometheus Mem0 Neo4j smoke test",
+) -> None:
+    """Valida conexão Mem0 com Qdrant + Neo4j mantendo a barreira work."""
+
+    async def _smoke() -> None:
+        from prometheus.memory.mem0_tool import add_memory, get_memory
+
+        memory_id = await add_memory(text, ctx=ctx)
+        results = await get_memory(text, ctx=ctx)
+        typer.echo(f"Memória gravada: {memory_id or '<sem id retornado>'}")
+        typer.echo(f"Memórias recuperadas: {len(results)}")
+
+    try:
+        asyncio.run(_smoke())
+    except PermissionError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------

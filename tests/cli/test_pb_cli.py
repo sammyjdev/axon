@@ -233,7 +233,7 @@ def test_rtk_init_codex_calls_expected_command(monkeypatch) -> None:
 
 
 def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
-    calls: dict[str, object] = {"ensure": False, "closed": False}
+    calls: dict[str, object] = {"ensure": False, "closed": False, "graph": False}
 
     class FakeStore:
         def __init__(self, url: str) -> None:
@@ -250,12 +250,24 @@ def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
     class FakeEngine:
         pass
 
+    class FakeGraphStore:
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+        async def connect(self) -> None:
+            await asyncio.sleep(0)
+            calls["graph"] = True
+
+        async def close(self) -> None:
+            await asyncio.sleep(0)
+
     async def fake_index_path(target: Path, **_kwargs):
         await asyncio.sleep(0)
         assert target.exists()
         return 2, 7
 
     monkeypatch.setattr("prometheus.store.vector_store.VectorStore", FakeStore)
+    monkeypatch.setattr("prometheus.store.graph_store.GraphStore", FakeGraphStore)
     monkeypatch.setattr("prometheus.embedder.engine.EmbedderEngine", FakeEngine)
     monkeypatch.setattr("prometheus.embedder.pipeline.index_path", fake_index_path)
 
@@ -267,6 +279,7 @@ def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
     assert result.exit_code == 0
     assert "Indexação concluída: 2 arquivo(s), 7 chunk(s)" in result.stdout
     assert calls["ensure"] is True
+    assert calls["graph"] is True
     assert calls["closed"] is True
 
 
@@ -284,6 +297,16 @@ def test_watch_reindexes_changed_files(monkeypatch, tmp_path) -> None:
     class FakeEngine:
         pass
 
+    class FakeGraphStore:
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+        async def connect(self) -> None:
+            await asyncio.sleep(0)
+
+        async def close(self) -> None:
+            await asyncio.sleep(0)
+
     async def fake_index_path(_target: Path, **_kwargs):
         await asyncio.sleep(0)
         return 1, 3
@@ -296,6 +319,7 @@ def test_watch_reindexes_changed_files(monkeypatch, tmp_path) -> None:
     watch_target.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr("prometheus.store.vector_store.VectorStore", FakeStore)
+    monkeypatch.setattr("prometheus.store.graph_store.GraphStore", FakeGraphStore)
     monkeypatch.setattr("prometheus.embedder.engine.EmbedderEngine", FakeEngine)
     monkeypatch.setattr("prometheus.embedder.pipeline.index_path", fake_index_path)
     monkeypatch.setattr("prometheus.watcher.main.run_watcher", fake_run_watcher)
@@ -305,3 +329,70 @@ def test_watch_reindexes_changed_files(monkeypatch, tmp_path) -> None:
     assert result.exit_code == 0
     assert "Watcher ativo em:" in result.stdout
     assert "[watch] Reindexado:" in result.stdout
+
+
+def test_index_dev_dry_run_uses_manifest_without_writes(tmp_path) -> None:
+    project_path = tmp_path / "project"
+    source_dir = project_path / "src"
+    ignored_dir = project_path / "node_modules"
+    source_dir.mkdir(parents=True)
+    ignored_dir.mkdir()
+    (source_dir / "app.py").write_text("def main():\n    return 1\n", encoding="utf-8")
+    (ignored_dir / "lib.py").write_text("def ignored():\n    return 1\n", encoding="utf-8")
+    manifest = tmp_path / "projects.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "projects": [
+                    {
+                        "name": "demo",
+                        "path": str(project_path),
+                        "ctx": "knowledge",
+                        "enabled": True,
+                        "languages": ["python"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(pb.app, ["index-dev", "--manifest", str(manifest), "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "demo: ctx=knowledge" in result.stdout
+    assert "files=1" in result.stdout
+
+
+def test_index_dev_rejects_invalid_manifest(tmp_path) -> None:
+    manifest = tmp_path / "projects.json"
+    manifest.write_text(json.dumps({"projects": []}), encoding="utf-8")
+
+    result = runner.invoke(
+        pb.app,
+        ["index-dev", "--manifest", str(tmp_path / "missing.json"), "--dry-run"],
+    )
+
+    assert result.exit_code == 1
+    assert "Manifesto inválido:" in result.output
+
+
+def test_memory_smoke_uses_mem0_helpers(monkeypatch) -> None:
+    async def fake_add_memory(content: str, ctx: str = "personal", user_id: str = "sammy") -> str:
+        _ = (content, ctx, user_id)
+        await asyncio.sleep(0)
+        return "mem-1"
+
+    async def fake_get_memory(query: str, ctx: str = "personal", user_id: str = "sammy"):
+        _ = (query, ctx, user_id)
+        await asyncio.sleep(0)
+        return [{"id": "mem-1"}]
+
+    monkeypatch.setattr("prometheus.memory.mem0_tool.add_memory", fake_add_memory)
+    monkeypatch.setattr("prometheus.memory.mem0_tool.get_memory", fake_get_memory)
+
+    result = runner.invoke(pb.app, ["memory", "smoke", "--ctx", "knowledge", "--text", "hello"])
+
+    assert result.exit_code == 0
+    assert "Memória gravada: mem-1" in result.stdout
+    assert "Memórias recuperadas: 1" in result.stdout

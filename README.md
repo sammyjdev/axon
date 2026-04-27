@@ -73,8 +73,12 @@ As decisões abaixo são estruturais para o projeto:
 | `PROMETHEUS_VAULT`          | `~/vault`                      | Vault externo com dados e notas |
 | `PROMETHEUS_ENGINE`         | `/Users/samdev/dev/Prometheus` | Caminho do engine               |
 | `QDRANT_URL`                | `http://localhost:6333`        | Busca vetorial                  |
-| `REDIS_URL`                 | `redis://localhost:6379`       | Grafo de dependências           |
-| `PROMETHEUS_OLLAMA_LOCAL_HOST` | `http://127.0.0.1:11434`    | Modelos locais                  |
+| `REDIS_URL`                 | `redis://localhost:6379`       | Grafo de dependências de código |
+| `NEO4J_URI`                 | `bolt://localhost:7687`        | Grafo Mem0, não usado para código |
+| `NEO4J_USER`                | `neo4j`                        | Usuário Neo4j do Mem0           |
+| `NEO4J_PASSWORD`            | `local-password`               | Senha local padrão do Neo4j     |
+| `PROMETHEUS_DESKTOP_HOST`   | `192.168.x.x`                  | Host do desktop quando Mac usa infra remota |
+| `PROMETHEUS_OLLAMA_LOCAL_HOST` | `http://127.0.0.1:11434` ou `http://192.168.x.x:11434` | Ollama local ou remoto no desktop |
 | `PROMETHEUS_RTK_MAX_TOKENS` | `300` a `450`                  | Teto de tokens do Caveman Compressor |
 | `PROMETHEUS_DAILY_BUDGET`   | ex. `5.0`                      | Budget diário de uso cloud      |
 | `PROMETHEUS_OPUS_BUDGET`    | ex. `2.0`                      | Budget específico para Opus     |
@@ -82,6 +86,25 @@ As decisões abaixo são estruturais para o projeto:
 | `PROMETHEUS_EXPANSION_MONTHLY_BUDGET` | `4.0`                  | Budget mensal da expansão cloud |
 
 Regra importante: `~/vault` e o engine nunca devem ser misturados. O vault é a camada de dados. Este repositório é a camada de runtime.
+
+Exemplos de endpoints:
+
+```bash
+# Infra local na mesma máquina
+QDRANT_URL=http://localhost:6333
+REDIS_URL=redis://localhost:6379
+NEO4J_URI=bolt://localhost:7687
+PROMETHEUS_OLLAMA_LOCAL_HOST=http://127.0.0.1:11434
+
+# Mac usando serviços no desktop
+PROMETHEUS_DESKTOP_HOST=192.168.68.104
+QDRANT_URL=http://192.168.68.104:6333
+REDIS_URL=redis://192.168.68.104:6379
+NEO4J_URI=bolt://192.168.68.104:7687
+PROMETHEUS_OLLAMA_LOCAL_HOST=http://192.168.68.104:11434
+```
+
+Neo4j é exclusivo do Mem0 (`pb memory smoke` e tool `get_memory`). O grafo de dependências de código fica no Redis (`dep:<symbol>` com `calls` e `called_by`) e é populado por `pb index`, `pb watch` e `pb index-dev`.
 
 ---
 
@@ -124,6 +147,7 @@ Regra importante: `~/vault` e o engine nunca devem ser misturados. O vault é a 
 │   ├── router/       ← provider validation e budget guardrails
 │   └── store/        ← stores e collections
 ├── docker-compose.yml
+├── config/projects.json
 ├── setup.sh
 └── pyproject.toml
 ```
@@ -250,6 +274,10 @@ pb search "UUID qdrant" --ctx knowledge
 # Indexação one-shot
 pb index ~/vault/knowledge --ctx knowledge
 
+# Indexação de projetos de desenvolvimento via manifesto
+pb index-dev --dry-run
+pb index-dev --project prometheus
+
 # Watcher contínuo
 pb watch ~/vault/knowledge --ctx knowledge
 
@@ -268,6 +296,9 @@ pb deep suggest
 
 # Custo de LLMs
 pb cost today
+
+# Smoke test Mem0 com Qdrant + Neo4j
+pb memory smoke --ctx knowledge
 
 # Expansão manual com staging obrigatório
 pb expand run --ctx knowledge --topic "vector search" --fast
