@@ -22,6 +22,7 @@ dependencies = [
     "ollama>=0.2.0",
     "aiosqlite>=0.20.0",
     "python-dotenv>=1.0.0",
+    "mem0ai>=0.1.0",
 ]
 
 [project.scripts]

@@ -10,6 +10,7 @@ from prometheus.expansion.budget import (
     ExpansionBudgetManager,
 )
 from prometheus.expansion.telemetry import ExpansionExecutionRecord, ExpansionTelemetryStore
+from prometheus.memory.config import Mem0Config
 
 
 def test_runtime_loads_expansion_defaults(monkeypatch, tmp_path) -> None:
@@ -24,11 +25,24 @@ def test_runtime_loads_expansion_defaults(monkeypatch, tmp_path) -> None:
     assert runtime.expansion.manual_trigger_only is True
     assert runtime.expansion.default_contexts == ("knowledge", "career", "personal")
     assert runtime.expansion.paths.root == engine_root / "data" / "expansion"
-    assert runtime.expansion.source_catalog_path == engine_root / "config" / "expansion_sources.json"
+    assert runtime.expansion.source_catalog_path == (
+        engine_root / "config" / "expansion_sources.json"
+    )
     assert runtime.expansion.paths.staging_context_root("Knowledge") == (
         engine_root / "data" / "expansion" / "staging" / "knowledge"
     )
     assert runtime.vault_context_root("career") == vault_root / "career"
+
+
+def test_mem0_config_prefers_qdrant_url_over_legacy_host(monkeypatch) -> None:
+    monkeypatch.setenv("QDRANT_URL", "http://192.168.68.104:6333")
+    monkeypatch.setenv("QDRANT_HOST", "localhost")
+    monkeypatch.setenv("QDRANT_PORT", "6333")
+
+    cfg = Mem0Config()
+
+    assert cfg.qdrant_host == "192.168.68.104"
+    assert cfg.qdrant_port == 6333
 
 
 def test_budget_manager_enforces_soft_cap_and_hard_stop(monkeypatch, tmp_path) -> None:

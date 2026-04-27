@@ -5,8 +5,6 @@ import logging
 import os
 from typing import Any
 
-from mem0 import Memory
-
 from prometheus.memory.config import Mem0Config
 
 logger = logging.getLogger(__name__)
@@ -15,22 +13,28 @@ logger = logging.getLogger(__name__)
 _PROTECTED_CONTEXTS = {"work"}
 
 
-def _build_client() -> Memory:
+def _build_client() -> Any:
+    from mem0 import Memory
+
     cfg = Mem0Config()
     return Memory.from_config(cfg.as_mem0_config())
 
 
-_client: Memory | None = None
+_client: Any | None = None
 
 
-def _get_client() -> Memory:
+def _get_client() -> Any:
     global _client
     if _client is None:
         _client = _build_client()
     return _client
 
 
-async def get_memory(query: str, ctx: str = "personal", user_id: str = "sammy") -> list[dict[str, Any]]:
+async def get_memory(
+    query: str,
+    ctx: str = "personal",
+    user_id: str = "sammy",
+) -> list[dict[str, Any]]:
     """Retrieves memories matching query, filtered by context.
 
     The 'work' context is protected and requires PROMETHEUS_WORK_CTX=1 env var.
