@@ -77,6 +77,22 @@ Historico detalhado de planejamento e specs antigas em `docs/archive/`.
 - Motivo: evitar recuperar contexto excessivo que supera budget ou piora qualidade do retrieval.
 - Status: requisito identificado (2026-04-21); implementacao pendente.
 
+## ARD-011 - Compressao de contexto com preservacao de anchors
+
+- O pipeline de `pb ask` e MCP `ask` deve enviar chunks completos para compressao semantica.
+- Truncamento de conteudo antes da compressao e proibido; truncamento so pode ser usado para preview humano.
+- O sistema deve extrair simbolos obrigatorios dos anchors estruturados do retrieval.
+- Toda saida comprimida deve passar por validacao de qualidade antes de ser usada em prompts finais.
+- A validacao deve rejeitar:
+  - contaminacao de prompt ou meta-instrucao;
+  - perda de simbolos obrigatorios recuperados pelo retrieval.
+- Quando Caveman falhar na validacao, o sistema deve fazer retry em modo estrito com os simbolos obrigatorios explicitados.
+- Quando o retry tambem falhar, o sistema deve usar fallback seguro com o ultimo contexto confiavel.
+- A mesma regra deve valer para CLI e MCP.
+- A telemetria de compressao deve refletir o engine efetivamente aceito e notas de rejeicao quando houver fallback.
+- Motivo: evitar que compressao prematura ou agressiva aumente risco de alucinacao em tarefas de codigo.
+- Status: implementado (2026-04-30).
+
 ---
 
 ## Estado atual (2026-04-21)
@@ -96,6 +112,16 @@ Historico detalhado de planejamento e specs antigas em `docs/archive/`.
 ARD-007, ARD-008, ARD-009, ARD-010 sao requisitos identificados e priorizados.
 Decisoes de produto e governanca registradas em ADR-011 a ADR-015.
 Implementacao entra como proximas tasks em TASKS.md.
+
+### Atualizacao operacional (2026-04-30)
+
+- ADR-016 e ARD-011 registram o comportamento atual de compressao validada por qualidade.
+- Validacao focada executada:
+  - tests/cli/test_pb_cli.py
+  - tests/context/test_compression_quality.py
+  - tests/router/test_compressor.py
+  - Resultado: 27 passed.
+- Observacao: em casos em que Caveman perde simbolos ou contamina a saida, Prometheus preserva o contexto original em vez de aceitar compressao insegura.
 
 ### Baseline operacional historico (2026-04-19)
 

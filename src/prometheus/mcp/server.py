@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from mcp.server.fastmcp import FastMCP
 
-from prometheus.config.runtime import is_corporate_context, load_runtime_config
+from prometheus.config.runtime import load_runtime_config
+from prometheus.context.compression_quality import compression_quality_note
 from prometheus.context.rtk import RTKError, compress_text_with_rtk
-from prometheus.router.compressor import caveman_compress
 from prometheus.embedder.engine import EmbedderEngine
-from prometheus.observability.compression_telemetry import CompressionRecord, CompressionTelemetryStore
+from prometheus.observability.compression_telemetry import (
+    CompressionRecord,
+    CompressionTelemetryStore,
+)
 from prometheus.policy.core import PolicyRegistry
+from prometheus.router.compressor import caveman_compress_guarded
 from prometheus.store.collections import get_search_collections
 from prometheus.store.graph_store import GraphStore
 from prometheus.store.session_store import ADR, SessionStore
@@ -319,8 +321,13 @@ async def ask(
     before_tokens = _estimate_tokens(code_context)
 
     # Pipeline duplo: caveman (semântico) → RTK (token-level)
-    caveman_out, caveman_err = await caveman_compress(code_context, max_tokens=max_tokens)
+    caveman_out, caveman_err = await caveman_compress_guarded(code_context, max_tokens=max_tokens)
+
     compressed_context, rtk_err = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
+    rtk_quality_err = compression_quality_note(code_context, compressed_context)
+    if rtk_quality_err:
+        compressed_context = caveman_out
+        rtk_err = rtk_quality_err
 
     engines = []
     if caveman_err is None:

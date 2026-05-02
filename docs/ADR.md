@@ -114,6 +114,24 @@ Historico detalhado de planejamento e specs antigas em `docs/archive/`.
 - Aplicacao: SLOs distintos por rota (local, remote, cloud) em vez de um unico SLO global.
 - Motivo: diferentes rotas tem diferentes expectativas de latencia e tolerancia a falha.
 
+## ADR-016 - Compressao de contexto validada por qualidade
+
+- Decisao: compressao de contexto e uma otimizacao condicionada a qualidade, nao uma etapa cega.
+- Definicao:
+  - o retrieval entrega chunks completos para o pipeline de compressao;
+  - truncamento de 200 caracteres fica restrito a preview humano no terminal;
+  - Caveman roda primeiro como compressor semantico;
+  - se a saida do Caveman falhar no quality gate, o sistema faz retry em modo estrito com simbolos obrigatorios;
+  - RTK roda depois como compressor token-level;
+  - cada estagio comprimido deve passar por quality gate antes de ser aceito;
+  - se retry/RTK degradarem o contexto, o sistema usa o ultimo contexto confiavel.
+- Quality gate:
+  - rejeita contaminacao de prompt, como `Your task`, `Input (Original Code)` e `Output (Compressed Code)`;
+  - rejeita saida que remove simbolos recuperados a partir dos anchors do retrieval.
+- Motivo: economia de tokens so e util se preservar simbolos, decisoes e caminhos de execucao necessarios para agentes de codigo.
+- Consequencia: em alguns casos Prometheus escolhe reduzir 0 tokens para preservar fidelidade do contexto.
+- Status: implementado em CLI e MCP (2026-04-30).
+
 ---
 
 ## Politica de manutencao
