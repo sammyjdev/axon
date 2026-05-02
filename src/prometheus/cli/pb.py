@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Annotated
@@ -26,6 +27,7 @@ til_app = typer.Typer(help="TIL e HOW-TO — knowledge automation")
 deep_app = typer.Typer(help="Sugestões de aprofundamento técnico")
 expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
 memory_app = typer.Typer(help="Memória Mem0 / Neo4j")
+graph_app = typer.Typer(help="Grafo estrutural Graphify / Neo4j")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -35,6 +37,7 @@ app.add_typer(til_app, name="til")
 app.add_typer(deep_app, name="deep")
 app.add_typer(expand_app, name="expand")
 app.add_typer(memory_app, name="memory")
+app.add_typer(graph_app, name="graph")
 
 QDRANT_DEFAULT_URL = "http://localhost:6333"
 _MAX_CHUNK_INPUT_CHARS = 4_000
@@ -138,6 +141,38 @@ def _handle_expand_expected_error(exc: FileNotFoundError | ValueError) -> None:
     else:
         typer.echo(f"Não foi possível concluir a operação: {exc}", err=True)
     raise typer.Exit(1)
+
+
+def _neo4j_driver():
+    try:
+        from neo4j import GraphDatabase
+    except ImportError as exc:
+        raise typer.BadParameter(
+            "neo4j driver não instalado. Instale o extra graph: pip install -e '.[graph]'"
+        ) from exc
+
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    user = os.environ.get("NEO4J_USER", "neo4j")
+    password = os.environ.get("NEO4J_PASSWORD", "local-password")
+    return GraphDatabase.driver(uri, auth=(user, password))
+
+
+def _run_neo4j_write(cypher: str) -> None:
+    driver = _neo4j_driver()
+    try:
+        with driver.session() as session:
+            session.run(cypher)
+    finally:
+        driver.close()
+
+
+def _run_neo4j_read(cypher: str) -> list[dict]:
+    driver = _neo4j_driver()
+    try:
+        with driver.session() as session:
+            return [dict(record) for record in session.run(cypher)]
+    finally:
+        driver.close()
 
 
 def _build_planner_executor_prompts(
@@ -757,6 +792,90 @@ def _do_promote_today() -> None:
         promote_run()
     except ImportError:
         typer.echo("[promote] til_promoter não disponível.")
+
+
+# ---------------------------------------------------------------------------
+# pb graph
+# ---------------------------------------------------------------------------
+
+@graph_app.command("index")
+def graph_index(
+    project: Annotated[str, typer.Option("--project", help="Project slug para namespace Neo4j")],
+    repo: Annotated[str, typer.Option("--repo", help="Repo a indexar com Graphify")],
+) -> None:
+    """Indexa grafo estrutural via Graphify com namespace isolado por projeto."""
+    from prometheus.store.graph_namespace import transform_cypher
+
+    graphify_bin = shutil.which("graphify")
+    if graphify_bin is None:
+        typer.echo(
+            "graphifyy não instalado. "
+            "Instale com: pip install -e '.[graph]' ou pip install graphifyy",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    repo_path = Path(repo).expanduser()
+    if not repo_path.exists():
+        typer.echo(f"Repo não encontrado: {repo_path}", err=True)
+        raise typer.Exit(1)
+
+    result = subprocess.run(
+        [graphify_bin, str(repo_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        typer.echo(result.stderr.strip() or "graphify falhou ao extrair Cypher.", err=True)
+        raise typer.Exit(result.returncode)
+
+    cypher = result.stdout.strip()
+    if not cypher:
+        typer.echo("graphify não retornou Cypher para enviar ao Neo4j.", err=True)
+        raise typer.Exit(1)
+
+    namespaced = transform_cypher(cypher, project)
+    _run_neo4j_write(namespaced)
+    typer.echo(f"Grafo indexado: project={project} repo={repo_path}")
+
+
+@graph_app.command("neighbors")
+def graph_neighbors(
+    node: Annotated[str, typer.Argument(help="Nome/id/símbolo do nó")],
+    project: Annotated[str, typer.Option("--project", help="Project slug do namespace")],
+    depth: Annotated[int, typer.Option("--depth", help="Profundidade de vizinhança")] = 1,
+) -> None:
+    """Lista vizinhos de um nó no namespace Graphify do projeto."""
+    from prometheus.store.graph_namespace import neighbors_query
+
+    rows = _run_neo4j_read(neighbors_query(node, project, depth))
+    if not rows:
+        typer.echo("Nenhum vizinho encontrado.")
+        return
+    for row in rows:
+        typer.echo(f"{row.get('node')} -> {row.get('neighbor')}")
+
+
+@graph_app.command("path")
+def graph_path(
+    from_node: Annotated[str, typer.Argument(help="Nó de origem")],
+    to_node: Annotated[str, typer.Argument(help="Nó de destino")],
+    project: Annotated[str, typer.Option("--project", help="Project slug do namespace")],
+) -> None:
+    """Mostra o caminho mais curto entre dois nós no namespace do projeto."""
+    from prometheus.store.graph_namespace import path_query
+
+    rows = _run_neo4j_read(path_query(from_node, to_node, project))
+    if not rows:
+        typer.echo("Nenhum caminho encontrado.")
+        return
+    for row in rows:
+        path = row.get("path")
+        if isinstance(path, list):
+            typer.echo(" -> ".join(str(item) for item in path))
+        else:
+            typer.echo(str(path))
 
 
 @til_app.command("howto")

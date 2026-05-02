@@ -84,6 +84,48 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def _record_mcp_tool_call(
+    tool_name: str,
+    input_text: str,
+    output_text: str,
+    ctx: str | None = None,
+) -> None:
+    from datetime import UTC, datetime
+
+    before_tokens = _estimate_tokens(input_text)
+    after_tokens = _estimate_tokens(output_text)
+    reduction = max(0, before_tokens - after_tokens)
+    reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
+    _COMPRESSION_TELEMETRY.append(
+        CompressionRecord(
+            ts=datetime.now(UTC).isoformat(),
+            engine=tool_name,
+            caller="mcp",
+            ctx=ctx,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            reduction_tokens=reduction,
+            reduction_pct=round(reduction_pct, 1),
+        )
+    )
+
+
+async def _run_neo4j_read(cypher: str) -> list[dict]:
+    import os
+
+    from neo4j import GraphDatabase
+
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    user = os.environ.get("NEO4J_USER", "neo4j")
+    password = os.environ.get("NEO4J_PASSWORD", "local-password")
+    driver = GraphDatabase.driver(uri, auth=(user, password))
+    try:
+        with driver.session() as session:
+            return [dict(record) for record in session.run(cypher)]
+    finally:
+        driver.close()
+
+
 def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
     try:
         return compress_text_with_rtk(text, max_tokens=max_tokens), None
@@ -382,6 +424,49 @@ async def ask(
     response += f"## Prompt pronto — Local (Knowledge Draft)\n{local_prompt}"
 
     return _truncate(response, budget)
+
+
+@mcp.tool()
+async def get_graph_neighbors(
+    node: str,
+    project: str,
+    depth: int = 1,
+) -> str:
+    """Retorna vizinhos do grafo estrutural Graphify no namespace do projeto."""
+    from prometheus.store.graph_namespace import neighbors_query
+
+    rows = await _run_neo4j_read(neighbors_query(node, project, depth))
+    if not rows:
+        response = "Nenhum vizinho encontrado."
+    else:
+        response = "\n".join(f"{row.get('node')} -> {row.get('neighbor')}" for row in rows)
+    _record_mcp_tool_call("get_graph_neighbors", node, response)
+    return response
+
+
+@mcp.tool()
+async def get_graph_path(
+    from_node: str,
+    to_node: str,
+    project: str,
+) -> str:
+    """Retorna o caminho mais curto no grafo estrutural Graphify do projeto."""
+    from prometheus.store.graph_namespace import path_query
+
+    rows = await _run_neo4j_read(path_query(from_node, to_node, project))
+    if not rows:
+        response = "Nenhum caminho encontrado."
+    else:
+        lines = []
+        for row in rows:
+            path = row.get("path")
+            if isinstance(path, list):
+                lines.append(" -> ".join(str(item) for item in path))
+            else:
+                lines.append(str(path))
+        response = "\n".join(lines)
+    _record_mcp_tool_call("get_graph_path", f"{from_node}\n{to_node}", response)
+    return response
 
 
 # ---------------------------------------------------------------------------

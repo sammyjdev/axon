@@ -383,6 +383,54 @@ def test_rtk_init_codex_calls_expected_command(monkeypatch) -> None:
     assert commands == [["/usr/local/bin/rtk", "init", "-g", "--codex"]]
 
 
+def test_graph_index_fails_clearly_when_graphify_is_missing(monkeypatch, tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setattr(pb.shutil, "which", lambda _name: None)
+
+    result = runner.invoke(
+        pb.app,
+        ["graph", "index", "--project", "rpg-master-ai", "--repo", str(repo)],
+    )
+
+    assert result.exit_code == 1
+    assert "graphifyy não instalado" in result.output
+
+
+def test_graph_neighbors_requires_project() -> None:
+    result = runner.invoke(pb.app, ["graph", "neighbors", "CampaignService"])
+
+    assert result.exit_code != 0
+    assert "Missing option" in result.output
+
+
+def test_graph_neighbors_prints_namespaced_results(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_read(query: str):
+        captured["query"] = query
+        return [{"node": "CampaignService", "neighbor": "CampaignRepository"}]
+
+    monkeypatch.setattr(pb, "_run_neo4j_read", fake_read)
+
+    result = runner.invoke(
+        pb.app,
+        [
+            "graph",
+            "neighbors",
+            "CampaignService",
+            "--project",
+            "rpg-master-ai",
+            "--depth",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "rpg_master_ai__" in str(captured["query"])
+    assert "CampaignRepository" in result.stdout
+
+
 def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
     calls: dict[str, object] = {"ensure": False, "closed": False, "graph": False}
 
