@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from prometheus.config.runtime import RuntimeConfig, load_runtime_config
@@ -11,8 +10,8 @@ from prometheus.config.runtime import RuntimeConfig, load_runtime_config
 @dataclass(frozen=True)
 class CompressionRecord:
     ts: str
-    engine: str          # e.g. "caveman/phi3+rtk", "caveman/phi3", "fallback"
-    caller: str          # "claude-code", "codex", "cli"
+    engine: str  # e.g. "caveman/phi3+rtk", "caveman/phi3", "fallback"
+    caller: str  # "claude-code", "codex", "cli"
     ctx: str | None
     before_tokens: int
     after_tokens: int

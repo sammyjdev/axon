@@ -83,6 +83,7 @@ def _truncate(text: str, budget: int) -> str:
 def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
+
 def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
     try:
         return compress_text_with_rtk(text, max_tokens=max_tokens), None
@@ -90,13 +91,16 @@ def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
         return text, str(exc)
 
 
-def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_name: str | None) -> tuple[str, str, str]:
+def _build_planner_executor_prompts(
+    query: str, compressed_context: str, ctx_name: str | None
+) -> tuple[str, str, str]:
     ctx_label = ctx_name or "auto"
 
     planner = (
         "Você é o planner. Gere um plano executável para agentes Codex em paralelo.\n"
         "Retorne JSON válido com: goal, assumptions, tasks[].\n"
-        "Cada task deve conter: task_id, objective, files, dependencies, acceptance_criteria, tests, risk, rollback.\n\n"
+        "Cada task deve conter: task_id, objective, files, dependencies, "
+        "acceptance_criteria, tests, risk, rollback.\n\n"
         f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Solicitação: {query}"
     )
@@ -107,7 +111,8 @@ def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_nam
         "Task: <COLE_A_TASK_JSON_AQUI>"
     )
     local_knowledge = (
-        "Você é um assistente local para preencher arquivos de knowledge vazios com rascunho útil.\n"
+        "Você é um assistente local para preencher arquivos de knowledge vazios "
+        "com rascunho útil.\n"
         "Formato: resumo, passos, exemplos curtos, perguntas para aprofundamento.\n\n"
         f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Tema: {query}"
@@ -118,6 +123,7 @@ def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_nam
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
+
 
 @mcp.tool()
 async def search_code(
@@ -161,7 +167,7 @@ async def search_code(
         lines.append(f"Score: {float(r.get('score', 0.0)):.3f}")
         lines.append("")
 
-    top_symbol = ((results[0].get("payload") or {}).get("symbol") if results else None)
+    top_symbol = (results[0].get("payload") or {}).get("symbol") if results else None
     if top_symbol:
         graph = _get_graph_store()
         await graph.connect()
@@ -311,7 +317,8 @@ async def ask(
     if not gateway_decision.allowed and caller == "cloud":
         return (
             "Fallback cloud bloqueado por policy central. "
-            f"reason_code={gateway_decision.reason_code.value}; policy_version={gateway_decision.policy_version}."
+            f"reason_code={gateway_decision.reason_code.value}; "
+            f"policy_version={gateway_decision.policy_version}."
         )
 
     # Busca contexto relevante
@@ -341,16 +348,19 @@ async def ask(
     reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
 
     from datetime import UTC, datetime
-    _COMPRESSION_TELEMETRY.append(CompressionRecord(
-        ts=datetime.now(UTC).isoformat(),
-        engine=used_engine,
-        caller=caller,
-        ctx=effective_ctx,
-        before_tokens=before_tokens,
-        after_tokens=after_tokens,
-        reduction_tokens=reduction,
-        reduction_pct=round(reduction_pct, 1),
-    ))
+
+    _COMPRESSION_TELEMETRY.append(
+        CompressionRecord(
+            ts=datetime.now(UTC).isoformat(),
+            engine=used_engine,
+            caller=caller,
+            ctx=effective_ctx,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            reduction_tokens=reduction,
+            reduction_pct=round(reduction_pct, 1),
+        )
+    )
 
     planner_prompt, executor_prompt, local_prompt = _build_planner_executor_prompts(
         query=query,
@@ -377,6 +387,7 @@ async def ask(
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     mcp.run()

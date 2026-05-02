@@ -12,7 +12,6 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-
 VECTOR_SIZE = int(os.environ.get("PROMETHEUS_VECTOR_SIZE", "384"))
 
 COLLECTIONS = ["personal", "career", "knowledge", "work"]
@@ -24,10 +23,10 @@ class Chunk:
     vector: list[float]
     file_path: str
     language: str
-    chunk_type: str          # method | class | file
+    chunk_type: str  # method | class | file
     symbol: str
     project: str
-    ctx: str                 # personal | career | knowledge | work
+    ctx: str  # personal | career | knowledge | work
     content: str
     git_commit: str = ""
     modified_at: datetime = field(default_factory=datetime.utcnow)

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
-import logging
 from dataclasses import dataclass, field
 
 import litellm
@@ -30,11 +30,11 @@ _BREAKER = CircuitBreaker(redis_url=_RUNTIME.redis_url)
 
 _MODEL_MAP: dict[TaskType, str] = {
     TaskType.TRIVIAL_COMPLETION: "claude-haiku-4-5-20251001",
-    TaskType.CODE_ANALYSIS:      "claude-sonnet-4-6",
-    TaskType.ARCHITECTURE:       "claude-opus-4-7",
-    TaskType.DEEP_REASONING:     "claude-opus-4-7",
-    TaskType.LOCAL_ONLY:         "ollama/phi3:mini",
-    TaskType.UNKNOWN:            "claude-haiku-4-5-20251001",
+    TaskType.CODE_ANALYSIS: "claude-sonnet-4-6",
+    TaskType.ARCHITECTURE: "claude-opus-4-7",
+    TaskType.DEEP_REASONING: "claude-opus-4-7",
+    TaskType.LOCAL_ONLY: "ollama/phi3:mini",
+    TaskType.UNKNOWN: "claude-haiku-4-5-20251001",
 }
 
 _BUDGET_USD: float = float(os.environ.get("PROMETHEUS_DAILY_BUDGET", "5.0"))
@@ -44,11 +44,11 @@ _MAX_PRE_SEND_TOKENS: int = int(os.environ.get("PROMETHEUS_MAX_PRE_SEND_TOKENS",
 # Custo aproximado por 1k tokens (input+output médio)
 _COST_PER_1K: dict[str, float] = {
     "claude-haiku-4-5-20251001": 0.001,
-    "claude-sonnet-4-6":         0.01,
-    "claude-opus-4-7":           0.05,
-    "ollama/phi3:mini":          0.0,
-    "ollama/gemma4:e4b":         0.0,
-    "ollama/gemma4:26b":         0.0,
+    "claude-sonnet-4-6": 0.01,
+    "claude-opus-4-7": 0.05,
+    "ollama/phi3:mini": 0.0,
+    "ollama/gemma4:e4b": 0.0,
+    "ollama/gemma4:26b": 0.0,
 }
 
 
@@ -74,6 +74,7 @@ class RouteResult:
 _COST_CACHE: dict[str, float] = {"value": 0.0, "at": 0.0}
 _PROMPT_CACHE: dict[str, tuple[str, str]] = {}
 
+
 def daily_cost() -> float:
     """Retorna custo acumulado do dia via Langfuse (fallback: 0.0)."""
     now = time.time()
@@ -82,6 +83,7 @@ def daily_cost() -> float:
 
     try:
         import httpx
+
         langfuse_url = os.environ.get("LANGFUSE_HOST", "http://localhost:3000")
         r = httpx.get(f"{langfuse_url}/api/public/daily-cost", timeout=1.0)
         if r.status_code == 200:

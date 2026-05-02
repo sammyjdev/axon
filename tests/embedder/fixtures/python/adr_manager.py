@@ -27,8 +27,14 @@ class AdrManager:
             cur = conn.execute(
                 "INSERT INTO adr (project, title, context, decision, rationale, created_at) "
                 "VALUES (?,?,?,?,?,?)",
-                (adr.project, adr.title, adr.context, adr.decision, adr.rationale,
-                 datetime.utcnow().isoformat()),
+                (
+                    adr.project,
+                    adr.title,
+                    adr.context,
+                    adr.decision,
+                    adr.rationale,
+                    datetime.utcnow().isoformat(),
+                ),
             )
             return Adr(
                 id=cur.lastrowid,

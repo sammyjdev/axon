@@ -4,10 +4,10 @@ work só é acessível com ctx='work' explícito — protege IP da Avangrid.
 """
 
 _REGISTRY: dict[str, dict] = {
-    "personal":  {"restricted": False},
-    "career":    {"restricted": False},
+    "personal": {"restricted": False},
+    "career": {"restricted": False},
     "knowledge": {"restricted": False},
-    "work":      {"restricted": True},
+    "work": {"restricted": True},
 }
 
 

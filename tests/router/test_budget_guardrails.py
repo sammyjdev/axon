@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
+import prometheus.router.engine as engine
 from prometheus.router.classifier import TaskType
 from prometheus.router.engine import TaskRequest, complete, route
-import prometheus.router.engine as engine
 
 
 def test_route_downgrades_code_analysis_when_daily_budget_is_exhausted(monkeypatch) -> None:
@@ -39,9 +39,7 @@ async def test_complete_downgrades_to_haiku_when_projected_cost_crosses_budget(m
 
     async def fake_acompletion(*, model: str, messages: list[dict]):
         requested_models.append(model)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
-        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
 
     class FakeBreaker:
         def allow_call(self, _key: str) -> bool:
@@ -62,8 +60,12 @@ async def test_complete_downgrades_to_haiku_when_projected_cost_crosses_budget(m
         lambda: engine._BUDGET_USD - 0.005,
     )
     monkeypatch.setattr("prometheus.router.engine.provider_for_model", lambda _model: "anthropic")
-    monkeypatch.setattr("prometheus.router.engine.validate_anthropic_cache_control", lambda _messages: None)
-    monkeypatch.setattr("prometheus.router.engine.count_tokens_for_provider", lambda _provider, _messages: 1000)
+    monkeypatch.setattr(
+        "prometheus.router.engine.validate_anthropic_cache_control", lambda _messages: None
+    )
+    monkeypatch.setattr(
+        "prometheus.router.engine.count_tokens_for_provider", lambda _provider, _messages: 1000
+    )
     monkeypatch.setattr("prometheus.router.engine._BREAKER", FakeBreaker())
     monkeypatch.setattr("prometheus.router.engine.litellm.acompletion", fake_acompletion)
 

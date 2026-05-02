@@ -72,7 +72,10 @@ def test_run_includes_registered_web_sources_in_staging(monkeypatch, tmp_path: P
     staging_path = service.run(ctx="knowledge", topic="vector search", fast=True, allow_cloud=False)
     draft = load_draft(staging_path)
 
-    assert any(source.source_url == "https://knowledge.example.com/vector-search" for source in draft.sources)
+    assert any(
+        source.source_url == "https://knowledge.example.com/vector-search"
+        for source in draft.sources
+    )
 
 
 def test_run_records_budget_when_cloud_review_is_used(monkeypatch, tmp_path: Path) -> None:
@@ -114,7 +117,11 @@ def test_run_records_budget_when_cloud_review_is_used(monkeypatch, tmp_path: Pat
     async def fake_acompletion(*, model: str, messages: list[dict], max_tokens: int):
         _ = (messages, max_tokens)
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="Cloud summary for ambiguous candidates."))],
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="Cloud summary for ambiguous candidates.")
+                )
+            ],
             usage=SimpleNamespace(prompt_tokens=500, completion_tokens=100),
         )
 
