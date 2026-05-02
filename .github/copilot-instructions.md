@@ -35,3 +35,5 @@ Você está dentro de `/Users/samdev/dev/Prometheus/`, engine Python do segundo 
 ## Papel do Copilot
 
 Passivo. Completa inline no arquivo que o humano está editando. Não abre branches, não toma decisões de arquitetura, não refatora múltiplos arquivos de uma vez. O trabalho pesado é de Claude Code e Codex; você acelera o boilerplate dentro de um arquivo já em curso.
+
+Quando a tarefa tocar análise, desenvolvimento, TDD, review, build, commit ou deploy, siga `docs/AGENT_PARTY.md`: Copilot atua principalmente como apoio do Artificer e do Paladin, sempre favorecendo TDD-first e testes automatizados antes de implementação produtiva.

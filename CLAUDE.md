@@ -87,6 +87,14 @@ O chunker é o componente com maior risco técnico. Antes de qualquer outra cois
 
 **MVP completo — todas as tasks estão `done`.** Novos agentes que chegarem devem apenas manter o sistema funcional, corrigir bugs pontuais, ou implementar novas tasks adicionadas ao TASKS.md.
 
+## RPG Agent Party
+
+Quando a tarefa envolver análise, desenvolvimento, TDD, review, build, commit ou deploy, leia `docs/AGENT_PARTY.md` e siga o fluxo de classes RPG pragmático do Prometheus.
+
+Regra central: toda mudança de código produtivo começa com estratégia de teste automatizado. Bugfix começa por teste de regressão; feature começa por critérios de aceite testáveis; refactor começa por cobertura ou characterization tests. Testar só depois da implementação é exceção e exige justificativa no handoff.
+
+O playbook não substitui D1-D5, `TASKS.md`, a barreira `work` nem as proibições universais. Em conflito, este `CLAUDE.md` vence.
+
 ### Claude Code
 
 Responsável por: qualquer integração multi-módulo, qualquer coisa que toque a barreira `work/`, lógica de contexto e router.
