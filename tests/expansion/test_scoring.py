@@ -146,8 +146,7 @@ def test_score_candidate_returns_maybe_for_relevant_but_thin_content(monkeypatch
         title="Java Streams gotcha",
         source_url="https://example.com/streams",
         extracted_text=(
-            "Java Streams can hide allocation costs.\n"
-            "Watch collector choices during profiling."
+            "Java Streams can hide allocation costs.\nWatch collector choices during profiling."
         ),
     )
 

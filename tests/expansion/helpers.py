@@ -13,9 +13,7 @@ def load_pb_module(monkeypatch, *, engine_root: Path, vault_root: Path):
 
 def staging_markdown_files(vault_root: Path) -> set[Path]:
     return {
-        path.relative_to(vault_root)
-        for path in vault_root.rglob("*.md")
-        if "staging" in path.parts
+        path.relative_to(vault_root) for path in vault_root.rglob("*.md") if "staging" in path.parts
     }
 
 
@@ -28,11 +26,7 @@ def final_markdown_files(vault_root: Path) -> set[Path]:
 
 
 def newest_staging_file(vault_root: Path) -> Path | None:
-    candidates = [
-        path
-        for path in vault_root.rglob("*.md")
-        if "staging" in path.parts
-    ]
+    candidates = [path for path in vault_root.rglob("*.md") if "staging" in path.parts]
     if not candidates:
         return None
     return max(candidates, key=lambda path: path.stat().st_mtime_ns)

@@ -4,6 +4,7 @@ Strips filler words, articles and connectives; keeps method signatures,
 business rules and decisions. Returns dense, token-efficient context.
 Model is set via PROMETHEUS_CAVEMAN_MODEL (falls back to OLLAMA_MODEL_PRIMARY).
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,9 +62,7 @@ async def caveman_compress(
     user_content = text
     if strict and required_symbols:
         user_content = (
-            "Required symbols to preserve exactly: "
-            f"{', '.join(required_symbols)}\n\n"
-            f"{text}"
+            f"Required symbols to preserve exactly: {', '.join(required_symbols)}\n\n{text}"
         )
     try:
         response = await litellm.acompletion(

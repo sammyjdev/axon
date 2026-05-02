@@ -15,7 +15,12 @@ from prometheus.expansion.collector import ExpansionCollector
 from prometheus.expansion.models import SourceDocument
 from prometheus.expansion.registry import SourceRegistry, default_source_registry
 from prometheus.expansion.scoring import ExpansionCandidate, ExpansionDecision, score_candidates
-from prometheus.expansion.staging import ExpansionDraft, build_staged_sources, load_draft, render_draft
+from prometheus.expansion.staging import (
+    ExpansionDraft,
+    build_staged_sources,
+    load_draft,
+    render_draft,
+)
 from prometheus.expansion.telemetry import ExpansionExecutionRecord, ExpansionTelemetryStore
 from prometheus.expansion.transport import SourceTransport
 from prometheus.policy.core import PolicyRegistry
@@ -85,8 +90,12 @@ class ExpansionService:
         gate = self._review_gate(scored, cloud_review["summary"])
 
         draft_id = str(uuid.uuid4())
-        staging_path = self.runtime.vault_context_root(normalized_ctx) / "staging" / f"{_slugify(topic)}.md"
-        publish_path = self.runtime.vault_context_root(normalized_ctx) / "expansion" / f"{_slugify(topic)}.md"
+        staging_path = (
+            self.runtime.vault_context_root(normalized_ctx) / "staging" / f"{_slugify(topic)}.md"
+        )
+        publish_path = (
+            self.runtime.vault_context_root(normalized_ctx) / "expansion" / f"{_slugify(topic)}.md"
+        )
         now = _utc_now()
 
         draft = ExpansionDraft(
@@ -180,10 +189,7 @@ class ExpansionService:
     def reject(self, staging_path: Path) -> Path:
         draft = self._load_valid_staging_path(staging_path)
         rejected_path = (
-            self.runtime.vault_context_root(draft.ctx)
-            / "staging"
-            / "rejected"
-            / staging_path.name
+            self.runtime.vault_context_root(draft.ctx) / "staging" / "rejected" / staging_path.name
         )
         rejected_path.parent.mkdir(parents=True, exist_ok=True)
         updated = ExpansionDraft.from_payload(
@@ -219,8 +225,10 @@ class ExpansionService:
             f"status={draft.status}\n"
             f"risk_level={draft.risk_level}\n"
             f"recommended_action={draft.recommended_action}\n"
-            f"sources={draft.source_count} keep={draft.keep_count} maybe={draft.maybe_count} discard={draft.discard_count}\n"
-            f"cloud_mode={draft.cloud_mode} reason={draft.cloud_reason} month_spend=${draft.monthly_cloud_spend_usd:.2f}\n"
+            f"sources={draft.source_count} keep={draft.keep_count} "
+            f"maybe={draft.maybe_count} discard={draft.discard_count}\n"
+            f"cloud_mode={draft.cloud_mode} reason={draft.cloud_reason} "
+            f"month_spend=${draft.monthly_cloud_spend_usd:.2f}\n"
             f"publish_path={draft.publish_path}\n"
             f"summary={draft.summary}"
         )
@@ -258,7 +266,9 @@ class ExpansionService:
     def _expected_publish_path(self, ctx: str, topic: str) -> Path:
         return self.runtime.vault_context_root(ctx) / "expansion" / f"{_slugify(topic)}.md"
 
-    def _collect_local_candidates(self, ctx: str, topic: str, *, fast: bool) -> list[ExpansionCandidate]:
+    def _collect_local_candidates(
+        self, ctx: str, topic: str, *, fast: bool
+    ) -> list[ExpansionCandidate]:
         root = self.runtime.vault_context_root(ctx)
         if not root.exists():
             return []
@@ -335,7 +345,8 @@ class ExpansionService:
     ) -> str:
         if scored:
             items = "\n".join(
-                f"- {item.candidate.title} [{item.decision.value}] total={item.score.weighted_total:.2f} source={item.candidate.source_url}"
+                f"- {item.candidate.title} [{item.decision.value}] "
+                f"total={item.score.weighted_total:.2f} source={item.candidate.source_url}"
                 for item in scored[:6]
             )
             details = "\n\n".join(
@@ -368,10 +379,10 @@ class ExpansionService:
         )
 
     def _render_final_markdown(self, draft: ExpansionDraft) -> str:
-        sources = "\n".join(
-            f"- {source.title} ({source.source_url})"
-            for source in draft.sources[:8]
-        ) or "- Nenhuma fonte"
+        sources = (
+            "\n".join(f"- {source.title} ({source.source_url})" for source in draft.sources[:8])
+            or "- Nenhuma fonte"
+        )
         return (
             "---\n"
             f"created: {draft.created_at[:10]}\n"
@@ -601,7 +612,9 @@ def _utc_now() -> str:
 
 
 def _excerpt(content: str) -> str:
-    lines = [line.strip() for line in content.splitlines() if line.strip() and line.strip() != "---"]
+    lines = [
+        line.strip() for line in content.splitlines() if line.strip() and line.strip() != "---"
+    ]
     return "\n".join(lines[:12])[:1600]
 
 

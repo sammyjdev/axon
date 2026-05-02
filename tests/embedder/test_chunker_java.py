@@ -2,6 +2,7 @@
 T-041 — Chunker Java test suite.
 Gate: ALL tests must pass before merging feat/phase-3a-chunker-java.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,6 +40,7 @@ def chunk_types(chunks: list[Chunk]) -> list[str]:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def assert_no_orphans(chunks: list[Chunk]) -> None:
     for c in chunks:
         assert c.symbol not in ("", "anonymous"), (
@@ -63,6 +65,7 @@ def assert_content_nonempty(chunks: list[Chunk]) -> None:
 # ---------------------------------------------------------------------------
 # SimpleController — 3 methods, no inner classes
 # ---------------------------------------------------------------------------
+
 
 class TestSimpleController:
     @pytest.fixture(autouse=True)
@@ -110,6 +113,7 @@ class TestSimpleController:
 # UserService — constructor + 4 methods
 # ---------------------------------------------------------------------------
 
+
 class TestUserService:
     @pytest.fixture(autouse=True)
     def chunks(self):
@@ -137,6 +141,7 @@ class TestUserService:
 # OrderRepository — interface, methods from @Query
 # ---------------------------------------------------------------------------
 
+
 class TestOrderRepository:
     @pytest.fixture(autouse=True)
     def chunks(self):
@@ -159,6 +164,7 @@ class TestOrderRepository:
 # ---------------------------------------------------------------------------
 # PaymentService — methods + nested record (inner record should be 1 chunk)
 # ---------------------------------------------------------------------------
+
 
 class TestPaymentService:
     @pytest.fixture(autouse=True)
@@ -187,10 +193,13 @@ class TestPaymentService:
 # NotificationService — anonymous classes inside methods are NOT separate chunks
 # ---------------------------------------------------------------------------
 
+
 class TestNotificationService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("NotificationService.java"), "java", "NotificationService.java")
+        self._chunks = chunk_source(
+            load("NotificationService.java"), "java", "NotificationService.java"
+        )
 
     def test_anonymous_classes_not_chunked(self):
         # anonymous Runnable impls must NOT appear as separate chunks
@@ -215,6 +224,7 @@ class TestNotificationService:
 # UserRecord — record with compact constructor + methods
 # ---------------------------------------------------------------------------
 
+
 class TestUserRecord:
     @pytest.fixture(autouse=True)
     def chunks(self):
@@ -236,6 +246,7 @@ class TestUserRecord:
 # ---------------------------------------------------------------------------
 # OrderStatusEnum — enum with methods
 # ---------------------------------------------------------------------------
+
 
 class TestOrderStatusEnum:
     @pytest.fixture(autouse=True)
@@ -260,10 +271,13 @@ class TestOrderStatusEnum:
 # SelfInvocationService — @Transactional with self-invocation (regular methods)
 # ---------------------------------------------------------------------------
 
+
 class TestSelfInvocationService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("SelfInvocationService.java"), "java", "SelfInvocationService.java")
+        self._chunks = chunk_source(
+            load("SelfInvocationService.java"), "java", "SelfInvocationService.java"
+        )
 
     def test_chunk_count(self):
         # constructor + processAll + processSingle + getItem
@@ -283,6 +297,7 @@ class TestSelfInvocationService:
 # ---------------------------------------------------------------------------
 # CommandHandler — interface with default and static methods
 # ---------------------------------------------------------------------------
+
 
 class TestCommandHandler:
     @pytest.fixture(autouse=True)
@@ -311,10 +326,13 @@ class TestCommandHandler:
 # GenericRepositoryService — methods with bounded types and wildcards
 # ---------------------------------------------------------------------------
 
+
 class TestGenericRepositoryService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("GenericRepositoryService.java"), "java", "GenericRepositoryService.java")
+        self._chunks = chunk_source(
+            load("GenericRepositoryService.java"), "java", "GenericRepositoryService.java"
+        )
 
     def test_chunk_count(self):
         assert len(self._chunks) == 4
@@ -338,10 +356,13 @@ class TestGenericRepositoryService:
 # StaticInnerClassService — static inner class becomes a single chunk
 # ---------------------------------------------------------------------------
 
+
 class TestStaticInnerClassService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("StaticInnerClassService.java"), "java", "StaticInnerClassService.java")
+        self._chunks = chunk_source(
+            load("StaticInnerClassService.java"), "java", "StaticInnerClassService.java"
+        )
 
     def test_has_inner_class_chunk(self):
         class_chunks = [c for c in self._chunks if c.chunk_type == "class"]
@@ -366,10 +387,13 @@ class TestStaticInnerClassService:
 # NonStaticInnerClassService — non-static inner class becomes a chunk
 # ---------------------------------------------------------------------------
 
+
 class TestNonStaticInnerClassService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("NonStaticInnerClassService.java"), "java", "NonStaticInnerClassService.java")
+        self._chunks = chunk_source(
+            load("NonStaticInnerClassService.java"), "java", "NonStaticInnerClassService.java"
+        )
 
     def test_has_inner_class_chunk(self):
         class_chunks = [c for c in self._chunks if c.chunk_type == "class"]
@@ -390,10 +414,13 @@ class TestNonStaticInnerClassService:
 # StreamProcessingService — complex Stream pipelines are part of method chunks
 # ---------------------------------------------------------------------------
 
+
 class TestStreamProcessingService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("StreamProcessingService.java"), "java", "StreamProcessingService.java")
+        self._chunks = chunk_source(
+            load("StreamProcessingService.java"), "java", "StreamProcessingService.java"
+        )
 
     def test_chunk_count(self):
         assert len(self._chunks) == 5
@@ -418,10 +445,13 @@ class TestStreamProcessingService:
 # GlobalExceptionHandler — inner record + handler methods
 # ---------------------------------------------------------------------------
 
+
 class TestGlobalExceptionHandler:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("GlobalExceptionHandler.java"), "java", "GlobalExceptionHandler.java")
+        self._chunks = chunk_source(
+            load("GlobalExceptionHandler.java"), "java", "GlobalExceptionHandler.java"
+        )
 
     def test_has_record_chunk(self):
         assert any(c.chunk_type == "record" and c.symbol == "ErrorResponse" for c in self._chunks)
@@ -441,10 +471,13 @@ class TestGlobalExceptionHandler:
 # ScheduledTaskService — @Component with @Scheduled methods
 # ---------------------------------------------------------------------------
 
+
 class TestScheduledTaskService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("ScheduledTaskService.java"), "java", "ScheduledTaskService.java")
+        self._chunks = chunk_source(
+            load("ScheduledTaskService.java"), "java", "ScheduledTaskService.java"
+        )
 
     def test_chunk_count(self):
         # constructor + sendDailyReport + cleanupExpiredSessions + syncExternalData
@@ -465,6 +498,7 @@ class TestScheduledTaskService:
 # OrderService — large 500+ line class, ~20 chunks
 # ---------------------------------------------------------------------------
 
+
 class TestOrderService:
     @pytest.fixture(autouse=True)
     def chunks(self):
@@ -478,7 +512,15 @@ class TestOrderService:
 
     def test_key_methods_present(self):
         syms = set(symbols(self._chunks))
-        for expected in ("create", "findById", "processPayment", "fulfil", "ship", "deliver", "cancel"):
+        for expected in (
+            "create",
+            "findById",
+            "processPayment",
+            "fulfil",
+            "ship",
+            "deliver",
+            "cancel",
+        ):
             assert expected in syms, f"Expected method '{expected}' not found in chunks"
 
     def test_private_helpers_chunked(self):
@@ -505,10 +547,13 @@ class TestOrderService:
 # MultipleInnerClassService — 2 static inner classes
 # ---------------------------------------------------------------------------
 
+
 class TestMultipleInnerClassService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("MultipleInnerClassService.java"), "java", "MultipleInnerClassService.java")
+        self._chunks = chunk_source(
+            load("MultipleInnerClassService.java"), "java", "MultipleInnerClassService.java"
+        )
 
     def test_both_inner_classes_chunked(self):
         class_chunks = [c for c in self._chunks if c.chunk_type == "class"]
@@ -533,10 +578,13 @@ class TestMultipleInnerClassService:
 # AbstractAuditService — abstract class with abstract + concrete methods
 # ---------------------------------------------------------------------------
 
+
 class TestAbstractAuditService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("AbstractAuditService.java"), "java", "AbstractAuditService.java")
+        self._chunks = chunk_source(
+            load("AbstractAuditService.java"), "java", "AbstractAuditService.java"
+        )
 
     def test_abstract_methods_are_chunked(self):
         syms = set(symbols(self._chunks))
@@ -557,10 +605,13 @@ class TestAbstractAuditService:
 # RecordWithCompactConstructor — complex record with methods
 # ---------------------------------------------------------------------------
 
+
 class TestRecordWithCompactConstructor:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("RecordWithCompactConstructor.java"), "java", "RecordWithCompactConstructor.java")
+        self._chunks = chunk_source(
+            load("RecordWithCompactConstructor.java"), "java", "RecordWithCompactConstructor.java"
+        )
 
     def test_single_record_chunk(self):
         assert len(self._chunks) == 1
@@ -583,10 +634,13 @@ class TestRecordWithCompactConstructor:
 # LambdaChainService — complex lambda chains are not separate chunks
 # ---------------------------------------------------------------------------
 
+
 class TestLambdaChainService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("LambdaChainService.java"), "java", "LambdaChainService.java")
+        self._chunks = chunk_source(
+            load("LambdaChainService.java"), "java", "LambdaChainService.java"
+        )
 
     def test_method_count(self):
         methods = [c for c in self._chunks if c.chunk_type == "method"]
@@ -611,10 +665,13 @@ class TestLambdaChainService:
 # TransactionalService — multiple @Transactional propagations
 # ---------------------------------------------------------------------------
 
+
 class TestTransactionalService:
     @pytest.fixture(autouse=True)
     def chunks(self):
-        self._chunks = chunk_source(load("TransactionalService.java"), "java", "TransactionalService.java")
+        self._chunks = chunk_source(
+            load("TransactionalService.java"), "java", "TransactionalService.java"
+        )
 
     def test_method_count(self):
         # constructor + transfer + getBalance + auditTransfer + reserveFunds
@@ -634,6 +691,7 @@ class TestTransactionalService:
 # ---------------------------------------------------------------------------
 # WildcardService — methods with wildcard generic parameters
 # ---------------------------------------------------------------------------
+
 
 class TestWildcardService:
     @pytest.fixture(autouse=True)
@@ -657,6 +715,7 @@ class TestWildcardService:
 # ===========================================================================
 # Python fixtures (T-050) — 10 files, structure validation
 # ===========================================================================
+
 
 class TestPythonChunker:
     def _chunks(self, name: str) -> list[Chunk]:
@@ -701,16 +760,34 @@ class TestPythonChunker:
         assert {"route", "_is_architecture_query", "estimate_tokens"}.issubset(syms)
 
     def test_no_orphans_python(self):
-        for name in ["simple_service.py", "vector_store.py", "context_detector.py",
-                     "router.py", "session_store.py", "chunker_utils.py",
-                     "graph_service.py", "til_promoter.py", "adr_manager.py", "embedder_engine.py"]:
+        for name in [
+            "simple_service.py",
+            "vector_store.py",
+            "context_detector.py",
+            "router.py",
+            "session_store.py",
+            "chunker_utils.py",
+            "graph_service.py",
+            "til_promoter.py",
+            "adr_manager.py",
+            "embedder_engine.py",
+        ]:
             chunks = self._chunks(name)
             assert_no_orphans(chunks)
 
     def test_valid_bounds_python(self):
-        for name in ["simple_service.py", "vector_store.py", "context_detector.py",
-                     "router.py", "session_store.py", "chunker_utils.py",
-                     "graph_service.py", "til_promoter.py", "adr_manager.py", "embedder_engine.py"]:
+        for name in [
+            "simple_service.py",
+            "vector_store.py",
+            "context_detector.py",
+            "router.py",
+            "session_store.py",
+            "chunker_utils.py",
+            "graph_service.py",
+            "til_promoter.py",
+            "adr_manager.py",
+            "embedder_engine.py",
+        ]:
             chunks = self._chunks(name)
             assert_valid_bounds(chunks)
 
@@ -718,6 +795,7 @@ class TestPythonChunker:
 # ===========================================================================
 # TypeScript fixtures (T-050) — 10 files, structure validation
 # ===========================================================================
+
 
 class TestTypescriptChunker:
     def _chunks(self, name: str) -> list[Chunk]:
@@ -744,15 +822,33 @@ class TestTypescriptChunker:
         assert {"classifyQuery", "route"}.issubset(syms)
 
     def test_no_orphans_typescript(self):
-        for name in ["api_client.ts", "context_detector.ts", "session_manager.ts",
-                     "router.ts", "vault_client.ts", "mcp_tools.ts",
-                     "collections.ts", "chunker.ts", "platform_utils.ts", "cost_tracker.ts"]:
+        for name in [
+            "api_client.ts",
+            "context_detector.ts",
+            "session_manager.ts",
+            "router.ts",
+            "vault_client.ts",
+            "mcp_tools.ts",
+            "collections.ts",
+            "chunker.ts",
+            "platform_utils.ts",
+            "cost_tracker.ts",
+        ]:
             chunks = self._chunks(name)
             assert_no_orphans(chunks)
 
     def test_valid_bounds_typescript(self):
-        for name in ["api_client.ts", "context_detector.ts", "session_manager.ts",
-                     "router.ts", "vault_client.ts", "mcp_tools.ts",
-                     "collections.ts", "chunker.ts", "platform_utils.ts", "cost_tracker.ts"]:
+        for name in [
+            "api_client.ts",
+            "context_detector.ts",
+            "session_manager.ts",
+            "router.ts",
+            "vault_client.ts",
+            "mcp_tools.ts",
+            "collections.ts",
+            "chunker.ts",
+            "platform_utils.ts",
+            "cost_tracker.ts",
+        ]:
             chunks = self._chunks(name)
             assert_valid_bounds(chunks)

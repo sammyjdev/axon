@@ -12,10 +12,12 @@ def build_composite_cache_key(
     availability: str,
 ) -> str:
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    return "|".join([
-        digest,
-        ctx or "auto",
-        policy_version,
-        model,
-        availability,
-    ])
+    return "|".join(
+        [
+            digest,
+            ctx or "auto",
+            policy_version,
+            model,
+            availability,
+        ]
+    )

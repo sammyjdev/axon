@@ -1,4 +1,5 @@
 """MCP tool: get_memory(query, ctx) with work context barrier."""
+
 from __future__ import annotations
 
 import logging
@@ -47,10 +48,7 @@ async def get_memory(
     results = client.search(query=query, user_id=user_id, limit=10)
 
     # Filter by context tag if stored in metadata
-    return [
-        r for r in results
-        if r.get("metadata", {}).get("ctx", "personal") == ctx
-    ]
+    return [r for r in results if r.get("metadata", {}).get("ctx", "personal") == ctx]
 
 
 async def add_memory(content: str, ctx: str = "personal", user_id: str = "sammy") -> str:

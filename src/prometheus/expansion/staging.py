@@ -58,7 +58,7 @@ class ExpansionDraft:
         }
 
     @classmethod
-    def from_payload(cls, payload: dict[str, object], body: str) -> "ExpansionDraft":
+    def from_payload(cls, payload: dict[str, object], body: str) -> ExpansionDraft:
         sources = [StagedSource(**item) for item in payload.get("sources", [])]
         return cls(
             draft_id=str(payload["draft_id"]),
@@ -94,7 +94,7 @@ def parse_draft(text: str) -> ExpansionDraft:
     line, _, body = text.partition("\n")
     if not line.startswith(_START) or not line.endswith(_END):
         raise ValueError("metadata de staging ausente")
-    payload = json.loads(line[len(_START):-len(_END)])
+    payload = json.loads(line[len(_START) : -len(_END)])
     return ExpansionDraft.from_payload(payload, body.lstrip("\n"))
 
 
@@ -116,10 +116,11 @@ def build_staged_sources(results: list[ExpansionScoreResult]) -> list[StagedSour
                 "evidence": result.score.evidence,
                 "weighted_total": result.score.weighted_total,
             },
-            decision=result.decision.value if isinstance(result.decision, ExpansionDecision) else str(result.decision),
+            decision=result.decision.value
+            if isinstance(result.decision, ExpansionDecision)
+            else str(result.decision),
             reasoning=result.reasoning,
             evidence_quotes=result.evidence_quotes,
         )
         for result in results
     ]
-

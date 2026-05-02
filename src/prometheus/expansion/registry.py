@@ -90,7 +90,7 @@ def _parse_source_definition(payload: dict[str, object]) -> SourceDefinition:
         headers = tuple(
             (str(item[0]), str(item[1]))
             for item in headers_payload
-            if isinstance(item, (list, tuple)) and len(item) == 2
+            if isinstance(item, list | tuple) and len(item) == 2
         )
 
     return SourceDefinition(

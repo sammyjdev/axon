@@ -12,8 +12,7 @@ from prometheus.context.compression_quality import (
 
 def test_compression_quality_accepts_plain_context() -> None:
     assert (
-        compression_contamination_note("async def index_path(...) -> tuple[int, int]: ...")
-        is None
+        compression_contamination_note("async def index_path(...) -> tuple[int, int]: ...") is None
     )
 
 

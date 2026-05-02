@@ -1,1 +1,3 @@
-from prometheus.embedder.chunker import Chunk, chunk_source, chunk_java_file, ChunkType
+from prometheus.embedder.chunker import Chunk, ChunkType, chunk_java_file, chunk_source
+
+__all__ = ["Chunk", "ChunkType", "chunk_java_file", "chunk_source"]
