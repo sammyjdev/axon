@@ -5,12 +5,12 @@ import os
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Annotated
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
 
 from prometheus.config.runtime import load_runtime_config
+from prometheus.context.compression_quality import compression_quality_note
 from prometheus.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
 
 app = typer.Typer(
@@ -37,6 +37,7 @@ app.add_typer(expand_app, name="expand")
 app.add_typer(memory_app, name="memory")
 
 QDRANT_DEFAULT_URL = "http://localhost:6333"
+_MAX_CHUNK_INPUT_CHARS = 4_000
 _RUNTIME = load_runtime_config()
 
 
@@ -84,11 +85,16 @@ async def _compress_context_pipeline(
         CompressionRecord,
         CompressionTelemetryStore,
     )
-    from prometheus.router.compressor import caveman_compress
+    from prometheus.router.compressor import caveman_compress_guarded
 
     before_tokens = _estimate_tokens(text)
-    caveman_out, caveman_note = await caveman_compress(text, max_tokens=max_tokens)
+    caveman_out, caveman_note = await caveman_compress_guarded(text, max_tokens=max_tokens)
+
     compressed_context, rtk_note = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
+    rtk_quality_note = compression_quality_note(text, compressed_context)
+    if rtk_quality_note:
+        compressed_context = caveman_out
+        rtk_note = rtk_quality_note
 
     engines: list[str] = []
     if caveman_note is None:
@@ -239,8 +245,9 @@ def ask(
             score = hit.get("score", 0.0)
             content = str(payload.get("content", "")).strip().replace("\n", " ")
             preview = (content[:200] + "...") if len(content) > 200 else content
+            compressor_content = content[:_MAX_CHUNK_INPUT_CHARS]
             snippets.append(preview)
-            context_lines.append(f"[{score:.4f}] {file_path} :: {symbol} :: {preview}")
+            context_lines.append(f"[{score:.4f}] {file_path} :: {symbol} :: {compressor_content}")
             typer.echo(f"{i}. [{score:.4f}] {file_path} :: {symbol}")
 
         typer.echo("\nSíntese inicial:")
@@ -508,8 +515,9 @@ def adr_add(
     ctx: Annotated[Optional[str], typer.Option("--ctx")] = None,
 ) -> None:
     """Adiciona um ADR. Abre editor se --title não informado."""
-    from prometheus.store.session_store import ADR, SessionStore
     import datetime
+
+    from prometheus.store.session_store import ADR, SessionStore
 
     _resolve_ctx(ctx)
 
@@ -686,7 +694,6 @@ promoted: false
 
 
 def _list_til_pending() -> None:
-    import datetime
 
     vault = _RUNTIME.vault_root
     knowledge = vault / "knowledge"
