@@ -88,6 +88,18 @@ external Markdown vault, typically configured through:
 - Never weaken isolation around restricted contexts as a shortcut.
 - Investigate failing tests, hooks, or checks instead of bypassing them.
 
+## Response Style
+
+Caveman output mode is **active by default** for all responses in this project.
+
+Follow the rules in `.claude/skills/caveman.md`:
+- Drop articles, filler, preambles, and politeness padding
+- Use fragments where clarity is preserved
+- Preserve code, identifiers, paths, and error codes exactly
+- Default intensity: `full`
+
+Deactivate only when asked (`/caveman off` or `/verbose`).
+
 ## Validation Defaults
 
 Use `rtk` where available. Typical validation commands:
