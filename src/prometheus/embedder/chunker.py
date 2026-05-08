@@ -30,8 +30,8 @@ _MAX_CHUNK_LINES = 80
 class Chunk:
     symbol: str
     chunk_type: ChunkType
-    start_line: int   # 1-based
-    end_line: int     # 1-based inclusive
+    start_line: int  # 1-based
+    end_line: int  # 1-based inclusive
     content: str
     file_path: str
     language: str = "java"
@@ -68,41 +68,51 @@ def _extract_chunks(
 
             # Records, enums, annotations e interfaces internas são sempre chunk único
             if chunk_type == "interface" and parent_name:
-                chunks.append(Chunk(
-                    symbol=full_name,
-                    chunk_type=chunk_type,
-                    start_line=start,
-                    end_line=end,
-                    content=source[child.start_byte:child.end_byte].decode(errors="replace"),
-                    file_path=file_path,
-                ))
+                chunks.append(
+                    Chunk(
+                        symbol=full_name,
+                        chunk_type=chunk_type,
+                        start_line=start,
+                        end_line=end,
+                        content=source[child.start_byte : child.end_byte].decode(errors="replace"),
+                        file_path=file_path,
+                    )
+                )
                 continue
 
             # Classes internas (inner classes) são chunk único
             if chunk_type == "class" and parent_name:
-                chunks.append(Chunk(
-                    symbol=full_name,
-                    chunk_type=chunk_type,
-                    start_line=start,
-                    end_line=end,
-                    content=source[child.start_byte:child.end_byte].decode(errors="replace"),
-                    file_path=file_path,
-                ))
+                chunks.append(
+                    Chunk(
+                        symbol=full_name,
+                        chunk_type=chunk_type,
+                        start_line=start,
+                        end_line=end,
+                        content=source[child.start_byte : child.end_byte].decode(errors="replace"),
+                        file_path=file_path,
+                    )
+                )
                 continue
 
             if chunk_type in ("record", "enum", "annotation"):
                 lines_count = end - start + 1
                 if lines_count > _MAX_CHUNK_LINES:
-                    chunks.extend(_split_large_node(child, source, full_name, chunk_type, file_path))
+                    chunks.extend(
+                        _split_large_node(child, source, full_name, chunk_type, file_path)
+                    )
                 else:
-                    chunks.append(Chunk(
-                        symbol=full_name,
-                        chunk_type=chunk_type,
-                        start_line=start,
-                        end_line=end,
-                        content=source[child.start_byte:child.end_byte].decode(errors="replace"),
-                        file_path=file_path,
-                    ))
+                    chunks.append(
+                        Chunk(
+                            symbol=full_name,
+                            chunk_type=chunk_type,
+                            start_line=start,
+                            end_line=end,
+                            content=source[child.start_byte : child.end_byte].decode(
+                                errors="replace"
+                            ),
+                            file_path=file_path,
+                        )
+                    )
                 continue
 
             # Recursivamente extrai métodos internos
@@ -120,16 +130,22 @@ def _extract_chunks(
                 # Classe sem métodos: chunk completo, fragmentado se muito grande
                 lines_count = end - start + 1
                 if lines_count > _MAX_CHUNK_LINES:
-                    chunks.extend(_split_large_node(child, source, full_name, chunk_type, file_path))
+                    chunks.extend(
+                        _split_large_node(child, source, full_name, chunk_type, file_path)
+                    )
                 else:
-                    chunks.append(Chunk(
-                        symbol=full_name,
-                        chunk_type=chunk_type,
-                        start_line=start,
-                        end_line=end,
-                        content=source[child.start_byte:child.end_byte].decode(errors="replace"),
-                        file_path=file_path,
-                    ))
+                    chunks.append(
+                        Chunk(
+                            symbol=full_name,
+                            chunk_type=chunk_type,
+                            start_line=start,
+                            end_line=end,
+                            content=source[child.start_byte : child.end_byte].decode(
+                                errors="replace"
+                            ),
+                            file_path=file_path,
+                        )
+                    )
 
         elif child.type in _METHOD_TYPES:
             name = _get_identifier(child)
@@ -137,19 +153,25 @@ def _extract_chunks(
             full_name = name
             start = child.start_point[0] + 1
             end = child.end_point[0] + 1
-            method_chunk_type: ChunkType = "constructor" if child.type == "constructor_declaration" else "method"
+            method_chunk_type: ChunkType = (
+                "constructor" if child.type == "constructor_declaration" else "method"
+            )
             lines = end - start + 1
             if lines > _MAX_CHUNK_LINES:
-                chunks.extend(_split_large_node(child, source, full_name, method_chunk_type, file_path))
+                chunks.extend(
+                    _split_large_node(child, source, full_name, method_chunk_type, file_path)
+                )
             else:
-                chunks.append(Chunk(
-                    symbol=full_name,
-                    chunk_type=method_chunk_type,
-                    start_line=start,
-                    end_line=end,
-                    content=source[child.start_byte:child.end_byte].decode(errors="replace"),
-                    file_path=file_path,
-                ))
+                chunks.append(
+                    Chunk(
+                        symbol=full_name,
+                        chunk_type=method_chunk_type,
+                        start_line=start,
+                        end_line=end,
+                        content=source[child.start_byte : child.end_byte].decode(errors="replace"),
+                        file_path=file_path,
+                    )
+                )
 
         elif child.type == "object_creation_expression":
             # Anonymous class dentro de expressão
@@ -163,14 +185,18 @@ def _extract_chunks(
                     if inner:
                         chunks.extend(inner)
                     else:
-                        chunks.append(Chunk(
-                            symbol=anon_name,
-                            chunk_type="class",
-                            start_line=start,
-                            end_line=end,
-                            content=source[child.start_byte:child.end_byte].decode(errors="replace"),
-                            file_path=file_path,
-                        ))
+                        chunks.append(
+                            Chunk(
+                                symbol=anon_name,
+                                chunk_type="class",
+                                start_line=start,
+                                end_line=end,
+                                content=source[child.start_byte : child.end_byte].decode(
+                                    errors="replace"
+                                ),
+                                file_path=file_path,
+                            )
+                        )
         else:
             # Desce recursivamente em outros nós (block, field_declaration, etc.)
             chunks.extend(_extract_chunks(child, source, file_path, parent_name, anon_counter))
@@ -186,20 +212,22 @@ def _split_large_node(
     file_path: str,
 ) -> list[Chunk]:
     """Divide nó que excede _MAX_CHUNK_LINES em sub-chunks de linhas."""
-    content = source[node.start_byte:node.end_byte].decode(errors="replace")
+    content = source[node.start_byte : node.end_byte].decode(errors="replace")
     lines = content.splitlines()
     start_line = node.start_point[0] + 1
     chunks: list[Chunk] = []
     for i in range(0, len(lines), _MAX_CHUNK_LINES):
         part_lines = lines[i : i + _MAX_CHUNK_LINES]
-        chunks.append(Chunk(
-            symbol=f"{symbol}[{i // _MAX_CHUNK_LINES}]",
-            chunk_type=chunk_type,
-            start_line=start_line + i,
-            end_line=start_line + i + len(part_lines) - 1,
-            content="\n".join(part_lines),
-            file_path=file_path,
-        ))
+        chunks.append(
+            Chunk(
+                symbol=f"{symbol}[{i // _MAX_CHUNK_LINES}]",
+                chunk_type=chunk_type,
+                start_line=start_line + i,
+                end_line=start_line + i + len(part_lines) - 1,
+                content="\n".join(part_lines),
+                file_path=file_path,
+            )
+        )
     return chunks
 
 
@@ -217,14 +245,16 @@ def chunk_java_file(path: str | Path) -> list[Chunk]:
     # Fallback: arquivo sem nenhum símbolo reconhecível → chunk único
     if not chunks:
         lines = source.decode(errors="replace").splitlines()
-        chunks.append(Chunk(
-            symbol=path.stem,
-            chunk_type="class",
-            start_line=1,
-            end_line=len(lines),
-            content=source.decode(errors="replace"),
-            file_path=str(path),
-        ))
+        chunks.append(
+            Chunk(
+                symbol=path.stem,
+                chunk_type="class",
+                start_line=1,
+                end_line=len(lines),
+                content=source.decode(errors="replace"),
+                file_path=str(path),
+            )
+        )
 
     return chunks
 
@@ -233,34 +263,45 @@ def chunk_java_file(path: str | Path) -> list[Chunk]:
 # Python chunker (via ast module)
 # ---------------------------------------------------------------------------
 
+
 def _chunk_python(source: str, file_path: str) -> list[Chunk]:
     lines = source.splitlines()
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return [Chunk(symbol=Path(file_path).stem, chunk_type="class",
-                      start_line=1, end_line=len(lines), content=source, file_path=file_path,
-                      language="python")]
+        return [
+            Chunk(
+                symbol=Path(file_path).stem,
+                chunk_type="class",
+                start_line=1,
+                end_line=len(lines),
+                content=source,
+                file_path=file_path,
+                language="python",
+            )
+        ]
 
     chunks: list[Chunk] = []
 
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             # Only top-level functions and methods (depth 1 or 2)
             end_line = node.end_lineno
             content = "\n".join(lines[node.lineno - 1 : end_line])
             chunk_type: ChunkType = "method" if _is_method(node, tree) else "method"
             # Top-level functions get type "function", methods get "method"
             chunk_type = "function" if _is_top_level(node, tree) else "method"
-            chunks.append(Chunk(
-                symbol=node.name,
-                chunk_type=chunk_type,
-                start_line=node.lineno,
-                end_line=end_line,
-                content=content,
-                file_path=file_path,
-                language="python",
-            ))
+            chunks.append(
+                Chunk(
+                    symbol=node.name,
+                    chunk_type=chunk_type,
+                    start_line=node.lineno,
+                    end_line=end_line,
+                    content=content,
+                    file_path=file_path,
+                    language="python",
+                )
+            )
 
     return chunks
 
@@ -283,21 +324,32 @@ def _is_method(func_node: ast.AST, tree: ast.Module) -> bool:
 # ---------------------------------------------------------------------------
 
 _TS_METHOD_RE = re.compile(
-    r'^[ \t]*(?:(?:public|private|protected|static|async|override|abstract)\s+)*'
-    r'([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[<(]',
+    r"^[ \t]*(?:(?:public|private|protected|static|async|override|abstract)\s+)*"
+    r"([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[<(]",
     re.MULTILINE,
 )
 _TS_FUNCTION_RE = re.compile(
-    r'^(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[<(]',
+    r"^(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[<(]",
     re.MULTILINE,
 )
 _TS_CLASS_RE = re.compile(
-    r'^(?:export\s+)?(?:abstract\s+)?class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)',
+    r"^(?:export\s+)?(?:abstract\s+)?class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)",
     re.MULTILINE,
 )
 _SKIP_TS_NAMES = {
-    "constructor", "if", "for", "while", "switch", "catch", "return",
-    "new", "typeof", "instanceof", "delete", "void", "throw",
+    "constructor",
+    "if",
+    "for",
+    "while",
+    "switch",
+    "catch",
+    "return",
+    "new",
+    "typeof",
+    "instanceof",
+    "delete",
+    "void",
+    "throw",
 }
 
 
@@ -310,25 +362,27 @@ def _chunk_typescript(source: str, file_path: str) -> list[Chunk]:
         name = m.group(1)
         if name in _SKIP_TS_NAMES:
             continue
-        start_line = source[:m.start()].count("\n") + 1
+        start_line = source[: m.start()].count("\n") + 1
         end_line = _find_block_end(lines, start_line - 1)
         content = "\n".join(lines[start_line - 1 : end_line])
-        chunks.append(Chunk(
-            symbol=name,
-            chunk_type="method",
-            start_line=start_line,
-            end_line=end_line,
-            content=content,
-            file_path=file_path,
-            language="typescript",
-        ))
+        chunks.append(
+            Chunk(
+                symbol=name,
+                chunk_type="method",
+                start_line=start_line,
+                end_line=end_line,
+                content=content,
+                file_path=file_path,
+                language="typescript",
+            )
+        )
 
     # Class methods
     for m in _TS_METHOD_RE.finditer(source):
         name = m.group(1)
         if name in _SKIP_TS_NAMES or name[0].isupper():
             continue
-        line_text = source[:m.start()].count("\n")
+        line_text = source[: m.start()].count("\n")
         # Only inside a class (indented)
         indent = len(m.group(0)) - len(m.group(0).lstrip())
         if indent < 2:
@@ -339,26 +393,30 @@ def _chunk_typescript(source: str, file_path: str) -> list[Chunk]:
         # Avoid duplicates
         if any(c.symbol == name and c.start_line == start_line for c in chunks):
             continue
-        chunks.append(Chunk(
-            symbol=name,
-            chunk_type="method",
-            start_line=start_line,
-            end_line=end_line,
-            content=content,
-            file_path=file_path,
-            language="typescript",
-        ))
+        chunks.append(
+            Chunk(
+                symbol=name,
+                chunk_type="method",
+                start_line=start_line,
+                end_line=end_line,
+                content=content,
+                file_path=file_path,
+                language="typescript",
+            )
+        )
 
     if not chunks:
-        chunks.append(Chunk(
-            symbol=Path(file_path).stem,
-            chunk_type="class",
-            start_line=1,
-            end_line=len(lines),
-            content=source,
-            file_path=file_path,
-            language="typescript",
-        ))
+        chunks.append(
+            Chunk(
+                symbol=Path(file_path).stem,
+                chunk_type="class",
+                start_line=1,
+                end_line=len(lines),
+                content=source,
+                file_path=file_path,
+                language="typescript",
+            )
+        )
 
     return chunks
 
@@ -379,6 +437,7 @@ def _find_block_end(lines: list[str], start_idx: int) -> int:
 # Public dispatcher
 # ---------------------------------------------------------------------------
 
+
 def chunk_source(source: str, language: str, file_path: str) -> list[Chunk]:
     """
     Parse source text for the given language and return a list of Chunks.
@@ -390,14 +449,16 @@ def chunk_source(source: str, language: str, file_path: str) -> list[Chunk]:
         chunks = _extract_chunks(tree.root_node, source_bytes, file_path)
         if not chunks:
             lines = source.splitlines()
-            chunks.append(Chunk(
-                symbol=Path(file_path).stem,
-                chunk_type="class",
-                start_line=1,
-                end_line=len(lines),
-                content=source,
-                file_path=file_path,
-            ))
+            chunks.append(
+                Chunk(
+                    symbol=Path(file_path).stem,
+                    chunk_type="class",
+                    start_line=1,
+                    end_line=len(lines),
+                    content=source,
+                    file_path=file_path,
+                )
+            )
         return chunks
     elif language == "python":
         return _chunk_python(source, file_path)
@@ -405,13 +466,14 @@ def chunk_source(source: str, language: str, file_path: str) -> list[Chunk]:
         return _chunk_typescript(source, file_path)
     else:
         lines = source.splitlines()
-        return [Chunk(
-            symbol=Path(file_path).stem,
-            chunk_type="class",
-            start_line=1,
-            end_line=len(lines),
-            content=source,
-            file_path=file_path,
-            language=language,
-        )]
-
+        return [
+            Chunk(
+                symbol=Path(file_path).stem,
+                chunk_type="class",
+                start_line=1,
+                end_line=len(lines),
+                content=source,
+                file_path=file_path,
+                language=language,
+            )
+        ]

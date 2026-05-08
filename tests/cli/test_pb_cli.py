@@ -11,7 +11,6 @@ from typer.testing import CliRunner
 
 from prometheus.cli import pb
 
-
 runner = CliRunner()
 
 
@@ -96,13 +95,16 @@ def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> 
     monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr(
-        "prometheus.router.compressor.caveman_compress",
-        lambda text, max_tokens: asyncio.sleep(0, result=(f"caveman::{text[:40]}", None)),
+        "prometheus.router.compressor.caveman_compress_guarded",
+        lambda text, max_tokens, **_kwargs: asyncio.sleep(
+            0,
+            result=("caveman::get_search_collections compressed", None),
+        ),
     )
     monkeypatch.setattr(
         pb,
         "_compress_with_rtk",
-        lambda text, max_tokens: (f"rtk::{text[:30]}", None),
+        lambda text, max_tokens: ("rtk::get_search_collections compressed", None),
     )
 
     result = runner.invoke(
@@ -132,6 +134,152 @@ def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> 
     assert record["engine"] == "caveman/phi3+rtk"
     assert record["caller"] == "cli"
     assert record["ctx"] == "knowledge"
+
+
+def test_ask_sends_chunk_content_within_limit_to_compressor(monkeypatch, tmp_path) -> None:
+    class FakeDetector:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        def detect(self, *_args, **_kwargs):
+            return SimpleNamespace(context="knowledge", display="[knowledge 50%]")
+
+    marker = "IMPORTANT_RULE_AT_THE_END"
+    long_content = ("context detail " * 40) + marker
+    captured: dict[str, str] = {}
+
+    async def fake_hits(*args, **kwargs):
+        _ = (args, kwargs)
+        await asyncio.sleep(0)
+        return [
+            {
+                "score": 0.77,
+                "payload": {
+                    "file_path": "/tmp/rules.py",
+                    "symbol": "important_rule",
+                    "content": long_content,
+                },
+            }
+        ]
+
+    async def fake_caveman(text: str, max_tokens: int, **_kwargs):
+        _ = max_tokens
+        captured["text"] = text
+        return text, None
+
+    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
+    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
+    monkeypatch.setattr("prometheus.router.compressor.caveman_compress_guarded", fake_caveman)
+    monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, None))
+
+    result = runner.invoke(
+        pb.app,
+        ["ask", "qual regra importante?", "--ctx", "knowledge", "--cwd", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert marker in captured["text"]
+
+
+def test_ask_truncates_oversized_chunk_content_before_compression(monkeypatch, tmp_path) -> None:
+    class FakeDetector:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        def detect(self, *_args, **_kwargs):
+            return SimpleNamespace(context="knowledge", display="[knowledge 50%]")
+
+    visible_prefix = "A" * pb._MAX_CHUNK_INPUT_CHARS
+    marker = "SHOULD_NOT_REACH_COMPRESSOR"
+    long_content = visible_prefix + marker + ("Z" * 500)
+    captured: dict[str, str] = {}
+
+    async def fake_hits(*args, **kwargs):
+        _ = (args, kwargs)
+        await asyncio.sleep(0)
+        return [
+            {
+                "score": 0.77,
+                "payload": {
+                    "file_path": "/tmp/rules.py",
+                    "symbol": "important_rule",
+                    "content": long_content,
+                },
+            }
+        ]
+
+    async def fake_caveman(text: str, max_tokens: int, **_kwargs):
+        _ = max_tokens
+        captured["text"] = text
+        return text, None
+
+    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
+    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
+    monkeypatch.setattr("prometheus.router.compressor.caveman_compress_guarded", fake_caveman)
+    monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, None))
+
+    result = runner.invoke(
+        pb.app,
+        ["ask", "qual regra importante?", "--ctx", "knowledge", "--cwd", str(tmp_path)],
+    )
+
+    anchor = "[0.7700] /tmp/rules.py :: important_rule :: "
+    assert result.exit_code == 0
+    assert captured["text"] == anchor + visible_prefix
+    assert len(captured["text"]) == len(anchor) + pb._MAX_CHUNK_INPUT_CHARS
+    assert marker not in captured["text"]
+
+
+def test_ask_rejects_contaminated_rtk_output(monkeypatch, tmp_path) -> None:
+    class FakeDetector:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        def detect(self, *_args, **_kwargs):
+            return SimpleNamespace(context="knowledge", display="[knowledge 50%]")
+
+    async def fake_hits(*args, **kwargs):
+        _ = (args, kwargs)
+        await asyncio.sleep(0)
+        return [
+            {
+                "score": 0.77,
+                "payload": {
+                    "file_path": "/tmp/pipeline.py",
+                    "symbol": "index_path",
+                    "content": "async def index_path(): return 'raw context'",
+                },
+            }
+        ]
+
+    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
+    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
+    monkeypatch.setattr(
+        "prometheus.router.compressor.caveman_compress_guarded",
+        lambda text, max_tokens, **_kwargs: asyncio.sleep(
+            0,
+            result=("clean compressed context for index_path", None),
+        ),
+    )
+    monkeypatch.setattr(
+        pb,
+        "_compress_with_rtk",
+        lambda text, max_tokens: ("## Your task: Compress the provided Python code snippet.", None),
+    )
+
+    result = runner.invoke(
+        pb.app,
+        ["ask", "como indexa?", "--ctx", "knowledge", "--cwd", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "engine: caveman/phi3" in result.stdout
+    assert "rtk_note: compression output rejected" in result.stdout
+    assert "clean compressed context for index_path" in result.stdout
+    assert "Your task" not in result.stdout
 
 
 def test_rtk_reduces_and_prints_summary() -> None:
@@ -181,8 +329,11 @@ def test_ask_falls_back_when_rtk_is_unavailable(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr(
-        "prometheus.router.compressor.caveman_compress",
-        lambda text, max_tokens: asyncio.sleep(0, result=(f"caveman::{text[:40]}", None)),
+        "prometheus.router.compressor.caveman_compress_guarded",
+        lambda text, max_tokens, **_kwargs: asyncio.sleep(
+            0,
+            result=("caveman::get_search_collections compressed", None),
+        ),
     )
     monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, "rtk missing"))
 
@@ -230,6 +381,54 @@ def test_rtk_init_codex_calls_expected_command(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert commands == [["/usr/local/bin/rtk", "init", "-g", "--codex"]]
+
+
+def test_graph_index_fails_clearly_when_graphify_is_missing(monkeypatch, tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setattr(pb.shutil, "which", lambda _name: None)
+
+    result = runner.invoke(
+        pb.app,
+        ["graph", "index", "--project", "rpg-master-ai", "--repo", str(repo)],
+    )
+
+    assert result.exit_code == 1
+    assert "graphifyy não instalado" in result.output
+
+
+def test_graph_neighbors_requires_project() -> None:
+    result = runner.invoke(pb.app, ["graph", "neighbors", "CampaignService"])
+
+    assert result.exit_code != 0
+    assert "Missing option" in result.output
+
+
+def test_graph_neighbors_prints_namespaced_results(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_read(query: str):
+        captured["query"] = query
+        return [{"node": "CampaignService", "neighbor": "CampaignRepository"}]
+
+    monkeypatch.setattr(pb, "_run_neo4j_read", fake_read)
+
+    result = runner.invoke(
+        pb.app,
+        [
+            "graph",
+            "neighbors",
+            "CampaignService",
+            "--project",
+            "rpg-master-ai",
+            "--depth",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "rpg_master_ai__" in str(captured["query"])
+    assert "CampaignRepository" in result.stdout
 
 
 def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:

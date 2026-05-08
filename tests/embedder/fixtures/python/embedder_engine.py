@@ -20,6 +20,7 @@ class EmbedderEngine:
     def _ensure_model(self) -> None:
         if self._model is None:
             from fastembed import TextEmbedding
+
             self._model = TextEmbedding(model_name=self._model_name)
 
     def embed_one(self, text: str) -> list[float]:

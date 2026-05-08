@@ -5,6 +5,7 @@ import logging
 from collections.abc import Iterable
 from pathlib import Path
 
+from prometheus.context.registry import VALID_CONTEXTS
 from prometheus.embedder.chunker import Chunk, chunk_source
 from prometheus.embedder.engine import EmbedderEngine
 from prometheus.embedder.graph_extractor import build_dependency_records
@@ -23,7 +24,7 @@ _LANGUAGE_MAP = {
 }
 
 
-_CTX_ROOTS = {"personal", "career", "knowledge", "work"}
+_CTX_ROOTS = set(VALID_CONTEXTS)
 _FILE_HASH_CACHE: dict[str, str] = {}
 _BATCH_SIZE = 400
 EXCLUDED_DIR_NAMES = {

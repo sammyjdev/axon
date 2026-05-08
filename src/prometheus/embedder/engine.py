@@ -22,7 +22,9 @@ def _default_model() -> str:
 @dataclass
 class EmbedderEngine:
     model_name: str = field(default_factory=_default_model)
-    cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "prometheus" / "models")
+    cache_dir: Path = field(
+        default_factory=lambda: Path.home() / ".cache" / "prometheus" / "models"
+    )
     _model: TextEmbedding | None = field(default=None, init=False, repr=False)
 
     def _ensure_model(self) -> TextEmbedding:

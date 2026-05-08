@@ -5,8 +5,21 @@ build-backend = "hatchling.build"
 [project]
 name = "prometheus-engine"
 version = "0.1.0"
-description = "Second brain engine — context layer for Claude Code + Copilot"
+description = "Self-hosted second-brain engine for local context retrieval and tooling"
 requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Prometheus contributors" }]
+keywords = ["rag", "cli", "knowledge-base", "local-first", "second-brain"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "fastembed>=0.4.0",
     "qdrant-client>=1.9.0",
@@ -25,10 +38,18 @@ dependencies = [
     "mem0ai>=0.1.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/sammyjdev/Prometheus"
+Repository = "https://github.com/sammyjdev/Prometheus"
+
 [project.scripts]
 pb = "prometheus.cli.pb:app"
 
 [project.optional-dependencies]
+graph = [
+    "graphifyy",
+    "neo4j>=5.0.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",

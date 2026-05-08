@@ -3,13 +3,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-CONTEXTS = ["personal", "career", "knowledge", "work", "general"]
+from prometheus.context.registry import VALID_CONTEXTS
+
+CONTEXTS = [*VALID_CONTEXTS, "general"]
 
 PATH_MAP: dict[str, str] = {
+    "afrodite-ai": "saas",
     "aerus-rpg": "personal",
     "rpg-master-ai": "personal",
     "linkedin-tool": "personal",
     "avangrid": "work",
+    "vault/saas": "saas",
     "vault/work": "work",
     "vault/career": "career",
     "vault/knowledge": "knowledge",
@@ -18,33 +22,82 @@ PATH_MAP: dict[str, str] = {
 
 CONTENT_SIGNALS: dict[str, list[str]] = {
     "knowledge": [
-        r"\bjava\b", r"\bspring\b", r"\bkafka\b", r"\bjvm\b",
-        r"\bvirtual.?thread", r"\bspring.?boot\b", r"\bhibernate\b",
-        r"\bmicroservice", r"\bdocker\b", r"\bkubernetes\b",
-        r"\bfastembed\b", r"\bqdrant\b", r"\bollama\b", r"\brag\b",
-        r"\bembedding\b", r"\bvector\b", r"\bllm\b",
-        r"\balgorithm\b", r"\bcomplexidade\b", r"\bbig.?o\b",
-        r"\bdesign.?pattern\b", r"\bsolid\b", r"\bhexagonal\b",
+        r"\bjava\b",
+        r"\bspring\b",
+        r"\bkafka\b",
+        r"\bjvm\b",
+        r"\bvirtual.?thread",
+        r"\bspring.?boot\b",
+        r"\bhibernate\b",
+        r"\bmicroservice",
+        r"\bdocker\b",
+        r"\bkubernetes\b",
+        r"\bfastembed\b",
+        r"\bqdrant\b",
+        r"\bollama\b",
+        r"\brag\b",
+        r"\bembedding\b",
+        r"\bvector\b",
+        r"\bllm\b",
+        r"\balgorithm\b",
+        r"\bcomplexidade\b",
+        r"\bbig.?o\b",
+        r"\bdesign.?pattern\b",
+        r"\bsolid\b",
+        r"\bhexagonal\b",
     ],
     "personal": [
-        r"\baer[uo]s\b", r"\brpg.?master\b", r"\blinkedin.?tool\b",
-        r"\bvor'athek\b", r"\bfaction\b", r"\bmutation\b",
-        r"\bworld.?doc\b", r"\bbacklog\b",
+        r"\baer[uo]s\b",
+        r"\brpg.?master\b",
+        r"\blinkedin.?tool\b",
+        r"\bvor'athek\b",
+        r"\bfaction\b",
+        r"\bmutation\b",
+        r"\bworld.?doc\b",
+        r"\bbacklog\b",
     ],
     "career": [
-        r"\bvaga\b", r"\bentrevista\b", r"\bsal[aá]rio\b", r"\brecruiter\b",
-        r"\bcurr[íi]culo\b", r"\blinkedin\b", r"\bremote\b", r"\bjob\b",
-        r"\bsenior\b.*\bposition\b", r"\bcover.?letter\b",
-        r"\boffer\b", r"\bnegociar\b",
+        r"\bvaga\b",
+        r"\bentrevista\b",
+        r"\bsal[aá]rio\b",
+        r"\brecruiter\b",
+        r"\bcurr[íi]culo\b",
+        r"\blinkedin\b",
+        r"\bremote\b",
+        r"\bjob\b",
+        r"\bsenior\b.*\bposition\b",
+        r"\bcover.?letter\b",
+        r"\boffer\b",
+        r"\bnegociar\b",
+    ],
+    "saas": [
+        r"\bafrodite\b",
+        r"\bwhatsapp\b",
+        r"\bagendament[oa]s?\b",
+        r"\bcomiss[oõ]es?\b",
+        r"\bcheckout\b",
+        r"\bsal[aã]o\b",
+        r"\bsal[oõ]es\b",
+        r"\bmultitenan",
     ],
     "work": [
-        r"\bavangrid\b", r"\beks\b", r"\bobservabilit\b",
-        r"\bpingone\b", r"\byubico\b", r"\bestée.?lauder\b",
-        r"\btcu\b", r"\bbanco.?do.?brasil\b",
+        r"\bavangrid\b",
+        r"\beks\b",
+        r"\bobservabilit\b",
+        r"\bpingone\b",
+        r"\byubico\b",
+        r"\bestée.?lauder\b",
+        r"\btcu\b",
+        r"\bbanco.?do.?brasil\b",
     ],
     "general": [
-        r"\bo que [eé]\b", r"\bwhat is\b", r"\bexplica\b", r"\bexplain\b",
-        r"\bdiferen[çc]a\b", r"\bdifference\b", r"\bcomo funciona\b",
+        r"\bo que [eé]\b",
+        r"\bwhat is\b",
+        r"\bexplica\b",
+        r"\bexplain\b",
+        r"\bdiferen[çc]a\b",
+        r"\bdifference\b",
+        r"\bcomo funciona\b",
         r"\bhow does\b",
     ],
 }
@@ -90,11 +143,7 @@ class ContextDetector:
             winner = "general"
             confidence = 0.35
 
-        top_content = (
-            max(content_scores, key=content_scores.get)
-            if content_scores
-            else None
-        )
+        top_content = max(content_scores, key=content_scores.get) if content_scores else None
 
         return ContextResult(
             context=winner,

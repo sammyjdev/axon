@@ -17,7 +17,9 @@ def test_approve_recomputes_publish_path_from_ctx_and_topic(monkeypatch, tmp_pat
 
     knowledge_root = vault_root / "knowledge"
     knowledge_root.mkdir(parents=True, exist_ok=True)
-    (knowledge_root / "howto.md").write_text("# Vector Search\ncreated: 2026-04-23\n", encoding="utf-8")
+    (knowledge_root / "howto.md").write_text(
+        "# Vector Search\ncreated: 2026-04-23\n", encoding="utf-8"
+    )
 
     runtime = load_runtime_config()
     service = ExpansionService(runtime)
@@ -54,7 +56,9 @@ def test_approve_rejects_when_ctx_metadata_differs_from_staging_directory(
 
     runtime = load_runtime_config()
     service = ExpansionService(runtime)
-    staging_path = service.run(ctx="knowledge", topic="secure publish", fast=True, allow_cloud=False)
+    staging_path = service.run(
+        ctx="knowledge", topic="secure publish", fast=True, allow_cloud=False
+    )
 
     draft = load_draft(staging_path)
     tampered = draft.to_payload()
@@ -83,7 +87,9 @@ def test_approve_rejects_when_ctx_metadata_is_path_traversal(
 
     runtime = load_runtime_config()
     service = ExpansionService(runtime)
-    staging_path = service.run(ctx="knowledge", topic="secure publish 2", fast=True, allow_cloud=False)
+    staging_path = service.run(
+        ctx="knowledge", topic="secure publish 2", fast=True, allow_cloud=False
+    )
 
     draft = load_draft(staging_path)
     tampered = draft.to_payload()
@@ -112,7 +118,9 @@ def test_review_and_approve_reject_files_inside_staging_rejected(
 
     runtime = load_runtime_config()
     service = ExpansionService(runtime)
-    staging_path = service.run(ctx="knowledge", topic="secure rejected path", fast=True, allow_cloud=False)
+    staging_path = service.run(
+        ctx="knowledge", topic="secure rejected path", fast=True, allow_cloud=False
+    )
 
     rejected_path = knowledge_root / "staging" / "rejected" / staging_path.name
     rejected_path.parent.mkdir(parents=True, exist_ok=True)

@@ -23,13 +23,15 @@ class FakeStore:
 
 
 def test_search_collections_hide_work_without_explicit_context() -> None:
-    assert get_search_collections(None) == ["personal", "career", "knowledge"]
-    assert get_search_collections("knowledge") == ["personal", "career", "knowledge"]
+    assert get_search_collections(None) == ["personal", "career", "knowledge", "saas"]
+    assert get_search_collections("knowledge") == ["personal", "career", "knowledge", "saas"]
     assert get_search_collections("work") == ["work"]
 
 
 @pytest.mark.asyncio
-async def test_index_path_skips_work_tree_without_explicit_context(monkeypatch, tmp_path: Path) -> None:
+async def test_index_path_skips_work_tree_without_explicit_context(
+    monkeypatch, tmp_path: Path
+) -> None:
     vault_root = tmp_path / "vault"
     knowledge_file = vault_root / "knowledge" / "notes.md"
     work_file = vault_root / "work" / "secret.md"
@@ -61,11 +63,7 @@ async def test_index_path_skips_work_tree_without_explicit_context(monkeypatch, 
         vault_root=vault_root,
     )
 
-    indexed_paths = {
-        chunk.file_path
-        for batch in store.batches
-        for chunk in batch
-    }
+    indexed_paths = {chunk.file_path for batch in store.batches for chunk in batch}
 
     assert indexed_files == 1
     assert total_chunks == 1

@@ -1,4 +1,5 @@
 """End-of-session hook: appends session summary to today's daily note."""
+
 from __future__ import annotations
 
 import asyncio
