@@ -239,6 +239,73 @@ def test_init_refuses_to_overwrite_env_local_without_force(monkeypatch, tmp_path
     assert env_file.read_text(encoding="utf-8") == "PROMETHEUS_RUNTIME_MODE=minimal\n"
 
 
+def test_profile_list_shows_profiles_and_active_marker(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                'mode = "hybrid-local"',
+                'active_profile = "solo-dev"',
+                f'engine_root = "{tmp_path / "engine"}"',
+                f'vault_root = "{tmp_path / "vault"}"',
+                "",
+                "[profiles.solo-dev]",
+                'description = "Single developer default"',
+                'mode = "hybrid-local"',
+                "",
+                "[profiles.team-dev]",
+                'description = "Shared team setup"',
+                'mode = "remote-infra"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(pb.app, ["profile", "list"])
+
+    assert result.exit_code == 0
+    assert "* solo-dev" in result.stdout
+    assert "team-dev" in result.stdout
+    assert "remote-infra" in result.stdout
+
+
+def test_profile_use_updates_config_file(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                'mode = "hybrid-local"',
+                'active_profile = "solo-dev"',
+                f'engine_root = "{tmp_path / "engine"}"',
+                f'vault_root = "{tmp_path / "vault"}"',
+                "",
+                "[profiles.solo-dev]",
+                'description = "Single developer default"',
+                'mode = "hybrid-local"',
+                "",
+                "[profiles.team-dev]",
+                'description = "Shared team setup"',
+                'mode = "remote-infra"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(pb.app, ["profile", "use", "team-dev"])
+
+    payload = config_path.read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert "Perfil ativo: team-dev" in result.stdout
+    assert 'active_profile = "team-dev"' in payload
+    assert 'mode = "remote-infra"' in payload
+
+
 def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> None:
     class FakeDetector:
         def __init__(self, *_args, **_kwargs) -> None:
