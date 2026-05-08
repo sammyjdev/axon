@@ -185,6 +185,7 @@ Prometheus runs on Python 3.11+ and uses:
 ## Documentation
 
 - [Vault setup](docs/VAULT_SETUP.md)
+- [TIL automation](docs/TIL_AUTOMATION.md)
 - [Usage guide](docs/USAGE_GUIDE.md)
 - [Support matrix](docs/SUPPORT_MATRIX.md)
 - [Roadmap](docs/ROADMAP.md)

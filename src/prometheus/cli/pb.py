@@ -540,8 +540,22 @@ def init(
         f"{platform_payload}"
     )
     env_file.write_text(payload, encoding="utf-8")
+    config_file = engine_root / "prometheus.toml"
+    config_file.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                f'mode = "{normalized_mode}"',
+                f'engine_root = "{engine_root}"',
+                f'vault_root = "{vault_root}"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     typer.echo(f"Scaffold criado: {env_file}")
+    typer.echo(f"Config criado: {config_file}")
     typer.echo(f"mode: {normalized_mode}")
     typer.echo("Próximos passos:")
     typer.echo(f"1. source {env_file}")
