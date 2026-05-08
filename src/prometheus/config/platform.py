@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from os import environ
 from pathlib import Path
 
-from prometheus.config.runtime import RuntimeConfig
+from prometheus.config.runtime import RuntimeConfig, RuntimeMode
 
 
 @dataclass
@@ -29,6 +29,15 @@ class DoctorReport:
     configured_mode: str | None = None
     active_profile: str | None = None
     profile_mode: str | None = None
+
+
+@dataclass(frozen=True)
+class SetupPlan:
+    runtime_mode: RuntimeMode
+    compose_profile: str | None
+    start_local_stack: bool
+    validate_remote_services: bool
+    pull_models: tuple[str, ...]
 
 
 def detect_platform() -> PlatformConfig:
@@ -152,6 +161,46 @@ def _recommend_operating_mode(
     return "minimal"
 
 
+def build_setup_plan(
+    *,
+    runtime_mode: RuntimeMode,
+    platform_config: PlatformConfig,
+    remote_infra_host: str | None,
+) -> SetupPlan:
+    if runtime_mode == "remote-infra":
+        return SetupPlan(
+            runtime_mode=runtime_mode,
+            compose_profile=None,
+            start_local_stack=False,
+            validate_remote_services=bool(remote_infra_host),
+            pull_models=(),
+        )
+    if runtime_mode == "minimal":
+        return SetupPlan(
+            runtime_mode=runtime_mode,
+            compose_profile=None,
+            start_local_stack=False,
+            validate_remote_services=False,
+            pull_models=(),
+        )
+
+    base_models: list[str] = ["phi3:mini", platform_config.model_primary]
+    if runtime_mode == "full-local" and platform_config.max_models >= 2:
+        knowledge_model = platform_config.model_knowledge
+        if knowledge_model not in base_models:
+            base_models.append(knowledge_model)
+
+    return SetupPlan(
+        runtime_mode=runtime_mode,
+        compose_profile="gpu"
+        if runtime_mode == "full-local" and "CUDAExecutionProvider" in platform_config.embedding_providers
+        else "cpu",
+        start_local_stack=True,
+        validate_remote_services=False,
+        pull_models=tuple(base_models),
+    )
+
+
 def merge_env_text(source_text: str, target_text: str, *, mode: str = "replace") -> str:
     source_lines = source_text.splitlines()
     target_lines = target_text.splitlines()
@@ -214,6 +263,22 @@ if __name__ == "__main__":
         if len(sys.argv) != 5:
             raise SystemExit("usage: platform.py --merge-env <source> <target> <mode>")
         merge_env_files(Path(sys.argv[2]), Path(sys.argv[3]), mode=sys.argv[4])
+    elif len(sys.argv) > 1 and sys.argv[1] == "--setup-plan":
+        if len(sys.argv) != 4:
+            raise SystemExit("usage: platform.py --setup-plan <runtime-mode> <remote-infra-host-or-dash>")
+        mode = sys.argv[2].strip().lower()
+        if mode not in {"full-local", "hybrid-local", "remote-infra", "minimal"}:
+            raise SystemExit(f"invalid runtime mode: {mode}")
+        remote_host = None if sys.argv[3] == "-" else sys.argv[3]
+        plan = build_setup_plan(
+            runtime_mode=mode,  # type: ignore[arg-type]
+            platform_config=detect_platform(),
+            remote_infra_host=remote_host,
+        )
+        print(plan.compose_profile or "-", end="\t")
+        print("1" if plan.start_local_stack else "0", end="\t")
+        print("1" if plan.validate_remote_services else "0", end="\t")
+        print(",".join(plan.pull_models))
     else:
         # Invocado pelo setup.sh para gerar .env.local
         config = detect_platform()

@@ -48,7 +48,7 @@ machines without assuming Odisseu, Claude, or the author's hardware.
 | --- | --- | --- | --- | --- |
 | P1-T1 | Define profile manifest | profile schema for use cases such as `solo-dev`, `team-dev`, `privacy-first`, `low-resource` | P0-T2 | profiles can express enabled services, policies, and feature flags |
 | P1-T2 | Build user-needs questionnaire | prompts mapping problem type, privacy needs, and hardware to a profile | P1-T1 | answers produce deterministic profile recommendations |
-| P1-T3 | Add `pb configure` | interactive profile/customization command | P1-T2 | user can reconfigure without editing raw files |
+| P1-T3 | Evolve `pb configure` | today: flag-driven profile recommender; next: interactive customization command | P1-T2 | user can reconfigure without editing raw files |
 | P1-T4 | Build capability selector | rules deciding which subsystems are necessary vs overkill | P1-T1 | low-resource users avoid heavy components by default |
 | P1-T5 | Add profile docs and examples | examples for common developer setups | P1-T3 | users can compare profiles before installing |
 
