@@ -7,6 +7,7 @@ from prometheus.config.platform import (
     PlatformConfig,
     _to_dotenv,
     build_doctor_report,
+    merge_env_text,
 )
 from prometheus.config.runtime import ExpansionBudgetConfig, ExpansionConfig, ExpansionPaths, RuntimeConfig
 
@@ -145,6 +146,28 @@ def test_build_doctor_report_falls_back_to_minimal_when_local_tooling_missing(tm
     assert report.recommended_mode == "minimal"
     assert report.checks["docker"] == "missing"
     assert report.checks["ollama"] == "missing"
+
+
+def test_merge_env_text_replaces_generated_values_with_existing_overrides() -> None:
+    source = "PROMETHEUS_VAULT=/custom/vault\nANTHROPIC_API_KEY=secret\n"
+    target = "PROMETHEUS_VAULT=~/vault\nPROMETHEUS_PLATFORM=mac\n"
+
+    merged = merge_env_text(source, target, mode="replace")
+
+    assert "PROMETHEUS_VAULT=/custom/vault" in merged
+    assert "PROMETHEUS_PLATFORM=mac" in merged
+    assert "ANTHROPIC_API_KEY=secret" in merged
+
+
+def test_merge_env_text_appends_only_missing_defaults() -> None:
+    source = "PROMETHEUS_ENGINE=~/dev/Prometheus\nPROMETHEUS_VAULT=~/vault\n"
+    target = "PROMETHEUS_ENGINE=/already/set\nPROMETHEUS_PLATFORM=pc\n"
+
+    merged = merge_env_text(source, target, mode="append-missing")
+
+    assert "PROMETHEUS_ENGINE=/already/set" in merged
+    assert "PROMETHEUS_VAULT=~/vault" in merged
+    assert "PROMETHEUS_PLATFORM=pc" in merged
 
 
 def _runtime(tmp_path: Path, *, ollama_remote_host: str | None = None) -> RuntimeConfig:
