@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import uuid
+
 from mcp.server.fastmcp import FastMCP
 
 from prometheus.config.runtime import load_runtime_config
+from prometheus.context.contracts import ContextPack, select_default_retrieval_strategy
 from prometheus.context.compression_quality import compression_quality_note
 from prometheus.context.rtk import RTKError, compress_text_with_rtk
 from prometheus.embedder.engine import EmbedderEngine
@@ -10,6 +13,7 @@ from prometheus.observability.compression_telemetry import (
     CompressionRecord,
     CompressionTelemetryStore,
 )
+from prometheus.observability.trace_store import TraceStore
 from prometheus.policy.core import PolicyRegistry
 from prometheus.router.compressor import caveman_compress_guarded
 from prometheus.store.collections import get_search_collections
@@ -162,6 +166,178 @@ def _build_planner_executor_prompts(
     return planner, executor, local_knowledge
 
 
+def _load_retrieval_profile() -> tuple[str | None, str, tuple[str, ...]]:
+    from prometheus.config.runtime import get_active_profile, get_profile, select_capabilities
+
+    active_profile = _RUNTIME.active_profile or get_active_profile()
+    mode = _RUNTIME.mode
+    capabilities: tuple[str, ...] = ()
+
+    if active_profile:
+        try:
+            profile = get_profile(active_profile)
+            profile_mode = str(profile.get("mode") or "").strip()
+            if profile_mode:
+                mode = profile_mode
+            capabilities = tuple(select_capabilities(profile=profile).enabled_features)
+        except ValueError:
+            pass
+
+    return active_profile, mode, capabilities
+
+
+def _select_retrieval_strategy(query: str, ctx: str | None) -> tuple[object, str, str | None, str]:
+    from prometheus.router.classifier import TaskType, classify_task_with_source
+
+    task_type = TaskType.CODE_ANALYSIS
+    try:
+        task_type, _source = classify_task_with_source(query, ctx=ctx)
+    except Exception:
+        pass
+
+    profile, mode, capabilities = _load_retrieval_profile()
+    strategy = select_default_retrieval_strategy(
+        task_type=task_type,
+        profile=profile,
+        mode=mode,
+        capabilities=capabilities,
+    )
+    return strategy, str(task_type.value), profile, mode
+
+
+def _build_context_pack(
+    *,
+    strategy,
+    task_type: str,
+    profile: str | None,
+    mode: str,
+    effective_ctx: str | None,
+    hits: list[dict],
+) -> ContextPack:
+    contexts = (effective_ctx,) if effective_ctx else strategy.contexts
+    segments: list[str] = []
+    total_chars = 0
+
+    for hit in hits[: strategy.max_segments]:
+        payload = hit.get("payload") or {}
+        file_path = payload.get("file_path", "?")
+        symbol = payload.get("symbol", "unknown")
+        language = payload.get("language", "?")
+        score = float(hit.get("score", 0.0))
+        content = str(payload.get("content", "")).strip().replace("\n", " ")
+        remaining = strategy.max_chars - total_chars
+        if remaining <= 0:
+            break
+        segment = (
+            f"### {symbol} ({language})\n"
+            f"Arquivo: {file_path}\n"
+            f"Score: {score:.3f}\n"
+            f"Trecho: {content[:remaining]}"
+        ).strip()
+        if not segment:
+            continue
+        segments.append(segment)
+        total_chars += len(segment)
+
+    return ContextPack(
+        strategy=strategy,
+        task_type=task_type,
+        profile=profile,
+        mode=mode,
+        contexts=contexts,
+        segments=tuple(segments),
+        metadata=(
+            ("ctx", effective_ctx or "auto"),
+            ("hits", str(len(segments))),
+            ("profile", profile or ""),
+            ("mode", mode),
+        ),
+    )
+
+
+def _format_context_pack(pack: ContextPack) -> str:
+    contexts = ",".join(pack.contexts) if pack.contexts else "auto"
+    return (
+        "## Context pack\n"
+        f"strategy: {pack.strategy.name}\n"
+        f"task_type: {pack.task_type}\n"
+        f"contexts: {contexts}\n"
+        f"segments: {len(pack.segments)}"
+    )
+
+
+def _staleness_notes(hits: list[dict]) -> list[str]:
+    notes: list[str] = []
+    for hit in hits:
+        staleness = hit.get("staleness") or {}
+        if not isinstance(staleness, dict) or not staleness.get("is_stale"):
+            continue
+        payload = hit.get("payload") or {}
+        symbol = payload.get("symbol", "unknown")
+        replacement_id = staleness.get("replacement_id")
+        reasons = staleness.get("reasons") or []
+        reason = staleness.get("replacement_reason") or ",".join(reasons)
+        note = f"- {symbol} stale"
+        if replacement_id:
+            note += f" -> replacement={replacement_id}"
+        if reason:
+            note += f" ({reason})"
+        notes.append(note)
+    return notes
+
+
+async def _retrieve_context(
+    *,
+    query: str,
+    ctx: str | None,
+    language: str | None,
+    max_depth: int,
+    max_nodes: int,
+    max_tokens: int,
+) -> tuple[str, ContextPack, list[dict]]:
+    strategy, task_type, profile, mode = _select_retrieval_strategy(query, ctx)
+    collections = get_search_collections(ctx) if ctx else list(strategy.contexts)
+    store = _get_vector_store()
+    query_vector = _get_embedder().embed_one(query)
+    results = await store.search(
+        query_vector=query_vector,
+        collections=collections,
+        language=language,
+        top_k=strategy.max_segments,
+        max_depth=max_depth,
+        max_nodes=max_nodes,
+        max_tokens=min(max_tokens, max(1, strategy.max_chars // 4)),
+    )
+
+    pack = _build_context_pack(
+        strategy=strategy,
+        task_type=task_type,
+        profile=profile,
+        mode=mode,
+        effective_ctx=ctx,
+        hits=results,
+    )
+    if not results:
+        return "Nenhum resultado encontrado.", pack, results
+
+    lines: list[str] = list(pack.segments)
+    top_symbol = (results[0].get("payload") or {}).get("symbol") if results else None
+    if top_symbol:
+        graph = _get_graph_store()
+        await graph.connect()
+        traversal = await graph.traverse(top_symbol, max_depth=max_depth, max_nodes=max_nodes)
+        lines.append("## Dependencias relacionadas (2-step)")
+        lines.append(f"Root: {traversal['root']}")
+        lines.append(f"Nodes: {', '.join(traversal['nodes'][:10])}")
+
+    lines.append(_format_context_pack(pack))
+    stale_notes = _staleness_notes(results)
+    if stale_notes:
+        lines.append("## Staleness")
+        lines.extend(stale_notes)
+    return "\n\n".join(lines), pack, results
+
+
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
@@ -185,41 +361,27 @@ async def search_code(
     Sem ctx, busca em personal + career + knowledge + saas.
     caller: claude-code | copilot (afeta budget de tokens retornados)
     """
-    collections = get_search_collections(ctx)
-    store = _get_vector_store()
-    query_vector = _get_embedder().embed_one(query)
-    results = await store.search(
-        query_vector=query_vector,
-        collections=collections,
+    trace_id = str(uuid.uuid4())
+    trace = TraceStore(_RUNTIME).recorder(trace_id=trace_id, caller="mcp", ctx=ctx)
+    response, pack, hits = await _retrieve_context(
+        query=query,
+        ctx=ctx,
         language=language,
-        top_k=10,
         max_depth=max_depth,
         max_nodes=max_nodes,
         max_tokens=max_tokens,
     )
-    if not results:
-        return "Nenhum resultado encontrado."
-
-    # Formata resultados
-    lines: list[str] = []
-    for r in results[:5]:
-        payload = r.get("payload") or {}
-        lines.append(f"### {payload.get('symbol', 'unknown')} ({payload.get('language', '?')})")
-        lines.append(f"Arquivo: {payload.get('file_path', '?')}")
-        lines.append(f"Score: {float(r.get('score', 0.0)):.3f}")
-        lines.append("")
-
-    top_symbol = (results[0].get("payload") or {}).get("symbol") if results else None
-    if top_symbol:
-        graph = _get_graph_store()
-        await graph.connect()
-        traversal = await graph.traverse(top_symbol, max_depth=max_depth, max_nodes=max_nodes)
-        lines.append("## Dependencias relacionadas (2-step)")
-        lines.append(f"Root: {traversal['root']}")
-        lines.append(f"Nodes: {', '.join(traversal['nodes'][:10])}")
-
+    trace.append_stage(
+        "retrieval",
+        payload={
+            "strategy": pack.strategy.name,
+            "task_type": pack.task_type,
+            "mode": pack.mode or "",
+            "hit_count": len(hits),
+        },
+    )
     budget = CONTEXT_BUDGETS.get(caller, 4000)
-    return _truncate("\n".join(lines), budget)
+    return _truncate(f"trace_id: {trace_id}\n{response}", budget)
 
 
 @mcp.tool()
@@ -349,12 +511,18 @@ async def ask(
     detector = ContextDetector(session_store)
     result = detector.detect(query, cwd=cwd)
     effective_ctx = ctx or result.context
+    trace_id = str(uuid.uuid4())
+    trace_store = TraceStore(_RUNTIME)
+    trace = trace_store.recorder(trace_id=trace_id, caller=caller, ctx=effective_ctx)
 
     gateway_decision = _POLICY.decide(
         ctx=effective_ctx,
         model="claude-haiku-4-5-20251001",
         caller=caller,
         force_cloud=(caller == "cloud"),
+        trace_store=trace_store,
+        trace_id=trace_id,
+        trace_payload={"stage": "gateway"},
     )
     if not gateway_decision.allowed and caller == "cloud":
         return (
@@ -363,31 +531,68 @@ async def ask(
             f"policy_version={gateway_decision.policy_version}."
         )
 
-    # Busca contexto relevante
-    code_context = await search_code(query=query, ctx=effective_ctx, caller=caller)
+    code_context, pack, hits = await _retrieve_context(
+        query=query,
+        ctx=effective_ctx,
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS,
+    )
+    trace.append_stage(
+        "retrieval",
+        payload={
+            "strategy": pack.strategy.name,
+            "task_type": pack.task_type,
+            "mode": pack.mode or "",
+            "hit_count": len(hits),
+        },
+    )
 
-    max_tokens = rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS
-    before_tokens = _estimate_tokens(code_context)
+    if pack.strategy.enable_compression:
+        max_tokens = rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS
+        before_tokens = _estimate_tokens(pack.text)
 
-    # Pipeline duplo: caveman (semântico) → RTK (token-level)
-    caveman_out, caveman_err = await caveman_compress_guarded(code_context, max_tokens=max_tokens)
+        caveman_out, caveman_err = await caveman_compress_guarded(pack.text, max_tokens=max_tokens)
 
-    compressed_context, rtk_err = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
-    rtk_quality_err = compression_quality_note(code_context, compressed_context)
-    if rtk_quality_err:
-        compressed_context = caveman_out
-        rtk_err = rtk_quality_err
+        compressed_context, rtk_err = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
+        rtk_quality_err = compression_quality_note(pack.text, compressed_context)
+        if rtk_quality_err:
+            compressed_context = caveman_out
+            rtk_err = rtk_quality_err
 
-    engines = []
-    if caveman_err is None:
-        engines.append("caveman/phi3")
-    if rtk_err is None:
-        engines.append("rtk")
-    used_engine = "+".join(engines) if engines else "fallback"
+        engines = []
+        if caveman_err is None:
+            engines.append("caveman/phi3")
+        if rtk_err is None:
+            engines.append("rtk")
+        used_engine = "+".join(engines) if engines else "fallback"
 
-    after_tokens = _estimate_tokens(compressed_context)
-    reduction = max(0, before_tokens - after_tokens)
-    reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
+        after_tokens = _estimate_tokens(compressed_context)
+        reduction = max(0, before_tokens - after_tokens)
+        reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
+    else:
+        compressed_context = pack.text
+        caveman_err = f"strategy={pack.strategy.name}"
+        rtk_err = None
+        used_engine = "disabled"
+        before_tokens = _estimate_tokens(pack.text)
+        after_tokens = before_tokens
+        reduction = 0
+        reduction_pct = 0.0
+    trace.append_stage(
+        "compression",
+        model=used_engine,
+        payload={
+            "strategy": pack.strategy.name,
+            "before_tokens": before_tokens,
+            "after_tokens": after_tokens,
+            "reduction_pct": round(reduction_pct, 1),
+            "compression_enabled": pack.strategy.enable_compression,
+            "caveman_note": caveman_err or "",
+            "rtk_note": rtk_err or "",
+        },
+    )
 
     from datetime import UTC, datetime
 
@@ -411,7 +616,8 @@ async def ask(
     )
 
     budget = CONTEXT_BUDGETS.get(caller, 4000)
-    response = f"Contexto detectado: {result.display}\n\n"
+    response = f"trace_id: {trace_id}\n"
+    response += f"Contexto detectado: {result.display}\n\n"
     response += f"## Contexto relevante\n{code_context}\n\n"
     response += f"## compression\nengine: {used_engine}\n"
     if caveman_err:

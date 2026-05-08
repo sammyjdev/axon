@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +11,8 @@ from prometheus.expansion.registry import SourceRegistry
 from prometheus.expansion.scoring import ExpansionDecision
 from prometheus.expansion.service import ExpansionService
 from prometheus.expansion.staging import load_draft
+from prometheus.store.failure_store import FailureStore
+from prometheus.store.outcome_store import OutcomeStore
 
 
 class FakeTransport:
@@ -26,6 +29,25 @@ class FakeTransport:
             text=self.responses[url],
             content_type="application/xml",
         )
+
+
+def _scored_candidates(candidates, decision=ExpansionDecision.KEEP):
+    return [
+        SimpleNamespace(
+            candidate=item,
+            decision=decision,
+            reasoning="deterministic test score",
+            evidence_quotes=(),
+            score=SimpleNamespace(
+                relevance=0.9,
+                novelty=0.8,
+                actionability=0.8,
+                evidence=0.9,
+                weighted_total=0.86,
+            ),
+        )
+        for item in candidates
+    ]
 
 
 def test_run_includes_registered_web_sources_in_staging(monkeypatch, tmp_path: Path) -> None:
@@ -176,3 +198,109 @@ def test_run_records_budget_when_cloud_review_is_used(monkeypatch, tmp_path: Pat
     assert "cloud_review=used" in draft.cloud_reason
     assert budget_payload["spent_usd"] > 0
     assert budget_payload["entries"][0]["metadata"]["stage"] == "expand_cloud_review"
+
+
+def test_run_approve_reject_persist_outcomes(monkeypatch, tmp_path: Path) -> None:
+    engine_root = tmp_path / "engine"
+    vault_root = tmp_path / "vault"
+    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
+    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+
+    knowledge_root = vault_root / "knowledge"
+    knowledge_root.mkdir(parents=True, exist_ok=True)
+    (knowledge_root / "vector.md").write_text(
+        "# Vector Search\ncreated: 2026-04-23\nVector tuning guidance.\n",
+        encoding="utf-8",
+    )
+    (knowledge_root / "ranking.md").write_text(
+        "# Ranking Signals\ncreated: 2026-04-24\nRanking note for vector search.\n",
+        encoding="utf-8",
+    )
+
+    service = ExpansionService(load_runtime_config())
+    monkeypatch.setattr(
+        "prometheus.expansion.service.score_candidates",
+        lambda candidates, topic: _scored_candidates(candidates),
+    )
+
+    async def fake_reindex_publish_path(publish_path: Path, ctx: str) -> None:
+        _ = (publish_path, ctx)
+
+    monkeypatch.setattr(service, "_reindex_publish_path", fake_reindex_publish_path)
+
+    staged_path = service.run(ctx="knowledge", topic="vector search", fast=True, allow_cloud=False)
+    publish_path, reindex_status = service.approve(staged_path)
+    rejected_stage = service.run(
+        ctx="knowledge", topic="ranking notes", fast=True, allow_cloud=False
+    )
+    rejected_path = service.reject(rejected_stage)
+
+    store = OutcomeStore(engine_root / "data" / "outcomes.db")
+    asyncio.run(store.init())
+    outcomes = asyncio.run(store.get_outcomes_for_context("prometheus", "knowledge", limit=10))
+    asyncio.run(store.close())
+
+    assert publish_path.exists()
+    assert reindex_status in {"reindex_ok", "reindex_skipped"}
+    assert rejected_path.exists()
+    assert [item.outcome for item in outcomes[:3]] == [
+        "expansion_rejected",
+        "expansion_run_staged",
+        "expansion_approved",
+    ]
+    assert [item.outcome for item in outcomes] == [
+        "expansion_rejected",
+        "expansion_run_staged",
+        "expansion_approved",
+        "expansion_run_staged",
+    ]
+
+
+def test_approve_reindex_failures_are_persisted_for_repeated_failure_queries(
+    monkeypatch, tmp_path: Path
+) -> None:
+    engine_root = tmp_path / "engine"
+    vault_root = tmp_path / "vault"
+    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
+    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+
+    knowledge_root = vault_root / "knowledge"
+    knowledge_root.mkdir(parents=True, exist_ok=True)
+    (knowledge_root / "first.md").write_text(
+        "# Vector Search\ncreated: 2026-04-23\nVector tuning guidance.\n",
+        encoding="utf-8",
+    )
+    (knowledge_root / "second.md").write_text(
+        "# Hybrid Search\ncreated: 2026-04-24\nHybrid search guidance.\n",
+        encoding="utf-8",
+    )
+
+    service = ExpansionService(load_runtime_config())
+    monkeypatch.setattr(
+        "prometheus.expansion.service.score_candidates",
+        lambda candidates, topic: _scored_candidates(candidates),
+    )
+
+    async def failing_reindex_publish_path(publish_path: Path, ctx: str) -> None:
+        _ = (publish_path, ctx)
+        raise RuntimeError("qdrant unavailable")
+
+    monkeypatch.setattr(service, "_reindex_publish_path", failing_reindex_publish_path)
+
+    first_stage = service.run(ctx="knowledge", topic="vector search", fast=True, allow_cloud=False)
+    second_stage = service.run(ctx="knowledge", topic="hybrid search", fast=True, allow_cloud=False)
+
+    _, first_status = service.approve(first_stage)
+    _, second_status = service.approve(second_stage)
+
+    store = FailureStore(engine_root / "data" / "failures.db")
+    asyncio.run(store.init())
+    failures = asyncio.run(store.get_recent_failures("prometheus", limit=10))
+    repeated = asyncio.run(store.get_repeated_failures("prometheus", min_occurrences=2, limit=10))
+    asyncio.run(store.close())
+
+    assert first_status == "reindex_skipped"
+    assert second_status == "reindex_skipped"
+    assert len(failures) == 2
+    assert all(item.operation == "expansion_approve_reindex" for item in failures)
+    assert repeated == [("publish reindex failed", 2)]
