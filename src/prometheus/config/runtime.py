@@ -57,6 +57,7 @@ class RuntimeConfig:
     qdrant_url: str
     redis_url: str
     rtk_max_tokens: int
+    caveman_num_ctx: int
     ollama_remote_host: str | None
     ollama_local_host: str
     caveman_model: str
@@ -138,6 +139,7 @@ def load_runtime_config() -> RuntimeConfig:
         qdrant_url=os.environ.get("QDRANT_URL", "http://localhost:6333"),
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379"),
         rtk_max_tokens=int(os.environ.get("PROMETHEUS_RTK_MAX_TOKENS", "450")),
+        caveman_num_ctx=int(os.environ.get("PROMETHEUS_CAVEMAN_NUM_CTX", "4096")),
         ollama_remote_host=os.environ.get("PROMETHEUS_OLLAMA_REMOTE_HOST") or None,
         ollama_local_host=os.environ.get("PROMETHEUS_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434"),
         caveman_model=os.environ.get(

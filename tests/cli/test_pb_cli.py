@@ -136,6 +136,51 @@ def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> 
     assert record["ctx"] == "knowledge"
 
 
+def test_ask_closes_store_when_no_hits(monkeypatch, tmp_path) -> None:
+    class FakeDetector:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        def detect(self, *_args, **_kwargs):
+            return SimpleNamespace(context="saas", display="[saas 50%]")
+
+    class FakeStore:
+        closed = False
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def init(self) -> None:
+            return None
+
+        async def close(self) -> None:
+            self.closed = True
+
+    async def fake_hits(*args, **kwargs):
+        _ = (args, kwargs)
+        await asyncio.sleep(0)
+        return []
+
+    fake_store = FakeStore()
+
+    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
+    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setattr(
+        "prometheus.store.session_store.SessionStore",
+        lambda *_args, **_kwargs: fake_store,
+    )
+    monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
+
+    result = runner.invoke(
+        pb.app,
+        ["ask", "arquitetura do projeto", "--ctx", "saas", "--cwd", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Nenhum contexto relevante encontrado." in result.stdout
+    assert fake_store.closed is True
+
+
 def test_ask_sends_chunk_content_within_limit_to_compressor(monkeypatch, tmp_path) -> None:
     class FakeDetector:
         def __init__(self, *_args, **_kwargs) -> None:
