@@ -25,6 +25,10 @@ class DoctorReport:
     recommended_mode: str
     checks: dict[str, str]
     notes: list[str]
+    sources: dict[str, str] | None = None
+    configured_mode: str | None = None
+    active_profile: str | None = None
+    profile_mode: str | None = None
 
 
 def detect_platform() -> PlatformConfig:
@@ -82,6 +86,8 @@ def build_doctor_report(
     *,
     docker_available: bool,
     ollama_available: bool,
+    profile_mode: str | None = None,
+    sources: dict[str, str] | None = None,
 ) -> DoctorReport:
     checks = {
         "engine_root": "ok" if runtime.engine_root.exists() else "missing",
@@ -97,6 +103,10 @@ def build_doctor_report(
         ollama_available=ollama_available,
     )
     notes: list[str] = []
+    if runtime.active_profile and profile_mode and profile_mode != runtime.mode:
+        notes.append(
+            f"Profile '{runtime.active_profile}' expects mode '{profile_mode}', but runtime is '{runtime.mode}'."
+        )
     if runtime.mode != recommended_mode:
         notes.append(
             f"Current mode '{runtime.mode}' differs from recommended '{recommended_mode}'."
@@ -114,6 +124,10 @@ def build_doctor_report(
         recommended_mode=recommended_mode,
         checks=checks,
         notes=notes,
+        sources=sources or {},
+        configured_mode=runtime.mode,
+        active_profile=runtime.active_profile,
+        profile_mode=profile_mode,
     )
 
 

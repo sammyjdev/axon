@@ -127,7 +127,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
     )
     monkeypatch.setattr(
         "prometheus.config.platform.build_doctor_report",
-        lambda runtime, platform_config, docker_available, ollama_available: DoctorReport(
+        lambda runtime, platform_config, docker_available, ollama_available, **_kwargs: DoctorReport(
             platform=platform_config.platform,
             recommended_mode="full-local",
             checks={
@@ -137,6 +137,10 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
                 "ollama": "ok",
                 "remote_infra": "local",
             },
+            sources={"mode": "env", "engine_root": "toml", "vault_root": "default"},
+            configured_mode="full-local",
+            active_profile="solo-dev",
+            profile_mode="hybrid-local",
             notes=["GPU-capable local stack available."],
         ),
     )
@@ -146,6 +150,8 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
     assert result.exit_code == 0
     assert "Prometheus doctor" in result.stdout
     assert "recommended_mode: full-local" in result.stdout
+    assert "mode_source: env" in result.stdout
+    assert "active_profile: solo-dev" in result.stdout
     assert "docker: ok" in result.stdout
     assert "GPU-capable local stack available." in result.stdout
 
