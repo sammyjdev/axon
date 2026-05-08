@@ -89,3 +89,30 @@ project.
   trustworthy.
 - Rationale: token savings are only useful when retrieval fidelity survives the
   compression pipeline.
+
+## ADR-011: Prometheus stays agent-agnostic; Odisseu is an optional consumer
+
+- Decision: position Prometheus as a self-hosted context, memory, and
+  governance engine for AI systems rather than as a deep agent runtime.
+- Shape:
+  - Prometheus exposes CLI, MCP, and future API/profile surfaces;
+  - Odisseu may consume Prometheus, but Prometheus must remain useful without
+    Odisseu;
+  - Odisseu must remain free to support non-Prometheus backends.
+- Rationale: deep-agent-first positioning would narrow adoption, overfit the
+  engine to one consumer, and reduce Prometheus's value as shared
+  infrastructure for other developers and teams.
+
+## ADR-012: Distribution-first roadmap for external developer adoption
+
+- Decision: the next product phase prioritizes installation, hardware-fit,
+  profiles, and guided customization over new deep-agent-specific features.
+- Shape:
+  - support modes: `full-local`, `hybrid-local`, `remote-infra`, `minimal`;
+  - support targets: macOS, Linux, Windows/WSL2, CPU-first and GPU-capable
+    machines;
+  - provide `pb init`, `pb doctor`, profiles, and profile-driven defaults
+    before broader domain-pack expansion.
+- Rationale: Prometheus only becomes a credible shared tool when another
+  developer can install, size, and use it without inheriting the author's
+  machine assumptions.

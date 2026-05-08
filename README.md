@@ -180,6 +180,7 @@ Prometheus runs on Python 3.11+ and uses:
 
 - [Vault setup](docs/VAULT_SETUP.md)
 - [Usage guide](docs/USAGE_GUIDE.md)
+- [Roadmap](docs/ROADMAP.md)
 - [Architectural decisions](docs/ADR.md)
 - [Architectural requirements](docs/ARD.md)
 
