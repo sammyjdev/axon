@@ -119,6 +119,15 @@ def _load_toml_runtime_overrides() -> dict[str, str]:
     }
 
 
+def get_runtime_sources() -> dict[str, str]:
+    overrides = _load_toml_runtime_overrides()
+    return {
+        "mode": "env" if "PROMETHEUS_RUNTIME_MODE" in os.environ else ("toml" if "mode" in overrides else "default"),
+        "engine_root": "env" if "PROMETHEUS_ENGINE" in os.environ else ("toml" if "engine_root" in overrides else "default"),
+        "vault_root": "env" if "PROMETHEUS_VAULT" in os.environ else ("toml" if "vault_root" in overrides else "default"),
+    }
+
+
 def get_prometheus_config_path() -> Path:
     config_env = os.environ.get("PROMETHEUS_CONFIG")
     return Path(config_env).expanduser() if config_env else Path.cwd() / "prometheus.toml"

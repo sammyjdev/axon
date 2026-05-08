@@ -481,20 +481,37 @@ def git_proxy(
 def doctor() -> None:
     """Inspeciona ambiente local e recomenda o modo operacional mais seguro."""
     from prometheus.config.platform import build_doctor_report, detect_platform
+    from prometheus.config.runtime import get_profile, get_runtime_sources
 
     runtime = load_runtime_config()
     platform_config = detect_platform()
+    profile_mode = None
+    if runtime.active_profile:
+        try:
+            profile_mode = get_profile(runtime.active_profile)["mode"]
+        except ValueError:
+            profile_mode = None
     report = build_doctor_report(
         runtime,
         platform_config,
         docker_available=shutil.which("docker") is not None,
         ollama_available=shutil.which("ollama") is not None,
+        profile_mode=profile_mode,
+        sources=get_runtime_sources(),
     )
 
     typer.echo("Prometheus doctor")
     typer.echo(f"platform: {report.platform}")
-    typer.echo(f"configured_mode: {runtime.mode}")
+    typer.echo(f"configured_mode: {report.configured_mode or runtime.mode}")
     typer.echo(f"recommended_mode: {report.recommended_mode}")
+    if report.active_profile:
+        typer.echo(f"active_profile: {report.active_profile}")
+    if report.profile_mode:
+        typer.echo(f"profile_mode: {report.profile_mode}")
+    if report.sources:
+        typer.echo(f"mode_source: {report.sources.get('mode', 'unknown')}")
+        typer.echo(f"engine_root_source: {report.sources.get('engine_root', 'unknown')}")
+        typer.echo(f"vault_root_source: {report.sources.get('vault_root', 'unknown')}")
     typer.echo("checks:")
     for name, status in report.checks.items():
         typer.echo(f"- {name}: {status}")
