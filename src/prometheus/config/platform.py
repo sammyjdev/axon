@@ -1,7 +1,9 @@
 import platform
 import subprocess
+import sys
 from dataclasses import dataclass
 from os import environ
+from pathlib import Path
 
 from prometheus.config.runtime import RuntimeConfig
 
@@ -136,6 +138,38 @@ def _recommend_operating_mode(
     return "minimal"
 
 
+def merge_env_text(source_text: str, target_text: str, *, mode: str = "replace") -> str:
+    source_lines = source_text.splitlines()
+    target_lines = target_text.splitlines()
+
+    target_index: dict[str, int] = {}
+    for idx, line in enumerate(target_lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            continue
+        key = line.split("=", 1)[0]
+        target_index[key] = idx
+
+    for line in source_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            continue
+        key = line.split("=", 1)[0]
+        if key in target_index:
+            if mode == "replace":
+                target_lines[target_index[key]] = line
+        else:
+            target_lines.append(line)
+
+    return "\n".join(target_lines) + "\n"
+
+
+def merge_env_files(source_path: Path, target_path: Path, *, mode: str = "replace") -> None:
+    source_text = source_path.read_text() if source_path.exists() else ""
+    target_text = target_path.read_text() if target_path.exists() else ""
+    target_path.write_text(merge_env_text(source_text, target_text, mode=mode))
+
+
 def _to_dotenv(config: PlatformConfig) -> str:
     providers = ",".join(config.embedding_providers)
     remote_host = environ.get("PROMETHEUS_INFRA_HOST") or environ.get("PROMETHEUS_DESKTOP_HOST")
@@ -162,6 +196,11 @@ def _to_dotenv(config: PlatformConfig) -> str:
     return env_text
 
 if __name__ == "__main__":
-    # Invocado pelo setup.sh para gerar .env.local
-    config = detect_platform()
-    print(_to_dotenv(config), end="")
+    if len(sys.argv) > 1 and sys.argv[1] == "--merge-env":
+        if len(sys.argv) != 5:
+            raise SystemExit("usage: platform.py --merge-env <source> <target> <mode>")
+        merge_env_files(Path(sys.argv[2]), Path(sys.argv[3]), mode=sys.argv[4])
+    else:
+        # Invocado pelo setup.sh para gerar .env.local
+        config = detect_platform()
+        print(_to_dotenv(config), end="")
