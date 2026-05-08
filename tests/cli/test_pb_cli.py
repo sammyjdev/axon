@@ -150,6 +150,88 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
     assert "GPU-capable local stack available." in result.stdout
 
 
+def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> None:
+    from prometheus.config.platform import PlatformConfig
+
+    engine_root = tmp_path / "engine"
+    vault_root = tmp_path / "vault"
+
+    monkeypatch.setattr(
+        "prometheus.config.platform.detect_platform",
+        lambda: PlatformConfig(
+            platform="mac",
+            embedding_providers=["CoreMLExecutionProvider", "CPUExecutionProvider"],
+            ollama_flash=False,
+            max_models=1,
+            model_primary="gemma4:e4b",
+            model_knowledge="gemma4:e4b",
+            keep_alive="10m",
+        ),
+    )
+
+    result = runner.invoke(
+        pb.app,
+        [
+            "init",
+            "--engine",
+            str(engine_root),
+            "--vault",
+            str(vault_root),
+            "--mode",
+            "hybrid-local",
+        ],
+    )
+
+    env_file = engine_root / ".env.local"
+
+    assert result.exit_code == 0
+    assert env_file.exists()
+    payload = env_file.read_text(encoding="utf-8")
+    assert f"PROMETHEUS_ENGINE={engine_root}" in payload
+    assert f"PROMETHEUS_VAULT={vault_root}" in payload
+    assert "PROMETHEUS_RUNTIME_MODE=hybrid-local" in payload
+    assert "PROMETHEUS_PLATFORM=mac" in payload
+
+
+def test_init_refuses_to_overwrite_env_local_without_force(monkeypatch, tmp_path) -> None:
+    from prometheus.config.platform import PlatformConfig
+
+    engine_root = tmp_path / "engine"
+    engine_root.mkdir()
+    env_file = engine_root / ".env.local"
+    env_file.write_text("PROMETHEUS_RUNTIME_MODE=minimal\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "prometheus.config.platform.detect_platform",
+        lambda: PlatformConfig(
+            platform="pc",
+            embedding_providers=["CUDAExecutionProvider"],
+            ollama_flash=True,
+            max_models=2,
+            model_primary="gemma4:e4b",
+            model_knowledge="gemma4:26b",
+            keep_alive="-1",
+        ),
+    )
+
+    result = runner.invoke(
+        pb.app,
+        [
+            "init",
+            "--engine",
+            str(engine_root),
+            "--vault",
+            str(tmp_path / "vault"),
+            "--mode",
+            "full-local",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "já existe" in result.stdout
+    assert env_file.read_text(encoding="utf-8") == "PROMETHEUS_RUNTIME_MODE=minimal\n"
+
+
 def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> None:
     class FakeDetector:
         def __init__(self, *_args, **_kwargs) -> None:

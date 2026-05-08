@@ -63,8 +63,14 @@ sequenceDiagram
 
 ## Quick Start
 
-Prometheus expects an external vault and a local clone of the engine. A common
-setup is:
+Prometheus expects an external vault and a local clone of the engine. Start
+with the quickstart for your OS:
+
+- [macOS quickstart](docs/QUICKSTART_MACOS.md)
+- [Linux quickstart](docs/QUICKSTART_LINUX.md)
+- [Windows with WSL2 quickstart](docs/QUICKSTART_WINDOWS_WSL2.md)
+
+A common manual setup is:
 
 - `PROMETHEUS_ENGINE=/path/to/prometheus`
 - `PROMETHEUS_VAULT=~/vault`
@@ -180,6 +186,7 @@ Prometheus runs on Python 3.11+ and uses:
 
 - [Vault setup](docs/VAULT_SETUP.md)
 - [Usage guide](docs/USAGE_GUIDE.md)
+- [Support matrix](docs/SUPPORT_MATRIX.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Architectural decisions](docs/ADR.md)
 - [Architectural requirements](docs/ARD.md)
