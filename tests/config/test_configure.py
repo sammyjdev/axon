@@ -38,6 +38,42 @@ def test_recommend_profile_prefers_solo_dev_for_local_individual_setup() -> None
     assert mode == "hybrid-local"
 
 
+def test_recommend_profile_respects_preferred_mode_override() -> None:
+    profile, mode = recommend_profile(
+        use_case="solo",
+        privacy="public",
+        hardware="mac-laptop",
+        preferred_mode="remote-infra",
+    )
+
+    assert profile == "team-dev"
+    assert mode == "remote-infra"
+
+
+def test_recommend_profile_prefers_remote_infra_when_infra_override_is_remote() -> None:
+    profile, mode = recommend_profile(
+        use_case="solo",
+        privacy="public",
+        hardware="mac-laptop",
+        infra="remote",
+    )
+
+    assert profile == "team-dev"
+    assert mode == "remote-infra"
+
+
+def test_recommend_profile_prefers_minimal_when_memory_override_is_light() -> None:
+    profile, mode = recommend_profile(
+        use_case="solo",
+        privacy="public",
+        hardware="cpu-only",
+        memory="light",
+    )
+
+    assert profile == "privacy-first"
+    assert mode == "minimal"
+
+
 def test_use_profile_can_apply_recommended_profile(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
     monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))

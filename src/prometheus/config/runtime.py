@@ -176,10 +176,32 @@ def get_profile(name: str) -> dict[str, str]:
     }
 
 
-def recommend_profile(*, use_case: str, privacy: str, hardware: str) -> tuple[str, str]:
+def recommend_profile(
+    *,
+    use_case: str,
+    privacy: str,
+    hardware: str,
+    preferred_mode: str | None = None,
+    infra: str | None = None,
+    memory: str | None = None,
+    cloud: str | None = None,
+) -> tuple[str, str]:
     normalized_use_case = use_case.strip().lower()
     normalized_privacy = privacy.strip().lower()
     normalized_hardware = hardware.strip().lower()
+    normalized_preferred_mode = preferred_mode.strip().lower() if preferred_mode else None
+    normalized_infra = infra.strip().lower() if infra else None
+    normalized_memory = memory.strip().lower() if memory else None
+    normalized_cloud = cloud.strip().lower() if cloud else None
+
+    if normalized_preferred_mode in _RUNTIME_MODES:
+        return _profile_for_mode(normalized_preferred_mode), normalized_preferred_mode
+    if normalized_infra == "remote":
+        return "team-dev", "remote-infra"
+    if normalized_memory == "light":
+        return "privacy-first", "minimal"
+    if normalized_cloud == "deny" and normalized_privacy in {"internal", "public"}:
+        return "privacy-first", "minimal"
 
     if normalized_privacy in {"restricted", "confidential"}:
         return "privacy-first", "minimal"
@@ -188,6 +210,14 @@ def recommend_profile(*, use_case: str, privacy: str, hardware: str) -> tuple[st
     if normalized_hardware in {"nvidia", "linux-workstation"}:
         return "solo-dev", "hybrid-local"
     return "solo-dev", "hybrid-local"
+
+
+def _profile_for_mode(mode: str) -> str:
+    if mode == "remote-infra":
+        return "team-dev"
+    if mode == "minimal":
+        return "privacy-first"
+    return "solo-dev"
 
 
 def use_profile(name: str) -> None:
@@ -236,6 +266,39 @@ def use_profile(name: str) -> None:
         updated.append(f'mode = "{mode}"')
     config_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
     _sync_env_runtime_mode(config_path.parent / ".env.local", mode)
+
+
+def create_profile(name: str, *, description: str, mode: str) -> None:
+    normalized_mode = mode.strip().lower()
+    if normalized_mode not in _RUNTIME_MODES:
+        raise ValueError(f"Invalid mode: {mode}")
+    config_path = get_prometheus_config_path()
+    payload = _load_toml_payload()
+    profiles = payload.get("profiles")
+    if isinstance(profiles, dict) and name in profiles:
+        raise ValueError(f"Profile already exists: {name}")
+    lines = config_path.read_text(encoding="utf-8").splitlines()
+    lines.extend(
+        [
+            "",
+            f"[profiles.{name}]",
+            f'description = "{description}"',
+            f'mode = "{normalized_mode}"',
+        ]
+    )
+    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def export_profile(name: str) -> str:
+    profile = get_profile(name)
+    return "\n".join(
+        [
+            f"[profiles.{profile['name']}]",
+            f'description = "{profile["description"]}"',
+            f'mode = "{profile["mode"]}"',
+            "",
+        ]
+    )
 
 
 def _sync_env_runtime_mode(env_path: Path, mode: str) -> None:
