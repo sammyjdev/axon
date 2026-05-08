@@ -1,0 +1,20 @@
+{
+  "schema_version": "1",
+  "domain_id": "software",
+  "display_name": "Software",
+  "description": "General software engineering artifacts and workflows.",
+  "signals": {
+    "languages": [
+      "python",
+      "typescript"
+    ],
+    "artifact_types": [
+      "source_code",
+      "documentation"
+    ],
+    "task_types": [
+      "implementation",
+      "review"
+    ]
+  }
+}
