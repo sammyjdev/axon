@@ -32,21 +32,29 @@ fi
 
 echo ""
 echo "==> Gerando .env.local a partir da plataforma..."
-python3 src/prometheus/config/platform.py > .env.local
+GENERATED_ENV="$(mktemp)"
+python3 src/prometheus/config/platform.py > "$GENERATED_ENV"
 
-# Preservar variáveis do .env.example que não são geradas pelo platform.py
-if [[ -f ".env.example" && ! -f ".env.local.bak" ]]; then
-    echo "    Mesclando com .env.example..."
-    # Adicionar vars do example que não existem no .env.local gerado
-    while IFS= read -r line; do
-        key="${line%%=*}"
-        if [[ -n "$key" && "$key" != \#* ]]; then
-            if ! grep -q "^${key}=" .env.local 2>/dev/null; then
-                echo "$line" >> .env.local
-            fi
-        fi
-    done < .env.example
+merge_env_file() {
+    local source_file=$1
+    local target_file=$2
+    local mode=${3:-replace}
+
+    [[ -f "$source_file" ]] || return 0
+    python3 src/prometheus/config/platform.py --merge-env "$source_file" "$target_file" "$mode"
+}
+
+if [[ -f ".env.local" ]]; then
+    echo "    Preservando overrides existentes de .env.local..."
+    merge_env_file ".env.local" "$GENERATED_ENV"
 fi
+
+if [[ -f ".env.example" ]]; then
+    echo "    Mesclando defaults de .env.example..."
+    merge_env_file ".env.example" "$GENERATED_ENV" "append-missing"
+fi
+
+mv "$GENERATED_ENV" .env.local
 
 echo "    .env.local gerado"
 
