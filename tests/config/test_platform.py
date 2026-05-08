@@ -5,8 +5,10 @@ from pathlib import Path
 from prometheus.config.platform import (
     DoctorReport,
     PlatformConfig,
+    SetupPlan,
     _to_dotenv,
     build_doctor_report,
+    build_setup_plan,
     merge_env_text,
 )
 from prometheus.config.runtime import ExpansionBudgetConfig, ExpansionConfig, ExpansionPaths, RuntimeConfig
@@ -173,6 +175,96 @@ def test_build_doctor_report_warns_when_profile_mode_differs_from_runtime(tmp_pa
     assert report.profile_mode == "remote-infra"
     assert report.sources["mode"] == "toml"
     assert any("Profile 'team-dev'" in note for note in report.notes)
+
+
+def test_build_setup_plan_for_remote_infra_skips_local_stack() -> None:
+    platform_config = PlatformConfig(
+        platform="pc",
+        embedding_providers=["CUDAExecutionProvider"],
+        ollama_flash=True,
+        max_models=2,
+        model_primary="gemma4:e4b",
+        model_knowledge="gemma4:26b",
+        keep_alive="-1",
+    )
+
+    plan = build_setup_plan(
+        runtime_mode="remote-infra",
+        platform_config=platform_config,
+        remote_infra_host="desktop.local",
+    )
+
+    assert plan.compose_profile is None
+    assert plan.start_local_stack is False
+    assert plan.pull_models == ()
+    assert plan.validate_remote_services is True
+
+
+def test_build_setup_plan_for_minimal_mode_skips_local_stack() -> None:
+    platform_config = PlatformConfig(
+        platform="mac",
+        embedding_providers=["CoreMLExecutionProvider", "CPUExecutionProvider"],
+        ollama_flash=False,
+        max_models=1,
+        model_primary="gemma4:e4b",
+        model_knowledge="gemma4:e4b",
+        keep_alive="10m",
+    )
+
+    plan = build_setup_plan(
+        runtime_mode="minimal",
+        platform_config=platform_config,
+        remote_infra_host=None,
+    )
+
+    assert plan.compose_profile is None
+    assert plan.start_local_stack is False
+    assert plan.pull_models == ()
+    assert plan.validate_remote_services is False
+
+
+def test_build_setup_plan_for_hybrid_local_uses_cpu_profile_and_small_models() -> None:
+    platform_config = PlatformConfig(
+        platform="mac",
+        embedding_providers=["CoreMLExecutionProvider", "CPUExecutionProvider"],
+        ollama_flash=False,
+        max_models=1,
+        model_primary="gemma4:e4b",
+        model_knowledge="gemma4:e4b",
+        keep_alive="10m",
+    )
+
+    plan = build_setup_plan(
+        runtime_mode="hybrid-local",
+        platform_config=platform_config,
+        remote_infra_host=None,
+    )
+
+    assert plan.compose_profile == "cpu"
+    assert plan.start_local_stack is True
+    assert plan.pull_models == ("phi3:mini", "gemma4:e4b")
+
+
+def test_build_setup_plan_for_full_local_includes_heavier_model_when_supported() -> None:
+    platform_config = PlatformConfig(
+        platform="pc",
+        embedding_providers=["CUDAExecutionProvider"],
+        ollama_flash=True,
+        max_models=2,
+        model_primary="gemma4:e4b",
+        model_knowledge="gemma4:26b",
+        keep_alive="-1",
+    )
+
+    plan = build_setup_plan(
+        runtime_mode="full-local",
+        platform_config=platform_config,
+        remote_infra_host=None,
+    )
+
+    assert plan.compose_profile == "gpu"
+    assert plan.start_local_stack is True
+    assert "gemma4:26b" in plan.pull_models
 
 
 def test_merge_env_text_replaces_generated_values_with_existing_overrides() -> None:

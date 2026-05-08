@@ -134,6 +134,29 @@ pb til --promote-today
 pb watch ~/vault/knowledge --ctx knowledge
 ```
 
+## Profiles
+
+Prometheus supports named profiles in `prometheus.toml` so you can switch
+between common operating shapes without editing runtime mode by hand.
+
+Current built-ins:
+
+- `solo-dev` -> `hybrid-local`
+- `team-dev` -> `remote-infra`
+- `privacy-first` -> `minimal`
+
+Typical commands:
+
+```bash
+pb configure --use-case solo --privacy public --hardware mac-laptop
+pb profile list
+pb profile show
+pb profile use team-dev
+```
+
+For when to use each profile and how `configure`, `list`, `show`, `use`,
+`create`, and `export` fit together, see [Profiles](docs/PROFILES.md).
+
 ## Context Model
 
 Prometheus organizes data into separate collections:
@@ -185,6 +208,7 @@ Prometheus runs on Python 3.11+ and uses:
 ## Documentation
 
 - [Vault setup](docs/VAULT_SETUP.md)
+- [Profiles](docs/PROFILES.md)
 - [TIL automation](docs/TIL_AUTOMATION.md)
 - [Usage guide](docs/USAGE_GUIDE.md)
 - [Support matrix](docs/SUPPORT_MATRIX.md)
