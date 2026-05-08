@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from functools import lru_cache
 from enum import Enum
+from functools import lru_cache
 
 import litellm
 import ollama

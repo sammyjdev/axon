@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -19,6 +19,7 @@ class VectorStore:
     def _ensure_client(self):
         if self._client is None:
             from qdrant_client import QdrantClient
+
             self._client = QdrantClient(host=self.host, port=self.port)
 
     def search(self, vector: list[float], limit: int = 10) -> list[SearchResult]:
@@ -33,6 +34,7 @@ class VectorStore:
     def upsert(self, doc_id: str, vector: list[float], payload: dict[str, Any]) -> None:
         self._ensure_client()
         from qdrant_client.models import PointStruct
+
         self._client.upsert(
             collection_name=self.collection,
             points=[PointStruct(id=doc_id, vector=vector, payload=payload)],
@@ -41,6 +43,7 @@ class VectorStore:
     def delete(self, doc_id: str) -> None:
         self._ensure_client()
         from qdrant_client.models import PointIdsList
+
         self._client.delete(
             collection_name=self.collection,
             points_selector=PointIdsList(points=[doc_id]),

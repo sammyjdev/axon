@@ -1,6 +1,7 @@
 import platform
 import subprocess
 from dataclasses import dataclass
+from os import environ
 
 
 @dataclass
@@ -65,7 +66,8 @@ def _get_nvidia_vram() -> int:
 
 def _to_dotenv(config: PlatformConfig) -> str:
     providers = ",".join(config.embedding_providers)
-    return (
+    remote_host = environ.get("PROMETHEUS_INFRA_HOST") or environ.get("PROMETHEUS_DESKTOP_HOST")
+    env_text = (
         f"PROMETHEUS_PLATFORM={config.platform}\n"
         f"EMBEDDING_PROVIDERS={providers}\n"
         f"OLLAMA_FLASH={str(config.ollama_flash).lower()}\n"
@@ -74,7 +76,18 @@ def _to_dotenv(config: PlatformConfig) -> str:
         f"OLLAMA_MODEL_KNOWLEDGE={config.model_knowledge}\n"
         f"OLLAMA_KEEP_ALIVE={config.keep_alive}\n"
     )
-
+    if remote_host:
+        env_text += (
+            f"PROMETHEUS_INFRA_HOST={remote_host}\n"
+            f"QDRANT_URL=http://{remote_host}:6333\n"
+            f"REDIS_URL=redis://{remote_host}:6379\n"
+            f"NEO4J_URI=bolt://{remote_host}:7687\n"
+            f"LANGFUSE_HOST=http://{remote_host}:3000\n"
+            f"PROMETHEUS_OLLAMA_LOCAL_HOST=http://{remote_host}:11434\n"
+            f"PROMETHEUS_OLLAMA_REMOTE_HOST=http://{remote_host}:11434\n"
+            f"OLLAMA_HOST=http://{remote_host}:11434\n"
+        )
+    return env_text
 
 if __name__ == "__main__":
     # Invocado pelo setup.sh para gerar .env.local

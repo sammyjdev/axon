@@ -113,10 +113,7 @@ def score_candidates(
     model: str = DEFAULT_LOCAL_MODEL,
     host: str | None = None,
 ) -> list[ExpansionScoreResult]:
-    return [
-        score_candidate(candidate, topic, model=model, host=host)
-        for candidate in candidates
-    ]
+    return [score_candidate(candidate, topic, model=model, host=host) for candidate in candidates]
 
 
 def _score_with_local_slm(
@@ -254,7 +251,7 @@ def _heuristic_reasoning(score: ExpansionScore, quotes: tuple[str, ...]) -> str:
         f"evidence={score.evidence:.2f}",
     ]
     if quotes:
-        parts.append(f"evidencia=\"{quotes[0]}\"")
+        parts.append(f'evidencia="{quotes[0]}"')
     return ", ".join(parts)
 
 
@@ -275,9 +272,7 @@ def _score_relevance(topic: str, candidate: ExpansionCandidate) -> float:
         return 0.0
     haystack = _tokenize(f"{candidate.title} {candidate.extracted_text}")
     overlap = len(topic_tokens & haystack) / len(topic_tokens)
-    phrase_bonus = (
-        0.2 if topic.strip().lower() in candidate.extracted_text.lower() else 0.0
-    )
+    phrase_bonus = 0.2 if topic.strip().lower() in candidate.extracted_text.lower() else 0.0
     title_bonus = 0.15 if topic_tokens & _tokenize(candidate.title) else 0.0
     return _bound(overlap + phrase_bonus + title_bonus)
 

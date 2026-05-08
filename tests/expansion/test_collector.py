@@ -208,5 +208,7 @@ def test_load_source_registry_from_json_catalog(tmp_path) -> None:
 
     registry = load_source_registry(catalog)
 
-    assert [source.source_id for source in registry.list_for_context("knowledge")] == ["knowledge-feed"]
+    assert [source.source_id for source in registry.list_for_context("knowledge")] == [
+        "knowledge-feed"
+    ]
     assert registry.get("knowledge-feed").follow_links is True

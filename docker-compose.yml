@@ -18,7 +18,7 @@ services:
   neo4j:
     image: neo4j:5-community
     environment:
-      NEO4J_AUTH: neo4j/local-password
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-change-me}
       NEO4J_server_memory_heap_max__size: 1G
     volumes:
       - ./data/neo4j:/data
@@ -31,7 +31,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-prometheus}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
       POSTGRES_DB: ${POSTGRES_DB:-langfuse}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
@@ -40,10 +40,10 @@ services:
   langfuse:
     image: langfuse/langfuse:2
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-prometheus}:${POSTGRES_PASSWORD:-local}@postgres:5432/${POSTGRES_DB:-langfuse}
-      NEXTAUTH_SECRET: local-secret-change-in-prod
-      NEXTAUTH_URL: http://localhost:3000
-      SALT: local-salt-change-in-prod
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prometheus}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-langfuse}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me}
+      NEXTAUTH_URL: ${LANGFUSE_HOST:-http://localhost:3000}
+      SALT: ${LANGFUSE_SALT:-change-me}
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
     ports:
       - "3000:3000"
@@ -51,7 +51,7 @@ services:
       - postgres
     restart: unless-stopped
 
-  # Ollama com suporte a GPU (NVIDIA) — sobe com --profile gpu
+  # NVIDIA-enabled Ollama profile
   ollama:
     image: ollama/ollama:latest
     volumes:
@@ -73,7 +73,7 @@ services:
       - gpu
     restart: unless-stopped
 
-  # Ollama sem GPU — sobe com --profile cpu (Mac / máquina sem NVIDIA)
+  # CPU-only Ollama profile
   ollama-cpu:
     image: ollama/ollama:latest
     volumes:

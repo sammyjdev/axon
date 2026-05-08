@@ -2,6 +2,7 @@
 
 Compresses session turns every 10 interactions using claude-haiku.
 """
+
 from __future__ import annotations
 
 import logging

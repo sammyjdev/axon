@@ -4,7 +4,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-VALID_CONTEXTS = {"personal", "career", "knowledge", "work"}
+from prometheus.context.registry import VALID_CONTEXTS as REGISTERED_CONTEXTS
+
+VALID_CONTEXTS = set(REGISTERED_CONTEXTS)
 VALID_LANGUAGES = {"java", "python", "typescript", "markdown", "text"}
 
 

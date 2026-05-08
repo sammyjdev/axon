@@ -3,14 +3,16 @@ from __future__ import annotations
 import asyncio
 import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Annotated
-from typing import Optional
 
 import typer
 
 from prometheus.config.runtime import load_runtime_config
+from prometheus.context.compression_quality import compression_quality_note
+from prometheus.context.registry import VALID_CONTEXTS
 from prometheus.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
 
 app = typer.Typer(
@@ -26,6 +28,7 @@ til_app = typer.Typer(help="TIL e HOW-TO — knowledge automation")
 deep_app = typer.Typer(help="Sugestões de aprofundamento técnico")
 expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
 memory_app = typer.Typer(help="Memória Mem0 / Neo4j")
+graph_app = typer.Typer(help="Grafo estrutural Graphify / Neo4j")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -35,14 +38,18 @@ app.add_typer(til_app, name="til")
 app.add_typer(deep_app, name="deep")
 app.add_typer(expand_app, name="expand")
 app.add_typer(memory_app, name="memory")
+app.add_typer(graph_app, name="graph")
 
 QDRANT_DEFAULT_URL = "http://localhost:6333"
+_MAX_CHUNK_INPUT_CHARS = 4_000
 _RUNTIME = load_runtime_config()
+_CTX_HELP = f"Contexto: {'|'.join(VALID_CONTEXTS)}"
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_db_path() -> Path:
     return _RUNTIME.db_path
@@ -84,11 +91,16 @@ async def _compress_context_pipeline(
         CompressionRecord,
         CompressionTelemetryStore,
     )
-    from prometheus.router.compressor import caveman_compress
+    from prometheus.router.compressor import caveman_compress_guarded
 
     before_tokens = _estimate_tokens(text)
-    caveman_out, caveman_note = await caveman_compress(text, max_tokens=max_tokens)
+    caveman_out, caveman_note = await caveman_compress_guarded(text, max_tokens=max_tokens)
+
     compressed_context, rtk_note = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
+    rtk_quality_note = compression_quality_note(text, compressed_context)
+    if rtk_quality_note:
+        compressed_context = caveman_out
+        rtk_note = rtk_quality_note
 
     engines: list[str] = []
     if caveman_note is None:
@@ -133,13 +145,48 @@ def _handle_expand_expected_error(exc: FileNotFoundError | ValueError) -> None:
     raise typer.Exit(1)
 
 
-def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_name: str | None) -> tuple[str, str, str]:
+def _neo4j_driver():
+    try:
+        from neo4j import GraphDatabase
+    except ImportError as exc:
+        raise typer.BadParameter(
+            "neo4j driver não instalado. Instale o extra graph: pip install -e '.[graph]'"
+        ) from exc
+
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    user = os.environ.get("NEO4J_USER", "neo4j")
+    password = os.environ.get("NEO4J_PASSWORD", "local-password")
+    return GraphDatabase.driver(uri, auth=(user, password))
+
+
+def _run_neo4j_write(cypher: str) -> None:
+    driver = _neo4j_driver()
+    try:
+        with driver.session() as session:
+            session.run(cypher)
+    finally:
+        driver.close()
+
+
+def _run_neo4j_read(cypher: str) -> list[dict]:
+    driver = _neo4j_driver()
+    try:
+        with driver.session() as session:
+            return [dict(record) for record in session.run(cypher)]
+    finally:
+        driver.close()
+
+
+def _build_planner_executor_prompts(
+    query: str, compressed_context: str, ctx_name: str | None
+) -> tuple[str, str, str]:
     ctx_label = ctx_name or "auto"
 
     planner = (
         "Você é o planner. Gere um plano executável para agentes Codex em paralelo.\n"
         "Retorne JSON válido com campos: goal, assumptions, tasks[].\n"
-        "Cada task deve conter: task_id, objective, files, dependencies, acceptance_criteria, tests, risk, rollback.\n"
+        "Cada task deve conter: task_id, objective, files, dependencies, "
+        "acceptance_criteria, tests, risk, rollback.\n"
         "Não execute código. Não omita riscos.\n\n"
         f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Solicitação do usuário: {query}"
@@ -148,7 +195,8 @@ def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_nam
     executor = (
         "Você é o executor Codex de uma tarefa do plano.\n"
         "Execute APENAS task_id informado, respeitando acceptance_criteria e tests.\n"
-        "Saída obrigatória: resumo de mudanças, arquivos alterados, comandos executados, resultados de teste, próximos passos.\n"
+        "Saída obrigatória: resumo de mudanças, arquivos alterados, comandos executados, "
+        "resultados de teste, próximos passos.\n"
         "Se houver bloqueio, pare e reporte causa raiz com alternativa segura.\n\n"
         "Contexto Prometheus comprimido:\n"
         f"{compressed_context}\n\n"
@@ -157,8 +205,10 @@ def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_nam
 
     local_knowledge = (
         "Você é um assistente local para preencher notas de knowledge com baixa alucinação.\n"
-        "Objetivo: criar rascunho objetivo para arquivo vazio (TIL/HOW-TO), sem decisões arquiteturais finais.\n"
-        "Formato: título, resumo, passos práticos, exemplos curtos, perguntas para aprofundamento.\n\n"
+        "Objetivo: criar rascunho objetivo para arquivo vazio (TIL/HOW-TO), "
+        "sem decisões arquiteturais finais.\n"
+        "Formato: título, resumo, passos práticos, exemplos curtos, "
+        "perguntas para aprofundamento.\n\n"
         f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Tema alvo: {query}"
     )
@@ -196,12 +246,19 @@ async def _semantic_search_hits(
 # pb ask
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def ask(
     query: Annotated[str, typer.Argument(help="Pergunta ou task")],
-    ctx: Annotated[Optional[str], typer.Option("--ctx", help="Contexto: personal|career|knowledge|work")] = None,
-    cwd: Annotated[Optional[str], typer.Option("--cwd", help="Diretório para detecção automática de contexto")] = None,
-    rtk_max_tokens: Annotated[int, typer.Option("--rtk-max-tokens", help="Budget de tokens para contexto comprimido")] = _RUNTIME.rtk_max_tokens,
+    ctx: Annotated[
+        str | None, typer.Option("--ctx", help=_CTX_HELP)
+    ] = None,
+    cwd: Annotated[
+        str | None, typer.Option("--cwd", help="Diretório para detecção automática de contexto")
+    ] = None,
+    rtk_max_tokens: Annotated[
+        int, typer.Option("--rtk-max-tokens", help="Budget de tokens para contexto comprimido")
+    ] = _RUNTIME.rtk_max_tokens,
 ) -> None:
     """Consulta ao segundo cérebro — detecta contexto e roteia para o modelo adequado."""
     from prometheus.context.detector import ContextDetector
@@ -239,12 +296,18 @@ def ask(
             score = hit.get("score", 0.0)
             content = str(payload.get("content", "")).strip().replace("\n", " ")
             preview = (content[:200] + "...") if len(content) > 200 else content
+            compressor_content = content[:_MAX_CHUNK_INPUT_CHARS]
             snippets.append(preview)
-            context_lines.append(f"[{score:.4f}] {file_path} :: {symbol} :: {preview}")
+            context_lines.append(
+                f"[{score:.4f}] {file_path} :: {symbol} :: {compressor_content}"
+            )
             typer.echo(f"{i}. [{score:.4f}] {file_path} :: {symbol}")
 
         typer.echo("\nSíntese inicial:")
-        typer.echo("Baseado nos trechos recuperados, estes parecem ser os pontos mais relevantes para sua pergunta:")
+        typer.echo(
+            "Baseado nos trechos recuperados, estes parecem ser os pontos mais relevantes "
+            "para sua pergunta:"
+        )
         for i, text in enumerate(snippets[:3], start=1):
             typer.echo(f"{i}) {text}")
 
@@ -333,8 +396,13 @@ def rtk_status() -> None:
 
 @app.command("rtk-init")
 def rtk_init(
-    agent: Annotated[str, typer.Option("--agent", help="Agente alvo: claude|codex|copilot")] = "claude",
-    auto_patch: Annotated[bool, typer.Option("--auto-patch/--interactive", help="Executa init sem perguntas interativas")] = True,
+    agent: Annotated[
+        str, typer.Option("--agent", help="Agente alvo: claude|codex|copilot")
+    ] = "claude",
+    auto_patch: Annotated[
+        bool,
+        typer.Option("--auto-patch/--interactive", help="Executa init sem perguntas interativas"),
+    ] = True,
 ) -> None:
     """Inicializa RTK oficial para o agente escolhido."""
     rtk_path = _rtk_binary_path()
@@ -394,7 +462,9 @@ def run_proxy(
 
 @app.command("git")
 def git_proxy(
-    git_args: Annotated[list[str], typer.Argument(help="Argumentos do git (ex.: status, diff, log -n 5)")],
+    git_args: Annotated[
+        list[str], typer.Argument(help="Argumentos do git (ex.: status, diff, log -n 5)")
+    ],
 ) -> None:
     """Atalho para `pb git ...` com saída filtrada por RTK."""
     if not git_args:
@@ -406,11 +476,14 @@ def git_proxy(
 # pb search
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def search(
     query: Annotated[str, typer.Argument(help="Query de busca semântica")],
-    ctx: Annotated[Optional[str], typer.Option("--ctx", help="Contexto: personal|career|knowledge|work")] = None,
-    language: Annotated[Optional[str], typer.Option("--lang", help="Filtrar por linguagem")] = None,
+    ctx: Annotated[
+        str | None, typer.Option("--ctx", help=_CTX_HELP)
+    ] = None,
+    language: Annotated[str | None, typer.Option("--lang", help="Filtrar por linguagem")] = None,
     top_k: Annotated[int, typer.Option("--top", help="Número de resultados")] = 5,
 ) -> None:
     """Busca semântica no vault. Sem --ctx exclui work automaticamente."""
@@ -453,9 +526,12 @@ def search(
 # pb session
 # ---------------------------------------------------------------------------
 
+
 @session_app.callback(invoke_without_command=True)
 def session_root(
-    ctx_name: Annotated[Optional[str], typer.Argument(help="Contexto: personal|career|knowledge|work")] = None,
+    ctx_name: Annotated[
+        str | None, typer.Argument(help=_CTX_HELP)
+    ] = None,
 ) -> None:
     """Inicia ou exibe sessão ativa."""
     if ctx_name is None:
@@ -474,10 +550,11 @@ def session_root(
 # pb adr
 # ---------------------------------------------------------------------------
 
+
 @adr_app.command("list")
 def adr_list(
     project: Annotated[str, typer.Option("--project", "-p", help="Nome do projeto")],
-    ctx: Annotated[Optional[str], typer.Option("--ctx")] = None,
+    ctx: Annotated[str | None, typer.Option("--ctx")] = None,
 ) -> None:
     """Lista ADRs de um projeto."""
     _resolve_ctx(ctx)
@@ -504,12 +581,13 @@ def adr_list(
 @adr_app.command("add")
 def adr_add(
     project: Annotated[str, typer.Option("--project", "-p")],
-    title: Annotated[Optional[str], typer.Option("--title")] = None,
-    ctx: Annotated[Optional[str], typer.Option("--ctx")] = None,
+    title: Annotated[str | None, typer.Option("--title")] = None,
+    ctx: Annotated[str | None, typer.Option("--ctx")] = None,
 ) -> None:
     """Adiciona um ADR. Abre editor se --title não informado."""
-    from prometheus.store.session_store import ADR, SessionStore
     import datetime
+
+    from prometheus.store.session_store import ADR, SessionStore
 
     _resolve_ctx(ctx)
 
@@ -542,6 +620,7 @@ def adr_add(
 # ---------------------------------------------------------------------------
 # pb career
 # ---------------------------------------------------------------------------
+
 
 @career_app.command("metrics")
 def career_metrics() -> None:
@@ -577,6 +656,7 @@ def career_interview(
 # pb cost
 # ---------------------------------------------------------------------------
 
+
 @cost_app.callback(invoke_without_command=True)
 def cost_root(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:
@@ -611,6 +691,7 @@ def _show_cost(period: str, breakdown: bool = False) -> None:
 def cost_compression() -> None:
     """Exibe tokens economizados pelo pipeline caveman+RTK."""
     from prometheus.observability.compression_telemetry import CompressionTelemetryStore
+
     store = CompressionTelemetryStore()
     s = store.summary()
     if s["total_calls"] == 0:
@@ -630,13 +711,18 @@ def cost_compression() -> None:
 # pb til
 # ---------------------------------------------------------------------------
 
+
 @til_app.callback(invoke_without_command=True)
 def til_capture(
     ctx: typer.Context,
-    text: Annotated[Optional[str], typer.Argument(help="Texto do TIL")] = None,
-    tags: Annotated[Optional[str], typer.Option("--tags", help="Tags separadas por vírgula")] = None,
-    list_pending: Annotated[bool, typer.Option("--list", "--list-pending", help="Lista TILs pendentes")] = False,
-    promote_today: Annotated[bool, typer.Option("--promote-today", help="Promove todos os TILs do dia")] = False,
+    text: Annotated[str | None, typer.Argument(help="Texto do TIL")] = None,
+    tags: Annotated[str | None, typer.Option("--tags", help="Tags separadas por vírgula")] = None,
+    list_pending: Annotated[
+        bool, typer.Option("--list", "--list-pending", help="Lista TILs pendentes")
+    ] = False,
+    promote_today: Annotated[
+        bool, typer.Option("--promote-today", help="Promove todos os TILs do dia")
+    ] = False,
 ) -> None:
     """Captura TIL ou lista/promove TILs pendentes."""
     if ctx.invoked_subcommand is not None:
@@ -686,18 +772,13 @@ promoted: false
 
 
 def _list_til_pending() -> None:
-    import datetime
-
     vault = _RUNTIME.vault_root
     knowledge = vault / "knowledge"
     if not knowledge.exists():
         typer.echo("Vault não encontrado.")
         return
 
-    pending = [
-        f for f in knowledge.rglob("til-*.md")
-        if "promoted: false" in f.read_text()
-    ]
+    pending = [f for f in knowledge.rglob("til-*.md") if "promoted: false" in f.read_text()]
     if not pending:
         typer.echo("Nenhum TIL pendente de promoção.")
         return
@@ -709,9 +790,94 @@ def _list_til_pending() -> None:
 def _do_promote_today() -> None:
     try:
         from prometheus.vault.til_promoter import run as promote_run
+
         promote_run()
     except ImportError:
         typer.echo("[promote] til_promoter não disponível.")
+
+
+# ---------------------------------------------------------------------------
+# pb graph
+# ---------------------------------------------------------------------------
+
+@graph_app.command("index")
+def graph_index(
+    project: Annotated[str, typer.Option("--project", help="Project slug para namespace Neo4j")],
+    repo: Annotated[str, typer.Option("--repo", help="Repo a indexar com Graphify")],
+) -> None:
+    """Indexa grafo estrutural via Graphify com namespace isolado por projeto."""
+    from prometheus.store.graph_namespace import transform_cypher
+
+    graphify_bin = shutil.which("graphify")
+    if graphify_bin is None:
+        typer.echo(
+            "graphifyy não instalado. "
+            "Instale com: pip install -e '.[graph]' ou pip install graphifyy",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    repo_path = Path(repo).expanduser()
+    if not repo_path.exists():
+        typer.echo(f"Repo não encontrado: {repo_path}", err=True)
+        raise typer.Exit(1)
+
+    result = subprocess.run(
+        [graphify_bin, str(repo_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        typer.echo(result.stderr.strip() or "graphify falhou ao extrair Cypher.", err=True)
+        raise typer.Exit(result.returncode)
+
+    cypher = result.stdout.strip()
+    if not cypher:
+        typer.echo("graphify não retornou Cypher para enviar ao Neo4j.", err=True)
+        raise typer.Exit(1)
+
+    namespaced = transform_cypher(cypher, project)
+    _run_neo4j_write(namespaced)
+    typer.echo(f"Grafo indexado: project={project} repo={repo_path}")
+
+
+@graph_app.command("neighbors")
+def graph_neighbors(
+    node: Annotated[str, typer.Argument(help="Nome/id/símbolo do nó")],
+    project: Annotated[str, typer.Option("--project", help="Project slug do namespace")],
+    depth: Annotated[int, typer.Option("--depth", help="Profundidade de vizinhança")] = 1,
+) -> None:
+    """Lista vizinhos de um nó no namespace Graphify do projeto."""
+    from prometheus.store.graph_namespace import neighbors_query
+
+    rows = _run_neo4j_read(neighbors_query(node, project, depth))
+    if not rows:
+        typer.echo("Nenhum vizinho encontrado.")
+        return
+    for row in rows:
+        typer.echo(f"{row.get('node')} -> {row.get('neighbor')}")
+
+
+@graph_app.command("path")
+def graph_path(
+    from_node: Annotated[str, typer.Argument(help="Nó de origem")],
+    to_node: Annotated[str, typer.Argument(help="Nó de destino")],
+    project: Annotated[str, typer.Option("--project", help="Project slug do namespace")],
+) -> None:
+    """Mostra o caminho mais curto entre dois nós no namespace do projeto."""
+    from prometheus.store.graph_namespace import path_query
+
+    rows = _run_neo4j_read(path_query(from_node, to_node, project))
+    if not rows:
+        typer.echo("Nenhum caminho encontrado.")
+        return
+    for row in rows:
+        path = row.get("path")
+        if isinstance(path, list):
+            typer.echo(" -> ".join(str(item) for item in path))
+        else:
+            typer.echo(str(path))
 
 
 @til_app.command("howto")
@@ -728,6 +894,7 @@ def til_to_howto(
 
     try:
         from prometheus.vault.til_promoter import promote_to_howto
+
         howto_path = promote_to_howto(til_path)
         typer.echo(f"HOW-TO criado: {howto_path}")
     except ImportError:
@@ -738,6 +905,7 @@ def til_to_howto(
 # pb deep
 # ---------------------------------------------------------------------------
 
+
 @deep_app.command("suggest")
 def deep_suggest() -> None:
     """Analisa TILs da semana e sugere tópicos para aprofundamento."""
@@ -745,6 +913,7 @@ def deep_suggest() -> None:
     async def _suggest() -> None:
         try:
             from prometheus.vault.deep_suggester import suggest_deep_topics
+
             suggestions = await suggest_deep_topics()
             if not suggestions:
                 typer.echo("Nenhuma sugestão gerada (vault vazio ou Ollama não disponível).")
@@ -784,12 +953,17 @@ def deep_list() -> None:
 # pb expand
 # ---------------------------------------------------------------------------
 
+
 @expand_app.command("run")
 def expand_run(
-    ctx: Annotated[str, typer.Option("--ctx", help="Contexto alvo")] ,
-    topic: Annotated[str, typer.Option("--topic", help="Tema para expansão manual")] ,
-    fast: Annotated[bool, typer.Option("--fast", help="Limita coleta local para execução rápida")] = False,
-    allow_cloud: Annotated[bool, typer.Option("--allow-cloud", help="Permite uso cloud se policy e budget liberarem")] = False,
+    ctx: Annotated[str, typer.Option("--ctx", help="Contexto alvo")],
+    topic: Annotated[str, typer.Option("--topic", help="Tema para expansão manual")],
+    fast: Annotated[
+        bool, typer.Option("--fast", help="Limita coleta local para execução rápida")
+    ] = False,
+    allow_cloud: Annotated[
+        bool, typer.Option("--allow-cloud", help="Permite uso cloud se policy e budget liberarem")
+    ] = False,
 ) -> None:
     """Executa expansão manual e grava apenas em staging."""
     from prometheus.expansion.service import ExpansionService
@@ -865,10 +1039,13 @@ def expand_reject(
 # pb index
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def index(
-    path: Annotated[Optional[str], typer.Argument(help="Caminho a indexar (default: vault inteiro)")] = None,
-    ctx: Annotated[Optional[str], typer.Option("--ctx")] = None,
+    path: Annotated[
+        str | None, typer.Argument(help="Caminho a indexar (default: vault inteiro)")
+    ] = None,
+    ctx: Annotated[str | None, typer.Option("--ctx")] = None,
 ) -> None:
     """Indexação one-shot do vault ou de um path específico."""
     resolved_ctx = _resolve_ctx(ctx)
@@ -914,10 +1091,14 @@ def index(
 
 @app.command("index-dev")
 def index_dev(
-    project: Annotated[Optional[str], typer.Option("--project", help="Nome do projeto no manifesto")] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Lista projetos/arquivos sem gravar")] = False,
+    project: Annotated[
+        str | None, typer.Option("--project", help="Nome do projeto no manifesto")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Lista projetos/arquivos sem gravar")
+    ] = False,
     manifest: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--manifest", help="Manifesto JSON de projetos"),
     ] = None,
 ) -> None:
@@ -925,7 +1106,9 @@ def index_dev(
     from prometheus.config.projects import load_project_manifest
     from prometheus.embedder.pipeline import iter_supported_files
 
-    manifest_path = Path(manifest) if manifest else _RUNTIME.engine_root / "config" / "projects.json"
+    manifest_path = (
+        Path(manifest) if manifest else _RUNTIME.engine_root / "config" / "projects.json"
+    )
     try:
         projects = load_project_manifest(manifest_path)
     except (FileNotFoundError, ValueError) as exc:
@@ -985,8 +1168,7 @@ def index_dev(
                 total_files += indexed_files
                 total_chunks += chunks
                 typer.echo(
-                    f"{entry.name}: {indexed_files} arquivo(s), {chunks} chunk(s) "
-                    f"(ctx={entry.ctx})"
+                    f"{entry.name}: {indexed_files} arquivo(s), {chunks} chunk(s) (ctx={entry.ctx})"
                 )
         finally:
             await store.close()
@@ -999,8 +1181,10 @@ def index_dev(
 
 @app.command()
 def watch(
-    path: Annotated[Optional[str], typer.Argument(help="Caminho para observar (default: vault inteiro)")] = None,
-    ctx: Annotated[Optional[str], typer.Option("--ctx")] = None,
+    path: Annotated[
+        str | None, typer.Argument(help="Caminho para observar (default: vault inteiro)")
+    ] = None,
+    ctx: Annotated[str | None, typer.Option("--ctx")] = None,
 ) -> None:
     """Observa mudanças e reindexa arquivos suportados em tempo real."""
     resolved_ctx = _resolve_ctx(ctx)
@@ -1055,6 +1239,7 @@ def watch(
 # pb memory
 # ---------------------------------------------------------------------------
 
+
 @memory_app.command("smoke")
 def memory_smoke(
     ctx: Annotated[str, typer.Option("--ctx", help="Contexto da memória")] = "knowledge",
@@ -1083,6 +1268,7 @@ def memory_smoke(
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     app()

@@ -21,7 +21,8 @@ class SessionStore:
     def save(self, project: str, summary: str, raw_turns: int) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT INTO session_memory (project, summary, raw_turns, created_at) VALUES (?,?,?,?)",
+                "INSERT INTO session_memory "
+                "(project, summary, raw_turns, created_at) VALUES (?,?,?,?)",
                 (project, summary, raw_turns, datetime.utcnow().isoformat()),
             )
 

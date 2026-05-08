@@ -7,6 +7,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+REMOTE_INFRA_HOST="${PROMETHEUS_INFRA_HOST:-${PROMETHEUS_DESKTOP_HOST:-}}"
+
 echo "==> Detectando plataforma..."
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -48,18 +50,6 @@ fi
 
 echo "    .env.local gerado"
 
-echo ""
-echo "==> Criando diretórios de dados..."
-mkdir -p data/{qdrant,redis,neo4j,postgres,ollama}
-
-echo ""
-echo "==> Subindo stack Docker com profile: $COMPOSE_PROFILE"
-docker compose --profile "$COMPOSE_PROFILE" up -d
-
-echo ""
-echo "==> Aguardando serviços ficarem healthy..."
-sleep 5
-
 # Verificação básica de acessibilidade
 check_service() {
     local name=$1
@@ -71,21 +61,44 @@ check_service() {
     fi
 }
 
-check_service "Qdrant"   "http://localhost:6333/collections"
-check_service "Redis"    "http://localhost:6379" || true  # redis não é HTTP
-check_service "Langfuse" "http://localhost:3000"
-check_service "Ollama"   "http://localhost:11434/api/tags"
-
-echo ""
-echo "==> Puxando modelos Ollama necessários..."
-ollama pull phi3:mini
-ollama pull gemma4:e4b
-
-if [[ "$PLATFORM" == "pc" ]] || { [[ "$PLATFORM" == "mac" ]] && [[ "${MEM_GB:-0}" -ge 24 ]]; }; then
-    echo "    Puxando gemma4:26b (modelo knowledge)..."
-    ollama pull gemma4:26b
+if [[ -n "$REMOTE_INFRA_HOST" ]]; then
+    echo ""
+    echo "==> Modo infra remota detectado: $REMOTE_INFRA_HOST"
+    echo "    Docker local e pull de modelos serão ignorados."
+    echo ""
+    echo "==> Validando serviços remotos..."
+    check_service "Qdrant"   "http://${REMOTE_INFRA_HOST}:6333/collections"
+    check_service "Langfuse" "http://${REMOTE_INFRA_HOST}:3000"
+    check_service "Ollama"   "http://${REMOTE_INFRA_HOST}:11434/api/tags"
 else
-    echo "    Memória insuficiente para gemma4:26b — usando gemma4:e4b como fallback"
+    echo ""
+    echo "==> Criando diretórios de dados..."
+    mkdir -p data/{qdrant,redis,neo4j,postgres,ollama}
+
+    echo ""
+    echo "==> Subindo stack Docker com profile: $COMPOSE_PROFILE"
+    docker compose --profile "$COMPOSE_PROFILE" up -d
+
+    echo ""
+    echo "==> Aguardando serviços ficarem healthy..."
+    sleep 5
+
+    check_service "Qdrant"   "http://localhost:6333/collections"
+    check_service "Redis"    "http://localhost:6379" || true  # redis não é HTTP
+    check_service "Langfuse" "http://localhost:3000"
+    check_service "Ollama"   "http://localhost:11434/api/tags"
+
+    echo ""
+    echo "==> Puxando modelos Ollama necessários..."
+    ollama pull phi3:mini
+    ollama pull gemma4:e4b
+
+    if [[ "$PLATFORM" == "pc" ]] || { [[ "$PLATFORM" == "mac" ]] && [[ "${MEM_GB:-0}" -ge 24 ]]; }; then
+        echo "    Puxando gemma4:26b (modelo knowledge)..."
+        ollama pull gemma4:26b
+    else
+        echo "    Memória insuficiente para gemma4:26b — usando gemma4:e4b como fallback"
+    fi
 fi
 
 echo ""
@@ -93,6 +106,10 @@ echo "==> Setup concluído."
 echo ""
 echo "    Próximos passos:"
 echo "      1. Preencha ANTHROPIC_API_KEY em .env.local"
-echo "      2. Indexe o vault: pb index --ctx personal"
+if [[ -n "$REMOTE_INFRA_HOST" ]]; then
+    echo "      2. Confirme os endpoints remotos em .env.local"
+else
+    echo "      2. Indexe o vault: pb index --ctx personal"
+fi
 echo "      3. Consulte: pb ask 'sua pergunta aqui'"
 echo ""

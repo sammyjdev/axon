@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """One-shot vault indexer. Walks vault path and indexes all supported files."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,10 +22,7 @@ async def index_vault(vault_path: Path) -> None:
     engine = EmbedderEngine()
     store = VectorStore()
 
-    files = [
-        p for p in vault_path.rglob("*")
-        if p.is_file() and p.suffix in _SUPPORTED_EXTENSIONS
-    ]
+    files = [p for p in vault_path.rglob("*") if p.is_file() and p.suffix in _SUPPORTED_EXTENSIONS]
 
     logger.info("Found %d files to index in %s", len(files), vault_path)
     total = 0
