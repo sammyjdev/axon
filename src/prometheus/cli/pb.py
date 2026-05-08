@@ -29,6 +29,7 @@ deep_app = typer.Typer(help="Sugestões de aprofundamento técnico")
 expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
 memory_app = typer.Typer(help="Memória Mem0 / Neo4j")
 graph_app = typer.Typer(help="Grafo estrutural Graphify / Neo4j")
+profile_app = typer.Typer(help="Perfis de instalação e uso")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -39,6 +40,7 @@ app.add_typer(deep_app, name="deep")
 app.add_typer(expand_app, name="expand")
 app.add_typer(memory_app, name="memory")
 app.add_typer(graph_app, name="graph")
+app.add_typer(profile_app, name="profile")
 
 QDRANT_DEFAULT_URL = "http://localhost:6333"
 _MAX_CHUNK_INPUT_CHARS = 4_000
@@ -546,8 +548,21 @@ def init(
             [
                 "[runtime]",
                 f'mode = "{normalized_mode}"',
+                'active_profile = "solo-dev"',
                 f'engine_root = "{engine_root}"',
                 f'vault_root = "{vault_root}"',
+                "",
+                "[profiles.solo-dev]",
+                'description = "Single developer default"',
+                f'mode = "{normalized_mode}"',
+                "",
+                "[profiles.team-dev]",
+                'description = "Shared team setup"',
+                'mode = "remote-infra"',
+                "",
+                "[profiles.privacy-first]",
+                'description = "Prefer local or remote self-hosted paths"',
+                'mode = "minimal"',
                 "",
             ]
         ),
@@ -561,6 +576,35 @@ def init(
     typer.echo(f"1. source {env_file}")
     typer.echo("2. rode `pb doctor`")
     typer.echo("3. indexe seu vault com `pb index ~/vault/knowledge --ctx knowledge`")
+
+
+@profile_app.command("list")
+def profile_list() -> None:
+    """Lista perfis conhecidos em `prometheus.toml`."""
+    from prometheus.config.runtime import get_active_profile, list_profiles
+
+    active = get_active_profile()
+    profiles = list_profiles()
+    if not profiles:
+        typer.echo("Nenhum profile encontrado em prometheus.toml")
+        raise typer.Exit(1)
+    for name, description, mode in profiles:
+        marker = "*" if name == active else "-"
+        typer.echo(f"{marker} {name} | mode={mode} | {description}")
+
+
+@profile_app.command("use")
+def profile_use(
+    name: Annotated[str, typer.Argument(help="Nome do profile")],
+) -> None:
+    """Define o profile ativo e sincroniza o modo no `prometheus.toml`."""
+    from prometheus.config.runtime import use_profile
+
+    try:
+        use_profile(name)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"Perfil ativo: {name}")
 
 
 # ---------------------------------------------------------------------------
