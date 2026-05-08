@@ -607,6 +607,24 @@ def profile_use(
     typer.echo(f"Perfil ativo: {name}")
 
 
+@profile_app.command("show")
+def profile_show() -> None:
+    """Exibe o profile ativo definido em `prometheus.toml`."""
+    from prometheus.config.runtime import get_active_profile, get_profile
+
+    active = get_active_profile()
+    if not active:
+        typer.echo("Nenhum profile ativo em prometheus.toml")
+        raise typer.Exit(1)
+    try:
+        profile = get_profile(active)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"name: {profile['name']}")
+    typer.echo(f"mode: {profile['mode']}")
+    typer.echo(f"description: {profile['description']}")
+
+
 # ---------------------------------------------------------------------------
 # pb search
 # ---------------------------------------------------------------------------

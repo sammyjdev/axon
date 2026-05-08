@@ -306,6 +306,35 @@ def test_profile_use_updates_config_file(monkeypatch, tmp_path) -> None:
     assert 'mode = "remote-infra"' in payload
 
 
+def test_profile_show_displays_active_profile(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                'mode = "hybrid-local"',
+                'active_profile = "solo-dev"',
+                f'engine_root = "{tmp_path / "engine"}"',
+                f'vault_root = "{tmp_path / "vault"}"',
+                "",
+                "[profiles.solo-dev]",
+                'description = "Single developer default"',
+                'mode = "hybrid-local"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(pb.app, ["profile", "show"])
+
+    assert result.exit_code == 0
+    assert "name: solo-dev" in result.stdout
+    assert "mode: hybrid-local" in result.stdout
+    assert "description: Single developer default" in result.stdout
+
+
 def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> None:
     class FakeDetector:
         def __init__(self, *_args, **_kwargs) -> None:
