@@ -25,6 +25,7 @@ async def test_compresses_long_text() -> None:
     assert result == "compressed result"
     assert error is None
     mock_llm.assert_awaited_once()
+    assert mock_llm.await_args.kwargs["extra_body"] == {"options": {"num_ctx": 4096}}
 
 
 @pytest.mark.asyncio
@@ -48,6 +49,7 @@ async def test_strict_compression_includes_required_symbols() -> None:
     messages = mock_llm.await_args.kwargs["messages"]
     assert "lossless technical context compressor" in messages[0]["content"]
     assert "Required symbols to preserve exactly: index_path" in messages[1]["content"]
+    assert mock_llm.await_args.kwargs["extra_body"] == {"options": {"num_ctx": 4096}}
 
 
 @pytest.mark.asyncio

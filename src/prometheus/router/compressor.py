@@ -73,6 +73,7 @@ async def caveman_compress(
             ],
             max_tokens=max_tokens,
             api_base=_RUNTIME.ollama_local_host,
+            extra_body={"options": {"num_ctx": _RUNTIME.caveman_num_ctx}},
         )
         compressed = response.choices[0].message.content or text
         logger.debug("caveman_compress(%s): %d -> %d chars", model, len(text), len(compressed))

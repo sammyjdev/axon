@@ -30,7 +30,12 @@ class TestGetSearchCollections:
 
     def test_personal_ctx_excludes_work(self) -> None:
         result = get_search_collections("personal")
-        assert "work" not in result
+        assert result == ["personal"]
+
+    def test_explicit_non_work_ctx_returns_only_that_context(self) -> None:
+        assert get_search_collections("knowledge") == ["knowledge"]
+        assert get_search_collections("career") == ["career"]
+        assert get_search_collections("saas") == ["saas"]
 
     def test_empty_string_ctx_excludes_work(self) -> None:
         result = get_search_collections("")

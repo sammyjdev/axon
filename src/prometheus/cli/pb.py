@@ -272,83 +272,85 @@ def ask(
         db.parent.mkdir(parents=True, exist_ok=True)
         store = SessionStore(db)
         await store.init()
+        try:
+            detector = ContextDetector(store)
+            result = detector.detect(query, cwd=cwd or os.getcwd())
+            effective_ctx = resolved_ctx or result.context
+            collections = get_search_collections(effective_ctx)
+            hits = await _semantic_search_hits(query, collections=collections, top_k=5)
 
-        detector = ContextDetector(store)
-        result = detector.detect(query, cwd=cwd or os.getcwd())
-        effective_ctx = resolved_ctx or result.context
-        collections = get_search_collections(effective_ctx)
-        hits = await _semantic_search_hits(query, collections=collections, top_k=5)
+            typer.echo(f"Contexto detectado: {result.display}")
+            typer.echo(f"Busca em ctx={effective_ctx} ({collections})")
 
-        typer.echo(f"Contexto detectado: {result.display}")
-        typer.echo(f"Busca em ctx={effective_ctx} ({collections})")
+            if not hits:
+                typer.echo("\nNenhum contexto relevante encontrado.")
+                return
 
-        if not hits:
-            typer.echo("\nNenhum contexto relevante encontrado.")
-            return
+            typer.echo("\nContexto relevante:")
+            snippets: list[str] = []
+            context_lines: list[str] = []
+            for i, hit in enumerate(hits[:5], start=1):
+                payload = hit.get("payload", {})
+                file_path = payload.get("file_path", "<sem arquivo>")
+                symbol = payload.get("symbol", "<sem símbolo>")
+                score = hit.get("score", 0.0)
+                content = str(payload.get("content", "")).strip().replace("\n", " ")
+                preview = (content[:200] + "...") if len(content) > 200 else content
+                compressor_content = content[:_MAX_CHUNK_INPUT_CHARS]
+                snippets.append(preview)
+                context_lines.append(
+                    f"[{score:.4f}] {file_path} :: {symbol} :: {compressor_content}"
+                )
+                typer.echo(f"{i}. [{score:.4f}] {file_path} :: {symbol}")
 
-        typer.echo("\nContexto relevante:")
-        snippets: list[str] = []
-        context_lines: list[str] = []
-        for i, hit in enumerate(hits[:5], start=1):
-            payload = hit.get("payload", {})
-            file_path = payload.get("file_path", "<sem arquivo>")
-            symbol = payload.get("symbol", "<sem símbolo>")
-            score = hit.get("score", 0.0)
-            content = str(payload.get("content", "")).strip().replace("\n", " ")
-            preview = (content[:200] + "...") if len(content) > 200 else content
-            compressor_content = content[:_MAX_CHUNK_INPUT_CHARS]
-            snippets.append(preview)
-            context_lines.append(
-                f"[{score:.4f}] {file_path} :: {symbol} :: {compressor_content}"
+            typer.echo("\nSíntese inicial:")
+            typer.echo(
+                "Baseado nos trechos recuperados, estes parecem ser os pontos mais relevantes "
+                "para sua pergunta:"
             )
-            typer.echo(f"{i}. [{score:.4f}] {file_path} :: {symbol}")
+            for i, text in enumerate(snippets[:3], start=1):
+                typer.echo(f"{i}) {text}")
 
-        typer.echo("\nSíntese inicial:")
-        typer.echo(
-            "Baseado nos trechos recuperados, estes parecem ser os pontos mais relevantes "
-            "para sua pergunta:"
-        )
-        for i, text in enumerate(snippets[:3], start=1):
-            typer.echo(f"{i}) {text}")
+            raw_context = "\n".join(context_lines)
+            (
+                compressed_context,
+                engine_name,
+                caveman_note,
+                rtk_note,
+                before_tokens,
+                after_tokens,
+                reduction_pct,
+            ) = await _compress_context_pipeline(
+                raw_context,
+                max_tokens=rtk_max_tokens,
+                caller="cli",
+                ctx=effective_ctx,
+            )
 
-        raw_context = "\n".join(context_lines)
-        (
-            compressed_context,
-            engine_name,
-            caveman_note,
-            rtk_note,
-            before_tokens,
-            after_tokens,
-            reduction_pct,
-        ) = await _compress_context_pipeline(
-            raw_context,
-            max_tokens=rtk_max_tokens,
-            caller="cli",
-            ctx=effective_ctx,
-        )
+            planner_prompt, executor_prompt, local_prompt = _build_planner_executor_prompts(
+                query=query,
+                compressed_context=compressed_context,
+                ctx_name=effective_ctx,
+            )
 
-        planner_prompt, executor_prompt, local_prompt = _build_planner_executor_prompts(
-            query=query,
-            compressed_context=compressed_context,
-            ctx_name=effective_ctx,
-        )
+            typer.echo("\ncompression:")
+            typer.echo(f"engine: {engine_name}")
+            if caveman_note:
+                typer.echo(f"caveman_note: {caveman_note}")
+            if rtk_note:
+                typer.echo(f"rtk_note: {rtk_note}")
+            typer.echo(f"tokens aprox: {before_tokens} -> {after_tokens} (-{reduction_pct:.1f}%)")
 
-        typer.echo("\ncompression:")
-        typer.echo(f"engine: {engine_name}")
-        if caveman_note:
-            typer.echo(f"caveman_note: {caveman_note}")
-        if rtk_note:
-            typer.echo(f"rtk_note: {rtk_note}")
-        typer.echo(f"tokens aprox: {before_tokens} -> {after_tokens} (-{reduction_pct:.1f}%)")
+            typer.echo("\nPrompt pronto — Claude (Planner):")
+            typer.echo(planner_prompt)
 
-        typer.echo("\nPrompt pronto — Claude (Planner):")
-        typer.echo(planner_prompt)
+            typer.echo("\nPrompt pronto — Codex (Executor):")
+            typer.echo(executor_prompt)
 
-        typer.echo("\nPrompt pronto — Codex (Executor):")
-        typer.echo(executor_prompt)
-
-        typer.echo("\nPrompt pronto — Local (Knowledge Draft):")
-        typer.echo(local_prompt)
+            typer.echo("\nPrompt pronto — Local (Knowledge Draft):")
+            typer.echo(local_prompt)
+        finally:
+            await store.close()
 
     asyncio.run(_ask())
 
