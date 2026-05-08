@@ -7,6 +7,8 @@ vector_store requer Qdrant real — testa apenas a lógica de agrupamento/batch.
 
 import json
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -16,6 +18,7 @@ from prometheus.store.failure_store import FailureRecord, FailureStore
 from prometheus.store.graph_store import GraphStore
 from prometheus.store.outcome_store import OutcomeRecord, OutcomeStore
 from prometheus.store.session_store import ADR, CodeChange, SessionMemory, SessionStore
+from prometheus.store.vector_store import VectorStore
 
 # ── collections.py ─────────────────────────────────────────────────────────────
 
@@ -42,6 +45,93 @@ class TestGetSearchCollections:
     def test_empty_string_ctx_excludes_work(self) -> None:
         result = get_search_collections("")
         assert "work" not in result
+
+
+# ── vector_store.py ────────────────────────────────────────────────────────────
+
+
+class _FakeQdrantClient:
+    def __init__(self, responses: dict[str, list[SimpleNamespace]]) -> None:
+        self._responses = responses
+
+    async def query_points(self, collection_name: str, **_: object) -> SimpleNamespace:
+        return SimpleNamespace(points=self._responses.get(collection_name, []))
+
+
+@pytest.mark.asyncio
+class TestVectorStoreSearch:
+    async def test_search_down_ranks_stale_hits_and_exposes_replacement_metadata(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "prometheus.store.vector_store._utcnow",
+            lambda: datetime(2026, 5, 8, tzinfo=UTC),
+        )
+        store = VectorStore.__new__(VectorStore)
+        store._client = _FakeQdrantClient(
+            {
+                "knowledge": [
+                    SimpleNamespace(
+                        id="old",
+                        score=0.91,
+                        payload={
+                            "path": "runbooks/search.md",
+                            "content": "old runbook",
+                            "modified_at": "2025-01-01T00:00:00+00:00",
+                        },
+                    ),
+                    SimpleNamespace(
+                        id="new",
+                        score=0.90,
+                        payload={
+                            "path": "runbooks/search.md",
+                            "content": "new runbook",
+                            "modified_at": "2026-04-01T00:00:00+00:00",
+                        },
+                    ),
+                ]
+            }
+        )
+
+        results = await store.search([0.1, 0.2], ["knowledge"], top_k=2)
+
+        assert [result["id"] for result in results] == ["new", "old"]
+        assert results[0]["score"] == pytest.approx(0.90)
+        assert results[0]["ranking_score"] == pytest.approx(0.90)
+        assert results[0]["staleness"] == {
+            "score": 0.0,
+            "is_stale": False,
+            "reasons": [],
+            "replacement_family": "runbooks/search.md",
+            "replacement_id": None,
+            "replacement_reason": None,
+        }
+        assert results[1]["score"] == pytest.approx(0.91)
+        assert results[1]["ranking_score"] == pytest.approx(0.71)
+        assert results[1]["staleness"] == {
+            "score": 1.0,
+            "is_stale": True,
+            "reasons": ["age_exceeds_stale_window"],
+            "replacement_family": "runbooks/search.md",
+            "replacement_id": "new",
+            "replacement_reason": "newer_record_in_family",
+        }
+
+    async def test_search_breaks_score_ties_deterministically(self) -> None:
+        store = VectorStore.__new__(VectorStore)
+        store._client = _FakeQdrantClient(
+            {
+                "knowledge": [
+                    SimpleNamespace(id="b-hit", score=0.5, payload={"content": "second"}),
+                    SimpleNamespace(id="a-hit", score=0.5, payload={"content": "first"}),
+                ]
+            }
+        )
+
+        results = await store.search([0.1, 0.2], ["knowledge"], top_k=2)
+
+        assert [result["id"] for result in results] == ["a-hit", "b-hit"]
+        assert all(result["ranking_score"] == pytest.approx(0.5) for result in results)
 
 
 # ── graph_store.py ─────────────────────────────────────────────────────────────

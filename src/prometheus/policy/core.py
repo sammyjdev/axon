@@ -6,6 +6,7 @@ from enum import Enum
 
 from prometheus.config.runtime import RuntimeConfig, is_corporate_context, load_runtime_config
 from prometheus.observability.compliance import ComplianceEvent, emit_compliance_event
+from prometheus.observability.trace_store import TracePayload, TraceStore
 
 
 class SensitivityLevel(str, Enum):
@@ -59,6 +60,9 @@ class PolicyRegistry:
         caller: str | None = None,
         force_cloud: bool = False,
         sensitivity: SensitivityLevel | None = None,
+        trace_store: TraceStore | None = None,
+        trace_id: str | None = None,
+        trace_payload: TracePayload | None = None,
     ) -> PolicyDecision:
         route = RouteType.LOCAL if model.startswith("ollama/") else RouteType.CLOUD
         effective_sensitivity = sensitivity or self._sensitivity_from_ctx(ctx)
@@ -75,7 +79,13 @@ class PolicyRegistry:
                 ctx=ctx,
                 sensitivity=effective_sensitivity,
             )
-            self._emit(decision, caller)
+            self._emit(
+                decision,
+                caller,
+                trace_store=trace_store,
+                trace_id=trace_id,
+                trace_payload=trace_payload,
+            )
             return decision
 
         if force_cloud and is_corporate_context(ctx):
@@ -89,7 +99,13 @@ class PolicyRegistry:
                 ctx=ctx,
                 sensitivity=effective_sensitivity,
             )
-            self._emit(decision, caller)
+            self._emit(
+                decision,
+                caller,
+                trace_store=trace_store,
+                trace_id=trace_id,
+                trace_payload=trace_payload,
+            )
             return decision
 
         if is_corporate_context(ctx):
@@ -103,7 +119,13 @@ class PolicyRegistry:
                 ctx=ctx,
                 sensitivity=effective_sensitivity,
             )
-            self._emit(decision, caller)
+            self._emit(
+                decision,
+                caller,
+                trace_store=trace_store,
+                trace_id=trace_id,
+                trace_payload=trace_payload,
+            )
             return decision
 
         if effective_sensitivity is SensitivityLevel.RESTRICTED:
@@ -117,7 +139,13 @@ class PolicyRegistry:
                 ctx=ctx,
                 sensitivity=effective_sensitivity,
             )
-            self._emit(decision, caller)
+            self._emit(
+                decision,
+                caller,
+                trace_store=trace_store,
+                trace_id=trace_id,
+                trace_payload=trace_payload,
+            )
             return decision
 
         if effective_sensitivity is SensitivityLevel.CONFIDENTIAL:
@@ -131,7 +159,13 @@ class PolicyRegistry:
                 ctx=ctx,
                 sensitivity=effective_sensitivity,
             )
-            self._emit(decision, caller)
+            self._emit(
+                decision,
+                caller,
+                trace_store=trace_store,
+                trace_id=trace_id,
+                trace_payload=trace_payload,
+            )
             return decision
 
         decision = PolicyDecision(
@@ -144,10 +178,24 @@ class PolicyRegistry:
             ctx=ctx,
             sensitivity=effective_sensitivity,
         )
-        self._emit(decision, caller)
+        self._emit(
+            decision,
+            caller,
+            trace_store=trace_store,
+            trace_id=trace_id,
+            trace_payload=trace_payload,
+        )
         return decision
 
-    def _emit(self, decision: PolicyDecision, caller: str | None) -> None:
+    def _emit(
+        self,
+        decision: PolicyDecision,
+        caller: str | None,
+        *,
+        trace_store: TraceStore | None = None,
+        trace_id: str | None = None,
+        trace_payload: TracePayload | None = None,
+    ) -> None:
         emit_compliance_event(
             ComplianceEvent(
                 decision_id=decision.decision_id,
@@ -160,6 +208,12 @@ class PolicyRegistry:
                 allowed=decision.allowed,
             )
         )
+        if trace_store is not None and trace_id is not None and caller is not None:
+            trace_store.recorder(
+                trace_id=trace_id,
+                caller=caller,
+                ctx=decision.ctx,
+            ).append_policy_decision(decision, payload=trace_payload)
 
     @staticmethod
     def _sensitivity_from_ctx(ctx: str | None) -> SensitivityLevel:

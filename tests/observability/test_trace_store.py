@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from prometheus.policy.core import (
+    PolicyDecision,
+    ReasonCode,
+    RouteType,
+    SensitivityLevel,
+)
 from prometheus.observability.trace_store import TraceRecord, TraceStore
 
 
@@ -140,3 +146,57 @@ def test_trace_store_query_filters_by_policy_decision_and_caller(tmp_path) -> No
     )
 
     assert result == [records[0], records[1]]
+
+
+def test_trace_store_recorder_appends_stages_with_shared_defaults(tmp_path) -> None:
+    store = TraceStore(runtime=SimpleNamespace(data_root=tmp_path / "data"))
+    recorder = store.recorder(trace_id="trace-456", caller="router", ctx="knowledge")
+
+    retrieval = recorder.append_stage(
+        "retrieval",
+        payload={"chunks": 4},
+    )
+    compression = recorder.append_stage(
+        "compression",
+        model="phi3:mini",
+        payload={"before_tokens": 120, "after_tokens": 80},
+    )
+
+    assert retrieval.trace_id == "trace-456"
+    assert retrieval.caller == "router"
+    assert retrieval.ctx == "knowledge"
+    assert compression.model == "phi3:mini"
+    assert store.load_all() == [retrieval, compression]
+
+
+def test_trace_store_recorder_mirrors_policy_decision_metadata(tmp_path) -> None:
+    store = TraceStore(runtime=SimpleNamespace(data_root=tmp_path / "data"))
+    recorder = store.recorder(trace_id="trace-789", caller="router", ctx="knowledge")
+    decision = PolicyDecision(
+        decision_id="decision-9",
+        allowed=False,
+        reason_code=ReasonCode.DENY_CONFIDENTIAL_CLOUD,
+        policy_version="2026-04-21",
+        route=RouteType.CLOUD,
+        model="claude-sonnet-4-6",
+        ctx="knowledge",
+        sensitivity=SensitivityLevel.CONFIDENTIAL,
+        metadata={"policy_path": "retrieval.route"},
+    )
+
+    record = recorder.append_policy_decision(
+        decision,
+        payload={"blocked_docs": 2},
+    )
+
+    assert record.policy_decision_id == "decision-9"
+    assert record.policy_version == "2026-04-21"
+    assert record.route == "cloud"
+    assert record.model == "claude-sonnet-4-6"
+    assert record.payload == {
+        "allowed": False,
+        "reason_code": "DENY_CONFIDENTIAL_CLOUD",
+        "sensitivity": "CONFIDENTIAL",
+        "policy_path": "retrieval.route",
+        "blocked_docs": 2,
+    }

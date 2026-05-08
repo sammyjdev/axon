@@ -5,6 +5,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Annotated
 
@@ -282,6 +283,121 @@ def _build_planner_executor_prompts(
     return planner, executor, local_knowledge
 
 
+def _load_retrieval_profile() -> tuple[str | None, str, tuple[str, ...]]:
+    from prometheus.config.runtime import get_active_profile, get_profile, select_capabilities
+
+    active_profile = _RUNTIME.active_profile or get_active_profile()
+    mode = _RUNTIME.mode
+    capabilities: tuple[str, ...] = ()
+
+    if active_profile:
+        try:
+            profile = get_profile(active_profile)
+            profile_mode = str(profile.get("mode") or "").strip()
+            if profile_mode:
+                mode = profile_mode
+            capabilities = tuple(select_capabilities(profile=profile).enabled_features)
+        except ValueError:
+            pass
+
+    return active_profile, mode, capabilities
+
+
+def _select_retrieval_strategy(query: str, ctx: str | None) -> tuple[object, str, str | None, str]:
+    from prometheus.context.contracts import select_default_retrieval_strategy
+    from prometheus.router.classifier import TaskType, classify_task_with_source
+
+    task_type = TaskType.CODE_ANALYSIS
+    try:
+        task_type, _source = classify_task_with_source(query, ctx=ctx)
+    except Exception:
+        pass
+
+    profile, mode, capabilities = _load_retrieval_profile()
+    strategy = select_default_retrieval_strategy(
+        task_type=task_type,
+        profile=profile,
+        mode=mode,
+        capabilities=capabilities,
+    )
+    return strategy, str(task_type.value), profile, mode
+
+
+def _build_context_pack(
+    *,
+    strategy,
+    task_type: str,
+    profile: str | None,
+    mode: str,
+    effective_ctx: str | None,
+    hits: list[dict],
+):
+    from prometheus.context.contracts import ContextPack
+
+    contexts = (effective_ctx,) if effective_ctx else strategy.contexts
+    segments: list[str] = []
+    total_chars = 0
+
+    for hit in hits[: strategy.max_segments]:
+        payload = hit.get("payload", {})
+        file_path = payload.get("file_path", "<sem arquivo>")
+        symbol = payload.get("symbol", "<sem símbolo>")
+        score = hit.get("score", 0.0)
+        content = str(payload.get("content", "")).strip().replace("\n", " ")
+        remaining = strategy.max_chars - total_chars
+        if remaining <= 0:
+            break
+        compressor_content = content[: min(_MAX_CHUNK_INPUT_CHARS, remaining)]
+        segment = f"[{score:.4f}] {file_path} :: {symbol} :: {compressor_content}".strip()
+        if not segment:
+            continue
+        segments.append(segment)
+        total_chars += len(segment)
+
+    metadata = (
+        ("ctx", effective_ctx or "auto"),
+        ("hits", str(len(segments))),
+        ("profile", profile or ""),
+        ("mode", mode),
+    )
+    return ContextPack(
+        strategy=strategy,
+        task_type=task_type,
+        profile=profile,
+        mode=mode,
+        contexts=contexts,
+        segments=tuple(segments),
+        metadata=metadata,
+    )
+
+
+def _context_pack_summary(pack) -> str:
+    contexts = ",".join(pack.contexts) if pack.contexts else "auto"
+    return (
+        f"ContextPack: strategy={pack.strategy.name} task_type={pack.task_type} "
+        f"segments={len(pack.segments)} contexts={contexts}"
+    )
+
+
+def _staleness_notes(hits: list[dict]) -> list[str]:
+    notes: list[str] = []
+    for hit in hits:
+        staleness = hit.get("staleness") or {}
+        if not isinstance(staleness, dict) or not staleness.get("is_stale"):
+            continue
+        payload = hit.get("payload", {})
+        symbol = payload.get("symbol", "<sem símbolo>")
+        replacement_id = staleness.get("replacement_id")
+        reason = staleness.get("replacement_reason") or ",".join(staleness.get("reasons", []))
+        note = f"{symbol} stale"
+        if replacement_id:
+            note += f" -> replacement={replacement_id}"
+        if reason:
+            note += f" ({reason})"
+        notes.append(note)
+    return notes
+
+
 async def _semantic_search_hits(
     query: str,
     *,
@@ -334,39 +450,64 @@ def ask(
     resolved_ctx = _resolve_ctx(ctx)
 
     async def _ask() -> None:
+        from prometheus.observability import TraceStore
+
         db = _get_db_path()
         db.parent.mkdir(parents=True, exist_ok=True)
         store = SessionStore(db)
         await store.init()
+        trace_id = str(uuid.uuid4())
+        trace = TraceStore(_RUNTIME).recorder(trace_id=trace_id, caller="cli", ctx=resolved_ctx)
         try:
             detector = ContextDetector(store)
             result = detector.detect(query, cwd=cwd or os.getcwd())
             effective_ctx = resolved_ctx or result.context
-            collections = get_search_collections(effective_ctx)
-            hits = await _semantic_search_hits(query, collections=collections, top_k=5)
+            strategy, task_type, profile, mode = _select_retrieval_strategy(query, effective_ctx)
+            collections = get_search_collections(effective_ctx) if effective_ctx else list(strategy.contexts)
+            hits = await _semantic_search_hits(
+                query,
+                collections=collections,
+                top_k=strategy.max_segments,
+            )
+            trace.append_stage(
+                "retrieval",
+                ctx=effective_ctx,
+                payload={
+                    "strategy": strategy.name,
+                    "task_type": task_type,
+                    "profile": profile or "",
+                    "mode": mode,
+                    "hit_count": len(hits),
+                },
+            )
+            pack = _build_context_pack(
+                strategy=strategy,
+                task_type=task_type,
+                profile=profile,
+                mode=mode,
+                effective_ctx=effective_ctx,
+                hits=hits,
+            )
 
             typer.echo(f"Contexto detectado: {result.display}")
             typer.echo(f"Busca em ctx={effective_ctx} ({collections})")
+            typer.echo(f"trace_id: {trace_id}")
 
             if not hits:
+                typer.echo(_context_pack_summary(pack))
                 typer.echo("\nNenhum contexto relevante encontrado.")
                 return
 
             typer.echo("\nContexto relevante:")
             snippets: list[str] = []
-            context_lines: list[str] = []
-            for i, hit in enumerate(hits[:5], start=1):
+            for i, hit in enumerate(hits[: len(pack.segments)], start=1):
                 payload = hit.get("payload", {})
                 file_path = payload.get("file_path", "<sem arquivo>")
                 symbol = payload.get("symbol", "<sem símbolo>")
                 score = hit.get("score", 0.0)
                 content = str(payload.get("content", "")).strip().replace("\n", " ")
                 preview = (content[:200] + "...") if len(content) > 200 else content
-                compressor_content = content[:_MAX_CHUNK_INPUT_CHARS]
                 snippets.append(preview)
-                context_lines.append(
-                    f"[{score:.4f}] {file_path} :: {symbol} :: {compressor_content}"
-                )
                 typer.echo(f"{i}. [{score:.4f}] {file_path} :: {symbol}")
 
             typer.echo("\nSíntese inicial:")
@@ -377,20 +518,42 @@ def ask(
             for i, text in enumerate(snippets[:3], start=1):
                 typer.echo(f"{i}) {text}")
 
-            raw_context = "\n".join(context_lines)
-            (
-                compressed_context,
-                engine_name,
-                caveman_note,
-                rtk_note,
-                before_tokens,
-                after_tokens,
-                reduction_pct,
-            ) = await _compress_context_pipeline(
-                raw_context,
-                max_tokens=rtk_max_tokens,
-                caller="cli",
+            if strategy.enable_compression:
+                (
+                    compressed_context,
+                    engine_name,
+                    caveman_note,
+                    rtk_note,
+                    before_tokens,
+                    after_tokens,
+                    reduction_pct,
+                ) = await _compress_context_pipeline(
+                    pack.text,
+                    max_tokens=rtk_max_tokens,
+                    caller="cli",
+                    ctx=effective_ctx,
+                )
+            else:
+                compressed_context = pack.text
+                engine_name = "disabled"
+                caveman_note = f"strategy={strategy.name}"
+                rtk_note = None
+                before_tokens = _estimate_tokens(pack.text)
+                after_tokens = before_tokens
+                reduction_pct = 0.0
+            trace.append_stage(
+                "compression",
                 ctx=effective_ctx,
+                model=engine_name,
+                payload={
+                    "strategy": strategy.name,
+                    "before_tokens": before_tokens,
+                    "after_tokens": after_tokens,
+                    "reduction_pct": round(reduction_pct, 1),
+                    "compression_enabled": strategy.enable_compression,
+                    "caveman_note": caveman_note or "",
+                    "rtk_note": rtk_note or "",
+                },
             )
 
             planner_prompt, executor_prompt, local_prompt = _build_planner_executor_prompts(
@@ -406,6 +569,12 @@ def ask(
             if rtk_note:
                 typer.echo(f"rtk_note: {rtk_note}")
             typer.echo(f"tokens aprox: {before_tokens} -> {after_tokens} (-{reduction_pct:.1f}%)")
+            typer.echo(_context_pack_summary(pack))
+            stale_notes = _staleness_notes(hits)
+            if stale_notes:
+                typer.echo("staleness:")
+                for note in stale_notes:
+                    typer.echo(f"- {note}")
 
             typer.echo("\nPrompt pronto — Claude (Planner):")
             typer.echo(planner_prompt)
@@ -948,22 +1117,47 @@ def search(
     from prometheus.store.collections import get_search_collections
 
     resolved_ctx = _resolve_ctx(ctx)
-    collections = get_search_collections(resolved_ctx)
+    strategy, task_type, profile, mode = _select_retrieval_strategy(query, resolved_ctx)
+    collections = get_search_collections(resolved_ctx) if resolved_ctx else list(strategy.contexts)
     typer.echo(f"Buscando em: {collections}")
 
     async def _search() -> None:
+        from prometheus.observability import TraceStore
+
+        trace_id = str(uuid.uuid4())
+        trace = TraceStore(_RUNTIME).recorder(trace_id=trace_id, caller="cli", ctx=resolved_ctx)
         hits = await _semantic_search_hits(
             query,
             collections=collections,
             language=language,
-            top_k=top_k,
+            top_k=min(top_k, strategy.max_segments),
+        )
+        trace.append_stage(
+            "retrieval",
+            ctx=resolved_ctx,
+            payload={
+                "strategy": strategy.name,
+                "task_type": task_type,
+                "profile": profile or "",
+                "mode": mode,
+                "hit_count": len(hits),
+            },
         )
 
         if not hits:
             typer.echo("Nenhum resultado encontrado.")
             return
 
-        for i, hit in enumerate(hits, start=1):
+        pack = _build_context_pack(
+            strategy=strategy,
+            task_type=task_type,
+            profile=profile,
+            mode=mode,
+            effective_ctx=resolved_ctx,
+            hits=hits,
+        )
+
+        for i, hit in enumerate(hits[: len(pack.segments)], start=1):
             payload = hit.get("payload", {})
             file_path = payload.get("file_path", "<sem arquivo>")
             symbol = payload.get("symbol", "<sem símbolo>")
@@ -976,6 +1170,14 @@ def search(
             typer.echo(f"   symbol={symbol} | type={chunk_type}")
             if preview:
                 typer.echo(f"   preview: {preview}")
+
+        typer.echo(f"\n{_context_pack_summary(pack)}")
+        typer.echo(f"trace_id: {trace_id}")
+        stale_notes = _staleness_notes(hits)
+        if stale_notes:
+            typer.echo("staleness:")
+            for note in stale_notes:
+                typer.echo(f"- {note}")
 
     asyncio.run(_search())
 

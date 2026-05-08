@@ -10,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from prometheus.cli import pb
+from prometheus.router.classifier import TaskType
 
 runner = CliRunner()
 
@@ -66,6 +67,75 @@ def test_search_shows_semantic_results(monkeypatch) -> None:
     assert "Buscando em:" in result.stdout
     assert "score=0.9100" in result.stdout
     assert "symbol=upsert" in result.stdout
+    assert "trace_id:" in result.stdout
+
+
+def test_search_applies_strategy_budget_and_prints_context_pack(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_hits(*args, **kwargs):
+        captured["top_k"] = kwargs["top_k"]
+        await asyncio.sleep(0)
+        return [
+            {
+                "score": 0.91,
+                "payload": {
+                    "file_path": "/tmp/vector_store.py",
+                    "symbol": "upsert",
+                    "chunk_type": "method",
+                    "content": "async def upsert(self, chunk): ...",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
+    monkeypatch.setattr(
+        "prometheus.router.classifier.classify_task_with_source",
+        lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
+    )
+
+    result = runner.invoke(pb.app, ["search", "upsert vector", "--ctx", "knowledge", "--top", "20"])
+
+    assert result.exit_code == 0
+    assert captured["top_k"] == 8
+    assert "ContextPack: strategy=balanced" in result.stdout
+    assert "task_type=CODE_ANALYSIS" in result.stdout
+    assert "segments=1" in result.stdout
+    assert "contexts=knowledge" in result.stdout
+    assert "trace_id:" in result.stdout
+
+
+def test_search_surfaces_staleness_warnings(monkeypatch) -> None:
+    async def fake_hits(*args, **kwargs):
+        _ = (args, kwargs)
+        await asyncio.sleep(0)
+        return [
+            {
+                "score": 0.91,
+                "payload": {
+                    "file_path": "/tmp/vector_store.py",
+                    "symbol": "upsert",
+                    "chunk_type": "method",
+                    "content": "async def upsert(self, chunk): ...",
+                },
+                "staleness": {
+                    "score": 1.0,
+                    "is_stale": True,
+                    "reasons": ["age_exceeds_stale_window"],
+                    "replacement_family": "runbooks/search.md",
+                    "replacement_id": "fresh-hit",
+                    "replacement_reason": "newer_record_in_family",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
+
+    result = runner.invoke(pb.app, ["search", "upsert vector", "--ctx", "knowledge"])
+
+    assert result.exit_code == 0
+    assert "staleness:" in result.stdout
+    assert "upsert stale -> replacement=fresh-hit" in result.stdout
 
 
 def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> None:

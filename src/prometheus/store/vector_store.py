@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
@@ -12,9 +12,11 @@ from qdrant_client.models import (
     VectorParams,
 )
 
+from prometheus.context.staleness import assess_staleness, detect_stale_replacements
 from prometheus.context.registry import VALID_CONTEXTS
 
 VECTOR_SIZE = int(os.environ.get("PROMETHEUS_VECTOR_SIZE", "384"))
+_STALE_RANKING_PENALTY = 0.2
 
 COLLECTIONS = list(VALID_CONTEXTS)
 
@@ -136,7 +138,7 @@ class VectorStore:
             for hit in response.points:
                 results.append({"score": hit.score, "payload": hit.payload, "id": hit.id})
 
-        results.sort(key=lambda r: r["score"], reverse=True)
+        results = _apply_staleness_ranking(results, now=_utcnow())
         limited: list[dict] = []
         token_budget = max_tokens
         for item in results:
@@ -162,3 +164,52 @@ class VectorStore:
 
     async def close(self) -> None:
         await self._client.close()
+
+
+def _apply_staleness_ranking(results: list[dict], *, now: datetime) -> list[dict]:
+    records = [_staleness_record(result) for result in results]
+    replacements = {
+        replacement.stale_id: replacement
+        for replacement in detect_stale_replacements(records, now=now)
+    }
+
+    ranked_results: list[dict] = []
+    for result in results:
+        payload = result.get("payload") or {}
+        assessment = assess_staleness(payload, now=now)
+        replacement = replacements.get(str(result.get("id", "")))
+        ranking_score = float(result["score"]) - (assessment.score * _STALE_RANKING_PENALTY)
+
+        ranked_results.append(
+            {
+                **result,
+                "ranking_score": ranking_score,
+                "staleness": {
+                    "score": assessment.score,
+                    "is_stale": assessment.is_stale,
+                    "reasons": list(assessment.reasons),
+                    "replacement_family": assessment.replacement_family,
+                    "replacement_id": replacement.replacement_id if replacement else None,
+                    "replacement_reason": replacement.reason if replacement else None,
+                },
+            }
+        )
+
+    ranked_results.sort(
+        key=lambda result: (
+            -float(result["ranking_score"]),
+            -float(result["score"]),
+            str(result.get("id", "")),
+        )
+    )
+    return ranked_results
+
+
+def _staleness_record(result: dict) -> dict[str, object]:
+    payload = dict(result.get("payload") or {})
+    payload["id"] = str(result.get("id", ""))
+    return payload
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
