@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tomllib
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -101,8 +102,26 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _load_toml_runtime_overrides() -> dict[str, str]:
+    config_env = os.environ.get("PROMETHEUS_CONFIG")
+    config_path = Path(config_env).expanduser() if config_env else Path.cwd() / "prometheus.toml"
+    if not config_path.exists():
+        return {}
+
+    payload = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    runtime = payload.get("runtime")
+    if not isinstance(runtime, dict):
+        return {}
+    return {
+        key: str(value)
+        for key, value in runtime.items()
+        if key in {"mode", "engine_root", "vault_root"}
+    }
+
+
 def _load_runtime_mode() -> RuntimeMode:
-    value = os.environ.get("PROMETHEUS_RUNTIME_MODE", "full-local").strip().lower()
+    overrides = _load_toml_runtime_overrides()
+    value = os.environ.get("PROMETHEUS_RUNTIME_MODE", overrides.get("mode", "full-local")).strip().lower()
     if value not in _RUNTIME_MODES:
         supported = ", ".join(_RUNTIME_MODES)
         raise ValueError(
@@ -150,8 +169,15 @@ def _load_expansion_config(engine_root: Path) -> ExpansionConfig:
 
 
 def load_runtime_config() -> RuntimeConfig:
-    engine_root = _env_path("PROMETHEUS_ENGINE", Path.home() / "dev/Prometheus")
-    vault_root = _env_path("PROMETHEUS_VAULT", Path.home() / "vault")
+    overrides = _load_toml_runtime_overrides()
+    engine_root = _env_path(
+        "PROMETHEUS_ENGINE",
+        Path(overrides.get("engine_root", str(Path.home() / "dev/Prometheus"))),
+    )
+    vault_root = _env_path(
+        "PROMETHEUS_VAULT",
+        Path(overrides.get("vault_root", str(Path.home() / "vault"))),
+    )
     return RuntimeConfig(
         mode=_load_runtime_mode(),
         engine_root=engine_root,

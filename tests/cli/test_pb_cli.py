@@ -183,14 +183,21 @@ def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> Non
     )
 
     env_file = engine_root / ".env.local"
+    config_file = engine_root / "prometheus.toml"
 
     assert result.exit_code == 0
     assert env_file.exists()
+    assert config_file.exists()
     payload = env_file.read_text(encoding="utf-8")
+    config_payload = config_file.read_text(encoding="utf-8")
     assert f"PROMETHEUS_ENGINE={engine_root}" in payload
     assert f"PROMETHEUS_VAULT={vault_root}" in payload
     assert "PROMETHEUS_RUNTIME_MODE=hybrid-local" in payload
     assert "PROMETHEUS_PLATFORM=mac" in payload
+    assert '[runtime]' in config_payload
+    assert 'mode = "hybrid-local"' in config_payload
+    assert f'engine_root = "{engine_root}"' in config_payload
+    assert f'vault_root = "{vault_root}"' in config_payload
 
 
 def test_init_refuses_to_overwrite_env_local_without_force(monkeypatch, tmp_path) -> None:
