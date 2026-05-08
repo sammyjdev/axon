@@ -4,12 +4,21 @@ import os
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 
 # Carrega .env.local sobre .env, sem sobrescrever vars já exportadas pelo shell
 load_dotenv(Path(__file__).parents[3] / ".env", override=False)
 load_dotenv(Path(__file__).parents[3] / ".env.local", override=False)
+
+RuntimeMode = Literal["full-local", "hybrid-local", "remote-infra", "minimal"]
+_RUNTIME_MODES: tuple[RuntimeMode, ...] = (
+    "full-local",
+    "hybrid-local",
+    "remote-infra",
+    "minimal",
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +60,7 @@ class ExpansionConfig:
 
 @dataclass(frozen=True)
 class RuntimeConfig:
+    mode: RuntimeMode
     engine_root: Path
     vault_root: Path
     db_path: Path
@@ -89,6 +99,16 @@ def _env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_runtime_mode() -> RuntimeMode:
+    value = os.environ.get("PROMETHEUS_RUNTIME_MODE", "full-local").strip().lower()
+    if value not in _RUNTIME_MODES:
+        supported = ", ".join(_RUNTIME_MODES)
+        raise ValueError(
+            f"Invalid PROMETHEUS_RUNTIME_MODE={value!r}. Supported modes: {supported}."
+        )
+    return value
 
 
 def _load_expansion_config(engine_root: Path) -> ExpansionConfig:
@@ -133,6 +153,7 @@ def load_runtime_config() -> RuntimeConfig:
     engine_root = _env_path("PROMETHEUS_ENGINE", Path.home() / "dev/Prometheus")
     vault_root = _env_path("PROMETHEUS_VAULT", Path.home() / "vault")
     return RuntimeConfig(
+        mode=_load_runtime_mode(),
         engine_root=engine_root,
         vault_root=vault_root,
         db_path=engine_root / "data" / "prometheus.db",

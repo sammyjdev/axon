@@ -474,6 +474,33 @@ def git_proxy(
     rtk_proxy(f"git {' '.join(git_args)}")
 
 
+@app.command()
+def doctor() -> None:
+    """Inspeciona ambiente local e recomenda o modo operacional mais seguro."""
+    from prometheus.config.platform import build_doctor_report, detect_platform
+
+    runtime = load_runtime_config()
+    platform_config = detect_platform()
+    report = build_doctor_report(
+        runtime,
+        platform_config,
+        docker_available=shutil.which("docker") is not None,
+        ollama_available=shutil.which("ollama") is not None,
+    )
+
+    typer.echo("Prometheus doctor")
+    typer.echo(f"platform: {report.platform}")
+    typer.echo(f"configured_mode: {runtime.mode}")
+    typer.echo(f"recommended_mode: {report.recommended_mode}")
+    typer.echo("checks:")
+    for name, status in report.checks.items():
+        typer.echo(f"- {name}: {status}")
+    if report.notes:
+        typer.echo("notes:")
+        for note in report.notes:
+            typer.echo(f"- {note}")
+
+
 # ---------------------------------------------------------------------------
 # pb search
 # ---------------------------------------------------------------------------

@@ -3,6 +3,8 @@ import subprocess
 from dataclasses import dataclass
 from os import environ
 
+from prometheus.config.runtime import RuntimeConfig
+
 
 @dataclass
 class PlatformConfig:
@@ -13,6 +15,14 @@ class PlatformConfig:
     model_primary: str
     model_knowledge: str
     keep_alive: str
+
+
+@dataclass(frozen=True)
+class DoctorReport:
+    platform: str
+    recommended_mode: str
+    checks: dict[str, str]
+    notes: list[str]
 
 
 def detect_platform() -> PlatformConfig:
@@ -62,6 +72,68 @@ def _get_nvidia_vram() -> int:
         # nvidia-smi ausente — assume VRAM insuficiente para gemma4:26b
         return 0
     return int(result.stdout.strip()) // 1024
+
+
+def build_doctor_report(
+    runtime: RuntimeConfig,
+    platform_config: PlatformConfig,
+    *,
+    docker_available: bool,
+    ollama_available: bool,
+) -> DoctorReport:
+    checks = {
+        "engine_root": "ok" if runtime.engine_root.exists() else "missing",
+        "vault_root": "ok" if runtime.vault_root.exists() else "missing",
+        "docker": "ok" if docker_available else "missing",
+        "ollama": "ok" if ollama_available else "missing",
+        "remote_infra": "configured" if runtime.ollama_remote_host else "local",
+    }
+    recommended_mode = _recommend_operating_mode(
+        runtime,
+        platform_config,
+        docker_available=docker_available,
+        ollama_available=ollama_available,
+    )
+    notes: list[str] = []
+    if runtime.mode != recommended_mode:
+        notes.append(
+            f"Current mode '{runtime.mode}' differs from recommended '{recommended_mode}'."
+        )
+    if recommended_mode == "minimal":
+        notes.append("Local tooling incomplete or undersized; start with the smallest stack.")
+    elif recommended_mode == "remote-infra":
+        notes.append("Remote infra configured; keep heavy services off the current machine.")
+    elif recommended_mode == "hybrid-local":
+        notes.append("Prefer local workflow with a lighter infra footprint on this machine.")
+    else:
+        notes.append("GPU-capable local stack available.")
+    return DoctorReport(
+        platform=platform_config.platform,
+        recommended_mode=recommended_mode,
+        checks=checks,
+        notes=notes,
+    )
+
+
+def _recommend_operating_mode(
+    runtime: RuntimeConfig,
+    platform_config: PlatformConfig,
+    *,
+    docker_available: bool,
+    ollama_available: bool,
+) -> str:
+    if runtime.ollama_remote_host:
+        return "remote-infra"
+    if not docker_available and not ollama_available:
+        return "minimal"
+    if platform_config.platform == "mac":
+        return "hybrid-local"
+    has_gpu = "CUDAExecutionProvider" in platform_config.embedding_providers
+    if has_gpu and platform_config.max_models >= 2 and docker_available and ollama_available:
+        return "full-local"
+    if docker_available or ollama_available:
+        return "hybrid-local"
+    return "minimal"
 
 
 def _to_dotenv(config: PlatformConfig) -> str:
