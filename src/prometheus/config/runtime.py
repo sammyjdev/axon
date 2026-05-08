@@ -140,6 +140,54 @@ def _load_toml_payload() -> dict:
     return tomllib.loads(config_path.read_text(encoding="utf-8"))
 
 
+def _coerce_profile_features(value: object) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return ()
+
+
+def _parse_profile(name: str, profile: dict[str, object]) -> dict[str, str | tuple[str, ...] | None]:
+    return {
+        "name": name,
+        "description": str(profile.get("description", "")),
+        "mode": str(profile.get("mode", "")),
+        "cloud_policy": (
+            str(profile["cloud_policy"]).strip() if profile.get("cloud_policy") is not None else None
+        ),
+        "infra_strategy": (
+            str(profile["infra_strategy"]).strip() if profile.get("infra_strategy") is not None else None
+        ),
+        "memory_tier": (
+            str(profile["memory_tier"]).strip() if profile.get("memory_tier") is not None else None
+        ),
+        "enabled_features": _coerce_profile_features(profile.get("enabled_features")),
+    }
+
+
+def _format_toml_string(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _profile_toml_lines(
+    profile: dict[str, str | tuple[str, ...] | None],
+) -> list[str]:
+    lines = [
+        f"[profiles.{profile['name']}]",
+        f"description = {_format_toml_string(str(profile['description']))}",
+        f"mode = {_format_toml_string(str(profile['mode']))}",
+    ]
+    for key in ("cloud_policy", "infra_strategy", "memory_tier"):
+        value = profile.get(key)
+        if value:
+            lines.append(f"{key} = {_format_toml_string(str(value))}")
+    enabled_features = profile.get("enabled_features")
+    if enabled_features:
+        rendered = ", ".join(_format_toml_string(feature) for feature in enabled_features)
+        lines.append(f"enabled_features = [{rendered}]")
+    return lines
+
+
 def list_profiles() -> list[tuple[str, str, str]]:
     payload = _load_toml_payload()
     profiles = payload.get("profiles")
@@ -150,8 +198,9 @@ def list_profiles() -> list[tuple[str, str, str]]:
         profile = profiles.get(name)
         if not isinstance(profile, dict):
             continue
-        description = str(profile.get("description", ""))
-        mode = str(profile.get("mode", ""))
+        parsed = _parse_profile(name, profile)
+        description = str(parsed["description"])
+        mode = str(parsed["mode"])
         result.append((name, description, mode))
     return result
 
@@ -161,7 +210,7 @@ def get_active_profile() -> str | None:
     return overrides.get("active_profile")
 
 
-def get_profile(name: str) -> dict[str, str]:
+def get_profile(name: str) -> dict[str, str | tuple[str, ...] | None]:
     payload = _load_toml_payload()
     profiles = payload.get("profiles")
     if not isinstance(profiles, dict) or name not in profiles:
@@ -169,11 +218,7 @@ def get_profile(name: str) -> dict[str, str]:
     profile = profiles[name]
     if not isinstance(profile, dict):
         raise ValueError(f"Invalid profile: {name}")
-    return {
-        "name": name,
-        "description": str(profile.get("description", "")),
-        "mode": str(profile.get("mode", "")),
-    }
+    return _parse_profile(name, profile)
 
 
 def recommend_profile(
@@ -268,7 +313,16 @@ def use_profile(name: str) -> None:
     _sync_env_runtime_mode(config_path.parent / ".env.local", mode)
 
 
-def create_profile(name: str, *, description: str, mode: str) -> None:
+def create_profile(
+    name: str,
+    *,
+    description: str,
+    mode: str,
+    cloud_policy: str | None = None,
+    infra_strategy: str | None = None,
+    memory_tier: str | None = None,
+    enabled_features: tuple[str, ...] = (),
+) -> None:
     normalized_mode = mode.strip().lower()
     if normalized_mode not in _RUNTIME_MODES:
         raise ValueError(f"Invalid mode: {mode}")
@@ -278,12 +332,23 @@ def create_profile(name: str, *, description: str, mode: str) -> None:
     if isinstance(profiles, dict) and name in profiles:
         raise ValueError(f"Profile already exists: {name}")
     lines = config_path.read_text(encoding="utf-8").splitlines()
+    profile = {
+        "name": name,
+        "description": description,
+        "mode": normalized_mode,
+        "cloud_policy": cloud_policy.strip().lower() if cloud_policy else None,
+        "infra_strategy": infra_strategy.strip().lower() if infra_strategy else None,
+        "memory_tier": memory_tier.strip().lower() if memory_tier else None,
+        "enabled_features": tuple(
+            feature.strip()
+            for feature in enabled_features
+            if feature.strip()
+        ),
+    }
     lines.extend(
         [
             "",
-            f"[profiles.{name}]",
-            f'description = "{description}"',
-            f'mode = "{normalized_mode}"',
+            *_profile_toml_lines(profile),
         ]
     )
     config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -291,14 +356,7 @@ def create_profile(name: str, *, description: str, mode: str) -> None:
 
 def export_profile(name: str) -> str:
     profile = get_profile(name)
-    return "\n".join(
-        [
-            f"[profiles.{profile['name']}]",
-            f'description = "{profile["description"]}"',
-            f'mode = "{profile["mode"]}"',
-            "",
-        ]
-    )
+    return "\n".join([*_profile_toml_lines(profile), ""])
 
 
 def _sync_env_runtime_mode(env_path: Path, mode: str) -> None:

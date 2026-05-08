@@ -69,6 +69,10 @@ def test_get_profile_returns_metadata_for_active_profile(tmp_path: Path, monkeyp
         "name": "solo-dev",
         "description": "Single developer default",
         "mode": "hybrid-local",
+        "cloud_policy": None,
+        "infra_strategy": None,
+        "memory_tier": None,
+        "enabled_features": (),
     }
 
 
@@ -88,6 +92,27 @@ def test_create_profile_appends_new_profile_to_toml(tmp_path: Path, monkeypatch)
     assert 'mode = "minimal"' in payload
 
 
+def test_create_profile_persists_optional_structured_fields(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_config(tmp_path)
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    create_profile(
+        "support-lite",
+        description="Support workflow on lighter hardware",
+        mode="minimal",
+        cloud_policy="deny",
+        infra_strategy="local",
+        memory_tier="light",
+        enabled_features=("rtk", "local-rag"),
+    )
+
+    payload = config_path.read_text(encoding="utf-8")
+    assert 'cloud_policy = "deny"' in payload
+    assert 'infra_strategy = "local"' in payload
+    assert 'memory_tier = "light"' in payload
+    assert 'enabled_features = ["rtk", "local-rag"]' in payload
+
+
 def test_export_profile_returns_toml_snippet(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
     monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
@@ -97,6 +122,61 @@ def test_export_profile_returns_toml_snippet(tmp_path: Path, monkeypatch) -> Non
     assert "[profiles.team-dev]" in exported
     assert 'description = "Shared team setup"' in exported
     assert 'mode = "remote-infra"' in exported
+
+
+def test_get_profile_reads_optional_structured_fields(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_config(tmp_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + "\n".join(
+            [
+                "[profiles.privacy-first]",
+                'description = "Prefer local or remote self-hosted paths"',
+                'mode = "minimal"',
+                'cloud_policy = "deny"',
+                'infra_strategy = "local"',
+                'memory_tier = "light"',
+                'enabled_features = ["rtk", "local-rag"]',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    profile = get_profile("privacy-first")
+
+    assert profile == {
+        "name": "privacy-first",
+        "description": "Prefer local or remote self-hosted paths",
+        "mode": "minimal",
+        "cloud_policy": "deny",
+        "infra_strategy": "local",
+        "memory_tier": "light",
+        "enabled_features": ("rtk", "local-rag"),
+    }
+
+
+def test_export_profile_includes_optional_structured_fields(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_config(tmp_path)
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    create_profile(
+        "support-lite",
+        description="Support workflow on lighter hardware",
+        mode="minimal",
+        cloud_policy="deny",
+        infra_strategy="local",
+        memory_tier="light",
+        enabled_features=("rtk", "local-rag"),
+    )
+
+    exported = export_profile("support-lite")
+
+    assert 'cloud_policy = "deny"' in exported
+    assert 'infra_strategy = "local"' in exported
+    assert 'memory_tier = "light"' in exported
+    assert 'enabled_features = ["rtk", "local-rag"]' in exported
 
 
 def _write_config(tmp_path: Path) -> Path:
