@@ -167,6 +167,20 @@ def get_profile(name: str) -> dict[str, str]:
     }
 
 
+def recommend_profile(*, use_case: str, privacy: str, hardware: str) -> tuple[str, str]:
+    normalized_use_case = use_case.strip().lower()
+    normalized_privacy = privacy.strip().lower()
+    normalized_hardware = hardware.strip().lower()
+
+    if normalized_privacy in {"restricted", "confidential"}:
+        return "privacy-first", "minimal"
+    if normalized_use_case in {"team", "shared", "corporate"}:
+        return "team-dev", "remote-infra"
+    if normalized_hardware in {"nvidia", "linux-workstation"}:
+        return "solo-dev", "hybrid-local"
+    return "solo-dev", "hybrid-local"
+
+
 def use_profile(name: str) -> None:
     payload = _load_toml_payload()
     profiles = payload.get("profiles")

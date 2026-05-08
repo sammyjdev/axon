@@ -335,6 +335,55 @@ def test_profile_show_displays_active_profile(monkeypatch, tmp_path) -> None:
     assert "description: Single developer default" in result.stdout
 
 
+def test_configure_applies_recommended_profile(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                'mode = "hybrid-local"',
+                'active_profile = "solo-dev"',
+                f'engine_root = "{tmp_path}"',
+                f'vault_root = "{tmp_path / "vault"}"',
+                "",
+                "[profiles.solo-dev]",
+                'description = "Single developer default"',
+                'mode = "hybrid-local"',
+                "",
+                "[profiles.team-dev]",
+                'description = "Shared team setup"',
+                'mode = "remote-infra"',
+                "",
+                "[profiles.privacy-first]",
+                'description = "Prefer local or remote self-hosted paths"',
+                'mode = "minimal"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(
+        pb.app,
+        [
+            "configure",
+            "--use-case",
+            "team",
+            "--privacy",
+            "internal",
+            "--hardware",
+            "nvidia",
+        ],
+    )
+
+    payload = config_path.read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert "recommended_profile: team-dev" in result.stdout
+    assert "recommended_mode: remote-infra" in result.stdout
+    assert 'active_profile = "team-dev"' in payload
+
+
 def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> None:
     class FakeDetector:
         def __init__(self, *_args, **_kwargs) -> None:
