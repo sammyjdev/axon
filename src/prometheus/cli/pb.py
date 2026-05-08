@@ -44,6 +44,7 @@ QDRANT_DEFAULT_URL = "http://localhost:6333"
 _MAX_CHUNK_INPUT_CHARS = 4_000
 _RUNTIME = load_runtime_config()
 _CTX_HELP = f"Contexto: {'|'.join(VALID_CONTEXTS)}"
+_RUNTIME_MODES = ("full-local", "hybrid-local", "remote-infra", "minimal")
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +500,53 @@ def doctor() -> None:
         typer.echo("notes:")
         for note in report.notes:
             typer.echo(f"- {note}")
+
+
+@app.command()
+def init(
+    engine: Annotated[str, typer.Option("--engine", help="Diretório do engine Prometheus")],
+    vault: Annotated[str, typer.Option("--vault", help="Diretório do vault externo")],
+    mode: Annotated[
+        str, typer.Option("--mode", help="Modo operacional")
+    ] = "full-local",
+    force: Annotated[
+        bool, typer.Option("--force", help="Sobrescreve .env.local existente")
+    ] = False,
+) -> None:
+    """Gera scaffold inicial de `.env.local` para uma instalação nova."""
+    from prometheus.config.platform import _to_dotenv, detect_platform
+
+    normalized_mode = mode.strip().lower()
+    if normalized_mode not in _RUNTIME_MODES:
+        supported = ", ".join(_RUNTIME_MODES)
+        raise typer.BadParameter(f"mode deve ser um de: {supported}")
+
+    engine_root = Path(engine).expanduser()
+    vault_root = Path(vault).expanduser()
+    env_file = engine_root / ".env.local"
+
+    if env_file.exists() and not force:
+        typer.echo(f"Arquivo já existe: {env_file}. Use --force para sobrescrever.")
+        raise typer.Exit(1)
+
+    engine_root.mkdir(parents=True, exist_ok=True)
+    vault_root.mkdir(parents=True, exist_ok=True)
+
+    platform_payload = _to_dotenv(detect_platform())
+    payload = (
+        f"PROMETHEUS_ENGINE={engine_root}\n"
+        f"PROMETHEUS_VAULT={vault_root}\n"
+        f"PROMETHEUS_RUNTIME_MODE={normalized_mode}\n"
+        f"{platform_payload}"
+    )
+    env_file.write_text(payload, encoding="utf-8")
+
+    typer.echo(f"Scaffold criado: {env_file}")
+    typer.echo(f"mode: {normalized_mode}")
+    typer.echo("Próximos passos:")
+    typer.echo(f"1. source {env_file}")
+    typer.echo("2. rode `pb doctor`")
+    typer.echo("3. indexe seu vault com `pb index ~/vault/knowledge --ctx knowledge`")
 
 
 # ---------------------------------------------------------------------------
