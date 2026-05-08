@@ -73,6 +73,30 @@ external Markdown vault, typically configured through:
 - Do not silence failing tests or guardrails to make a change appear complete.
 - Prefer the smallest coherent change that satisfies the behavior.
 
+### Think Before Coding
+
+State assumptions before writing code. If a request has multiple interpretations,
+present them and ask — don't guess. Push back on unclear requirements instead of
+implementing the most likely guess.
+
+### Simplicity First
+
+Implement the minimum code that solves the problem. No speculative features,
+abstractions for single-use cases, or error handling for scenarios that cannot
+occur. Test: would a senior engineer call this overcomplicated?
+
+### Surgical Changes
+
+Touch only what the task requires. Don't improve adjacent code, don't match
+"better" style in untouched files, don't remove pre-existing dead code as a
+side effect. Only remove imports and variables that your changes made unused.
+
+### Goal-Driven Execution
+
+Transform tasks into verifiable goals with explicit success criteria. Instead of
+"add validation", state "write tests for invalid inputs, then make them pass."
+Provide criteria and verification methods — not a list of actions.
+
 ## Restricted Context Rules
 
 - `work` is a restricted context.

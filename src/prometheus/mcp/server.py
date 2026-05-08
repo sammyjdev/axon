@@ -177,14 +177,7 @@ async def search_code(
     max_nodes: int = 25,
     max_tokens: int = 1200,
 ) -> str:
-    """
-    Busca semântica no codebase indexado.
-
-    ctx: personal | career | knowledge | work
-    Para acessar work, ctx='work' é obrigatório e explícito.
-    Sem ctx, busca em personal + career + knowledge.
-    caller: claude-code | copilot (afeta budget de tokens retornados)
-    """
+    """Semantic search in indexed codebase. ctx: personal|career|knowledge|work (work requires explicit ctx='work'). caller: claude-code|copilot."""
     collections = get_search_collections(ctx)
     store = _get_vector_store()
     query_vector = _get_embedder().embed_one(query)
@@ -227,9 +220,7 @@ async def get_session_memory(
     project: str,
     caller: str = "claude-code",
 ) -> str:
-    """
-    Retorna o resumo comprimido das últimas sessões no projeto.
-    """
+    """Latest compressed session summaries for project."""
     store = _get_session_store()
     await store.init()
     memories = await store.get_session_memories(project, limit=3)
@@ -251,9 +242,7 @@ async def get_dependencies(
     symbol: str,
     caller: str = "claude-code",
 ) -> str:
-    """
-    Retorna o grafo de dependências de uma classe ou função.
-    """
+    """Dependency graph for a class or function symbol."""
     store = _get_graph_store()
     await store.connect()
     deps = await store.get_subgraph(symbol)
@@ -276,10 +265,7 @@ async def get_adrs(
     ctx: str | None = None,
     caller: str = "claude-code",
 ) -> str:
-    """
-    Retorna ADRs de um projeto.
-    Projetos de work só acessíveis com ctx='work'.
-    """
+    """ADRs for project. ctx='work' required for restricted projects."""
     _WORK_PROJECTS = {"avangrid"}
     if project.lower() in _WORK_PROJECTS and ctx != "work":
         return "Contexto de trabalho requer ctx='work' explícito."
@@ -309,10 +295,7 @@ async def save_adr(
     decision: str,
     rationale: str,
 ) -> str:
-    """
-    Persiste uma decisão arquitetural.
-    Use quando tomar uma decisão de design relevante.
-    """
+    """Persist an architectural decision record."""
     import datetime
 
     store = _get_session_store()
@@ -337,10 +320,7 @@ async def ask(
     caller: str = "claude-code",
     rtk_max_tokens: int | None = None,
 ) -> str:
-    """
-    Ponto de entrada unificado. Detecta contexto, roteia modelo e busca contexto relevante.
-    ctx: força contexto; sem ctx usa ContextDetector automático.
-    """
+    """Unified entrypoint: auto-detects ctx, routes model, retrieves compressed context. ctx overrides auto-detection."""
     from prometheus.context.detector import ContextDetector
 
     session_store = _get_session_store()
@@ -432,7 +412,7 @@ async def get_graph_neighbors(
     project: str,
     depth: int = 1,
 ) -> str:
-    """Retorna vizinhos do grafo estrutural Graphify no namespace do projeto."""
+    """Graph neighbors for node in project namespace (Graphify/Neo4j)."""
     from prometheus.store.graph_namespace import neighbors_query
 
     rows = await _run_neo4j_read(neighbors_query(node, project, depth))
@@ -450,7 +430,7 @@ async def get_graph_path(
     to_node: str,
     project: str,
 ) -> str:
-    """Retorna o caminho mais curto no grafo estrutural Graphify do projeto."""
+    """Shortest path between two nodes in project graph."""
     from prometheus.store.graph_namespace import path_query
 
     rows = await _run_neo4j_read(path_query(from_node, to_node, project))

@@ -48,3 +48,17 @@ excluded from the public repository.
 
 - Retrieval must support bounded output through token and scope constraints.
 - Dependency traversal must stay budget-aware to avoid context bloat.
+
+## ARD-009: Agent output density
+
+- Default response style must be caveman mode (full intensity).
+- Output verbosity must be reducible at session level without code changes.
+- MCP tool descriptions must be compressed to minimize token overhead on
+  every tool invocation.
+
+## ARD-010: Session context surfacing
+
+- A SessionStart hook must surface: active ctx, recent TIL count, compression
+  telemetry summary, and available commands.
+- Hook must be non-blocking and degrade gracefully when vault or telemetry
+  files are absent.

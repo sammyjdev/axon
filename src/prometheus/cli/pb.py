@@ -1264,6 +1264,77 @@ def memory_smoke(
 
 
 # ---------------------------------------------------------------------------
+# pb plan
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def plan(
+    task: Annotated[str, typer.Argument(help="Task a planejar")],
+    ctx: Annotated[str | None, typer.Option("--ctx")] = None,
+    no_context: Annotated[
+        bool, typer.Option("--no-context", help="Pula busca semântica de contexto")
+    ] = False,
+) -> None:
+    """Estrutura task em estágios: discuss → plan → execute → verify → ship."""
+    from prometheus.store.collections import get_search_collections
+
+    resolved_ctx = _resolve_ctx(ctx)
+
+    async def _plan() -> None:
+        context_block = ""
+        if not no_context:
+            collections = get_search_collections(resolved_ctx)
+            hits = await _semantic_search_hits(task, collections=collections, top_k=3)
+            if hits:
+                lines = []
+                for hit in hits:
+                    payload = hit.get("payload", {})
+                    symbol = payload.get("symbol", "?")
+                    file_path = payload.get("file_path", "?")
+                    score = hit.get("score", 0.0)
+                    lines.append(f"  [{score:.3f}] {file_path} :: {symbol}")
+                context_block = "Relevant context:\n" + "\n".join(lines) + "\n\n"
+
+        typer.echo(f"=== pb plan: {task} ===")
+        if context_block:
+            typer.echo(context_block)
+
+        typer.echo(
+            "STAGE 1 — DISCUSS\n"
+            f"  Goal: clarify scope and constraints for '{task}'\n"
+            "  Gate: ambiguities resolved, scope agreed\n"
+            "  Commands: pb ask / pb search\n"
+        )
+        typer.echo(
+            "STAGE 2 — PLAN\n"
+            "  Goal: define acceptance criteria and affected files\n"
+            "  Gate: ADR created if architectural; tests listed\n"
+            "  Commands: pb adr add / pb ask\n"
+        )
+        typer.echo(
+            "STAGE 3 — EXECUTE\n"
+            "  Goal: implement minimum change satisfying criteria\n"
+            "  Gate: tests pass, no adjacent code touched\n"
+            "  Commands: (implement) → rtk pytest tests/ -q\n"
+        )
+        typer.echo(
+            "STAGE 4 — VERIFY\n"
+            "  Goal: confirm acceptance criteria met, no regressions\n"
+            "  Gate: all tests green, ruff clean, compileall clean\n"
+            "  Commands: rtk ruff check / rtk python3 -m compileall src\n"
+        )
+        typer.echo(
+            "STAGE 5 — SHIP\n"
+            "  Goal: commit, capture knowledge, update ADRs if needed\n"
+            "  Gate: commit message describes why, TIL captured\n"
+            "  Commands: pb til / pb adr add / git commit\n"
+        )
+
+    asyncio.run(_plan())
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 

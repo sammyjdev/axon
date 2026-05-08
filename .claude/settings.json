@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $PROMETHEUS_ENGINE/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

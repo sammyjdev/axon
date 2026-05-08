@@ -89,3 +89,32 @@ project.
   trustworthy.
 - Rationale: token savings are only useful when retrieval fidelity survives the
   compression pipeline.
+
+## ADR-011: Caveman output mode as default agent style
+
+- Decision: all Claude Code sessions in this project default to caveman output
+  mode (full intensity), defined in `.claude/skills/caveman.md`.
+- Shape:
+  - drop articles, filler, preambles;
+  - fragments where clarity is preserved;
+  - code, identifiers, paths preserved exactly.
+- Deactivation: explicit `/caveman off` or `/verbose` per session.
+- Rationale: reduces output token cost ~40–65% on routine tasks without
+  sacrificing technical precision.
+
+## ADR-012: SessionStart hook for automatic context injection
+
+- Decision: a SessionStart hook surfaces project state at every new Claude Code
+  session: active ctx, recent TIL count, compression telemetry, and command
+  reference.
+- Files: `.claude/hooks/session-start.sh`, `.claude/settings.json`.
+- Rationale: eliminates manual re-orientation at session open; aligns with
+  everything-claude-code memory pattern.
+
+## ADR-013: Structured plan workflow (superpowers pattern)
+
+- Decision: `pb plan <task>` structures work into five explicit stages with
+  gates before advancing: discuss → plan → execute → verify → ship.
+- Rationale: prevents drift on large tasks; makes acceptance criteria explicit
+  before any code is written; integrates Prometheus semantic context at
+  planning time.
