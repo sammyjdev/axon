@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from prometheus.context.compression_quality import (
+    CompressionConfidence,
+    assess_compression_confidence,
     compression_contamination_note,
     compression_preservation_note,
     compression_quality_note,
@@ -107,3 +109,37 @@ def test_compression_quality_rejects_missing_mcp_symbols() -> None:
 
     assert note is not None
     assert "index_path" in note
+
+
+def test_assess_compression_confidence_accepts_safe_compression() -> None:
+    source = "\n".join(
+        [
+            "[0.9] /tmp/a.py :: index_path :: async def index_path(): ...",
+            "[0.8] /tmp/b.py :: _semantic_search_hits :: async def _semantic_search_hits(): ...",
+            "Keep invariants, retry semantics, and Qdrant filters.",
+        ]
+    )
+    compressed = (
+        "index_path keeps chunk ordering. "
+        "_semantic_search_hits applies Qdrant filters. "
+        "Retry semantics preserved."
+    )
+
+    confidence = assess_compression_confidence(source, compressed)
+
+    assert confidence == CompressionConfidence(
+        score=1.0,
+        reasons=(),
+        fallback_to_full_context=False,
+    )
+
+
+def test_assess_compression_confidence_flags_overcompression_without_anchors() -> None:
+    source = " ".join(f"token-{idx}" for idx in range(120))
+    compressed = "brief summary only"
+
+    confidence = assess_compression_confidence(source, compressed)
+
+    assert confidence.fallback_to_full_context is True
+    assert confidence.score < 0.6
+    assert "overcompressed_without_anchors" in confidence.reasons

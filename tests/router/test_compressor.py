@@ -104,6 +104,21 @@ async def test_guarded_compression_falls_back_when_retry_fails_quality() -> None
 
 
 @pytest.mark.asyncio
+async def test_guarded_compression_falls_back_when_confidence_is_too_low() -> None:
+    source = " ".join(f"token-{idx}" for idx in range(120))
+
+    async def fake_caveman(_text, max_tokens, *, required_symbols=None, strict=False):
+        _ = (max_tokens, required_symbols, strict)
+        return "brief summary only", None
+
+    with patch("prometheus.router.compressor.caveman_compress", new=fake_caveman):
+        result, error = await caveman_compress_guarded(source, max_tokens=400)
+
+    assert result == source
+    assert error == "compression confidence too low: overcompressed_without_anchors"
+
+
+@pytest.mark.asyncio
 async def test_skips_short_text() -> None:
     with patch("prometheus.router.compressor.litellm.acompletion", new=AsyncMock()) as mock_llm:
         result, error = await caveman_compress(_SHORT_TEXT)

@@ -13,6 +13,8 @@ import litellm
 
 from prometheus.config.runtime import load_runtime_config
 from prometheus.context.compression_quality import (
+    assess_compression_confidence,
+    compression_confidence_fallback_note,
     compression_quality_note,
     extract_required_symbols,
 )
@@ -92,7 +94,8 @@ async def caveman_compress_guarded(text: str, max_tokens: int) -> tuple[str, str
         required_symbols=required_symbols,
     )
     caveman_quality_note = compression_quality_note(text, caveman_out)
-    if not caveman_quality_note:
+    caveman_confidence = assess_compression_confidence(text, caveman_out)
+    if not caveman_quality_note and not caveman_confidence.fallback_to_full_context:
         return caveman_out, caveman_note
 
     retry_out, retry_note = await caveman_compress(
@@ -102,7 +105,19 @@ async def caveman_compress_guarded(text: str, max_tokens: int) -> tuple[str, str
         strict=True,
     )
     retry_quality_note = compression_quality_note(text, retry_out)
-    if retry_note is None and retry_quality_note is None:
+    retry_confidence = assess_compression_confidence(text, retry_out)
+    if (
+        retry_note is None
+        and retry_quality_note is None
+        and not retry_confidence.fallback_to_full_context
+    ):
         return retry_out, None
 
-    return text, retry_note or retry_quality_note or caveman_quality_note
+    return text, (
+        retry_note
+        or retry_quality_note
+        or compression_confidence_fallback_note(retry_confidence)
+        or caveman_note
+        or caveman_quality_note
+        or compression_confidence_fallback_note(caveman_confidence)
+    )
