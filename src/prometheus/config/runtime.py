@@ -79,6 +79,7 @@ class RuntimeConfig:
     provider_openrouter_enabled: bool
     provider_ollama_enabled: bool
     expansion: ExpansionConfig
+    active_profile: str | None = None
 
     @property
     def data_root(self) -> Path:
@@ -103,8 +104,7 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def _load_toml_runtime_overrides() -> dict[str, str]:
-    config_env = os.environ.get("PROMETHEUS_CONFIG")
-    config_path = Path(config_env).expanduser() if config_env else Path.cwd() / "prometheus.toml"
+    config_path = get_prometheus_config_path()
     if not config_path.exists():
         return {}
 
@@ -115,8 +115,88 @@ def _load_toml_runtime_overrides() -> dict[str, str]:
     return {
         key: str(value)
         for key, value in runtime.items()
-        if key in {"mode", "engine_root", "vault_root"}
+        if key in {"mode", "engine_root", "vault_root", "active_profile"}
     }
+
+
+def get_prometheus_config_path() -> Path:
+    config_env = os.environ.get("PROMETHEUS_CONFIG")
+    return Path(config_env).expanduser() if config_env else Path.cwd() / "prometheus.toml"
+
+
+def _load_toml_payload() -> dict:
+    config_path = get_prometheus_config_path()
+    if not config_path.exists():
+        return {}
+    return tomllib.loads(config_path.read_text(encoding="utf-8"))
+
+
+def list_profiles() -> list[tuple[str, str, str]]:
+    payload = _load_toml_payload()
+    profiles = payload.get("profiles")
+    if not isinstance(profiles, dict):
+        return []
+    result: list[tuple[str, str, str]] = []
+    for name in sorted(profiles):
+        profile = profiles.get(name)
+        if not isinstance(profile, dict):
+            continue
+        description = str(profile.get("description", ""))
+        mode = str(profile.get("mode", ""))
+        result.append((name, description, mode))
+    return result
+
+
+def get_active_profile() -> str | None:
+    overrides = _load_toml_runtime_overrides()
+    return overrides.get("active_profile")
+
+
+def use_profile(name: str) -> None:
+    payload = _load_toml_payload()
+    profiles = payload.get("profiles")
+    if not isinstance(profiles, dict) or name not in profiles:
+        raise ValueError(f"Unknown profile: {name}")
+    profile = profiles[name]
+    if not isinstance(profile, dict):
+        raise ValueError(f"Invalid profile: {name}")
+    mode = str(profile.get("mode", "")).strip().lower()
+    if mode not in _RUNTIME_MODES:
+        raise ValueError(f"Profile {name!r} has invalid mode {mode!r}")
+
+    config_path = get_prometheus_config_path()
+    lines = config_path.read_text(encoding="utf-8").splitlines()
+    in_runtime = False
+    saw_mode = False
+    saw_active = False
+    updated: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if in_runtime and not saw_active:
+                updated.append(f'active_profile = "{name}"')
+                saw_active = True
+            if in_runtime and not saw_mode:
+                updated.append(f'mode = "{mode}"')
+                saw_mode = True
+            in_runtime = stripped == "[runtime]"
+            updated.append(line)
+            continue
+        if in_runtime and stripped.startswith("mode = "):
+            updated.append(f'mode = "{mode}"')
+            saw_mode = True
+            continue
+        if in_runtime and stripped.startswith("active_profile = "):
+            updated.append(f'active_profile = "{name}"')
+            saw_active = True
+            continue
+        updated.append(line)
+
+    if in_runtime and not saw_active:
+        updated.append(f'active_profile = "{name}"')
+    if in_runtime and not saw_mode:
+        updated.append(f'mode = "{mode}"')
+    config_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 
 
 def _load_runtime_mode() -> RuntimeMode:
@@ -180,6 +260,7 @@ def load_runtime_config() -> RuntimeConfig:
     )
     return RuntimeConfig(
         mode=_load_runtime_mode(),
+        active_profile=overrides.get("active_profile"),
         engine_root=engine_root,
         vault_root=vault_root,
         db_path=engine_root / "data" / "prometheus.db",
