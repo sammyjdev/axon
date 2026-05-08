@@ -25,6 +25,8 @@ from prometheus.expansion.staging import (
 from prometheus.expansion.telemetry import ExpansionExecutionRecord, ExpansionTelemetryStore
 from prometheus.expansion.transport import SourceTransport
 from prometheus.policy.core import PolicyRegistry
+from prometheus.store.failure_store import FailureRecord, FailureStore
+from prometheus.store.outcome_store import OutcomeRecord, OutcomeStore
 
 _TITLE_RE = re.compile(r"^\s*#\s+(.+?)\s*$", re.MULTILINE)
 _CREATED_RE = re.compile(r"^\s*created:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})", re.MULTILINE)
@@ -52,6 +54,8 @@ class ExpansionService:
         *,
         source_registry: SourceRegistry | None = None,
         collector_transport: SourceTransport | None = None,
+        failure_store: FailureStore | None = None,
+        outcome_store: OutcomeStore | None = None,
     ) -> None:
         self.runtime = runtime or load_runtime_config()
         self.budget = ExpansionBudgetManager(self.runtime)
@@ -62,6 +66,9 @@ class ExpansionService:
             registry=self.source_registry,
             transport=collector_transport,
         )
+        self.failure_store = failure_store or FailureStore(self.runtime.data_root / "failures.db")
+        self.outcome_store = outcome_store or OutcomeStore(self.runtime.data_root / "outcomes.db")
+        self._stores_ready = False
 
     def run(self, *, ctx: str, topic: str, fast: bool, allow_cloud: bool) -> Path:
         normalized_ctx = ctx.strip().lower()
@@ -142,6 +149,19 @@ class ExpansionService:
                 },
             )
         )
+        self._record_outcome(
+            ctx=normalized_ctx,
+            summary=f"Expansion draft staged for topic '{topic}'.",
+            outcome="expansion_run_staged",
+            tags=[
+                "expansion",
+                "run",
+                "staged",
+                normalized_ctx,
+                "fast" if fast else "full",
+                cloud_mode,
+            ],
+        )
         return staging_path
 
     def review(self, staging_path: Path) -> ExpansionDraft:
@@ -167,8 +187,14 @@ class ExpansionService:
         reindex_status = "reindex_ok"
         try:
             asyncio.run(self._reindex_publish_path(publish_path, draft.ctx))
-        except Exception:
+        except Exception as exc:
             reindex_status = "reindex_skipped"
+            self._record_failure(
+                operation="expansion_approve_reindex",
+                error_message=str(exc),
+                probable_cause="publish reindex failed",
+                tags=["expansion", "approve", "reindex", draft.ctx],
+            )
         self.telemetry.append(
             ExpansionExecutionRecord(
                 execution_id=draft.telemetry_id,
@@ -184,6 +210,12 @@ class ExpansionService:
                     "reindex_status": reindex_status,
                 },
             )
+        )
+        self._record_outcome(
+            ctx=draft.ctx,
+            summary=f"Expansion draft published for topic '{draft.topic}'.",
+            outcome="expansion_approved",
+            tags=["expansion", "approve", reindex_status, draft.ctx],
         )
         return publish_path, reindex_status
 
@@ -216,6 +248,12 @@ class ExpansionService:
                 staging_path=str(rejected_path),
             )
         )
+        self._record_outcome(
+            ctx=draft.ctx,
+            summary=f"Expansion draft rejected for topic '{draft.topic}'.",
+            outcome="expansion_rejected",
+            tags=["expansion", "reject", draft.ctx],
+        )
         return rejected_path
 
     @staticmethod
@@ -233,6 +271,71 @@ class ExpansionService:
             f"publish_path={draft.publish_path}\n"
             f"summary={draft.summary}"
         )
+
+    def _ensure_stores_ready(self) -> None:
+        if self._stores_ready:
+            return
+        asyncio.run(self.failure_store.init())
+        asyncio.run(self.outcome_store.init())
+        self._stores_ready = True
+
+    def _record_outcome(
+        self,
+        *,
+        ctx: str,
+        summary: str,
+        outcome: str,
+        tags: list[str],
+    ) -> None:
+        try:
+            self._ensure_stores_ready()
+            asyncio.run(
+                self.outcome_store.save_outcome(
+                    OutcomeRecord(
+                        project="prometheus",
+                        context=ctx,
+                        summary=summary,
+                        outcome=outcome,
+                        tags=tags,
+                    )
+                )
+            )
+        except Exception:
+            return
+        finally:
+            try:
+                asyncio.run(self.outcome_store.close())
+            except Exception:
+                pass
+
+    def _record_failure(
+        self,
+        *,
+        operation: str,
+        error_message: str,
+        probable_cause: str,
+        tags: list[str],
+    ) -> None:
+        try:
+            self._ensure_stores_ready()
+            asyncio.run(
+                self.failure_store.save_failure(
+                    FailureRecord(
+                        project="prometheus",
+                        operation=operation,
+                        error_message=error_message,
+                        probable_cause=probable_cause,
+                        tags=tags,
+                    )
+                )
+            )
+        except Exception:
+            return
+        finally:
+            try:
+                asyncio.run(self.failure_store.close())
+            except Exception:
+                pass
 
     def _validate_context(self, ctx: str) -> None:
         if ctx not in _VALID_CONTEXTS:
