@@ -625,6 +625,38 @@ def profile_show() -> None:
     typer.echo(f"description: {profile['description']}")
 
 
+@app.command()
+def configure(
+    use_case: Annotated[
+        str, typer.Option("--use-case", help="solo|team|corporate")
+    ],
+    privacy: Annotated[
+        str, typer.Option("--privacy", help="public|internal|confidential|restricted")
+    ],
+    hardware: Annotated[
+        str, typer.Option("--hardware", help="cpu-only|mac-laptop|nvidia|linux-workstation")
+    ],
+) -> None:
+    """Recomenda e aplica um profile mínimo com base em uso, privacidade e hardware."""
+    from prometheus.config.runtime import recommend_profile, use_profile
+
+    profile_name, mode = recommend_profile(
+        use_case=use_case,
+        privacy=privacy,
+        hardware=hardware,
+    )
+    try:
+        use_profile(profile_name)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(f"recommended_profile: {profile_name}")
+    typer.echo(f"recommended_mode: {mode}")
+    typer.echo("Próximos passos:")
+    typer.echo("1. revise com `pb profile show`")
+    typer.echo("2. valide ambiente com `pb doctor`")
+
+
 # ---------------------------------------------------------------------------
 # pb search
 # ---------------------------------------------------------------------------
