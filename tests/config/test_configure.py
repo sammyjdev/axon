@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prometheus.config.runtime import recommend_profile, use_profile
+from prometheus.config.runtime import recommend_profile, select_capabilities, use_profile
 
 
 def test_recommend_profile_prefers_privacy_first_for_restricted_data() -> None:
@@ -88,6 +88,56 @@ def test_use_profile_can_apply_recommended_profile(tmp_path: Path, monkeypatch) 
     payload = config_path.read_text(encoding="utf-8")
     assert 'active_profile = "team-dev"' in payload
     assert 'mode = "remote-infra"' in payload
+
+
+def test_select_capabilities_for_privacy_first_light_profile() -> None:
+    selection = select_capabilities(
+        profile={
+            "name": "privacy-first",
+            "description": "Prefer local or remote self-hosted paths",
+            "mode": "minimal",
+            "cloud_policy": "deny",
+            "infra_strategy": "local",
+            "memory_tier": "light",
+            "enabled_features": ("rtk", "local-rag"),
+        }
+    )
+
+    assert selection.enabled_features == ("lean-context", "local-rag", "rtk")
+    assert selection.overkill_features == (
+        "cloud-routing",
+        "heavy-local-models",
+        "shared-remote-infra",
+    )
+
+
+def test_select_capabilities_for_team_remote_setup() -> None:
+    selection = select_capabilities(
+        use_case="team",
+        privacy="internal",
+        hardware="nvidia",
+        infra="remote",
+    )
+
+    assert selection.enabled_features == ("shared-remote-infra",)
+    assert selection.overkill_features == ("heavy-local-models", "offline-first")
+
+
+def test_select_capabilities_for_full_local_high_capability_setup() -> None:
+    selection = select_capabilities(
+        use_case="solo",
+        privacy="public",
+        hardware="nvidia",
+        preferred_mode="full-local",
+        infra="local",
+    )
+
+    assert selection.enabled_features == (
+        "heavy-local-models",
+        "local-rag",
+        "offline-first",
+    )
+    assert selection.overkill_features == ("shared-remote-infra",)
 
 
 def _write_config(tmp_path: Path) -> Path:

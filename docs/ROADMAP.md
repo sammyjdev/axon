@@ -6,6 +6,17 @@ This roadmap turns the current product direction into concrete tasks. The near
 term goal is simple: make Prometheus usable by other developers on different
 machines without assuming Odisseu, Claude, or the author's hardware.
 
+Current execution state as of 2026-05-08:
+
+- P0 is complete at the documentation and shipped-surface level.
+- P1 is complete at the initial guided-customization level.
+- The profile manifest exists in the runtime schema.
+- `pb configure` works both as a deterministic flag-driven recommender and as a
+  concise interactive questionnaire when core inputs are omitted.
+- A subsystem-level capability selector now exists for recommendation and
+  inspection, though it is still advisory rather than a hard feature-toggle
+  system.
+
 ## Product Direction
 
 - Prometheus: self-hosted context, memory, retrieval, and governance engine.
@@ -51,6 +62,20 @@ machines without assuming Odisseu, Claude, or the author's hardware.
 | P1-T3 | Evolve `pb configure` | today: flag-driven profile recommender; next: interactive customization command | P1-T2 | user can reconfigure without editing raw files |
 | P1-T4 | Build capability selector | rules deciding which subsystems are necessary vs overkill | P1-T1 | low-resource users avoid heavy components by default |
 | P1-T5 | Add profile docs and examples | examples for common developer setups | P1-T3 | users can compare profiles before installing |
+
+Current interpretation of P1:
+
+- P1-T1 is implemented: the config layer and CLI can carry profile metadata for
+  cloud policy, infra strategy, memory tier, and enabled features.
+- P1-T2 is implemented: `pb configure` can collect its core inputs
+  interactively when they are omitted from the command line.
+- P1-T3 is implemented: `pb configure` recommends and applies a profile through
+  both flags and prompts.
+- P1-T4 is implemented at the advisory layer: Prometheus can classify
+  capabilities as useful versus overkill, and surface that in inspection and
+  recommendation flows.
+- P1-T5 is implemented: the docs now explain both the shipped customization
+  flow and the remaining boundaries.
 
 ## P2: Engine Robustness
 
