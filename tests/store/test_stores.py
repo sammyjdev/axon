@@ -12,7 +12,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from prometheus.store.collections import get_search_collections
+from prometheus.store.failure_store import FailureRecord, FailureStore
 from prometheus.store.graph_store import GraphStore
+from prometheus.store.outcome_store import OutcomeRecord, OutcomeStore
 from prometheus.store.session_store import ADR, CodeChange, SessionMemory, SessionStore
 
 # ── collections.py ─────────────────────────────────────────────────────────────
@@ -228,3 +230,178 @@ class TestSessionStore:
     async def test_get_recent_changes_empty(self, session_store) -> None:
         changes = await session_store.get_recent_changes("nonexistent.java")
         assert changes == []
+
+
+@pytest.fixture
+async def failure_store(tmp_path) -> AsyncGenerator[FailureStore, None]:
+    store = FailureStore(db_path=tmp_path / "failure.db")
+    await store.init()
+    yield store
+    await store.close()
+
+
+@pytest.mark.asyncio
+class TestFailureStore:
+    async def test_save_and_get_recent_failures(self, failure_store) -> None:
+        record = FailureRecord(
+            project="prometheus",
+            operation="til-promotion",
+            error_message="promotion failed after duplicate note match",
+            probable_cause="duplicate detection threshold too low",
+            tags=["til", "promotion"],
+        )
+        record_id = await failure_store.save_failure(record)
+
+        failures = await failure_store.get_recent_failures("prometheus")
+        assert record_id > 0
+        assert len(failures) == 1
+        assert failures[0].probable_cause == "duplicate detection threshold too low"
+        assert failures[0].tags == ["til", "promotion"]
+
+    async def test_get_recent_failures_respects_project_and_limit(self, failure_store) -> None:
+        for index in range(4):
+            await failure_store.save_failure(
+                FailureRecord(
+                    project="prometheus",
+                    operation=f"task-{index}",
+                    error_message=f"failure {index}",
+                    probable_cause="shared cause",
+                    tags=["shared"],
+                )
+            )
+        await failure_store.save_failure(
+            FailureRecord(
+                project="other",
+                operation="other-task",
+                error_message="other failure",
+                probable_cause="other cause",
+                tags=["shared"],
+            )
+        )
+
+        failures = await failure_store.get_recent_failures("prometheus", limit=3)
+        assert len(failures) == 3
+        assert all(f.project == "prometheus" for f in failures)
+
+    async def test_find_failures_by_tag_filters_project(self, failure_store) -> None:
+        await failure_store.save_failure(
+            FailureRecord(
+                project="prometheus",
+                operation="retrieve",
+                error_message="timeout",
+                probable_cause="network jitter",
+                tags=["io", "retry"],
+            )
+        )
+        await failure_store.save_failure(
+            FailureRecord(
+                project="other",
+                operation="retrieve",
+                error_message="timeout",
+                probable_cause="network jitter",
+                tags=["io", "retry"],
+            )
+        )
+
+        failures = await failure_store.find_failures_by_tag("retry", project="prometheus")
+        assert len(failures) == 1
+        assert failures[0].project == "prometheus"
+
+    async def test_get_repeated_failures_groups_by_probable_cause(self, failure_store) -> None:
+        await failure_store.save_failure(
+            FailureRecord(
+                project="prometheus",
+                operation="retrieve",
+                error_message="timeout",
+                probable_cause="network jitter",
+                tags=["io"],
+            )
+        )
+        await failure_store.save_failure(
+            FailureRecord(
+                project="prometheus",
+                operation="compress",
+                error_message="timeout",
+                probable_cause="network jitter",
+                tags=["io", "compression"],
+            )
+        )
+        await failure_store.save_failure(
+            FailureRecord(
+                project="prometheus",
+                operation="index",
+                error_message="duplicate",
+                probable_cause="bad dedupe config",
+                tags=["indexing"],
+            )
+        )
+
+        repeated = await failure_store.get_repeated_failures("prometheus", min_occurrences=2)
+        assert repeated == [("network jitter", 2)]
+
+
+@pytest.fixture
+async def outcome_store(tmp_path) -> AsyncGenerator[OutcomeStore, None]:
+    store = OutcomeStore(db_path=tmp_path / "outcome.db")
+    await store.init()
+    yield store
+    await store.close()
+
+
+@pytest.mark.asyncio
+class TestOutcomeStore:
+    async def test_save_and_get_outcomes_for_context(self, outcome_store) -> None:
+        record = OutcomeRecord(
+            project="prometheus",
+            context="knowledge",
+            summary="Java chunking fixture review prevented a bad merge",
+            outcome="kept structure-aware chunking intact",
+            tags=["chunker", "review"],
+        )
+        record_id = await outcome_store.save_outcome(record)
+
+        outcomes = await outcome_store.get_outcomes_for_context("prometheus", "knowledge")
+        assert record_id > 0
+        assert len(outcomes) == 1
+        assert outcomes[0].outcome == "kept structure-aware chunking intact"
+        assert outcomes[0].tags == ["chunker", "review"]
+
+    async def test_get_outcomes_for_context_filters_project(self, outcome_store) -> None:
+        await outcome_store.save_outcome(
+            OutcomeRecord(
+                project="prometheus",
+                context="knowledge",
+                summary="kept fixture coverage stable",
+                outcome="tests caught a parser regression",
+                tags=["tests"],
+            )
+        )
+        await outcome_store.save_outcome(
+            OutcomeRecord(
+                project="other",
+                context="knowledge",
+                summary="other project outcome",
+                outcome="not relevant",
+                tags=["tests"],
+            )
+        )
+
+        outcomes = await outcome_store.get_outcomes_for_context("prometheus", "knowledge")
+        assert len(outcomes) == 1
+        assert outcomes[0].project == "prometheus"
+
+    async def test_find_outcomes_by_tag_and_limit(self, outcome_store) -> None:
+        for index in range(4):
+            await outcome_store.save_outcome(
+                OutcomeRecord(
+                    project="prometheus",
+                    context="saas",
+                    summary=f"outcome {index}",
+                    outcome=f"result {index}",
+                    tags=["reuse", "playbook"],
+                )
+            )
+
+        outcomes = await outcome_store.find_outcomes_by_tag("playbook", project="prometheus", limit=2)
+        assert len(outcomes) == 2
+        assert all("playbook" in outcome.tags for outcome in outcomes)
