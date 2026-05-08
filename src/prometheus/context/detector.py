@@ -3,13 +3,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-CONTEXTS = ["personal", "career", "knowledge", "work", "general"]
+from prometheus.context.registry import VALID_CONTEXTS
+
+CONTEXTS = [*VALID_CONTEXTS, "general"]
 
 PATH_MAP: dict[str, str] = {
+    "afrodite-ai": "saas",
     "aerus-rpg": "personal",
     "rpg-master-ai": "personal",
     "linkedin-tool": "personal",
     "avangrid": "work",
+    "vault/saas": "saas",
     "vault/work": "work",
     "vault/career": "career",
     "vault/knowledge": "knowledge",
@@ -65,6 +69,16 @@ CONTENT_SIGNALS: dict[str, list[str]] = {
         r"\bcover.?letter\b",
         r"\boffer\b",
         r"\bnegociar\b",
+    ],
+    "saas": [
+        r"\bafrodite\b",
+        r"\bwhatsapp\b",
+        r"\bagendament[oa]s?\b",
+        r"\bcomiss[oõ]es?\b",
+        r"\bcheckout\b",
+        r"\bsal[aã]o\b",
+        r"\bsal[oõ]es\b",
+        r"\bmultitenan",
     ],
     "work": [
         r"\bavangrid\b",

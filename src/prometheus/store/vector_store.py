@@ -12,9 +12,11 @@ from qdrant_client.models import (
     VectorParams,
 )
 
+from prometheus.context.registry import VALID_CONTEXTS
+
 VECTOR_SIZE = int(os.environ.get("PROMETHEUS_VECTOR_SIZE", "384"))
 
-COLLECTIONS = ["personal", "career", "knowledge", "work"]
+COLLECTIONS = list(VALID_CONTEXTS)
 
 
 @dataclass
@@ -26,7 +28,7 @@ class Chunk:
     chunk_type: str  # method | class | file
     symbol: str
     project: str
-    ctx: str  # personal | career | knowledge | work
+    ctx: str  # personal | career | knowledge | saas | work
     content: str
     git_commit: str = ""
     modified_at: datetime = field(default_factory=datetime.utcnow)
