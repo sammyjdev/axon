@@ -642,6 +642,35 @@ def profile_show() -> None:
     typer.echo(f"description: {profile['description']}")
 
 
+@profile_app.command("create")
+def profile_create(
+    name: Annotated[str, typer.Argument(help="Nome do profile")],
+    description: Annotated[str, typer.Option("--description", help="Descrição curta")],
+    mode: Annotated[str, typer.Option("--mode", help="Modo operacional")],
+) -> None:
+    """Cria um novo profile simples em `prometheus.toml`."""
+    from prometheus.config.runtime import create_profile
+
+    try:
+        create_profile(name, description=description, mode=mode)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"Perfil criado: {name}")
+
+
+@profile_app.command("export")
+def profile_export(
+    name: Annotated[str, typer.Argument(help="Nome do profile")],
+) -> None:
+    """Exporta um profile como snippet TOML."""
+    from prometheus.config.runtime import export_profile
+
+    try:
+        typer.echo(export_profile(name))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 @app.command()
 def configure(
     use_case: Annotated[
@@ -653,6 +682,18 @@ def configure(
     hardware: Annotated[
         str, typer.Option("--hardware", help="cpu-only|mac-laptop|nvidia|linux-workstation")
     ],
+    preferred_mode: Annotated[
+        str | None, typer.Option("--preferred-mode", help="full-local|hybrid-local|remote-infra|minimal")
+    ] = None,
+    cloud: Annotated[
+        str | None, typer.Option("--cloud", help="ok|avoid|deny")
+    ] = None,
+    infra: Annotated[
+        str | None, typer.Option("--infra", help="local|remote")
+    ] = None,
+    memory: Annotated[
+        str | None, typer.Option("--memory", help="light|full")
+    ] = None,
 ) -> None:
     """Recomenda e aplica um profile mínimo com base em uso, privacidade e hardware."""
     from prometheus.config.runtime import recommend_profile, use_profile
@@ -661,6 +702,10 @@ def configure(
         use_case=use_case,
         privacy=privacy,
         hardware=hardware,
+        preferred_mode=preferred_mode,
+        cloud=cloud,
+        infra=infra,
+        memory=memory,
     )
     try:
         use_profile(profile_name)

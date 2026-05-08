@@ -390,6 +390,125 @@ def test_configure_applies_recommended_profile(monkeypatch, tmp_path) -> None:
     assert 'active_profile = "team-dev"' in payload
 
 
+def test_configure_accepts_preferred_mode_override(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                'mode = "hybrid-local"',
+                'active_profile = "solo-dev"',
+                f'engine_root = "{tmp_path}"',
+                f'vault_root = "{tmp_path / "vault"}"',
+                "",
+                "[profiles.solo-dev]",
+                'description = "Single developer default"',
+                'mode = "hybrid-local"',
+                "",
+                "[profiles.team-dev]",
+                'description = "Shared team setup"',
+                'mode = "remote-infra"',
+                "",
+                "[profiles.privacy-first]",
+                'description = "Prefer local or remote self-hosted paths"',
+                'mode = "minimal"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(
+        pb.app,
+        [
+            "configure",
+            "--use-case",
+            "solo",
+            "--privacy",
+            "public",
+            "--hardware",
+            "mac-laptop",
+            "--preferred-mode",
+            "remote-infra",
+        ],
+    )
+
+    payload = config_path.read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert "recommended_profile: team-dev" in result.stdout
+    assert "recommended_mode: remote-infra" in result.stdout
+    assert 'active_profile = "team-dev"' in payload
+
+
+def test_profile_create_appends_new_profile(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                'mode = "hybrid-local"',
+                'active_profile = "solo-dev"',
+                f'engine_root = "{tmp_path}"',
+                f'vault_root = "{tmp_path / "vault"}"',
+                "",
+                "[profiles.solo-dev]",
+                'description = "Single developer default"',
+                'mode = "hybrid-local"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(
+        pb.app,
+        [
+            "profile",
+            "create",
+            "support-lite",
+            "--description",
+            "Support workflow on lighter hardware",
+            "--mode",
+            "minimal",
+        ],
+    )
+
+    payload = config_path.read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert "Perfil criado: support-lite" in result.stdout
+    assert "[profiles.support-lite]" in payload
+
+
+def test_profile_export_prints_toml_snippet(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                'mode = "hybrid-local"',
+                'active_profile = "solo-dev"',
+                f'engine_root = "{tmp_path}"',
+                f'vault_root = "{tmp_path / "vault"}"',
+                "",
+                "[profiles.team-dev]",
+                'description = "Shared team setup"',
+                'mode = "remote-infra"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(pb.app, ["profile", "export", "team-dev"])
+
+    assert result.exit_code == 0
+    assert "[profiles.team-dev]" in result.stdout
+    assert 'mode = "remote-infra"' in result.stdout
+
+
 def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> None:
     class FakeDetector:
         def __init__(self, *_args, **_kwargs) -> None:
