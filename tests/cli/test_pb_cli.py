@@ -114,6 +114,18 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
 
     monkeypatch.setattr(pb, "load_runtime_config", lambda: runtime)
     monkeypatch.setattr(
+        "prometheus.config.runtime.get_profile",
+        lambda _name: {
+            "name": "solo-dev",
+            "description": "Single developer default",
+            "mode": "hybrid-local",
+            "cloud_policy": "avoid",
+            "infra_strategy": "local",
+            "memory_tier": "full",
+            "enabled_features": ("rtk",),
+        },
+    )
+    monkeypatch.setattr(
         "prometheus.config.platform.detect_platform",
         lambda: PlatformConfig(
             platform="pc",
@@ -154,6 +166,8 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
     assert "active_profile: solo-dev" in result.stdout
     assert "docker: ok" in result.stdout
     assert "GPU-capable local stack available." in result.stdout
+    assert "capabilities:" in result.stdout
+    assert "enabled: rtk" in result.stdout
 
 
 def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> None:
@@ -339,6 +353,8 @@ def test_profile_show_displays_active_profile(monkeypatch, tmp_path) -> None:
     assert "name: solo-dev" in result.stdout
     assert "mode: hybrid-local" in result.stdout
     assert "description: Single developer default" in result.stdout
+    assert "selected_capabilities:" in result.stdout
+    assert "overkill_capabilities:" in result.stdout
 
 
 def test_configure_applies_recommended_profile(monkeypatch, tmp_path) -> None:
@@ -387,6 +403,51 @@ def test_configure_applies_recommended_profile(monkeypatch, tmp_path) -> None:
     assert result.exit_code == 0
     assert "recommended_profile: team-dev" in result.stdout
     assert "recommended_mode: remote-infra" in result.stdout
+    assert "selected_capabilities: shared-remote-infra" in result.stdout
+    assert 'active_profile = "team-dev"' in payload
+
+
+def test_configure_interactive_applies_recommended_profile(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                'mode = "hybrid-local"',
+                'active_profile = "solo-dev"',
+                f'engine_root = "{tmp_path}"',
+                f'vault_root = "{tmp_path / "vault"}"',
+                "",
+                "[profiles.solo-dev]",
+                'description = "Single developer default"',
+                'mode = "hybrid-local"',
+                "",
+                "[profiles.team-dev]",
+                'description = "Shared team setup"',
+                'mode = "remote-infra"',
+                "",
+                "[profiles.privacy-first]",
+                'description = "Prefer local or remote self-hosted paths"',
+                'mode = "minimal"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(
+        pb.app,
+        ["configure"],
+        input="team\ninternal\nnvidia\n\n\n\n\n",
+    )
+
+    payload = config_path.read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert "Caso de uso" in result.stdout
+    assert "recommended_profile: team-dev" in result.stdout
+    assert "recommended_mode: remote-infra" in result.stdout
+    assert "selected_capabilities: shared-remote-infra" in result.stdout
     assert 'active_profile = "team-dev"' in payload
 
 
@@ -438,7 +499,55 @@ def test_configure_accepts_preferred_mode_override(monkeypatch, tmp_path) -> Non
     assert result.exit_code == 0
     assert "recommended_profile: team-dev" in result.stdout
     assert "recommended_mode: remote-infra" in result.stdout
+    assert "selected_capabilities: shared-remote-infra" in result.stdout
     assert 'active_profile = "team-dev"' in payload
+
+
+def test_configure_rejects_invalid_restricted_remote_combination(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    original_payload = "\n".join(
+        [
+            "[runtime]",
+            'mode = "hybrid-local"',
+            'active_profile = "solo-dev"',
+            f'engine_root = "{tmp_path}"',
+            f'vault_root = "{tmp_path / "vault"}"',
+            "",
+            "[profiles.solo-dev]",
+            'description = "Single developer default"',
+            'mode = "hybrid-local"',
+            "",
+            "[profiles.team-dev]",
+            'description = "Shared team setup"',
+            'mode = "remote-infra"',
+            "",
+            "[profiles.privacy-first]",
+            'description = "Prefer local or remote self-hosted paths"',
+            'mode = "minimal"',
+            "",
+        ]
+    )
+    config_path.write_text(original_payload, encoding="utf-8")
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(
+        pb.app,
+        [
+            "configure",
+            "--use-case",
+            "solo",
+            "--privacy",
+            "restricted",
+            "--hardware",
+            "cpu-only",
+            "--infra",
+            "remote",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "privacy=restricted is incompatible with infra=remote" in result.stdout
+    assert config_path.read_text(encoding="utf-8") == original_payload
 
 
 def test_profile_create_appends_new_profile(monkeypatch, tmp_path) -> None:
@@ -472,6 +581,14 @@ def test_profile_create_appends_new_profile(monkeypatch, tmp_path) -> None:
             "Support workflow on lighter hardware",
             "--mode",
             "minimal",
+            "--cloud-policy",
+            "deny",
+            "--infra-strategy",
+            "local",
+            "--memory-tier",
+            "light",
+            "--enabled-features",
+            "rtk,local-rag",
         ],
     )
 
@@ -479,6 +596,10 @@ def test_profile_create_appends_new_profile(monkeypatch, tmp_path) -> None:
     assert result.exit_code == 0
     assert "Perfil criado: support-lite" in result.stdout
     assert "[profiles.support-lite]" in payload
+    assert 'cloud_policy = "deny"' in payload
+    assert 'infra_strategy = "local"' in payload
+    assert 'memory_tier = "light"' in payload
+    assert 'enabled_features = ["rtk", "local-rag"]' in payload
 
 
 def test_profile_export_prints_toml_snippet(monkeypatch, tmp_path) -> None:

@@ -2,7 +2,7 @@
 
 Profiles are named setup presets stored in `prometheus.toml`.
 
-Today, a profile is intentionally small:
+Today, the CLI uses a deliberately small built-in profile model:
 
 - a profile `name`
 - a short `description`
@@ -12,9 +12,11 @@ Using a profile updates the active profile in `[runtime]`, syncs the runtime
 `mode`, and, when `.env.local` exists next to `prometheus.toml`, also updates
 `PROMETHEUS_RUNTIME_MODE`.
 
-Profiles do not currently enable or disable individual subsystems. They are a
-practical way to choose the operating shape that best fits your machine and
-workflow.
+Profiles do not currently enable or disable individual subsystems at runtime.
+They are the current way to choose the operating shape that best fits your
+machine and workflow. Optional structured profile fields exist in the config
+schema, but they should be read as setup intent and future customization
+metadata, not as a finished feature-flag system.
 
 ## Built-in Profiles
 
@@ -33,6 +35,57 @@ The current built-in mapping is simple and explicit:
 - `privacy-first` means `minimal`
 
 If you need `full-local`, create a custom profile for it.
+
+## Profile Manifest
+
+Prometheus can store more than the three core fields above in
+`prometheus.toml`.
+
+Supported profile keys today:
+
+| Key | Meaning | Current behavior |
+| --- | --- | --- |
+| `description` | short human label | shown in profile listings and export |
+| `mode` | operating shape: `full-local`, `hybrid-local`, `remote-infra`, `minimal` | applied by `pb profile use` and `pb configure` |
+| `cloud_policy` | whether cloud assistance is acceptable | stored, exported, shown in `pb profile show`, and used by capability selection |
+| `infra_strategy` | whether heavier services should be local or remote | stored, exported, shown in `pb profile show`, and used by capability selection |
+| `memory_tier` | lighter vs fuller memory footprint | stored, exported, shown in `pb profile show`, and used by capability selection |
+| `enabled_features` | named capabilities you intend to keep visible | stored, exported, shown in `pb profile show`, and folded into capability selection |
+
+Example:
+
+```toml
+[profiles.support-lite]
+description = "Support workflow on lighter hardware"
+mode = "minimal"
+cloud_policy = "deny"
+infra_strategy = "local"
+memory_tier = "light"
+enabled_features = ["rtk", "local-rag"]
+```
+
+This richer shape matters for P1 because it lets Prometheus represent user
+choices in language that is closer to actual setup decisions, even though the
+current CLI still applies only the profile name and `mode`.
+
+## How Custom Fields Map To Real Setup Choices
+
+These optional fields are intended to capture the decisions a user is really
+making:
+
+| Field | User choice it represents | Typical interpretation |
+| --- | --- | --- |
+| `cloud_policy = "deny"` | "Do not depend on hosted model calls for this setup." | prefer the smallest local or self-hosted path |
+| `cloud_policy = "avoid"` | "Use cloud only if local paths are not enough." | keep hybrid paths available but not primary |
+| `infra_strategy = "local"` | "Run the important services on this machine." | fits `full-local`, `hybrid-local`, or `minimal` depending on hardware |
+| `infra_strategy = "remote"` | "Keep the CLI local but move heavy infra elsewhere." | usually points toward `remote-infra` |
+| `memory_tier = "light"` | "I want lower resource cost and less operational weight." | usually aligns with `minimal` |
+| `memory_tier = "full"` | "I can afford the heavier memory-related pieces." | usually aligns with fuller local or shared setups |
+| `enabled_features = ["rtk", ...]` | "These are the capabilities I actively want surfaced." | a future capability selector can use this to hide overkill |
+
+Important boundary: the current implementation now interprets those fields for
+capability selection and profile inspection, but it still does not start or
+stop services, rewrite compose files, or toggle retrieval subsystems directly.
 
 ## How Profiles Fit The CLI
 
@@ -61,9 +114,40 @@ What it does today:
 2. Applies that profile immediately.
 3. Writes the chosen profile back into `prometheus.toml`.
 
-This is a flag-driven recommender, not a full interactive wizard.
-In practice, it selects among the built-in profiles above. If you want a named
-`full-local` setup, create it explicitly with `pb profile create`.
+When any of the core fields are omitted, `pb configure` falls back to a concise
+interactive flow using the same logic in question form:
+
+1. Ask what kind of work you are doing: solo, team, or more restricted/corporate.
+2. Ask about privacy sensitivity and whether cloud use is acceptable.
+3. Ask what hardware and infrastructure you actually have available.
+4. Recommend a mode and profile that remove obvious overkill.
+5. Let you keep the recommendation or refine it into a named custom profile.
+
+The explicit flag path still works, which keeps the behavior deterministic and
+scriptable for automation.
+
+### Capability Selection And Overkill Hiding
+
+P1 introduces the idea that Prometheus should hide advanced pieces when they do
+not solve the user's immediate problem. The current implementation expresses
+that through a capability selector fed by profile metadata and recommendation
+inputs.
+
+The practical mapping today is:
+
+| If the user signals... | `pb configure` tends to recommend... | Why |
+| --- | --- | --- |
+| restricted or confidential data | `privacy-first` + `minimal` | smallest supported shape, least operational sprawl |
+| a shared or corporate setup | `team-dev` + `remote-infra` | move heavier infra off the laptop |
+| light memory preference | `privacy-first` + `minimal` | lower footprint beats extra capability |
+| explicit remote infra | `team-dev` + `remote-infra` | keep CLI local, outsource the heavy services |
+| a typical solo setup | `solo-dev` + `hybrid-local` | enough local capability without assuming the heaviest stack |
+
+What is not implemented yet:
+
+- automatic hiding or disabling of specific subsystems from `enabled_features`
+- service provisioning changes driven directly from profile metadata
+- a richer custom profile wizard beyond the current prompt-and-flags flow
 
 ### `pb profile list`
 
@@ -89,6 +173,9 @@ Shows the active profile in detail.
 pb profile show
 ```
 
+Today this prints the core fields, optional structured metadata, and the
+selected/overkill capabilities inferred from that profile.
+
 ### `pb profile use`
 
 Switches to an existing profile and syncs runtime mode.
@@ -106,7 +193,11 @@ Creates a new profile entry in `prometheus.toml`.
 ```bash
 pb profile create support-lite \
   --description "Support workflow on lighter hardware" \
-  --mode minimal
+  --mode minimal \
+  --cloud-policy deny \
+  --infra-strategy local \
+  --memory-tier light \
+  --enabled-features rtk,local-rag
 ```
 
 Supported modes are:
@@ -118,6 +209,10 @@ Supported modes are:
 
 This command only writes a profile entry. It does not activate it unless you
 follow with `pb profile use`.
+
+The CLI variant of `create` can now write all supported structured fields. You
+can still edit `prometheus.toml` directly when you want more control, then use
+`pb profile export` to verify the resulting shape.
 
 ### `pb profile export`
 
@@ -166,6 +261,19 @@ Current outcome:
 This is the right path when the CLI stays local but the heavier services are
 better hosted on a shared machine.
 
+### 2b. The same setup through the interactive flow
+
+This is the decision sequence the guided `pb configure` flow now represents:
+
+1. "Is this mainly solo or team work?" -> team
+2. "How sensitive is the data?" -> internal
+3. "What hardware or infra do you have?" -> heavier services can live remotely
+4. Recommendation -> `team-dev`
+5. Applied mode -> `remote-infra`
+
+That framing is useful because it explains why the resulting profile is a good
+fit, not just what the CLI selected.
+
 ### 3. Create a custom full-local profile for a stronger Linux box
 
 ```bash
@@ -187,6 +295,7 @@ For most users, the shortest path is:
 1. Run `pb configure` to get an initial recommendation.
 2. Verify with `pb profile show`.
 3. Switch later with `pb profile use` if your setup changes.
-4. Add custom profiles with `pb profile create` only when the built-ins are not enough.
+4. Add a custom profile with `pb profile create` when the built-ins are not enough.
+5. Add optional profile metadata through `pb profile create` or directly in `prometheus.toml` when you need a custom setup shape.
 
 For broader environment guidance, see [Support matrix](SUPPORT_MATRIX.md).
