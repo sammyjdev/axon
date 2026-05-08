@@ -10,6 +10,7 @@ from pathlib import Path
 import litellm
 
 from prometheus.config.runtime import RuntimeConfig, load_runtime_config
+from prometheus.context.registry import VALID_CONTEXTS as REGISTERED_CONTEXTS
 from prometheus.expansion.budget import BudgetEnforcement, ExpansionBudgetManager
 from prometheus.expansion.collector import ExpansionCollector
 from prometheus.expansion.models import SourceDocument
@@ -29,7 +30,7 @@ _TITLE_RE = re.compile(r"^\s*#\s+(.+?)\s*$", re.MULTILINE)
 _CREATED_RE = re.compile(r"^\s*created:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})", re.MULTILINE)
 _TOKEN_RE = re.compile(r"[a-z0-9]{3,}", re.IGNORECASE)
 _SUPPORTED_SUFFIXES = {".md", ".txt"}
-_VALID_CONTEXTS = {"knowledge", "career", "personal", "work"}
+_VALID_CONTEXTS = set(REGISTERED_CONTEXTS)
 _CLOUD_COST_PER_1K = {
     "claude-haiku-4-5-20251001": 0.001,
     "claude-sonnet-4-6": 0.01,

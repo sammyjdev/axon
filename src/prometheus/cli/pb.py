@@ -12,6 +12,7 @@ import typer
 
 from prometheus.config.runtime import load_runtime_config
 from prometheus.context.compression_quality import compression_quality_note
+from prometheus.context.registry import VALID_CONTEXTS
 from prometheus.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
 
 app = typer.Typer(
@@ -42,6 +43,7 @@ app.add_typer(graph_app, name="graph")
 QDRANT_DEFAULT_URL = "http://localhost:6333"
 _MAX_CHUNK_INPUT_CHARS = 4_000
 _RUNTIME = load_runtime_config()
+_CTX_HELP = f"Contexto: {'|'.join(VALID_CONTEXTS)}"
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +251,7 @@ async def _semantic_search_hits(
 def ask(
     query: Annotated[str, typer.Argument(help="Pergunta ou task")],
     ctx: Annotated[
-        str | None, typer.Option("--ctx", help="Contexto: personal|career|knowledge|work")
+        str | None, typer.Option("--ctx", help=_CTX_HELP)
     ] = None,
     cwd: Annotated[
         str | None, typer.Option("--cwd", help="Diretório para detecção automática de contexto")
@@ -479,7 +481,7 @@ def git_proxy(
 def search(
     query: Annotated[str, typer.Argument(help="Query de busca semântica")],
     ctx: Annotated[
-        str | None, typer.Option("--ctx", help="Contexto: personal|career|knowledge|work")
+        str | None, typer.Option("--ctx", help=_CTX_HELP)
     ] = None,
     language: Annotated[str | None, typer.Option("--lang", help="Filtrar por linguagem")] = None,
     top_k: Annotated[int, typer.Option("--top", help="Número de resultados")] = 5,
@@ -528,7 +530,7 @@ def search(
 @session_app.callback(invoke_without_command=True)
 def session_root(
     ctx_name: Annotated[
-        str | None, typer.Argument(help="Contexto: personal|career|knowledge|work")
+        str | None, typer.Argument(help=_CTX_HELP)
     ] = None,
 ) -> None:
     """Inicia ou exibe sessão ativa."""

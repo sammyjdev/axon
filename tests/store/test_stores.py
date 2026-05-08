@@ -22,7 +22,7 @@ class TestGetSearchCollections:
     def test_no_ctx_excludes_work(self) -> None:
         result = get_search_collections(None)
         assert "work" not in result
-        assert set(result) == {"personal", "career", "knowledge"}
+        assert set(result) == {"personal", "career", "knowledge", "saas"}
 
     def test_explicit_work_ctx_returns_only_work(self) -> None:
         result = get_search_collections("work")

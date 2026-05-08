@@ -180,9 +180,9 @@ async def search_code(
     """
     Busca semântica no codebase indexado.
 
-    ctx: personal | career | knowledge | work
+    ctx: personal | career | knowledge | saas | work
     Para acessar work, ctx='work' é obrigatório e explícito.
-    Sem ctx, busca em personal + career + knowledge.
+    Sem ctx, busca em personal + career + knowledge + saas.
     caller: claude-code | copilot (afeta budget de tokens retornados)
     """
     collections = get_search_collections(ctx)

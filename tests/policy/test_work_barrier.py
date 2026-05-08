@@ -23,8 +23,8 @@ class FakeStore:
 
 
 def test_search_collections_hide_work_without_explicit_context() -> None:
-    assert get_search_collections(None) == ["personal", "career", "knowledge"]
-    assert get_search_collections("knowledge") == ["personal", "career", "knowledge"]
+    assert get_search_collections(None) == ["personal", "career", "knowledge", "saas"]
+    assert get_search_collections("knowledge") == ["personal", "career", "knowledge", "saas"]
     assert get_search_collections("work") == ["work"]
 
 
