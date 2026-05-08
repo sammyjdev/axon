@@ -24,6 +24,7 @@ def test_runtime_loads_expansion_defaults(monkeypatch, tmp_path) -> None:
     assert runtime.data_root == engine_root / "data"
     assert runtime.expansion.manual_trigger_only is True
     assert runtime.expansion.default_contexts == ("knowledge", "career", "personal")
+    assert runtime.caveman_num_ctx == 4096
     assert runtime.expansion.paths.root == engine_root / "data" / "expansion"
     assert runtime.expansion.source_catalog_path == (
         engine_root / "config" / "expansion_sources.json"
@@ -60,6 +61,7 @@ def test_runtime_supports_remote_desktop_infra(monkeypatch, tmp_path) -> None:
 
     assert runtime.qdrant_url == "http://desktop.local:6333"
     assert runtime.redis_url == "redis://desktop.local:6379"
+    assert runtime.caveman_num_ctx == 4096
     assert runtime.ollama_local_host == "http://desktop.local:11434"
     assert runtime.ollama_remote_host == "http://desktop.local:11434"
 

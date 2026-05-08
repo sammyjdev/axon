@@ -24,7 +24,11 @@ def get_search_collections(ctx: str | None) -> list[str]:
     Nunca expõe 'work' sem ctx='work' explícito.
     """
     normalized_ctx = normalize_context(ctx)
+    if normalized_ctx is None:
+        return list(DEFAULT_SEARCH_CONTEXTS)
     if normalized_ctx in PROTECTED_CONTEXTS:
+        return [normalized_ctx]
+    if normalized_ctx in _REGISTRY:
         return [normalized_ctx]
     return list(DEFAULT_SEARCH_CONTEXTS)
 
