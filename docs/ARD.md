@@ -48,3 +48,28 @@ excluded from the public repository.
 
 - Retrieval must support bounded output through token and scope constraints.
 - Dependency traversal must stay budget-aware to avoid context bloat.
+
+## ARD-009: Mode-aware distribution
+
+- Prometheus must support at least four documented operating modes:
+  `full-local`, `hybrid-local`, `remote-infra`, and `minimal`.
+- Setup and runtime configuration must not assume one machine shape or one OS.
+- The supported path for Windows must be documented explicitly, including WSL2
+  when native support is incomplete.
+
+## ARD-010: Hardware-fit diagnosis
+
+- Prometheus must detect when the current machine is undersized for the chosen
+  operating mode.
+- The product must recommend a safer mode when local infra or local model cost
+  is too high.
+- Diagnostics must cover Docker, local model reachability, and approximate
+  machine capability.
+
+## ARD-011: Guided customization
+
+- Prometheus must be configurable from user problems and constraints, not only
+  from raw infrastructure toggles.
+- The product must be able to recommend which subsystems are necessary and
+  which are overkill for a given user profile.
+- Profile selection must be reproducible rather than ad hoc.
