@@ -89,6 +89,12 @@ class RuntimeConfig:
         return self.vault_root / ctx.strip().lower()
 
 
+@dataclass(frozen=True)
+class CapabilitySelection:
+    enabled_features: tuple[str, ...]
+    overkill_features: tuple[str, ...]
+
+
 _WORK_CONTEXTS = {"work", "corporate"}
 
 
@@ -221,6 +227,70 @@ def get_profile(name: str) -> dict[str, str | tuple[str, ...] | None]:
     return _parse_profile(name, profile)
 
 
+def select_capabilities(
+    *,
+    profile: dict[str, str | tuple[str, ...] | None] | None = None,
+    use_case: str | None = None,
+    privacy: str | None = None,
+    hardware: str | None = None,
+    preferred_mode: str | None = None,
+    infra: str | None = None,
+    memory: str | None = None,
+    cloud: str | None = None,
+) -> CapabilitySelection:
+    if profile is not None:
+        mode = str(profile.get("mode", "")).strip().lower()
+        cloud_policy = _normalize_optional_value(profile.get("cloud_policy"))
+        infra_strategy = _normalize_optional_value(profile.get("infra_strategy"))
+        memory_tier = _normalize_optional_value(profile.get("memory_tier"))
+        explicit_features = _coerce_profile_features(profile.get("enabled_features"))
+        normalized_hardware = None
+    else:
+        if not use_case or not privacy or not hardware:
+            raise ValueError("select_capabilities requires a profile or recommendation inputs")
+        _profile_name, mode = recommend_profile(
+            use_case=use_case,
+            privacy=privacy,
+            hardware=hardware,
+            preferred_mode=preferred_mode,
+            infra=infra,
+            memory=memory,
+            cloud=cloud,
+        )
+        cloud_policy = _normalize_optional_value(cloud)
+        infra_strategy = _normalize_optional_value(infra)
+        memory_tier = _normalize_optional_value(memory)
+        explicit_features = ()
+        normalized_hardware = hardware.strip().lower()
+
+    enabled = set(explicit_features)
+    overkill: set[str] = set()
+
+    if mode == "minimal" or memory_tier == "light":
+        enabled.add("lean-context")
+        overkill.update({"heavy-local-models", "shared-remote-infra"})
+
+    if mode == "remote-infra" or infra_strategy == "remote":
+        enabled.add("shared-remote-infra")
+        overkill.update({"heavy-local-models", "offline-first"})
+
+    if mode == "full-local":
+        enabled.update({"local-rag", "offline-first"})
+        overkill.add("shared-remote-infra")
+
+    if cloud_policy == "deny":
+        enabled.add("local-rag")
+        overkill.add("cloud-routing")
+
+    if normalized_hardware in {"nvidia", "linux-workstation", "high-capability"} and mode == "full-local":
+        enabled.add("heavy-local-models")
+
+    return CapabilitySelection(
+        enabled_features=tuple(sorted(enabled)),
+        overkill_features=tuple(sorted(overkill - enabled)),
+    )
+
+
 def recommend_profile(
     *,
     use_case: str,
@@ -255,6 +325,13 @@ def recommend_profile(
     if normalized_hardware in {"nvidia", "linux-workstation"}:
         return "solo-dev", "hybrid-local"
     return "solo-dev", "hybrid-local"
+
+
+def _normalize_optional_value(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    return normalized or None
 
 
 def _profile_for_mode(mode: str) -> str:

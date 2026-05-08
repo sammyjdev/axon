@@ -47,6 +47,12 @@ _MAX_CHUNK_INPUT_CHARS = 4_000
 _RUNTIME = load_runtime_config()
 _CTX_HELP = f"Contexto: {'|'.join(VALID_CONTEXTS)}"
 _RUNTIME_MODES = ("full-local", "hybrid-local", "remote-infra", "minimal")
+_CONFIGURE_USE_CASES = ("solo", "team", "corporate")
+_CONFIGURE_PRIVACY_LEVELS = ("public", "internal", "confidential", "restricted")
+_CONFIGURE_HARDWARE_OPTIONS = ("cpu-only", "mac-laptop", "nvidia", "linux-workstation")
+_CONFIGURE_CLOUD_POLICIES = ("ok", "avoid", "deny")
+_CONFIGURE_INFRA_OPTIONS = ("local", "remote")
+_CONFIGURE_MEMORY_OPTIONS = ("light", "full")
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +166,63 @@ def _neo4j_driver():
     user = os.environ.get("NEO4J_USER", "neo4j")
     password = os.environ.get("NEO4J_PASSWORD", "local-password")
     return GraphDatabase.driver(uri, auth=(user, password))
+
+
+def _normalize_configure_value(
+    field: str,
+    value: str | None,
+    *,
+    allowed: tuple[str, ...],
+) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized not in allowed:
+        allowed_values = "|".join(allowed)
+        raise typer.BadParameter(
+            f"{field} must be one of: {allowed_values}. Received: {value}"
+        )
+    return normalized
+
+
+def _prompt_configure_value(
+    prompt: str,
+    *,
+    allowed: tuple[str, ...],
+    optional: bool = False,
+) -> str | None:
+    allowed_values = "|".join(allowed)
+    prompt_text = f"{prompt} [{allowed_values}]"
+    if optional:
+        prompt_text = f"{prompt_text} (enter to skip)"
+
+    while True:
+        value = typer.prompt(prompt_text, default="" if optional else ..., show_default=False)
+        normalized = value.strip().lower()
+        if optional and not normalized:
+            return None
+        if normalized in allowed:
+            return normalized
+        typer.echo(f"Valor inválido. Escolha: {allowed_values}", err=True)
+
+
+def _validate_configure_combination(
+    *,
+    privacy: str,
+    preferred_mode: str | None,
+    cloud: str | None,
+    infra: str | None,
+) -> None:
+    if privacy != "restricted":
+        return
+    if infra == "remote":
+        raise typer.BadParameter("privacy=restricted is incompatible with infra=remote")
+    if preferred_mode == "remote-infra":
+        raise typer.BadParameter(
+            "privacy=restricted is incompatible with preferred_mode=remote-infra"
+        )
+    if cloud == "ok":
+        raise typer.BadParameter("privacy=restricted is incompatible with cloud=ok")
 
 
 def _run_neo4j_write(cypher: str) -> None:
@@ -481,14 +544,17 @@ def git_proxy(
 def doctor() -> None:
     """Inspeciona ambiente local e recomenda o modo operacional mais seguro."""
     from prometheus.config.platform import build_doctor_report, detect_platform
-    from prometheus.config.runtime import get_profile, get_runtime_sources
+    from prometheus.config.runtime import get_profile, get_runtime_sources, select_capabilities
 
     runtime = load_runtime_config()
     platform_config = detect_platform()
     profile_mode = None
+    capability_selection = None
     if runtime.active_profile:
         try:
-            profile_mode = get_profile(runtime.active_profile)["mode"]
+            profile = get_profile(runtime.active_profile)
+            profile_mode = profile["mode"]
+            capability_selection = select_capabilities(profile=profile)
         except ValueError:
             profile_mode = None
     report = build_doctor_report(
@@ -519,6 +585,15 @@ def doctor() -> None:
         typer.echo("notes:")
         for note in report.notes:
             typer.echo(f"- {note}")
+    if capability_selection is None and report.active_profile:
+        try:
+            capability_selection = select_capabilities(profile=get_profile(report.active_profile))
+        except ValueError:
+            capability_selection = None
+    if capability_selection:
+        typer.echo("capabilities:")
+        typer.echo(f"- enabled: {', '.join(capability_selection.enabled_features) or '(none)'}")
+        typer.echo(f"- overkill: {', '.join(capability_selection.overkill_features) or '(none)'}")
 
 
 @app.command()
@@ -627,7 +702,7 @@ def profile_use(
 @profile_app.command("show")
 def profile_show() -> None:
     """Exibe o profile ativo definido em `prometheus.toml`."""
-    from prometheus.config.runtime import get_active_profile, get_profile
+    from prometheus.config.runtime import get_active_profile, get_profile, select_capabilities
 
     active = get_active_profile()
     if not active:
@@ -637,9 +712,22 @@ def profile_show() -> None:
         profile = get_profile(active)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    capability_selection = select_capabilities(profile=profile)
     typer.echo(f"name: {profile['name']}")
     typer.echo(f"mode: {profile['mode']}")
     typer.echo(f"description: {profile['description']}")
+    for field in ("cloud_policy", "infra_strategy", "memory_tier"):
+        if profile.get(field):
+            typer.echo(f"{field}: {profile[field]}")
+    enabled_features = profile.get("enabled_features") or ()
+    if enabled_features:
+        typer.echo(f"enabled_features: {', '.join(enabled_features)}")
+    typer.echo(
+        f"selected_capabilities: {', '.join(capability_selection.enabled_features) or '(none)'}"
+    )
+    typer.echo(
+        f"overkill_capabilities: {', '.join(capability_selection.overkill_features) or '(none)'}"
+    )
 
 
 @profile_app.command("create")
@@ -647,12 +735,45 @@ def profile_create(
     name: Annotated[str, typer.Argument(help="Nome do profile")],
     description: Annotated[str, typer.Option("--description", help="Descrição curta")],
     mode: Annotated[str, typer.Option("--mode", help="Modo operacional")],
+    cloud_policy: Annotated[
+        str | None, typer.Option("--cloud-policy", help="ok|avoid|deny")
+    ] = None,
+    infra_strategy: Annotated[
+        str | None, typer.Option("--infra-strategy", help="local|remote")
+    ] = None,
+    memory_tier: Annotated[
+        str | None, typer.Option("--memory-tier", help="light|full")
+    ] = None,
+    enabled_features: Annotated[
+        str | None, typer.Option("--enabled-features", help="Lista separada por vírgulas")
+    ] = None,
 ) -> None:
     """Cria um novo profile simples em `prometheus.toml`."""
     from prometheus.config.runtime import create_profile
 
+    normalized_cloud_policy = _normalize_configure_value(
+        "cloud_policy", cloud_policy, allowed=_CONFIGURE_CLOUD_POLICIES
+    )
+    normalized_infra_strategy = _normalize_configure_value(
+        "infra_strategy", infra_strategy, allowed=_CONFIGURE_INFRA_OPTIONS
+    )
+    normalized_memory_tier = _normalize_configure_value(
+        "memory_tier", memory_tier, allowed=_CONFIGURE_MEMORY_OPTIONS
+    )
     try:
-        create_profile(name, description=description, mode=mode)
+        create_profile(
+            name,
+            description=description,
+            mode=mode,
+            cloud_policy=normalized_cloud_policy,
+            infra_strategy=normalized_infra_strategy,
+            memory_tier=normalized_memory_tier,
+            enabled_features=tuple(
+                feature.strip()
+                for feature in (enabled_features or "").split(",")
+                if feature.strip()
+            ),
+        )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(f"Perfil criado: {name}")
@@ -674,14 +795,14 @@ def profile_export(
 @app.command()
 def configure(
     use_case: Annotated[
-        str, typer.Option("--use-case", help="solo|team|corporate")
-    ],
+        str | None, typer.Option("--use-case", help="solo|team|corporate")
+    ] = None,
     privacy: Annotated[
-        str, typer.Option("--privacy", help="public|internal|confidential|restricted")
-    ],
+        str | None, typer.Option("--privacy", help="public|internal|confidential|restricted")
+    ] = None,
     hardware: Annotated[
-        str, typer.Option("--hardware", help="cpu-only|mac-laptop|nvidia|linux-workstation")
-    ],
+        str | None, typer.Option("--hardware", help="cpu-only|mac-laptop|nvidia|linux-workstation")
+    ] = None,
     preferred_mode: Annotated[
         str | None, typer.Option("--preferred-mode", help="full-local|hybrid-local|remote-infra|minimal")
     ] = None,
@@ -696,16 +817,100 @@ def configure(
     ] = None,
 ) -> None:
     """Recomenda e aplica um profile mínimo com base em uso, privacidade e hardware."""
-    from prometheus.config.runtime import recommend_profile, use_profile
+    from prometheus.config.runtime import recommend_profile, select_capabilities, use_profile
+
+    interactive = use_case is None or privacy is None or hardware is None
+    normalized_use_case = _normalize_configure_value(
+        "use_case", use_case, allowed=_CONFIGURE_USE_CASES
+    )
+    normalized_privacy = _normalize_configure_value(
+        "privacy", privacy, allowed=_CONFIGURE_PRIVACY_LEVELS
+    )
+    normalized_hardware = _normalize_configure_value(
+        "hardware", hardware, allowed=_CONFIGURE_HARDWARE_OPTIONS
+    )
+    normalized_preferred_mode = _normalize_configure_value(
+        "preferred_mode", preferred_mode, allowed=_RUNTIME_MODES
+    )
+    normalized_cloud = _normalize_configure_value(
+        "cloud", cloud, allowed=_CONFIGURE_CLOUD_POLICIES
+    )
+    normalized_infra = _normalize_configure_value(
+        "infra", infra, allowed=_CONFIGURE_INFRA_OPTIONS
+    )
+    normalized_memory = _normalize_configure_value(
+        "memory", memory, allowed=_CONFIGURE_MEMORY_OPTIONS
+    )
+
+    if interactive:
+        typer.echo("Configuração guiada")
+        if normalized_use_case is None:
+            normalized_use_case = _prompt_configure_value(
+                "Caso de uso",
+                allowed=_CONFIGURE_USE_CASES,
+            )
+        if normalized_privacy is None:
+            normalized_privacy = _prompt_configure_value(
+                "Privacidade",
+                allowed=_CONFIGURE_PRIVACY_LEVELS,
+            )
+        if normalized_hardware is None:
+            normalized_hardware = _prompt_configure_value(
+                "Hardware",
+                allowed=_CONFIGURE_HARDWARE_OPTIONS,
+            )
+        if normalized_preferred_mode is None:
+            normalized_preferred_mode = _prompt_configure_value(
+                "Modo preferido",
+                allowed=_RUNTIME_MODES,
+                optional=True,
+            )
+        if normalized_cloud is None:
+            normalized_cloud = _prompt_configure_value(
+                "Cloud",
+                allowed=_CONFIGURE_CLOUD_POLICIES,
+                optional=True,
+            )
+        if normalized_infra is None:
+            normalized_infra = _prompt_configure_value(
+                "Infra",
+                allowed=_CONFIGURE_INFRA_OPTIONS,
+                optional=True,
+            )
+        if normalized_memory is None:
+            normalized_memory = _prompt_configure_value(
+                "Memória",
+                allowed=_CONFIGURE_MEMORY_OPTIONS,
+                optional=True,
+            )
+
+    assert normalized_use_case is not None
+    assert normalized_privacy is not None
+    assert normalized_hardware is not None
+    _validate_configure_combination(
+        privacy=normalized_privacy,
+        preferred_mode=normalized_preferred_mode,
+        cloud=normalized_cloud,
+        infra=normalized_infra,
+    )
 
     profile_name, mode = recommend_profile(
-        use_case=use_case,
-        privacy=privacy,
-        hardware=hardware,
-        preferred_mode=preferred_mode,
-        cloud=cloud,
-        infra=infra,
-        memory=memory,
+        use_case=normalized_use_case,
+        privacy=normalized_privacy,
+        hardware=normalized_hardware,
+        preferred_mode=normalized_preferred_mode,
+        cloud=normalized_cloud,
+        infra=normalized_infra,
+        memory=normalized_memory,
+    )
+    capability_selection = select_capabilities(
+        use_case=normalized_use_case,
+        privacy=normalized_privacy,
+        hardware=normalized_hardware,
+        preferred_mode=normalized_preferred_mode,
+        cloud=normalized_cloud,
+        infra=normalized_infra,
+        memory=normalized_memory,
     )
     try:
         use_profile(profile_name)
@@ -714,6 +919,12 @@ def configure(
 
     typer.echo(f"recommended_profile: {profile_name}")
     typer.echo(f"recommended_mode: {mode}")
+    typer.echo(
+        f"selected_capabilities: {', '.join(capability_selection.enabled_features) or '(none)'}"
+    )
+    typer.echo(
+        f"overkill_capabilities: {', '.join(capability_selection.overkill_features) or '(none)'}"
+    )
     typer.echo("Próximos passos:")
     typer.echo("1. revise com `pb profile show`")
     typer.echo("2. valide ambiente com `pb doctor`")

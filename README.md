@@ -137,7 +137,11 @@ pb watch ~/vault/knowledge --ctx knowledge
 ## Profiles
 
 Prometheus supports named profiles in `prometheus.toml` so you can switch
-between common operating shapes without editing runtime mode by hand.
+between common operating shapes without editing runtime mode by hand. The
+current `pb configure` command is the guided entry point for that: it works as
+both a flag-driven recommender and a concise interactive flow, and it applies
+one of the built-in profiles while surfacing the capabilities that are useful
+versus overkill for that setup.
 
 Current built-ins:
 
@@ -155,7 +159,9 @@ pb profile use team-dev
 ```
 
 For when to use each profile and how `configure`, `list`, `show`, `use`,
-`create`, and `export` fit together, see [Profiles](docs/PROFILES.md).
+`create`, and `export` fit together, including how optional profile fields map
+to real setup choices such as cloud policy, remote infra, lighter memory, and
+feature scope, see [Profiles](docs/PROFILES.md).
 
 ## Context Model
 
