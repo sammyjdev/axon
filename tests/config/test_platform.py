@@ -148,6 +148,33 @@ def test_build_doctor_report_falls_back_to_minimal_when_local_tooling_missing(tm
     assert report.checks["ollama"] == "missing"
 
 
+def test_build_doctor_report_warns_when_profile_mode_differs_from_runtime(tmp_path: Path) -> None:
+    runtime = _runtime(tmp_path, active_profile="team-dev")
+    platform_config = PlatformConfig(
+        platform="pc",
+        embedding_providers=["CUDAExecutionProvider"],
+        ollama_flash=True,
+        max_models=2,
+        model_primary="gemma4:e4b",
+        model_knowledge="gemma4:26b",
+        keep_alive="-1",
+    )
+
+    report = build_doctor_report(
+        runtime,
+        platform_config,
+        docker_available=True,
+        ollama_available=True,
+        profile_mode="remote-infra",
+        sources={"mode": "toml", "engine_root": "toml", "vault_root": "env"},
+    )
+
+    assert report.active_profile == "team-dev"
+    assert report.profile_mode == "remote-infra"
+    assert report.sources["mode"] == "toml"
+    assert any("Profile 'team-dev'" in note for note in report.notes)
+
+
 def test_merge_env_text_replaces_generated_values_with_existing_overrides() -> None:
     source = "PROMETHEUS_VAULT=/custom/vault\nANTHROPIC_API_KEY=secret\n"
     target = "PROMETHEUS_VAULT=~/vault\nPROMETHEUS_PLATFORM=mac\n"
@@ -170,7 +197,12 @@ def test_merge_env_text_appends_only_missing_defaults() -> None:
     assert "PROMETHEUS_PLATFORM=pc" in merged
 
 
-def _runtime(tmp_path: Path, *, ollama_remote_host: str | None = None) -> RuntimeConfig:
+def _runtime(
+    tmp_path: Path,
+    *,
+    ollama_remote_host: str | None = None,
+    active_profile: str | None = None,
+) -> RuntimeConfig:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
     engine_root.mkdir()
@@ -212,4 +244,5 @@ def _runtime(tmp_path: Path, *, ollama_remote_host: str | None = None) -> Runtim
                 hard_cap_usd=4.0,
             ),
         ),
+        active_profile=active_profile,
     )
