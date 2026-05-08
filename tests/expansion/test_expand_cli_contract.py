@@ -12,7 +12,6 @@ from tests.expansion.helpers import (
     staging_markdown_files,
 )
 
-
 runner = CliRunner()
 
 

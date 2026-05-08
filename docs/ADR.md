@@ -1,122 +1,91 @@
-# Prometheus - ADR (Architecture Decision Records)
+# Prometheus ADRs
 
-Data de consolidacao: 2026-04-19
-Status: Ativo (documento canonico de decisoes)
+Status: active public summary
 
-## Objetivo
+This document captures the architectural decisions that are still relevant to
+external users and contributors. Historical planning material is kept in the
+private source repository and is not required to understand or run the public
+project.
 
-Este documento concentra as decisoes arquiteturais oficiais do projeto.
+## ADR-001: Separate data and engine paths
 
-Historico detalhado de planejamento e specs antigas em `docs/archive/`.
+- Decision: keep the knowledge vault outside the engine repository.
+- Definition:
+  - `PROMETHEUS_VAULT=~/vault`
+  - `PROMETHEUS_ENGINE=/path/to/prometheus`
+- Rationale: prevents mixing user data with runtime code and reduces the risk
+  of accidental disclosure.
 
-## Fontes arquivadas
+## ADR-002: Task-based model routing
 
-- docs/archive/EXECUTION_PLAN.md
-- docs/archive/prometheus-context-detection-crossplatform.md
-- docs/archive/prometheus-context-engine.md
-- docs/archive/prometheus-context-isolation.md
-- docs/archive/prometheus-knowledge-split.md
-- docs/archive/prometheus-second-brain-full.md
-- docs/archive/prometheus-vault-final.md
+- Decision: route cloud models by task type with an explicit fallback.
+- Definition:
+  - trivial/completion -> `claude-haiku-4-5-20251001`
+  - code analysis -> `claude-sonnet-4-6`
+  - architecture/deep reasoning -> `claude-opus-4-7`
+  - fallback -> `claude-haiku-4-5-20251001`
+- Rationale: keeps cost and quality predictable.
 
----
+## ADR-003: Local Ollama models
 
-## ADR-001 - Paths canonicos
+- Decision: standardize on lightweight local models for classification and
+  compression, with heavier models reserved for larger hardware.
+- Default models:
+  - `phi3:mini`
+  - `gemma4:e4b`
+  - `gemma4:26b`
+- Rationale: reduce cloud cost and preserve low-latency local operation.
 
-- Decisao: separar dados e engine por path fixo.
-- Definicao: `PROMETHEUS_VAULT=~/vault` e `PROMETHEUS_ENGINE=/Users/samdev/dev/Prometheus`.
-- Motivo: evitar mistura de conteudo e reduzir risco de vazamento de contexto.
+## ADR-004: Split graph backends by responsibility
 
-## ADR-002 - Roteamento de modelos Anthropic por tipo de tarefa
+- Decision: use Redis for code dependency relationships and Neo4j only for
+  Mem0-style memory relationships.
+- Rationale: the two graph use cases have different query patterns and
+  operational concerns.
 
-- Decisao: usar roteamento por classe de tarefa com fallback.
-- Definicao:
-  - TRIVIAL_COMPLETION -> `claude-haiku-4-5-20251001`
-  - CODE_ANALYSIS -> `claude-sonnet-4-6`
-  - ARCHITECTURE/DEEP_REASONING -> `claude-opus-4-7`
-  - Fallback -> `claude-haiku-4-5-20251001`
-- Motivo: equilibrar custo e qualidade mantendo previsibilidade.
+## ADR-005: Java chunker quality gate
 
-## ADR-003 - Modelos locais Ollama
+- Decision: treat the Java chunker as a TDD-first, high-risk subsystem.
+- Quality bar:
+  - real-world Spring fixtures;
+  - explicit chunk boundary assertions;
+  - no promotion of chunker changes without a passing suite.
+- Rationale: retrieval quality depends directly on chunk fidelity.
 
-- Decisao: padronizar em `gemma4:e4b`, `gemma4:26b` e `phi3:mini`.
-- Motivo: reduzir custo cloud e manter baixa latencia local.
+## ADR-006: Explicit restricted-context access
 
-## ADR-004 - Backend de grafo separado por responsabilidade
+- Decision: restricted contexts must never be searched implicitly.
+- Mechanism:
+  - separate collections by context;
+  - explicit context selection for restricted data;
+  - CLI and MCP guardrails.
+- Rationale: preserve isolation between general knowledge and sensitive context.
 
-- Decisao: Redis para dependencias de codigo; Neo4j apenas para Mem0.
-- Motivo: separar grafo operacional de codigo do grafo semantico de memoria.
+## ADR-007: Layered architecture
 
-## ADR-005 - Chunker Java como gate de qualidade
+- Decision: organize the engine into watcher/embedder/store/router/MCP layers.
+- Rationale: isolates responsibilities and makes testing and evolution easier.
 
-- Decisao: desenvolvimento TDD-first com suite de fixtures Spring antes do restante do pipeline.
-- Criterio: 30+ fixtures e suite 100% verde antes de promover alteracoes.
-- Motivo: chunking correto e pre-requisito para recuperacao de contexto confiavel.
+## ADR-008: Local-first runtime stack
 
-## ADR-006 - Barreira de contexto work
+- Decision: use Docker Compose with Qdrant, Redis, Neo4j, Postgres, Langfuse,
+  and Ollama, with CPU/GPU profiles.
+- Rationale: provide a reproducible local environment across laptops and
+  desktops.
 
-- Decisao: work nao participa de busca sem explicitude de contexto.
-- Mecanismo:
-  - collections separadas por contexto;
-  - bloqueio em MCP e CLI;
-  - confirmacao explicita para acesso.
-- Motivo: protecao de propriedade intelectual e isolamento de dados sensiveis.
+## ADR-009: Knowledge split
 
-## ADR-007 - Arquitetura em 5 camadas
+- Decision: separate rapid capture from deeper reference material.
+- Shape:
+  - `knowledge/daily` for TILs and quick notes;
+  - `knowledge/deep` for durable reference material.
+- Rationale: maintain capture speed without losing long-term organization.
 
-- Decisao: Watcher -> Embedder -> Store -> Router -> MCP Server.
-- Motivo: desacoplamento, observabilidade e evolucao incremental por camada.
+## ADR-010: Validated compression
 
-## ADR-008 - Stack local principal
-
-- Decisao: usar Docker Compose com Qdrant, Redis, Neo4j, Postgres, Langfuse e Ollama (profiles cpu/gpu).
-- Motivo: reproducibilidade local em Mac e PC com minimizacao de custo.
-
-## ADR-009 - Knowledge split
-
-- Decisao: dividir conhecimento em knowledge/daily (captura rapida/TIL) e knowledge/deep (estudo acumulativo).
-- Motivo: preservar fluxo diario sem perder consolidacao de aprendizado.
-
-## ADR-010 - Memoria de sessao comprimida
-
-- Decisao: compactor periodico de sessao + hook de fim de sessao para resumo no daily note.
-- Motivo: reduzir tokens e manter continuidade entre sessoes.
-
-## ADR-011 - Politica de sensibilidade de contexto para cloud
-
-- Decisao: classificar contexto em tres niveis — PUBLIC, CONFIDENTIAL, RESTRICTED.
-- Regra: PUBLIC pode ser enviado a provedores cloud. CONFIDENTIAL e RESTRICTED sao bloqueados por padrao.
-- INTERNAL permanece fora do escopo ate decisao explicita com validacao de compliance do provedor.
-- Motivo: proteger dados sensiveis sem bloquear uso do cloud para contexto publico.
-
-## ADR-012 - Owner de policy e versionamento
-
-- Decisao: Security aprova mudancas de provedor, ZDR e retention; Platform implementa.
-- Mecanismo: policy_version semantico com changelog obrigatorio por mudanca de regra.
-- Motivo: garantir rastreabilidade de quem aprovou cada decisao de roteamento sensivel.
-
-## ADR-013 - Estrategia de fallback oficial
-
-- Decisao: local-first strict — tenta local (phi3:mini), depois remoto Ollama, cloud somente quando policy permite explicitamente e metadados de compliance do provedor estao completos.
-- Fallback cloud bloqueado sempre para contexto corporativo, independente de disponibilidade local.
-- Motivo: minimizar exposicao de dados e custo, com controle explicito de cada escalada.
-
-## ADR-014 - Taxonomia de reason_code completa
-
-- Decisao: adotar taxonomia completa de reason_code (25-35 codigos) com semantica imutavel apos freeze.
-- Categorias: policy, budget, provider, retrieval, resilience.
-- Toda decisao deny/fallback deve emitir: decision_id, reason_code, policy_version, route.
-- Motivo: auditabilidade completa sem expor conteudo sensivel nos logs.
-
-## ADR-015 - Perfil de SLO por rota
-
-- Decisao: perfil balanceado — trade-off entre latencia e risco operacional.
-- Aplicacao: SLOs distintos por rota (local, remote, cloud) em vez de um unico SLO global.
-- Motivo: diferentes rotas tem diferentes expectativas de latencia e tolerancia a falha.
-
----
-
-## Politica de manutencao
-
-- Novas decisoes arquiteturais entram como novos ADRs neste arquivo.
-- Nao usar `docs/archive/` como fonte ativa de decisao.
+- Decision: context compression is accepted only when it preserves required
+  anchors and avoids prompt contamination.
+- Consequence: Prometheus may keep the original context when compression is not
+  trustworthy.
+- Rationale: token savings are only useful when retrieval fidelity survives the
+  compression pipeline.

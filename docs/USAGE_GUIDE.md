@@ -1,359 +1,215 @@
-# Guia de uso do Prometheus
+# Usage Guide
 
-## Antes de começar
+This guide covers the day-to-day Prometheus workflow after the engine and vault
+are already set up.
 
-A infra precisa estar rodando. Sem ela, nada funciona.
+## Session Checklist
 
-Ordem recomendada de setup em máquina nova:
-
-1. `./setup.sh`
-2. `pipx install --editable /Users/samdev/dev/Prometheus`
-3. carregar `.env.local` no shell atual
-4. bootstrap do vault em `docs/VAULT_SETUP.md`
-5. revisar `config/projects.json`
-6. `pb index ~/vault/knowledge --ctx knowledge`
-7. `pb index-dev --dry-run`
-
-Checklist rápido antes de iniciar qualquer sessão: veja a seção **Checklist antes de uma sessão** ao final deste guia.
+Before starting a work session:
 
 ```bash
-# Mac
-docker compose --profile cpu up -d
+cd /path/to/prometheus
+set -a
+source .env.local
+set +a
 
-# Verificar se o MCP está conectado (Claude Code)
-claude mcp list   # deve mostrar: prometheus ✓ Connected
-
-# Verificar se o CLI está instalado
 pb --help
+docker compose ps
 ```
 
-Se o LaunchAgent estiver configurado em `~/Library/LaunchAgents/dev.samdev.colima.plist`, o Colima e os containers sobem no boot sem precisar de nenhum comando.
+If your repository lives elsewhere, export `PROMETHEUS_ENGINE` first.
 
-### Infra local ou desktop remoto
+## Core Commands
 
-Por padrão, os serviços rodam localmente:
+### Ask for context
+
+`pb ask` retrieves relevant chunks, compresses them, and prints prompt-ready
+output.
 
 ```bash
-QDRANT_URL=http://localhost:6333
-REDIS_URL=redis://localhost:6379
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=local-password
-PROMETHEUS_OLLAMA_LOCAL_HOST=http://127.0.0.1:11434
+pb ask "How should I model semantic indexing for mixed code and markdown?"
+pb ask "Summarize the current context for the auth module" --rtk-max-tokens 600
 ```
 
-Quando o Mac usa os serviços do desktop, aponte os hosts para o IP do desktop:
+What it does:
+
+1. Detects or validates the context.
+2. Searches the allowed collections.
+3. Compresses the retrieved material.
+4. Prints planner and executor prompts.
+
+### Search directly
+
+Use `pb search` when you want raw hits instead of the full prompt pipeline.
 
 ```bash
-PROMETHEUS_DESKTOP_HOST=192.168.68.104
-QDRANT_URL=http://192.168.68.104:6333
-REDIS_URL=redis://192.168.68.104:6379
-NEO4J_URI=bolt://192.168.68.104:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=local-password
-PROMETHEUS_OLLAMA_LOCAL_HOST=http://192.168.68.104:11434
+pb search "uuid5 qdrant" --ctx knowledge
+pb search "service layer" --ctx personal --lang python --top 10
 ```
 
-Após alterar o shell permanente, recarregue o terminal atual:
+### Index a path
 
 ```bash
-source ~/.zshrc
-python3 -c "from prometheus.config.runtime import load_runtime_config as l; c=l(); print(c.qdrant_url, c.redis_url, c.ollama_local_host)"
-```
-
-Redis e Neo4j têm papéis separados. Redis guarda o grafo de dependências de código usado por `get_dependencies` e pela expansão 2-step do `search_code`. Neo4j é exclusivo do Mem0 e só deve ser tratado como backend de memória, junto com Qdrant.
-
----
-
-## Claude Code
-
-Claude Code tem acesso total ao vault via MCP. Ele chama as tools do servidor diretamente, sem precisar do terminal.
-
-### Tools do MCP
-
-| Tool                 | O que faz                                             |
-| -------------------- | ----------------------------------------------------- |
-| `search_code`        | busca semântica no vault (código, HOW-TOs, notas)     |
-| `ask`                | query com detecção de contexto pelo cwd               |
-| `get_session_memory` | resumo comprimido de sessões anteriores de um projeto |
-| `get_dependencies`   | grafo de chamadas de uma classe ou função via Redis   |
-| `get_adrs`           | lista ADRs do projeto                                 |
-| `save_adr`           | persiste uma nova decisão                             |
-| `get_memory`         | memória Mem0 filtrada por contexto via Qdrant + Neo4j |
-
-O parâmetro `caller="claude-code"` é passado automaticamente. Isso libera 8000 tokens de retorno (vs. 2000 do Copilot), então Claude Code recebe respostas mais completas do vault.
-
-Contextos válidos: `personal`, `career`, `knowledge`, `work`. Nunca use `ctx="work"` por engano — ele acessa código proprietário da Avangrid.
-
-### Numa sessão típica
-
-Claude Code detecta o contexto pelo cwd quando você abre um projeto. Para decisões arquiteturais que você quer registrar, peça `save_adr` durante a sessão. Para retomar trabalho de outra vez, `get_session_memory` traz o que foi discutido anteriormente.
-
-### O que o Claude Code deve fazer antes de agir
-
-Ler `CLAUDE.md` e `TASKS.md`. Se não houver task `status: open`, só agir com pedido explícito. TDD obrigatório. Nunca silenciar falha de teste. Nunca tocar `~/vault/work/` sem `ctx="work"`.
-
----
-
-## GitHub Copilot
-
-Copilot também tem acesso ao MCP, mas com budget menor: 2000 tokens por resposta. Funciona melhor para completions dentro de um arquivo aberto.
-
-Ele é bom em completar boilerplate, sugerir imports consistentes com o `pyproject.toml` e seguir as convenções do projeto (dataclass, type hints, async). Não é o agente certo para refatorar múltiplos arquivos, tomar decisões de arquitetura ou tocar collections `work`.
-
-Para trabalho multi-módulo ou qualquer coisa que envolva a barreira `work/`, use Claude Code.
-
----
-
-## Cursor
-
-O Cursor não tem integração nativa com o MCP do Prometheus. Para usá-lo com o vault, rode o `pb` no terminal integrado e cole o output no chat.
-
-```bash
-pb search "como resolver X" --ctx knowledge
-pb ask "padrão usado em Spring services" --ctx knowledge
-```
-
-O output do `pb ask` funciona bem como contexto manual colado numa janela de chat.
-
----
-
-## CLI `pb`
-
-### Padrão Claude + Codex (TDD first)
-
-Fluxo recomendado para tarefas de código: sempre escrever ou atualizar testes antes da implementação.
-
-1. Recuperar contexto com Prometheus.
-2. Gerar plano no Claude (planner).
-3. Executar tasks no Codex em paralelo (executor).
-4. Rodar testes e só então integrar.
-
-> **Nota:** `codex exec` é uma ferramenta **externa ao Prometheus** (OpenAI Codex CLI). Não é um comando `pb`. O `pb ask` no passo 1 é o único comando Prometheus neste fluxo — os demais são chamadas a ferramentas externas.
-
-Exemplo prático:
-
-```bash
-# 1) Contexto via Prometheus (comando pb nativo)
-pb ask "implementar feature X" --cwd "$PWD"
-
-# 2) Planner no Claude (ferramenta externa)
-claude --model claude-opus-4-7 -p "Gere plano em JSON com tasks paralelas, critérios de aceite e testes obrigatórios."
-
-# 3) Executor no Codex (ferramenta externa — requer Codex CLI instalado)
-codex exec -C "$PWD" --model o3 "Execute task_id=T1 com TDD first"
-codex exec -C "$PWD" --model o3 "Execute task_id=T2 com TDD first"
-
-# 4) Validação local
-pytest -q
-```
-
-### Consultas
-
-```bash
-# Detecta contexto pelo cwd automaticamente
-pb ask "como funciona Spring @Transactional com self-invocation"
-
-# Ajustar budget do pipeline Caveman + RTK
-pb ask "resumir contexto do módulo de autenticação" --rtk-max-tokens 600
-
-# Busca semântica direta
-pb search "UUID qdrant" --ctx knowledge
-
-# Filtrar por linguagem
-pb search "service layer" --ctx knowledge --lang java --top 10
-```
-
-### Indexação
-
-```bash
-# Indexação pontual
 pb index ~/vault/knowledge --ctx knowledge
-pb index ~/dev/meu-projeto --ctx personal
+pb index ~/vault/personal --ctx personal
+```
 
-# Indexação de projetos de desenvolvimento cadastrados
+This writes semantic chunks to Qdrant and code dependency relationships to
+Redis.
+
+### Index development repositories from a manifest
+
+```bash
 pb index-dev --dry-run
-pb index-dev
 pb index-dev --project prometheus
-pb index-dev --manifest config/projects.json
+```
 
-# Watcher: reindexa automaticamente ao salvar
+Use `--dry-run` first when validating a manifest-driven setup.
+
+### Watch for changes
+
+```bash
 pb watch ~/vault/knowledge --ctx knowledge
 ```
 
-`pb index-dev` lê o manifesto `config/projects.json` por padrão. O arquivo declara projetos habilitados, path absoluto, contexto e linguagens suportadas:
+Use the watcher when you want near-real-time reindexing. For small or
+infrequently updated vaults, manual indexing is often enough.
 
-```json
-{
-  "projects": [
-    {
-      "name": "prometheus",
-      "path": "/Users/samdev/dev/Prometheus",
-      "ctx": "personal",
-      "enabled": true,
-      "languages": ["python", "typescript", "java", "markdown", "text"]
-    }
-  ]
-}
-```
+## Knowledge Capture
 
-Use `--dry-run` antes da indexação real para validar o manifesto e contar arquivos. Projetos com `ctx="work"` exigem confirmação explícita antes de qualquer escrita no índice.
-
-Durante a indexação, Qdrant recebe os chunks semânticos e Redis recebe o grafo de código (`dep:<symbol>`). Neo4j não participa da indexação de código.
-
-### Knowledge (TIL e HOW-TO)
+### Save a TIL
 
 ```bash
-# Registrar um aprendizado
-pb til "Spring @Transactional não funciona em self-invocation" --tags java,spring
+pb til "Qdrant ids should use uuid5 instead of raw SHA1 hex" --tags qdrant,ids
+```
 
-# Ver TILs que ainda não viraram HOW-TO
+### List pending TILs
+
+```bash
 pb til --list
-
-# Promover todos os TILs do dia
-pb til --promote-today
-
-# Converter um TIL específico
-pb til howto --from knowledge/daily/2026-04-20/til-spring-transac.md
 ```
 
-### ADRs
+### Promote today's TILs
 
 ```bash
-pb adr add --project prometheus --title "usar UUID5 no Qdrant"
+pb til --promote-today
+```
+
+### Convert one TIL into a HOW-TO
+
+```bash
+pb til howto --from knowledge/daily/2026-05-05/til-example.md
+```
+
+## ADR Workflow
+
+```bash
+pb adr add --project prometheus --title "Use UUID5 for deterministic Qdrant ids"
 pb adr list --project prometheus
 ```
 
-### Sessão de contexto
+Use ADRs for decisions that should remain queryable later.
+
+## Career and Memory Commands
 
 ```bash
-pb session knowledge
-pb session personal
+pb career metrics
+pb career brief "Target Company"
+pb career interview "kafka"
 
-# work pede confirmação interativa antes de liberar o acesso
-pb session work
-```
-
-### Carreira
-
-```bash
-pb career brief "Nubank"       # brief da empresa para entrevista
-pb career interview "kafka"    # experiências relevantes ao tópico
-pb career metrics              # métricas compiladas do vault
-```
-
-### Aprofundamento e custo
-
-```bash
-pb deep suggest --ctx knowledge   # sugestões do que estudar a seguir
-pb cost today
-pb cost week --breakdown          # detalha por contexto
-```
-
-### Mem0 / Neo4j
-
-```bash
 pb memory smoke --ctx knowledge
-pb memory smoke --ctx personal --text "lembrar decisão X"
 ```
 
-O smoke test grava e recupera uma memória curta usando Mem0 com Qdrant como vector store e Neo4j como graph store. Use `NEO4J_PASSWORD=local-password` no ambiente local e no desktop, salvo se a senha do container tiver sido alterada de propósito.
+`pb memory smoke` is the fastest way to validate the Mem0 + Neo4j integration
+path.
 
-### Caveman + RTK — compressão de contexto
-
-O `pb ask` e o MCP usam o pipeline duplo:
-
-```text
-contexto recuperado -> Caveman semântico -> RTK token-level -> prompt final
-```
-
-O Caveman usa `PROMETHEUS_CAVEMAN_MODEL` via Ollama. O RTK roda depois e pode usar o binário externo quando instalado; se ele não estiver disponível, o Prometheus mantém fallback sem quebrar a consulta.
+## Expansion and Deep Research
 
 ```bash
-pb ask "resumir contexto do módulo de autenticação" --rtk-max-tokens 450
+pb deep suggest
+
+pb expand run --ctx knowledge --topic "vector search" --fast
+pb expand review ~/vault/knowledge/staging/vector-search.md
+pb expand approve ~/vault/knowledge/staging/vector-search.md
+```
+
+The expansion flow is intentionally staged. Review happens before publication
+to the final vault path.
+
+## Cost and Compression
+
+```bash
+pb cost today
+pb cost week
 pb cost compression
 ```
 
-#### RTK externo opcional
+These commands help track whether compression and provider routing are working
+as expected over time.
 
-> **Pré-requisito:** `brew install rtk` — binário externo não incluído no Prometheus.
+## RTK Helpers
+
+Prometheus includes helper commands around the external RTK binary when it is
+installed:
 
 ```bash
-# Instalar RTK externo
-brew install rtk
-
-# Inicializar integração para o agente desejado
-pb rtk-init --agent claude
-pb rtk-init --agent codex
-
-# Verificar se RTK externo está disponível
 pb rtk-status
-
-# Usar RTK como proxy de comando
+pb rtk-init --agent codex
 pb rtk-proxy "git status"
-
-# Compressão direta com engine externa
-pb rtk "$(cat README.md)" --engine external --max-tokens 300
+pb rtk "git diff"
 ```
 
-Engines disponíveis:
+If RTK is not installed, the main Prometheus workflows still work.
 
-| Engine     | Comportamento                                        | Requer instalação |
-| ---------- | ---------------------------------------------------- | ----------------- |
-| `auto`     | tenta RTK externo e cai para interno se indisponível | Não               |
-| `internal` | usa apenas heurística local do Prometheus            | Não               |
-| `external` | exige RTK externo instalado (`brew install rtk`)     | **Sim**           |
+## Context Safety
 
----
+Available contexts:
 
-## Como funciona a detecção de contexto
+- `knowledge`
+- `career`
+- `personal`
+- `work`
 
-Quando você não passa `--ctx`, o `pb ask` tenta inferir o contexto pelo cwd e pelo conteúdo da query.
+Rules worth keeping:
 
-| Cwd contém                   | Contexto inferido |
-| ---------------------------- | ----------------- |
-| `avangrid`, `vault/work`     | `work`            |
-| `vault/career`               | `career`          |
-| `vault/knowledge`            | `knowledge`       |
-| `aerus-rpg`, `linkedin-tool` | `personal`        |
+- Use explicit `--ctx work` only when you really want restricted retrieval.
+- Do not mix vault data into the repository itself.
+- Reindex after structural moves if you are not running the watcher.
 
-Palavras na query também contribuem: `vaga`, `salário`, `recruiter` apontam para `career`; `kafka`, `spring`, `qdrant` apontam para `knowledge`.
-
-Nunca deixe o agente adivinhar `work`. Passe `--ctx work` de forma explícita quando precisar do contexto Avangrid.
-
----
-
-## Coleções no Qdrant
-
-| Coleção     | Conteúdo                             |
-| ----------- | ------------------------------------ |
-| `knowledge` | HOW-TOs, TILs, referências técnicas  |
-| `career`    | prep de entrevistas, empresas, metas |
-| `personal`  | projetos pessoais, decisões, notas   |
-| `work`      | código Avangrid (acesso restrito)    |
-
-Sem `--ctx`, as buscas cobrem `personal`, `career` e `knowledge`. A coleção `work` só entra com ctx explícito.
-
----
-
-## Observabilidade
-
-O Langfuse fica em [http://localhost:3000](http://localhost:3000) e mostra custo por modelo, latência e chamadas por contexto. Útil para ver onde o dinheiro está indo.
-
----
-
-## Checklist antes de uma sessão
+## Recommended Daily Loop
 
 ```bash
-# Infra está up?
-docker compose ps
+# start of day
+pb ask "What should I know before resuming this project?"
 
-# MCP conectado? (Claude Code)
-claude mcp list
+# while working
+pb search "previous decision about indexing" --ctx personal
+pb til "important implementation note" --tags project-x
 
-# Watcher está rodando?
-ps aux | grep "pb watch"
-
-# Indexar se necessário
-pb index ~/vault/knowledge --ctx knowledge
+# end of day
+pb til --list
+pb til --promote-today
 ```
+
+## MCP Usage
+
+Prometheus also exposes the same knowledge through MCP for agentic tools such
+as Claude Code and Copilot. The local CLI remains the easiest way to validate
+behavior before relying on editor integrations.
+
+## When Something Looks Wrong
+
+Check these first:
+
+```bash
+docker compose ps
+pb search "health check" --ctx knowledge --top 1
+pb memory smoke --ctx knowledge
+```
+
+If those fail, the problem is usually one of:
+
+- env vars not loaded in the current shell
+- local services not running
+- vault path mismatch
+- no indexed content for the queried context

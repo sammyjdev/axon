@@ -20,6 +20,9 @@ data/
 *.sqlite
 *.sqlite3
 
+# Local article drafts
+docs/LINKEDIN_ARTICLE_NOTES.md
+
 # Logs
 *.log
 logs/

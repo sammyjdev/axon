@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from mcp.server.fastmcp import FastMCP
 
-from prometheus.config.runtime import is_corporate_context, load_runtime_config
+from prometheus.config.runtime import load_runtime_config
+from prometheus.context.compression_quality import compression_quality_note
 from prometheus.context.rtk import RTKError, compress_text_with_rtk
-from prometheus.router.compressor import caveman_compress
 from prometheus.embedder.engine import EmbedderEngine
-from prometheus.observability.compression_telemetry import CompressionRecord, CompressionTelemetryStore
+from prometheus.observability.compression_telemetry import (
+    CompressionRecord,
+    CompressionTelemetryStore,
+)
 from prometheus.policy.core import PolicyRegistry
+from prometheus.router.compressor import caveman_compress_guarded
 from prometheus.store.collections import get_search_collections
 from prometheus.store.graph_store import GraphStore
 from prometheus.store.session_store import ADR, SessionStore
@@ -81,6 +83,49 @@ def _truncate(text: str, budget: int) -> str:
 def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
+
+def _record_mcp_tool_call(
+    tool_name: str,
+    input_text: str,
+    output_text: str,
+    ctx: str | None = None,
+) -> None:
+    from datetime import UTC, datetime
+
+    before_tokens = _estimate_tokens(input_text)
+    after_tokens = _estimate_tokens(output_text)
+    reduction = max(0, before_tokens - after_tokens)
+    reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
+    _COMPRESSION_TELEMETRY.append(
+        CompressionRecord(
+            ts=datetime.now(UTC).isoformat(),
+            engine=tool_name,
+            caller="mcp",
+            ctx=ctx,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            reduction_tokens=reduction,
+            reduction_pct=round(reduction_pct, 1),
+        )
+    )
+
+
+async def _run_neo4j_read(cypher: str) -> list[dict]:
+    import os
+
+    from neo4j import GraphDatabase
+
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    user = os.environ.get("NEO4J_USER", "neo4j")
+    password = os.environ.get("NEO4J_PASSWORD", "local-password")
+    driver = GraphDatabase.driver(uri, auth=(user, password))
+    try:
+        with driver.session() as session:
+            return [dict(record) for record in session.run(cypher)]
+    finally:
+        driver.close()
+
+
 def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
     try:
         return compress_text_with_rtk(text, max_tokens=max_tokens), None
@@ -88,13 +133,16 @@ def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
         return text, str(exc)
 
 
-def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_name: str | None) -> tuple[str, str, str]:
+def _build_planner_executor_prompts(
+    query: str, compressed_context: str, ctx_name: str | None
+) -> tuple[str, str, str]:
     ctx_label = ctx_name or "auto"
 
     planner = (
         "Você é o planner. Gere um plano executável para agentes Codex em paralelo.\n"
         "Retorne JSON válido com: goal, assumptions, tasks[].\n"
-        "Cada task deve conter: task_id, objective, files, dependencies, acceptance_criteria, tests, risk, rollback.\n\n"
+        "Cada task deve conter: task_id, objective, files, dependencies, "
+        "acceptance_criteria, tests, risk, rollback.\n\n"
         f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Solicitação: {query}"
     )
@@ -105,7 +153,8 @@ def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_nam
         "Task: <COLE_A_TASK_JSON_AQUI>"
     )
     local_knowledge = (
-        "Você é um assistente local para preencher arquivos de knowledge vazios com rascunho útil.\n"
+        "Você é um assistente local para preencher arquivos de knowledge vazios "
+        "com rascunho útil.\n"
         "Formato: resumo, passos, exemplos curtos, perguntas para aprofundamento.\n\n"
         f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Tema: {query}"
@@ -116,6 +165,7 @@ def _build_planner_executor_prompts(query: str, compressed_context: str, ctx_nam
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
+
 
 @mcp.tool()
 async def search_code(
@@ -130,9 +180,9 @@ async def search_code(
     """
     Busca semântica no codebase indexado.
 
-    ctx: personal | career | knowledge | work
+    ctx: personal | career | knowledge | saas | work
     Para acessar work, ctx='work' é obrigatório e explícito.
-    Sem ctx, busca em personal + career + knowledge.
+    Sem ctx, busca em personal + career + knowledge + saas.
     caller: claude-code | copilot (afeta budget de tokens retornados)
     """
     collections = get_search_collections(ctx)
@@ -159,7 +209,7 @@ async def search_code(
         lines.append(f"Score: {float(r.get('score', 0.0)):.3f}")
         lines.append("")
 
-    top_symbol = ((results[0].get("payload") or {}).get("symbol") if results else None)
+    top_symbol = (results[0].get("payload") or {}).get("symbol") if results else None
     if top_symbol:
         graph = _get_graph_store()
         await graph.connect()
@@ -309,7 +359,8 @@ async def ask(
     if not gateway_decision.allowed and caller == "cloud":
         return (
             "Fallback cloud bloqueado por policy central. "
-            f"reason_code={gateway_decision.reason_code.value}; policy_version={gateway_decision.policy_version}."
+            f"reason_code={gateway_decision.reason_code.value}; "
+            f"policy_version={gateway_decision.policy_version}."
         )
 
     # Busca contexto relevante
@@ -319,8 +370,13 @@ async def ask(
     before_tokens = _estimate_tokens(code_context)
 
     # Pipeline duplo: caveman (semântico) → RTK (token-level)
-    caveman_out, caveman_err = await caveman_compress(code_context, max_tokens=max_tokens)
+    caveman_out, caveman_err = await caveman_compress_guarded(code_context, max_tokens=max_tokens)
+
     compressed_context, rtk_err = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
+    rtk_quality_err = compression_quality_note(code_context, compressed_context)
+    if rtk_quality_err:
+        compressed_context = caveman_out
+        rtk_err = rtk_quality_err
 
     engines = []
     if caveman_err is None:
@@ -334,16 +390,19 @@ async def ask(
     reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
 
     from datetime import UTC, datetime
-    _COMPRESSION_TELEMETRY.append(CompressionRecord(
-        ts=datetime.now(UTC).isoformat(),
-        engine=used_engine,
-        caller=caller,
-        ctx=effective_ctx,
-        before_tokens=before_tokens,
-        after_tokens=after_tokens,
-        reduction_tokens=reduction,
-        reduction_pct=round(reduction_pct, 1),
-    ))
+
+    _COMPRESSION_TELEMETRY.append(
+        CompressionRecord(
+            ts=datetime.now(UTC).isoformat(),
+            engine=used_engine,
+            caller=caller,
+            ctx=effective_ctx,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            reduction_tokens=reduction,
+            reduction_pct=round(reduction_pct, 1),
+        )
+    )
 
     planner_prompt, executor_prompt, local_prompt = _build_planner_executor_prompts(
         query=query,
@@ -367,9 +426,53 @@ async def ask(
     return _truncate(response, budget)
 
 
+@mcp.tool()
+async def get_graph_neighbors(
+    node: str,
+    project: str,
+    depth: int = 1,
+) -> str:
+    """Retorna vizinhos do grafo estrutural Graphify no namespace do projeto."""
+    from prometheus.store.graph_namespace import neighbors_query
+
+    rows = await _run_neo4j_read(neighbors_query(node, project, depth))
+    if not rows:
+        response = "Nenhum vizinho encontrado."
+    else:
+        response = "\n".join(f"{row.get('node')} -> {row.get('neighbor')}" for row in rows)
+    _record_mcp_tool_call("get_graph_neighbors", node, response)
+    return response
+
+
+@mcp.tool()
+async def get_graph_path(
+    from_node: str,
+    to_node: str,
+    project: str,
+) -> str:
+    """Retorna o caminho mais curto no grafo estrutural Graphify do projeto."""
+    from prometheus.store.graph_namespace import path_query
+
+    rows = await _run_neo4j_read(path_query(from_node, to_node, project))
+    if not rows:
+        response = "Nenhum caminho encontrado."
+    else:
+        lines = []
+        for row in rows:
+            path = row.get("path")
+            if isinstance(path, list):
+                lines.append(" -> ".join(str(item) for item in path))
+            else:
+                lines.append(str(path))
+        response = "\n".join(lines)
+    _record_mcp_tool_call("get_graph_path", f"{from_node}\n{to_node}", response)
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     mcp.run()

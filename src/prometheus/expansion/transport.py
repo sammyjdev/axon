@@ -8,8 +8,7 @@ from prometheus.expansion.models import SourceDefinition, SourceResponse
 
 
 class SourceTransport(Protocol):
-    async def fetch(self, url: str, source: SourceDefinition | None = None) -> SourceResponse:
-        ...
+    async def fetch(self, url: str, source: SourceDefinition | None = None) -> SourceResponse: ...
 
 
 class UrllibSourceTransport:

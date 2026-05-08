@@ -1,10 +1,9 @@
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
-
 
 DDL = """
 CREATE TABLE IF NOT EXISTS adr (
@@ -48,7 +47,7 @@ class ADR:
 
     def __post_init__(self) -> None:
         if self.created_at is None:
-            self.created_at = datetime.now(timezone.utc)
+            self.created_at = datetime.now(UTC)
 
 
 @dataclass
@@ -61,7 +60,7 @@ class SessionMemory:
 
     def __post_init__(self) -> None:
         if self.created_at is None:
-            self.created_at = datetime.now(timezone.utc)
+            self.created_at = datetime.now(UTC)
 
 
 @dataclass
@@ -74,7 +73,7 @@ class CodeChange:
 
     def __post_init__(self) -> None:
         if self.changed_at is None:
-            self.changed_at = datetime.now(timezone.utc)
+            self.changed_at = datetime.now(UTC)
 
 
 class SessionStore:
@@ -103,8 +102,14 @@ class SessionStore:
             cursor = await db.execute(
                 "INSERT INTO adr (project, title, context, decision, rationale, created_at)"
                 " VALUES (?, ?, ?, ?, ?, ?)",
-                (adr.project, adr.title, adr.context, adr.decision, adr.rationale,
-                 adr.created_at.isoformat()),
+                (
+                    adr.project,
+                    adr.title,
+                    adr.context,
+                    adr.decision,
+                    adr.rationale,
+                    adr.created_at.isoformat(),
+                ),
             )
             await db.commit()
             return cursor.lastrowid  # type: ignore[return-value]
@@ -171,8 +176,13 @@ class SessionStore:
                 "INSERT OR REPLACE INTO code_change"
                 " (commit_hash, file_path, diff_summary, why, changed_at)"
                 " VALUES (?, ?, ?, ?, ?)",
-                (change.commit_hash, change.file_path, change.diff_summary,
-                 change.why, change.changed_at.isoformat()),
+                (
+                    change.commit_hash,
+                    change.file_path,
+                    change.diff_summary,
+                    change.why,
+                    change.changed_at.isoformat(),
+                ),
             )
             await db.commit()
 

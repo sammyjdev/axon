@@ -12,10 +12,7 @@ class Chunk:
 
 def split_by_lines(text: str, chunk_size: int = 30) -> list[str]:
     lines = text.splitlines()
-    return [
-        "\n".join(lines[i: i + chunk_size])
-        for i in range(0, len(lines), chunk_size)
-    ]
+    return ["\n".join(lines[i : i + chunk_size]) for i in range(0, len(lines), chunk_size)]
 
 
 def estimate_token_count(text: str) -> int:

@@ -55,10 +55,7 @@ TIL original:
 
 
 def find_todays_tils() -> list[Path]:
-    return [
-        f for f in KNOWLEDGE_PATH.rglob("til-*.md")
-        if TODAY in f.name and not _is_promoted(f)
-    ]
+    return [f for f in KNOWLEDGE_PATH.rglob("til-*.md") if TODAY in f.name and not _is_promoted(f)]
 
 
 def _is_promoted(path: Path) -> bool:

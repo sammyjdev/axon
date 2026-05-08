@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 
 
 class GraphStore:
@@ -12,6 +11,7 @@ class GraphStore:
     def _client_conn(self):
         if self._client is None:
             import redis
+
             self._client = redis.from_url(self._url)
         return self._client
 

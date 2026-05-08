@@ -49,6 +49,7 @@ def _created_after(path: Path, cutoff: date) -> bool:
         pass
     # Fallback: mtime do arquivo
     import datetime
+
     mtime = datetime.datetime.fromtimestamp(path.stat().st_mtime).date()
     return mtime >= cutoff
 
@@ -58,8 +59,7 @@ async def suggest_deep_topics() -> list[dict]:
     week_ago = date.today() - timedelta(days=7)
 
     daily_notes = [
-        f.read_text() for f in vault.rglob("daily/**/*.md")
-        if _created_after(f, week_ago)
+        f.read_text() for f in vault.rglob("daily/**/*.md") if _created_after(f, week_ago)
     ]
     deep_index = [f.stem for f in vault.rglob("deep/**/*.md")]
 
@@ -68,13 +68,15 @@ async def suggest_deep_topics() -> list[dict]:
 
     response = await litellm.acompletion(
         model="ollama/gemma4:26b",
-        messages=[{
-            "role": "user",
-            "content": _SUGGESTION_PROMPT.format(
-                daily_notes="\n---\n".join(daily_notes[:20]),
-                deep_index="\n".join(deep_index) if deep_index else "(nenhuma ainda)",
-            ),
-        }],
+        messages=[
+            {
+                "role": "user",
+                "content": _SUGGESTION_PROMPT.format(
+                    daily_notes="\n---\n".join(daily_notes[:20]),
+                    deep_index="\n".join(deep_index) if deep_index else "(nenhuma ainda)",
+                ),
+            }
+        ],
         max_tokens=1000,
     )
 

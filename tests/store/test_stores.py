@@ -4,9 +4,10 @@ graph_store e session_store usam Testcontainers.
 collections.py é testado sem infra (lógica pura).
 vector_store requer Qdrant real — testa apenas a lógica de agrupamento/batch.
 """
+
 import json
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -14,14 +15,14 @@ from prometheus.store.collections import get_search_collections
 from prometheus.store.graph_store import GraphStore
 from prometheus.store.session_store import ADR, CodeChange, SessionMemory, SessionStore
 
-
 # ── collections.py ─────────────────────────────────────────────────────────────
+
 
 class TestGetSearchCollections:
     def test_no_ctx_excludes_work(self) -> None:
         result = get_search_collections(None)
         assert "work" not in result
-        assert set(result) == {"personal", "career", "knowledge"}
+        assert set(result) == {"personal", "career", "knowledge", "saas"}
 
     def test_explicit_work_ctx_returns_only_work(self) -> None:
         result = get_search_collections("work")
@@ -37,6 +38,7 @@ class TestGetSearchCollections:
 
 
 # ── graph_store.py ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def redis_mock():
@@ -132,6 +134,7 @@ class TestGraphStore:
 
 
 # ── session_store.py ────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 async def session_store(tmp_path) -> AsyncGenerator[SessionStore, None]:

@@ -3,9 +3,9 @@ from dataclasses import dataclass
 
 SIGNALS: dict[str, list[str]] = {
     "knowledge": [r"\bjava\b", r"\bspring\b", r"\bpython\b"],
-    "personal":  [r"\baer[uo]s\b", r"\brpg\b"],
-    "career":    [r"\bvaga\b", r"\bentrevista\b"],
-    "work":      [r"\bavangrid\b", r"\beks\b"],
+    "personal": [r"\baer[uo]s\b", r"\brpg\b"],
+    "career": [r"\bvaga\b", r"\bentrevista\b"],
+    "work": [r"\bavangrid\b", r"\beks\b"],
 }
 
 
