@@ -68,6 +68,88 @@ def test_search_shows_semantic_results(monkeypatch) -> None:
     assert "symbol=upsert" in result.stdout
 
 
+def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> None:
+    from prometheus.config.platform import DoctorReport, PlatformConfig
+    from prometheus.config.runtime import ExpansionBudgetConfig, ExpansionConfig, ExpansionPaths, RuntimeConfig
+
+    runtime = RuntimeConfig(
+        mode="full-local",
+        engine_root=tmp_path / "engine",
+        vault_root=tmp_path / "vault",
+        db_path=tmp_path / "engine" / "data" / "prometheus.db",
+        qdrant_url="http://localhost:6333",
+        redis_url="redis://localhost:6379",
+        rtk_max_tokens=450,
+        caveman_num_ctx=4096,
+        ollama_remote_host=None,
+        ollama_local_host="http://127.0.0.1:11434",
+        caveman_model="phi3:mini",
+        classifier_cloud_model="claude-haiku-4-5-20251001",
+        classifier_timeout_seconds=4.0,
+        policy_version="2026-04-21",
+        provider_anthropic_enabled=True,
+        provider_openrouter_enabled=True,
+        provider_ollama_enabled=True,
+        expansion=ExpansionConfig(
+            enabled=True,
+            manual_trigger_only=True,
+            default_contexts=("knowledge", "career", "personal"),
+            allow_cloud_research=True,
+            source_catalog_path=tmp_path / "engine" / "config" / "expansion_sources.json",
+            paths=ExpansionPaths(
+                root=tmp_path / "engine" / "data" / "expansion",
+                staging_root=tmp_path / "engine" / "data" / "expansion" / "staging",
+                telemetry_root=tmp_path / "engine" / "data" / "expansion" / "telemetry",
+                budget_root=tmp_path / "engine" / "data" / "expansion" / "budget",
+            ),
+            budget=ExpansionBudgetConfig(
+                monthly_budget_usd=4.0,
+                soft_cap_usd=3.2,
+                hard_cap_usd=4.0,
+            ),
+        ),
+    )
+    runtime.engine_root.mkdir()
+    runtime.vault_root.mkdir()
+
+    monkeypatch.setattr(pb, "load_runtime_config", lambda: runtime)
+    monkeypatch.setattr(
+        "prometheus.config.platform.detect_platform",
+        lambda: PlatformConfig(
+            platform="pc",
+            embedding_providers=["CUDAExecutionProvider"],
+            ollama_flash=True,
+            max_models=2,
+            model_primary="gemma4:e4b",
+            model_knowledge="gemma4:26b",
+            keep_alive="-1",
+        ),
+    )
+    monkeypatch.setattr(
+        "prometheus.config.platform.build_doctor_report",
+        lambda runtime, platform_config, docker_available, ollama_available: DoctorReport(
+            platform=platform_config.platform,
+            recommended_mode="full-local",
+            checks={
+                "engine_root": "ok",
+                "vault_root": "ok",
+                "docker": "ok",
+                "ollama": "ok",
+                "remote_infra": "local",
+            },
+            notes=["GPU-capable local stack available."],
+        ),
+    )
+
+    result = runner.invoke(pb.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "Prometheus doctor" in result.stdout
+    assert "recommended_mode: full-local" in result.stdout
+    assert "docker: ok" in result.stdout
+    assert "GPU-capable local stack available." in result.stdout
+
+
 def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> None:
     class FakeDetector:
         def __init__(self, *_args, **_kwargs) -> None:
