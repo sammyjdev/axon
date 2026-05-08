@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prometheus.config.runtime import list_profiles, load_runtime_config, use_profile
+from prometheus.config.runtime import get_profile, list_profiles, load_runtime_config, use_profile
 
 
 def test_list_profiles_reads_profile_metadata(tmp_path: Path, monkeypatch) -> None:
@@ -29,6 +29,40 @@ def test_use_profile_sets_active_profile_and_runtime_mode(tmp_path: Path, monkey
     assert runtime.mode == "remote-infra"
     assert 'active_profile = "team-dev"' in payload
     assert 'mode = "remote-infra"' in payload
+
+
+def test_use_profile_syncs_env_local_when_present(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_config(tmp_path)
+    env_file = tmp_path / ".env.local"
+    env_file.write_text(
+        "\n".join(
+            [
+                "PROMETHEUS_ENGINE=/tmp/engine",
+                "PROMETHEUS_RUNTIME_MODE=hybrid-local",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    use_profile("team-dev")
+
+    payload = env_file.read_text(encoding="utf-8")
+    assert "PROMETHEUS_RUNTIME_MODE=remote-infra" in payload
+
+
+def test_get_profile_returns_metadata_for_active_profile(tmp_path: Path, monkeypatch) -> None:
+    config_path = _write_config(tmp_path)
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    profile = get_profile("solo-dev")
+
+    assert profile == {
+        "name": "solo-dev",
+        "description": "Single developer default",
+        "mode": "hybrid-local",
+    }
 
 
 def _write_config(tmp_path: Path) -> Path:

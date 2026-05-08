@@ -152,6 +152,21 @@ def get_active_profile() -> str | None:
     return overrides.get("active_profile")
 
 
+def get_profile(name: str) -> dict[str, str]:
+    payload = _load_toml_payload()
+    profiles = payload.get("profiles")
+    if not isinstance(profiles, dict) or name not in profiles:
+        raise ValueError(f"Unknown profile: {name}")
+    profile = profiles[name]
+    if not isinstance(profile, dict):
+        raise ValueError(f"Invalid profile: {name}")
+    return {
+        "name": name,
+        "description": str(profile.get("description", "")),
+        "mode": str(profile.get("mode", "")),
+    }
+
+
 def use_profile(name: str) -> None:
     payload = _load_toml_payload()
     profiles = payload.get("profiles")
@@ -197,6 +212,24 @@ def use_profile(name: str) -> None:
     if in_runtime and not saw_mode:
         updated.append(f'mode = "{mode}"')
     config_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    _sync_env_runtime_mode(config_path.parent / ".env.local", mode)
+
+
+def _sync_env_runtime_mode(env_path: Path, mode: str) -> None:
+    if not env_path.exists():
+        return
+    lines = env_path.read_text(encoding="utf-8").splitlines()
+    updated: list[str] = []
+    replaced = False
+    for line in lines:
+        if line.startswith("PROMETHEUS_RUNTIME_MODE="):
+            updated.append(f"PROMETHEUS_RUNTIME_MODE={mode}")
+            replaced = True
+        else:
+            updated.append(line)
+    if not replaced:
+        updated.append(f"PROMETHEUS_RUNTIME_MODE={mode}")
+    env_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 
 
 def _load_runtime_mode() -> RuntimeMode:
