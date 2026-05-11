@@ -1,0 +1,11 @@
+{
+  "schema_version": "1",
+  "domain_id": "python",
+  "display_name": "Python",
+  "description": "Python projects including scripts, APIs, and data pipelines",
+  "signals": {
+    "languages": ["python"],
+    "artifact_types": ["module", "class", "function"],
+    "task_types": ["code-analysis", "refactor", "debug"]
+  }
+}

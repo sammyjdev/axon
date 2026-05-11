@@ -1925,6 +1925,20 @@ def memory_smoke(
         raise typer.Exit(1)
 
 
+@app.command()
+def setup() -> None:
+    """Wizard de configuração pós-clone. Execute uma vez após clonar o repositório."""
+    from prometheus.cli.setup import run_setup
+    from prometheus.config.runtime import get_prometheus_config_path
+
+    config_path = get_prometheus_config_path()
+    run_setup(
+        config_path=config_path,
+        vault_root=_RUNTIME.vault_root,
+        packs_root=_RUNTIME.engine_root / "domain-packs",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------

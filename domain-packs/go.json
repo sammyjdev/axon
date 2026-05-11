@@ -1,0 +1,11 @@
+{
+  "schema_version": "1",
+  "domain_id": "go",
+  "display_name": "Go",
+  "description": "Go projects including CLI tools, APIs, and microservices",
+  "signals": {
+    "languages": ["go"],
+    "artifact_types": ["function", "struct", "interface"],
+    "task_types": ["code-analysis", "refactor", "debug"]
+  }
+}

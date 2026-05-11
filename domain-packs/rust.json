@@ -1,0 +1,11 @@
+{
+  "schema_version": "1",
+  "domain_id": "rust",
+  "display_name": "Rust",
+  "description": "Rust projects including systems programming and CLI tools",
+  "signals": {
+    "languages": ["rust"],
+    "artifact_types": ["function", "struct", "trait"],
+    "task_types": ["code-analysis", "refactor", "debug"]
+  }
+}
