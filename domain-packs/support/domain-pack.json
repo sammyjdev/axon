@@ -1,0 +1,39 @@
+{
+  "schema_version": "1",
+  "version": "1.0.0",
+  "domain_id": "support",
+  "display_name": "Support",
+  "description": "Customer support and operational troubleshooting workflows.",
+  "default_profiles": [
+    "team-dev"
+  ],
+  "retrieval_defaults": {
+    "top_k": 8,
+    "chunk_size": 1000
+  },
+  "policy_defaults": {
+    "cloud_policy": "avoid",
+    "memory_tier": "light"
+  },
+  "examples": [
+    {
+      "name": "triage-incident",
+      "prompt": "Triage this support issue and identify the next best action.",
+      "template": "Customer report:\n{{report}}\n\nKnown context:\n{{context}}"
+    }
+  ],
+  "signals": {
+    "languages": [],
+    "artifact_types": [
+      "ticket",
+      "runbook",
+      "faq",
+      "incident"
+    ],
+    "task_types": [
+      "triage",
+      "response",
+      "handoff"
+    ]
+  }
+}

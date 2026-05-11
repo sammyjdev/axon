@@ -1,8 +1,28 @@
 {
   "schema_version": "1",
+  "version": "1.0.0",
   "domain_id": "kotlin",
   "display_name": "Kotlin / Java",
   "description": "Kotlin and Java projects including Spring Boot and Android",
+  "default_profiles": [
+    "team-dev",
+    "solo-dev"
+  ],
+  "retrieval_defaults": {
+    "top_k": 8,
+    "chunk_size": 1100
+  },
+  "policy_defaults": {
+    "cloud_policy": "avoid",
+    "memory_tier": "balanced"
+  },
+  "examples": [
+    {
+      "name": "analyze-build",
+      "prompt": "Analyze this Kotlin or Java issue and point out the most likely fix.",
+      "template": "Build or runtime issue:\n{{issue}}\n\nLogs:\n{{logs}}"
+    }
+  ],
   "signals": {
     "languages": ["kotlin", "java"],
     "artifact_types": ["class", "interface", "function"],

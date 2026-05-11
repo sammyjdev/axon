@@ -10,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from prometheus.cli import pb
+from prometheus.portability.exporter import ExportArtifact, ExportManifest
 from prometheus.router.classifier import TaskType
 
 runner = CliRunner()
@@ -41,6 +42,73 @@ def test_run_command_proxies_raw_shell(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert captured == ["git status"]
+
+
+def test_portability_export_invokes_exporter(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_export_portability_bundle(destination: Path, *, runtime) -> ExportManifest:
+        captured["destination"] = destination
+        captured["runtime"] = runtime
+        return ExportManifest(
+            manifest_version="1",
+            artifacts=(
+                ExportArtifact(
+                    kind="metadata/env",
+                    path="metadata/env.json",
+                    sha256="abc",
+                    size_bytes=12,
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(
+        "prometheus.portability.exporter.export_portability_bundle",
+        fake_export_portability_bundle,
+    )
+
+    destination = tmp_path / "bundle"
+    result = runner.invoke(pb.app, ["portability", "export", str(destination)])
+
+    assert result.exit_code == 0
+    assert captured["destination"] == destination
+    assert captured["runtime"] is pb._RUNTIME
+    assert "Bundle exportado em:" in result.stdout
+    assert "Artefatos exportados: 1" in result.stdout
+
+
+def test_portability_import_invokes_importer(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_import_portability_bundle(source: Path, engine_root: Path) -> ExportManifest:
+        captured["source"] = source
+        captured["engine_root"] = engine_root
+        return ExportManifest(
+            manifest_version="1",
+            artifacts=(
+                ExportArtifact(
+                    kind="config/prometheus_toml",
+                    path="config/prometheus.toml",
+                    sha256="def",
+                    size_bytes=24,
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(
+        "prometheus.portability.importer.import_portability_bundle",
+        fake_import_portability_bundle,
+    )
+
+    source = tmp_path / "bundle"
+    engine_root = tmp_path / "engine"
+    result = runner.invoke(pb.app, ["portability", "import", str(source), str(engine_root)])
+
+    assert result.exit_code == 0
+    assert captured["source"] == source
+    assert captured["engine_root"] == engine_root
+    assert "Bundle importado em:" in result.stdout
+    assert "Artefatos importados: 1" in result.stdout
 
 
 def test_search_shows_semantic_results(monkeypatch) -> None:
@@ -140,7 +208,12 @@ def test_search_surfaces_staleness_warnings(monkeypatch) -> None:
 
 def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> None:
     from prometheus.config.platform import DoctorReport, PlatformConfig
-    from prometheus.config.runtime import ExpansionBudgetConfig, ExpansionConfig, ExpansionPaths, RuntimeConfig
+    from prometheus.config.runtime import (
+        ExpansionBudgetConfig,
+        ExpansionConfig,
+        ExpansionPaths,
+        RuntimeConfig,
+    )
 
     runtime = RuntimeConfig(
         mode="full-local",
@@ -209,21 +282,23 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
     )
     monkeypatch.setattr(
         "prometheus.config.platform.build_doctor_report",
-        lambda runtime, platform_config, docker_available, ollama_available, **_kwargs: DoctorReport(
-            platform=platform_config.platform,
-            recommended_mode="full-local",
-            checks={
-                "engine_root": "ok",
-                "vault_root": "ok",
-                "docker": "ok",
-                "ollama": "ok",
-                "remote_infra": "local",
-            },
-            sources={"mode": "env", "engine_root": "toml", "vault_root": "default"},
-            configured_mode="full-local",
-            active_profile="solo-dev",
-            profile_mode="hybrid-local",
-            notes=["GPU-capable local stack available."],
+        lambda runtime, platform_config, docker_available, ollama_available, **_kwargs: (
+            DoctorReport(
+                platform=platform_config.platform,
+                recommended_mode="full-local",
+                checks={
+                    "engine_root": "ok",
+                    "vault_root": "ok",
+                    "docker": "ok",
+                    "ollama": "ok",
+                    "remote_infra": "local",
+                },
+                sources={"mode": "env", "engine_root": "toml", "vault_root": "default"},
+                configured_mode="full-local",
+                active_profile="solo-dev",
+                profile_mode="hybrid-local",
+                notes=["GPU-capable local stack available."],
+            )
         ),
     )
 
