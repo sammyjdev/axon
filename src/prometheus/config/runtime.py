@@ -21,6 +21,21 @@ _RUNTIME_MODES: tuple[RuntimeMode, ...] = (
     "minimal",
 )
 
+_BUILTIN_PROFILES: dict[str, dict[str, object]] = {
+    "solo-dev": {
+        "description": "Single developer default",
+        "mode": "hybrid-local",
+    },
+    "team-dev": {
+        "description": "Shared team setup",
+        "mode": "remote-infra",
+    },
+    "privacy-first": {
+        "description": "Prefer local or remote self-hosted paths",
+        "mode": "minimal",
+    },
+}
+
 
 @dataclass(frozen=True)
 class ExpansionPaths:
@@ -128,9 +143,21 @@ def _load_toml_runtime_overrides() -> dict[str, str]:
 def get_runtime_sources() -> dict[str, str]:
     overrides = _load_toml_runtime_overrides()
     return {
-        "mode": "env" if "PROMETHEUS_RUNTIME_MODE" in os.environ else ("toml" if "mode" in overrides else "default"),
-        "engine_root": "env" if "PROMETHEUS_ENGINE" in os.environ else ("toml" if "engine_root" in overrides else "default"),
-        "vault_root": "env" if "PROMETHEUS_VAULT" in os.environ else ("toml" if "vault_root" in overrides else "default"),
+        "mode": (
+            "env"
+            if "PROMETHEUS_RUNTIME_MODE" in os.environ
+            else ("toml" if "mode" in overrides else "default")
+        ),
+        "engine_root": (
+            "env"
+            if "PROMETHEUS_ENGINE" in os.environ
+            else ("toml" if "engine_root" in overrides else "default")
+        ),
+        "vault_root": (
+            "env"
+            if "PROMETHEUS_VAULT" in os.environ
+            else ("toml" if "vault_root" in overrides else "default")
+        ),
     }
 
 
@@ -147,21 +174,28 @@ def _load_toml_payload() -> dict:
 
 
 def _coerce_profile_features(value: object) -> tuple[str, ...]:
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return tuple(str(item).strip() for item in value if str(item).strip())
     return ()
 
 
-def _parse_profile(name: str, profile: dict[str, object]) -> dict[str, str | tuple[str, ...] | None]:
+def _parse_profile(
+    name: str,
+    profile: dict[str, object],
+) -> dict[str, str | tuple[str, ...] | None]:
     return {
         "name": name,
         "description": str(profile.get("description", "")),
         "mode": str(profile.get("mode", "")),
         "cloud_policy": (
-            str(profile["cloud_policy"]).strip() if profile.get("cloud_policy") is not None else None
+            str(profile["cloud_policy"]).strip()
+            if profile.get("cloud_policy") is not None
+            else None
         ),
         "infra_strategy": (
-            str(profile["infra_strategy"]).strip() if profile.get("infra_strategy") is not None else None
+            str(profile["infra_strategy"]).strip()
+            if profile.get("infra_strategy") is not None
+            else None
         ),
         "memory_tier": (
             str(profile["memory_tier"]).strip() if profile.get("memory_tier") is not None else None
@@ -196,9 +230,15 @@ def _profile_toml_lines(
 
 def list_profiles() -> list[tuple[str, str, str]]:
     payload = _load_toml_payload()
-    profiles = payload.get("profiles")
-    if not isinstance(profiles, dict):
-        return []
+    raw_profiles = payload.get("profiles")
+    if isinstance(raw_profiles, dict):
+        profiles = {
+            str(name): dict(profile)
+            for name, profile in raw_profiles.items()
+            if isinstance(profile, dict)
+        }
+    else:
+        profiles = {name: dict(profile) for name, profile in _BUILTIN_PROFILES.items()}
     result: list[tuple[str, str, str]] = []
     for name in sorted(profiles):
         profile = profiles.get(name)
@@ -218,8 +258,8 @@ def get_active_profile() -> str | None:
 
 def get_profile(name: str) -> dict[str, str | tuple[str, ...] | None]:
     payload = _load_toml_payload()
-    profiles = payload.get("profiles")
-    if not isinstance(profiles, dict) or name not in profiles:
+    profiles = _merged_profiles(payload)
+    if name not in profiles:
         raise ValueError(f"Unknown profile: {name}")
     profile = profiles[name]
     if not isinstance(profile, dict):
@@ -282,7 +322,10 @@ def select_capabilities(
         enabled.add("local-rag")
         overkill.add("cloud-routing")
 
-    if normalized_hardware in {"nvidia", "linux-workstation", "high-capability"} and mode == "full-local":
+    if (
+        normalized_hardware in {"nvidia", "linux-workstation", "high-capability"}
+        and mode == "full-local"
+    ):
         enabled.add("heavy-local-models")
 
     return CapabilitySelection(
@@ -344,8 +387,8 @@ def _profile_for_mode(mode: str) -> str:
 
 def use_profile(name: str) -> None:
     payload = _load_toml_payload()
-    profiles = payload.get("profiles")
-    if not isinstance(profiles, dict) or name not in profiles:
+    profiles = _merged_profiles(payload)
+    if name not in profiles:
         raise ValueError(f"Unknown profile: {name}")
     profile = profiles[name]
     if not isinstance(profile, dict):
@@ -356,6 +399,7 @@ def use_profile(name: str) -> None:
 
     config_path = get_prometheus_config_path()
     lines = config_path.read_text(encoding="utf-8").splitlines()
+    lines = _ensure_builtin_profile_lines(lines)
     in_runtime = False
     saw_mode = False
     saw_active = False
@@ -388,6 +432,34 @@ def use_profile(name: str) -> None:
         updated.append(f'mode = "{mode}"')
     config_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
     _sync_env_runtime_mode(config_path.parent / ".env.local", mode)
+
+
+def _merged_profiles(payload: dict[str, object]) -> dict[str, dict[str, object]]:
+    merged = {name: dict(profile) for name, profile in _BUILTIN_PROFILES.items()}
+    raw_profiles = payload.get("profiles")
+    if not isinstance(raw_profiles, dict):
+        return merged
+    for name, profile in raw_profiles.items():
+        if isinstance(profile, dict):
+            merged[str(name)] = dict(profile)
+    return merged
+
+
+def _ensure_builtin_profile_lines(lines: list[str]) -> list[str]:
+    payload = tomllib.loads("\n".join(lines) + "\n") if lines else {}
+    profiles = payload.get("profiles")
+    existing = set(profiles.keys()) if isinstance(profiles, dict) else set()
+    missing = [name for name in _BUILTIN_PROFILES if name not in existing]
+    if not missing:
+        return lines
+
+    updated = list(lines)
+    if updated and updated[-1].strip():
+        updated.append("")
+    for name in missing:
+        updated.extend(_profile_toml_lines(_parse_profile(name, _BUILTIN_PROFILES[name])))
+        updated.append("")
+    return updated
 
 
 def create_profile(
@@ -455,7 +527,11 @@ def _sync_env_runtime_mode(env_path: Path, mode: str) -> None:
 
 def _load_runtime_mode() -> RuntimeMode:
     overrides = _load_toml_runtime_overrides()
-    value = os.environ.get("PROMETHEUS_RUNTIME_MODE", overrides.get("mode", "full-local")).strip().lower()
+    value = (
+        os.environ.get("PROMETHEUS_RUNTIME_MODE", overrides.get("mode", "full-local"))
+        .strip()
+        .lower()
+    )
     if value not in _RUNTIME_MODES:
         supported = ", ".join(_RUNTIME_MODES)
         raise ValueError(

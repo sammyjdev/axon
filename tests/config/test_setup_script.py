@@ -7,7 +7,6 @@ import subprocess
 import textwrap
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -65,6 +64,48 @@ def test_setup_remote_infra_mode_requires_remote_host(tmp_path: Path) -> None:
     assert "PROMETHEUS_RUNTIME_MODE=remote-infra" in env_payload
 
 
+def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None:
+    result, workspace, log_path = _run_setup(
+        tmp_path,
+        extra_env={
+            "OSTYPE": "darwin23",
+            "PROMETHEUS_INFRA_HOST": "desktop.local",
+        },
+        sysctl_bytes=34 * 1024 * 1024 * 1024,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    env_payload = (workspace / ".env.local").read_text(encoding="utf-8")
+    log_output = log_path.read_text(encoding="utf-8")
+
+    assert "PROMETHEUS_RUNTIME_MODE=remote-infra" in env_payload
+    assert "docker compose" not in log_output
+    assert "ollama pull" not in log_output
+    assert "curl -sf http://desktop.local:6333/collections" in log_output
+    assert "curl -sf http://desktop.local:11434/api/tags" in log_output
+
+
+def test_setup_full_local_without_nvidia_keeps_small_models_only(tmp_path: Path) -> None:
+    result, workspace, log_path = _run_setup(
+        tmp_path,
+        extra_env={
+            "OSTYPE": "linux-gnu",
+            "PROMETHEUS_RUNTIME_MODE": "full-local",
+        },
+        sysctl_bytes=34 * 1024 * 1024 * 1024,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    env_payload = (workspace / ".env.local").read_text(encoding="utf-8")
+    log_output = log_path.read_text(encoding="utf-8")
+
+    assert "PROMETHEUS_RUNTIME_MODE=full-local" in env_payload
+    assert "docker compose --profile cpu up -d" in log_output
+    assert "ollama pull phi3:mini" in log_output
+    assert "ollama pull gemma4:e4b" in log_output
+    assert "ollama pull gemma4:26b" not in log_output
+
+
 def _run_setup(
     tmp_path: Path,
     *,
@@ -94,6 +135,7 @@ def _run_setup(
         fake_bin / "curl",
         "#!/usr/bin/env bash\nprintf '%s\\n' \"curl $*\" >> \"$TEST_LOG\"\n",
     )
+    _write_executable(fake_bin / "nvidia-smi", "#!/usr/bin/env bash\nexit 1\n")
     _write_executable(fake_bin / "sleep", "#!/usr/bin/env bash\nexit 0\n")
     _write_executable(
         fake_bin / "sysctl",

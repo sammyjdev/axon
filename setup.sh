@@ -11,12 +11,15 @@ REMOTE_INFRA_HOST="${PROMETHEUS_INFRA_HOST:-${PROMETHEUS_DESKTOP_HOST:-}}"
 PYTHONPATH_PREFIX="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 
 resolve_setup_mode() {
-    PYTHONPATH="$PYTHONPATH_PREFIX" python3 - <<'PY'
+    local remote_host=${1:-}
+    PYTHONPATH="$PYTHONPATH_PREFIX" python3 - "$remote_host" <<'PY'
 import shutil
+import sys
 
 from prometheus.config.platform import build_doctor_report, detect_platform
 from prometheus.config.runtime import get_runtime_sources, load_runtime_config
 
+remote_host = sys.argv[1].strip()
 runtime = load_runtime_config()
 sources = get_runtime_sources()
 platform_config = detect_platform()
@@ -29,6 +32,8 @@ report = build_doctor_report(
 )
 source = sources.get("mode", "default")
 selected_mode = runtime.mode if source in {"env", "toml"} else report.recommended_mode
+if remote_host and source == "default":
+    selected_mode = "remote-infra"
 print(f"{selected_mode}\t{source}\t{report.recommended_mode}")
 PY
 }
@@ -39,27 +44,22 @@ resolve_setup_plan() {
     PYTHONPATH="$PYTHONPATH_PREFIX" python3 - "$runtime_mode" "$remote_host" <<'PY'
 import sys
 
+from prometheus.config.platform import build_setup_plan, detect_platform
+
 runtime_mode = sys.argv[1]
-_remote_host = sys.argv[2]
+remote_host = sys.argv[2]
+if remote_host == "-":
+    remote_host = None
 
-compose_profile = "-"
-start_local_stack = "0"
-validate_remote = "0"
-pull_models = ""
-
-if runtime_mode == "remote-infra":
-    validate_remote = "1"
-elif runtime_mode == "minimal":
-    pass
-elif runtime_mode == "hybrid-local":
-    compose_profile = "cpu"
-    start_local_stack = "1"
-    pull_models = "phi3:mini,gemma4:e4b"
-elif runtime_mode == "full-local":
-    start_local_stack = "1"
-    pull_models = "phi3:mini,gemma4:e4b,gemma4:26b"
-else:
-    raise SystemExit(f"Unsupported setup mode: {runtime_mode}")
+plan = build_setup_plan(
+    runtime_mode=runtime_mode,
+    platform_config=detect_platform(),
+    remote_infra_host=remote_host,
+)
+compose_profile = plan.compose_profile or "-"
+start_local_stack = "1" if plan.start_local_stack else "0"
+validate_remote = "1" if plan.validate_remote_services else "0"
+pull_models = ",".join(plan.pull_models)
 
 print(f"{compose_profile}\t{start_local_stack}\t{validate_remote}\t{pull_models}")
 PY
@@ -94,7 +94,7 @@ target_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 PY
 }
 
-IFS=$'\t' read -r SETUP_MODE MODE_SOURCE RECOMMENDED_MODE <<< "$(resolve_setup_mode)"
+IFS=$'\t' read -r SETUP_MODE MODE_SOURCE RECOMMENDED_MODE <<< "$(resolve_setup_mode "${REMOTE_INFRA_HOST:-}")"
 IFS=$'\t' read -r PLAN_COMPOSE_PROFILE PLAN_START_LOCAL_STACK PLAN_VALIDATE_REMOTE PLAN_PULL_MODELS <<< "$(resolve_setup_plan "$SETUP_MODE" "${REMOTE_INFRA_HOST:--}")"
 
 echo "==> Detectando plataforma..."
@@ -109,9 +109,13 @@ else
     PLATFORM="pc"
     COMPOSE_PROFILE="gpu"
     if command -v nvidia-smi &>/dev/null; then
-        VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
-        VRAM_GB=$((VRAM_MB / 1024))
-        echo "    PC detectado — ${VRAM_GB}GB VRAM (NVIDIA)"
+        if VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' '); then
+            VRAM_GB=$((VRAM_MB / 1024))
+            echo "    PC detectado — ${VRAM_GB}GB VRAM (NVIDIA)"
+        else
+            echo "    PC detectado — nvidia-smi falhou, usando CPU fallback"
+            COMPOSE_PROFILE="cpu"
+        fi
     else
         echo "    PC detectado — nvidia-smi não encontrado, usando CPU fallback"
         COMPOSE_PROFILE="cpu"
@@ -225,7 +229,10 @@ elif [[ "$PLAN_START_LOCAL_STACK" == "1" ]]; then
     IFS=',' read -r -a MODELS_TO_PULL <<< "$PLAN_PULL_MODELS"
     for model in "${MODELS_TO_PULL[@]}"; do
         [[ -n "$model" ]] || continue
-        if [[ "$model" == "gemma4:26b" ]] && ! { [[ "$PLATFORM" == "pc" ]] || { [[ "$PLATFORM" == "mac" ]] && [[ "${MEM_GB:-0}" -ge 24 ]]; }; }; then
+        if [[ "$model" == "gemma4:26b" ]] && ! {
+            { [[ "$PLATFORM" == "pc" ]] && [[ "${VRAM_GB:-0}" -ge 16 ]]; } ||
+            { [[ "$PLATFORM" == "mac" ]] && [[ "${MEM_GB:-0}" -ge 32 ]]; }
+        }; then
             echo "    Hardware insuficiente para gemma4:26b — usando gemma4:e4b como fallback"
             continue
         fi

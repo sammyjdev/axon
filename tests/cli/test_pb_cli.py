@@ -165,12 +165,46 @@ def test_search_applies_strategy_budget_and_prints_context_pack(monkeypatch) -> 
     result = runner.invoke(pb.app, ["search", "upsert vector", "--ctx", "knowledge", "--top", "20"])
 
     assert result.exit_code == 0
-    assert captured["top_k"] == 8
+    assert captured["top_k"] == 20
     assert "ContextPack: strategy=balanced" in result.stdout
     assert "task_type=CODE_ANALYSIS" in result.stdout
     assert "segments=1" in result.stdout
     assert "contexts=knowledge" in result.stdout
     assert "trace_id:" in result.stdout
+
+
+def test_search_shows_all_requested_hits_even_when_context_pack_is_smaller(monkeypatch) -> None:
+    hits = [
+        {
+            "score": 0.91 - (index * 0.01),
+            "payload": {
+                "file_path": f"/tmp/file_{index}.py",
+                "symbol": f"symbol_{index}",
+                "chunk_type": "method",
+                "content": f"content {index}",
+            },
+        }
+        for index in range(10)
+    ]
+
+    async def fake_hits(*args, **kwargs):
+        _ = (args, kwargs)
+        await asyncio.sleep(0)
+        return hits
+
+    monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
+    monkeypatch.setattr(
+        "prometheus.router.classifier.classify_task_with_source",
+        lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
+    )
+
+    result = runner.invoke(pb.app, ["search", "upsert vector", "--ctx", "knowledge", "--top", "10"])
+
+    assert result.exit_code == 0
+    assert "1. score=0.9100 | /tmp/file_0.py" in result.stdout
+    assert "10. score=0.8200 | /tmp/file_9.py" in result.stdout
+    assert "segments=8" in result.stdout
+    assert "all requested hits are shown above" in result.stdout
 
 
 def test_search_surfaces_staleness_warnings(monkeypatch) -> None:
@@ -550,6 +584,45 @@ def test_configure_applies_recommended_profile(monkeypatch, tmp_path) -> None:
     assert "recommended_mode: remote-infra" in result.stdout
     assert "selected_capabilities: shared-remote-infra" in result.stdout
     assert 'active_profile = "team-dev"' in payload
+
+
+def test_configure_works_with_minimal_runtime_only_config(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "prometheus.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[runtime]",
+                'mode = "hybrid-local"',
+                'active_profile = "solo-dev"',
+                f'engine_root = "{tmp_path}"',
+                f'vault_root = "{tmp_path / "vault"}"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+
+    result = runner.invoke(
+        pb.app,
+        [
+            "configure",
+            "--use-case",
+            "team",
+            "--privacy",
+            "internal",
+            "--hardware",
+            "nvidia",
+        ],
+    )
+
+    payload = config_path.read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert "recommended_profile: team-dev" in result.stdout
+    assert 'active_profile = "team-dev"' in payload
+    assert "[profiles.solo-dev]" in payload
+    assert "[profiles.team-dev]" in payload
+    assert "[profiles.privacy-first]" in payload
 
 
 def test_configure_interactive_applies_recommended_profile(monkeypatch, tmp_path) -> None:
