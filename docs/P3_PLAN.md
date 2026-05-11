@@ -1,6 +1,6 @@
 # P3 Execution Plan
 
-Status: planned next batch after `P2`
+Status: implemented foundation batch after `P2`
 
 This plan turns the `P3` roadmap into execution-ready slices for parallel
 agents. The goal is to make Prometheus extensible without collapsing back into
@@ -89,6 +89,18 @@ Scope:
 
 Done when:
 - a third party can extend Prometheus without reading large parts of the code
+
+Current implementation status:
+
+- P3-A1 is implemented with a richer pack manifest contract and checked-in
+  packs under `domain-packs/`
+- P3-A2 is implemented with deterministic export, manifest versioning,
+  indexed-context metadata, and import into a fresh engine root
+- P3-A3 is implemented with local registry contracts, validation, and
+  discovery
+- P3-A4 is implemented with retrieval, compression fallback, setup-mode, and
+  comparison reporting surfaces
+- P3-A5 is implemented through `docs/P3_EXTENSION_DOCS.md`
 
 ## Recommended Agent Split
 

@@ -6,12 +6,12 @@ This roadmap turns the current product direction into concrete tasks. The near
 term goal is simple: make Prometheus usable by other developers on different
 machines without assuming Odisseu, Claude, or the author's hardware.
 
-Current execution state as of 2026-05-08:
+Current execution state as of 2026-05-11:
 
 - P0 is complete at the documentation and shipped-surface level.
 - P1 is complete at the initial guided-customization level.
 - P2 is complete at the initial robustness level.
-- P3 planning is the current focus.
+- P3 implementation is complete at the foundation level.
 - The profile manifest exists in the runtime schema.
 - `pb configure` works both as a deterministic flag-driven recommender and as a
   concise interactive questionnaire when core inputs are omitted.
@@ -138,6 +138,26 @@ Planned P3 execution order:
 - P3-A4: add a benchmark harness for retrieval, compression fallback, and setup
   mode checks
 - P3-A5: document how third parties add packs, registries, and benchmarks
+
+Current interpretation of P3:
+
+- P3-T1 is implemented: the engine ships a declarative domain-pack contract,
+  checked-in example packs, and loader coverage for both flat and directory
+  layouts.
+- P3-T2 is implemented: portability export/import covers config, allowlisted
+  environment metadata, indexed contexts, and local stores with deterministic
+  manifests and checksum validation.
+- P3-T3 is implemented: plugin/tool registry contracts and local discovery
+  rules are available for third-party extensions.
+- P3-T4 is implemented: the benchmark harness covers retrieval, compression
+  fallback, setup-mode sanity, and comparison reporting.
+
+Remaining refinement beyond P3:
+
+- wire domain-pack defaults into more runtime decisions over time
+- add a dedicated benchmark CLI surface if benchmark operations become common
+- broaden portability beyond local engine artifacts if external stores need
+  first-class migration support
 
 ## Not In Scope For This Phase
 

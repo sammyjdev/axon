@@ -1,0 +1,40 @@
+{
+  "schema_version": "1",
+  "version": "1.0.0",
+  "domain_id": "research",
+  "display_name": "Research",
+  "description": "Research-oriented notes, experiment logs, and evidence synthesis workflows.",
+  "default_profiles": [
+    "solo-dev",
+    "privacy-first"
+  ],
+  "retrieval_defaults": {
+    "top_k": 10,
+    "chunk_size": 1400
+  },
+  "policy_defaults": {
+    "cloud_policy": "allow",
+    "memory_tier": "balanced"
+  },
+  "examples": [
+    {
+      "name": "summarize-findings",
+      "prompt": "Summarize the strongest findings and open questions from this research context.",
+      "template": "Question:\n{{question}}\n\nContext:\n{{context}}"
+    }
+  ],
+  "signals": {
+    "languages": [],
+    "artifact_types": [
+      "notes",
+      "paper",
+      "dataset",
+      "experiment"
+    ],
+    "task_types": [
+      "synthesis",
+      "analysis",
+      "planning"
+    ]
+  }
+}

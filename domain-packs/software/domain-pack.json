@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "domain_id": "software",
   "display_name": "Software",
-  "description": "General software engineering artifacts and workflows.",
+  "description": "General software engineering workflows across services, libraries, and tooling.",
   "default_profiles": [
     "solo-dev",
     "team-dev"
@@ -26,15 +26,20 @@
   "signals": {
     "languages": [
       "python",
-      "typescript"
+      "typescript",
+      "go",
+      "rust",
+      "kotlin"
     ],
     "artifact_types": [
       "source_code",
-      "documentation"
+      "documentation",
+      "configuration"
     ],
     "task_types": [
       "implementation",
-      "review"
+      "review",
+      "debug"
     ]
   }
 }
