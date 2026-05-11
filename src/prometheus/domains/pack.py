@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 MANIFEST_FILENAME = "domain-pack.json"
@@ -18,13 +18,25 @@ class DomainSignals:
 
 
 @dataclass(frozen=True)
+class DomainPackExample:
+    name: str
+    prompt: str | None = None
+    template: str | None = None
+
+
+@dataclass(frozen=True)
 class DomainPackManifest:
     schema_version: str
+    version: str
     domain_id: str
     display_name: str
     description: str
     signals: DomainSignals
     manifest_path: Path
+    default_profiles: tuple[str, ...] = ()
+    retrieval_defaults: dict[str, object] = field(default_factory=dict)
+    policy_defaults: dict[str, object] = field(default_factory=dict)
+    examples: tuple[DomainPackExample, ...] = ()
 
 
 def load_domain_pack(path: Path) -> DomainPackManifest:
@@ -47,9 +59,14 @@ def load_domain_pack(path: Path) -> DomainPackManifest:
 
     return DomainPackManifest(
         schema_version=schema_version,
+        version=_optional_string(payload, "version") or schema_version,
         domain_id=domain_id,
         display_name=_require_string(payload, "display_name"),
         description=_require_string(payload, "description"),
+        default_profiles=_string_list(payload, "default_profiles"),
+        retrieval_defaults=_dict_payload(payload, "retrieval_defaults"),
+        policy_defaults=_dict_payload(payload, "policy_defaults"),
+        examples=_example_list(payload),
         signals=DomainSignals(
             languages=_string_list(signals_payload, "languages"),
             artifact_types=_string_list(signals_payload, "artifact_types"),
@@ -73,6 +90,15 @@ def _require_string(payload: dict[str, object], field_name: str) -> str:
     return value.strip()
 
 
+def _optional_string(payload: dict[str, object], field_name: str) -> str | None:
+    value = payload.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a non-empty string.")
+    return value.strip()
+
+
 def _string_list(payload: dict[str, object], field_name: str) -> tuple[str, ...]:
     value = payload.get(field_name, [])
     if not isinstance(value, list):
@@ -90,3 +116,36 @@ def _string_list(payload: dict[str, object], field_name: str) -> tuple[str, ...]
         normalized.append(normalized_item)
 
     return tuple(normalized)
+
+
+def _dict_payload(payload: dict[str, object], field_name: str) -> dict[str, object]:
+    value = payload.get(field_name, {})
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be an object.")
+    return dict(value)
+
+
+def _example_list(payload: dict[str, object]) -> tuple[DomainPackExample, ...]:
+    value = payload.get("examples", [])
+    if not isinstance(value, list):
+        raise ValueError("examples must be a list.")
+
+    examples: list[DomainPackExample] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("examples entries must be objects.")
+
+        name = _require_string(item, "name")
+        if name in seen:
+            raise ValueError("examples entries must have unique names.")
+        seen.add(name)
+
+        prompt = _optional_string(item, "prompt")
+        template = _optional_string(item, "template")
+        if prompt is None and template is None:
+            raise ValueError("examples entries must define a prompt or template.")
+
+        examples.append(DomainPackExample(name=name, prompt=prompt, template=template))
+
+    return tuple(examples)

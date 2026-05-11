@@ -186,6 +186,12 @@ Main commands exposed by the current CLI:
 - `pb index`
 - `pb index-dev`
 - `pb watch`
+- `pb doctor`
+- `pb init`
+- `pb configure`
+- `pb profile list|show|use|create|export`
+- `pb portability export|import`
+- `pb setup`
 - `pb til`
 - `pb adr`
 - `pb deep`
@@ -215,6 +221,7 @@ Prometheus runs on Python 3.11+ and uses:
 
 - [Vault setup](docs/VAULT_SETUP.md)
 - [Profiles](docs/PROFILES.md)
+- [Extension docs](docs/P3_EXTENSION_DOCS.md)
 - [TIL automation](docs/TIL_AUTOMATION.md)
 - [Usage guide](docs/USAGE_GUIDE.md)
 - [Support matrix](docs/SUPPORT_MATRIX.md)

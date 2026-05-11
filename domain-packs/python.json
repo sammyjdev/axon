@@ -1,8 +1,28 @@
 {
   "schema_version": "1",
+  "version": "1.0.0",
   "domain_id": "python",
   "display_name": "Python",
   "description": "Python projects including scripts, APIs, and data pipelines",
+  "default_profiles": [
+    "solo-dev",
+    "privacy-first"
+  ],
+  "retrieval_defaults": {
+    "top_k": 8,
+    "chunk_size": 1000
+  },
+  "policy_defaults": {
+    "cloud_policy": "avoid",
+    "memory_tier": "balanced"
+  },
+  "examples": [
+    {
+      "name": "trace-debug",
+      "prompt": "Investigate this Python failure and explain the likely root cause.",
+      "template": "Trace:\n{{trace}}\n\nRelevant code:\n{{code}}"
+    }
+  ],
   "signals": {
     "languages": ["python"],
     "artifact_types": ["module", "class", "function"],

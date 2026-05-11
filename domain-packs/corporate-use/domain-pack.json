@@ -1,0 +1,39 @@
+{
+  "schema_version": "1",
+  "version": "1.0.0",
+  "domain_id": "corporate-use",
+  "display_name": "Corporate Use",
+  "description": "Restricted corporate workflows with explicit work-context and stronger policy defaults.",
+  "default_profiles": [
+    "team-dev",
+    "privacy-first"
+  ],
+  "retrieval_defaults": {
+    "top_k": 6,
+    "chunk_size": 1100
+  },
+  "policy_defaults": {
+    "cloud_policy": "deny",
+    "memory_tier": "balanced"
+  },
+  "examples": [
+    {
+      "name": "review-internal-doc",
+      "prompt": "Review this internal material with explicit work-context handling and policy checks.",
+      "template": "Request:\n{{request}}\n\nContext:\n{{context}}"
+    }
+  ],
+  "signals": {
+    "languages": [],
+    "artifact_types": [
+      "internal_doc",
+      "runbook",
+      "policy"
+    ],
+    "task_types": [
+      "review",
+      "analysis",
+      "compliance"
+    ]
+  }
+}

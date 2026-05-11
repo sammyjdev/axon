@@ -108,7 +108,11 @@ async def execute_retrieval_benchmark(fixture: RetrievalBenchmarkFixture) -> Ben
 
     with (
         patch.object(server, "_get_vector_store", return_value=_FakeVectorStore(fixture.hits)),
-        patch.object(server, "_get_embedder", return_value=SimpleNamespace(embed_one=lambda _query: [0.1])),
+        patch.object(
+            server,
+            "_get_embedder",
+            return_value=SimpleNamespace(embed_one=lambda _query: [0.1]),
+        ),
         patch.object(server, "_get_graph_store", return_value=_FakeGraphStore(fixture.graph_nodes)),
         patch(
             "prometheus.router.classifier.classify_task_with_source",

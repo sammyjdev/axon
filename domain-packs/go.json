@@ -1,8 +1,28 @@
 {
   "schema_version": "1",
+  "version": "1.0.0",
   "domain_id": "go",
   "display_name": "Go",
   "description": "Go projects including CLI tools, APIs, and microservices",
+  "default_profiles": [
+    "team-dev",
+    "minimal"
+  ],
+  "retrieval_defaults": {
+    "top_k": 6,
+    "chunk_size": 1000
+  },
+  "policy_defaults": {
+    "cloud_policy": "avoid",
+    "memory_tier": "light"
+  },
+  "examples": [
+    {
+      "name": "review-service",
+      "prompt": "Review this Go service change for correctness and production risks.",
+      "template": "Context:\n{{context}}\n\nDiff:\n{{diff}}"
+    }
+  ],
   "signals": {
     "languages": ["go"],
     "artifact_types": ["function", "struct", "interface"],

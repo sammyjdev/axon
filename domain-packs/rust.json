@@ -1,8 +1,28 @@
 {
   "schema_version": "1",
+  "version": "1.0.0",
   "domain_id": "rust",
   "display_name": "Rust",
   "description": "Rust projects including systems programming and CLI tools",
+  "default_profiles": [
+    "solo-dev",
+    "minimal"
+  ],
+  "retrieval_defaults": {
+    "top_k": 7,
+    "chunk_size": 1000
+  },
+  "policy_defaults": {
+    "cloud_policy": "avoid",
+    "memory_tier": "balanced"
+  },
+  "examples": [
+    {
+      "name": "analyze-borrow-check",
+      "prompt": "Explain this Rust compiler error and suggest the smallest fix.",
+      "template": "Compiler error:\n{{error}}\n\nRelevant code:\n{{code}}"
+    }
+  ],
   "signals": {
     "languages": ["rust"],
     "artifact_types": ["function", "struct", "trait"],

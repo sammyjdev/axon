@@ -31,6 +31,7 @@ expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
 memory_app = typer.Typer(help="Memória Mem0 / Neo4j")
 graph_app = typer.Typer(help="Grafo estrutural Graphify / Neo4j")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
+portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -42,6 +43,7 @@ app.add_typer(expand_app, name="expand")
 app.add_typer(memory_app, name="memory")
 app.add_typer(graph_app, name="graph")
 app.add_typer(profile_app, name="profile")
+app.add_typer(portability_app, name="portability")
 
 QDRANT_DEFAULT_URL = "http://localhost:6333"
 _MAX_CHUNK_INPUT_CHARS = 4_000
@@ -463,7 +465,9 @@ def ask(
             result = detector.detect(query, cwd=cwd or os.getcwd())
             effective_ctx = resolved_ctx or result.context
             strategy, task_type, profile, mode = _select_retrieval_strategy(query, effective_ctx)
-            collections = get_search_collections(effective_ctx) if effective_ctx else list(strategy.contexts)
+            collections = (
+                get_search_collections(effective_ctx) if effective_ctx else list(strategy.contexts)
+            )
             hits = await _semantic_search_hits(
                 query,
                 collections=collections,
@@ -973,7 +977,10 @@ def configure(
         str | None, typer.Option("--hardware", help="cpu-only|mac-laptop|nvidia|linux-workstation")
     ] = None,
     preferred_mode: Annotated[
-        str | None, typer.Option("--preferred-mode", help="full-local|hybrid-local|remote-infra|minimal")
+        str | None,
+        typer.Option(
+            "--preferred-mode", help="full-local|hybrid-local|remote-infra|minimal"
+        ),
     ] = None,
     cloud: Annotated[
         str | None, typer.Option("--cloud", help="ok|avoid|deny")
@@ -1893,6 +1900,36 @@ def watch(
         asyncio.run(_watch())
     except KeyboardInterrupt:
         typer.echo("Watcher encerrado.")
+
+
+# ---------------------------------------------------------------------------
+# pb portability
+# ---------------------------------------------------------------------------
+
+
+@portability_app.command("export")
+def portability_export(
+    destination: Annotated[str, typer.Argument(help="Diretório do bundle exportado")],
+) -> None:
+    """Exporta config, stores e manifestos portáveis para um bundle."""
+    from prometheus.portability.exporter import export_portability_bundle
+
+    manifest = export_portability_bundle(Path(destination), runtime=_RUNTIME)
+    typer.echo(f"Bundle exportado em: {Path(destination)}")
+    typer.echo(f"Artefatos exportados: {len(manifest.artifacts)}")
+
+
+@portability_app.command("import")
+def portability_import(
+    source: Annotated[str, typer.Argument(help="Diretório do bundle exportado")],
+    engine_root: Annotated[str, typer.Argument(help="Novo engine root")],
+) -> None:
+    """Importa um bundle portátil para um engine root novo."""
+    from prometheus.portability.importer import import_portability_bundle
+
+    manifest = import_portability_bundle(Path(source), Path(engine_root))
+    typer.echo(f"Bundle importado em: {Path(engine_root)}")
+    typer.echo(f"Artefatos importados: {len(manifest.artifacts)}")
 
 
 # ---------------------------------------------------------------------------

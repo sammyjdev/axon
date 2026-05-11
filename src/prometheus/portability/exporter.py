@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from prometheus.config.runtime import get_prometheus_config_path, load_runtime_config
+from prometheus.context.registry import VALID_CONTEXTS
 
 EXPORT_MANIFEST_VERSION = "1"
 
@@ -77,9 +78,25 @@ def export_portability_bundle(
             kind="metadata/env",
         )
     )
+    indexed_contexts_payload = {
+        "contexts": list(VALID_CONTEXTS),
+        "manifest_version": EXPORT_MANIFEST_VERSION,
+    }
+    artifacts.append(
+        _write_json_artifact(
+            payload=indexed_contexts_payload,
+            export_root=export_root,
+            relative_path=Path("metadata") / "indexed-contexts.json",
+            kind="metadata/indexed_contexts",
+        )
+    )
 
     store_artifacts = (
-        ("store/trace", resolved_runtime.data_root / "trace" / "records.jsonl", Path("stores/trace/records.jsonl")),
+        (
+            "store/trace",
+            resolved_runtime.data_root / "trace" / "records.jsonl",
+            Path("stores/trace/records.jsonl"),
+        ),
         ("store/failure", resolved_runtime.data_root / "failures.db", Path("stores/failures.db")),
         ("store/outcome", resolved_runtime.data_root / "outcomes.db", Path("stores/outcomes.db")),
     )

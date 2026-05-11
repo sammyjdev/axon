@@ -1,8 +1,28 @@
 {
   "schema_version": "1",
+  "version": "1.0.0",
   "domain_id": "typescript",
   "display_name": "TypeScript / JavaScript",
   "description": "TypeScript and JavaScript projects including Node.js and React",
+  "default_profiles": [
+    "team-dev",
+    "solo-dev"
+  ],
+  "retrieval_defaults": {
+    "top_k": 8,
+    "chunk_size": 1200
+  },
+  "policy_defaults": {
+    "cloud_policy": "avoid",
+    "memory_tier": "balanced"
+  },
+  "examples": [
+    {
+      "name": "review-ui-change",
+      "prompt": "Review this TypeScript or React change for correctness and maintainability.",
+      "template": "Summary:\n{{summary}}\n\nDiff:\n{{diff}}"
+    }
+  ],
   "signals": {
     "languages": ["typescript", "javascript"],
     "artifact_types": ["module", "class", "function"],

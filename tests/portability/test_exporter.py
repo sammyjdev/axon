@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 from prometheus.portability.exporter import EXPORT_MANIFEST_VERSION, export_portability_bundle
 
@@ -44,6 +44,7 @@ def test_export_portability_bundle_writes_manifest_and_artifacts(
 
     exported_config = export_root / "config" / "prometheus.toml"
     exported_env = export_root / "metadata" / "env.json"
+    exported_indexed_contexts = export_root / "metadata" / "indexed-contexts.json"
     exported_trace = export_root / "stores" / "trace" / "records.jsonl"
     exported_failures = export_root / "stores" / "failures.db"
     exported_outcomes = export_root / "stores" / "outcomes.db"
@@ -68,6 +69,12 @@ def test_export_portability_bundle_writes_manifest_and_artifacts(
     }
     assert "ANTHROPIC_API_KEY" not in exported_env.read_text(encoding="utf-8")
 
+    indexed_contexts_payload = json.loads(exported_indexed_contexts.read_text(encoding="utf-8"))
+    assert indexed_contexts_payload == {
+        "contexts": ["personal", "career", "knowledge", "saas", "work"],
+        "manifest_version": EXPORT_MANIFEST_VERSION,
+    }
+
     manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest_payload == {
         "artifacts": [
@@ -82,6 +89,12 @@ def test_export_portability_bundle_writes_manifest_and_artifacts(
                 "path": "metadata/env.json",
                 "sha256": _sha256(exported_env),
                 "size_bytes": exported_env.stat().st_size,
+            },
+            {
+                "kind": "metadata/indexed_contexts",
+                "path": "metadata/indexed-contexts.json",
+                "sha256": _sha256(exported_indexed_contexts),
+                "size_bytes": exported_indexed_contexts.stat().st_size,
             },
             {
                 "kind": "store/failure",
@@ -138,6 +151,12 @@ def test_export_portability_bundle_omits_missing_optional_artifacts(
             "sha256": _sha256(export_root / "metadata" / "env.json"),
             "size_bytes": (export_root / "metadata" / "env.json").stat().st_size,
         },
+        {
+            "kind": "metadata/indexed_contexts",
+            "path": "metadata/indexed-contexts.json",
+            "sha256": _sha256(export_root / "metadata" / "indexed-contexts.json"),
+            "size_bytes": (export_root / "metadata" / "indexed-contexts.json").stat().st_size,
+        },
     ]
 
 
@@ -151,7 +170,10 @@ def test_export_portability_bundle_writes_deterministic_json(
     monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path / "engine"))
     monkeypatch.setenv("PROMETHEUS_RUNTIME_MODE", "full-local")
 
-    runtime = SimpleNamespace(engine_root=tmp_path / "engine", data_root=tmp_path / "engine" / "data")
+    runtime = SimpleNamespace(
+        engine_root=tmp_path / "engine",
+        data_root=tmp_path / "engine" / "data",
+    )
 
     export_portability_bundle(tmp_path / "export-a", runtime=runtime)
     export_portability_bundle(tmp_path / "export-b", runtime=runtime)
