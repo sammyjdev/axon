@@ -1,0 +1,11 @@
+{
+  "schema_version": "1",
+  "domain_id": "typescript",
+  "display_name": "TypeScript / JavaScript",
+  "description": "TypeScript and JavaScript projects including Node.js and React",
+  "signals": {
+    "languages": ["typescript", "javascript"],
+    "artifact_types": ["module", "class", "function"],
+    "task_types": ["code-analysis", "refactor", "debug"]
+  }
+}
