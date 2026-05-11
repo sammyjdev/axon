@@ -1137,7 +1137,7 @@ def search(
             query,
             collections=collections,
             language=language,
-            top_k=min(top_k, strategy.max_segments),
+            top_k=top_k,
         )
         trace.append_stage(
             "retrieval",
@@ -1164,7 +1164,7 @@ def search(
             hits=hits,
         )
 
-        for i, hit in enumerate(hits[: len(pack.segments)], start=1):
+        for i, hit in enumerate(hits, start=1):
             payload = hit.get("payload", {})
             file_path = payload.get("file_path", "<sem arquivo>")
             symbol = payload.get("symbol", "<sem símbolo>")
@@ -1179,6 +1179,11 @@ def search(
                 typer.echo(f"   preview: {preview}")
 
         typer.echo(f"\n{_context_pack_summary(pack)}")
+        if len(pack.segments) < len(hits):
+            typer.echo(
+                "note: ContextPack summary reflects the strategy budget, "
+                "but all requested hits are shown above."
+            )
         typer.echo(f"trace_id: {trace_id}")
         stale_notes = _staleness_notes(hits)
         if stale_notes:
