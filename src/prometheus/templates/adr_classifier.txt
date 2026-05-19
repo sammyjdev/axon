@@ -1,0 +1,15 @@
+You are an architectural decision detector. Analyze the following git commit and determine if it contains an architectural decision.
+
+An architectural decision is: a choice about technology, patterns, significant deletions of subsystems, new constraints, or changes that future developers need to understand WHY it was done.
+
+NOT architectural decisions: bug fixes, dependency bumps, formatting, test additions, documentation updates, minor refactors.
+
+Commit message: {commit_message}
+
+Diff summary:
+{diff_summary}
+
+If this contains an architectural decision, respond with ONLY valid JSON (no markdown, no explanation):
+{{"title": "short title (max 60 chars)", "context": "why this decision was needed", "decision": "what was decided", "rationale": "why this option over alternatives"}}
+
+If this does NOT contain an architectural decision, respond with ONLY the word: null

@@ -2,7 +2,7 @@
   "projects": [
     {
       "name": "prometheus",
-      "path": "/path/to/prometheus",
+      "path": "/Users/samdev/dev/Prometheus",
       "ctx": "personal",
       "enabled": true,
       "languages": ["python", "typescript", "java", "markdown", "text"]

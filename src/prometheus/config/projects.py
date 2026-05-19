@@ -71,3 +71,39 @@ def load_project_manifest(path: Path) -> list[ProjectEntry]:
         )
 
     return projects
+
+
+def write_project_manifest(path: Path, entries: list[ProjectEntry]) -> None:
+    """Write or update a project manifest JSON, merging new entries with existing ones.
+
+    Existing entries with the same name are preserved as-is (no overwrite).
+    New entries are appended.
+    """
+    existing: list[ProjectEntry] = []
+    if path.exists():
+        try:
+            existing = load_project_manifest(path)
+        except (FileNotFoundError, ValueError):
+            existing = []
+
+    existing_names = {e.name for e in existing}
+    merged = list(existing)
+    for entry in entries:
+        if entry.name not in existing_names:
+            merged.append(entry)
+            existing_names.add(entry.name)
+
+    data = {
+        "projects": [
+            {
+                "name": e.name,
+                "path": str(e.path),
+                "ctx": e.ctx,
+                "enabled": e.enabled,
+                "languages": list(e.languages),
+            }
+            for e in merged
+        ]
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
