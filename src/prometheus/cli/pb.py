@@ -1246,6 +1246,7 @@ def note(
     session_note(text)
 
 
+@app.command("session-save")
 @session_app.command("save")
 def session_save(
     cwd: Annotated[str | None, typer.Option("--cwd", help="Working directory da sessão")] = None,
