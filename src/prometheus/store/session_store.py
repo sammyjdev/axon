@@ -32,6 +32,13 @@ CREATE TABLE IF NOT EXISTS code_change (
     changed_at  TEXT    NOT NULL,
     PRIMARY KEY (commit_hash, file_path)
 );
+
+CREATE TABLE IF NOT EXISTS session_note (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project    TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -55,6 +62,18 @@ class SessionMemory:
     project: str
     summary: str
     raw_turns: int
+    id: int = 0
+    created_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if self.created_at is None:
+            self.created_at = datetime.now(UTC)
+
+
+@dataclass
+class SessionNote:
+    project: str
+    body: str
     id: int = 0
     created_at: datetime | None = None
 
@@ -162,6 +181,36 @@ class SessionStore:
                 project=r["project"],
                 summary=r["summary"],
                 raw_turns=r["raw_turns"],
+                created_at=datetime.fromisoformat(r["created_at"]),
+            )
+            for r in rows
+        ]
+
+    # ── Session Note ──────────────────────────────────────────────────────────
+
+    async def save_note(self, note: SessionNote) -> int:
+        async with self._lock:
+            db = await self._connection()
+            cursor = await db.execute(
+                "INSERT INTO session_note (project, body, created_at) VALUES (?, ?, ?)",
+                (note.project, note.body, note.created_at.isoformat()),
+            )
+            await db.commit()
+            return cursor.lastrowid  # type: ignore[return-value]
+
+    async def get_notes(self, project: str, limit: int = 10) -> list[SessionNote]:
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            rows = await db.execute_fetchall(
+                "SELECT * FROM session_note WHERE project = ? ORDER BY created_at DESC LIMIT ?",
+                (project, limit),
+            )
+        return [
+            SessionNote(
+                id=r["id"],
+                project=r["project"],
+                body=r["body"],
                 created_at=datetime.fromisoformat(r["created_at"]),
             )
             for r in rows

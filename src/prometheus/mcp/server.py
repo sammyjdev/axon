@@ -395,14 +395,24 @@ async def get_session_memory(
     store = _get_session_store()
     await store.init()
     memories = await store.get_session_memories(project, limit=3)
-    if not memories:
+    notes = await store.get_notes(project, limit=10)
+
+    if not memories and not notes:
         return f"Nenhuma memória de sessão para projeto '{project}'."
 
-    lines = [f"## Sessões anteriores — {project}\n"]
-    for m in memories:
-        lines.append(f"**{m.created_at}** ({m.raw_turns} turns)")
-        lines.append(m.summary)
-        lines.append("")
+    lines: list[str] = []
+
+    if memories:
+        lines.append(f"## Sessões anteriores — {project}\n")
+        for m in memories:
+            lines.append(f"**{m.created_at}** ({m.raw_turns} turns)")
+            lines.append(m.summary)
+            lines.append("")
+
+    if notes:
+        lines.append("## Notas de sessão\n")
+        for n in notes:
+            lines.append(f"- **{n.created_at.isoformat()}** {n.body}")
 
     budget = CONTEXT_BUDGETS.get(caller, 4000)
     return _truncate("\n".join(lines), budget)
