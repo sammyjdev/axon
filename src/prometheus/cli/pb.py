@@ -1218,6 +1218,92 @@ def session_root(
     typer.echo(f"Contexto {resolved} ativo. Sessão salva em {state_file}")
 
 
+@session_app.command("note")
+def session_note(
+    text: Annotated[str, typer.Argument(help="Texto da nota")],
+) -> None:
+    """Adiciona uma nota livre à sessão atual."""
+    from prometheus.store.session_store import SessionNote, SessionStore
+
+    project = os.path.basename(os.getcwd())
+
+    async def _note() -> None:
+        db = _get_db_path()
+        store = SessionStore(db)
+        await store.init()
+        note = SessionNote(project=project, body=text)
+        await store.save_note(note)
+        typer.echo(f"Nota salva em '{project}': {text[:60]}{'...' if len(text) > 60 else ''}")
+
+    asyncio.run(_note())
+
+
+@app.command("note")
+def note(
+    text: Annotated[str, typer.Argument(help="Texto da nota livre de sessão")],
+) -> None:
+    """Alias para pb session note."""
+    session_note(text)
+
+
+@session_app.command("save")
+def session_save(
+    cwd: Annotated[str | None, typer.Option("--cwd", help="Working directory da sessão")] = None,
+    transcript: Annotated[str | None, typer.Option("--transcript", help="Path do transcript JSON")] = None,
+) -> None:
+    """Comprime e salva session memory (chamado pelo PostStop hook do Claude Code)."""
+    import json
+    from prometheus.memory.session_compressor import SessionCompressor
+    from prometheus.store.session_store import SessionMemory, SessionStore
+
+    project = os.path.basename(cwd or os.getcwd())
+
+    async def _save() -> None:
+        turns: list[dict[str, str]] = []
+
+        transcript_path = transcript or os.environ.get("CLAUDE_TRANSCRIPT_PATH")
+        if transcript_path and os.path.exists(transcript_path):
+            try:
+                data = json.loads(Path(transcript_path).read_text(encoding="utf-8"))
+                raw = data if isinstance(data, list) else data.get("messages", [])
+                for item in raw:
+                    role = item.get("role") or item.get("type", "")
+                    content = item.get("content", "")
+                    if isinstance(content, list):
+                        content = " ".join(
+                            c.get("text", "") for c in content if isinstance(c, dict)
+                        )
+                    if role and content and role in ("user", "assistant"):
+                        turns.append({"role": role, "content": str(content)})
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+
+        if len(turns) < 2:
+            typer.echo(f"[prometheus] Sessão muito curta ({len(turns)} turns), skip.", err=True)
+            return
+
+        turns = turns[-50:]
+
+        compressor = SessionCompressor()
+        for turn in turns:
+            compressor.add_turn(turn["role"], turn["content"])
+
+        try:
+            summary = await compressor.compress()
+        except Exception as e:
+            typer.echo(f"[prometheus] Erro ao comprimir sessão: {e}", err=True)
+            return
+
+        db = _get_db_path()
+        store = SessionStore(db)
+        await store.init()
+        mem = SessionMemory(project=project, summary=summary, raw_turns=len(turns))
+        await store.save_session_memory(mem)
+        typer.echo(f"[prometheus] Session memory salva: {project} ({len(turns)} turns)")
+
+    asyncio.run(_save())
+
+
 # ---------------------------------------------------------------------------
 # pb adr
 # ---------------------------------------------------------------------------
@@ -1287,6 +1373,154 @@ def adr_add(
         typer.echo(f"ADR salvo: {title}")
 
     asyncio.run(_add())
+
+
+@adr_app.command("sync")
+def adr_sync(
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Projeto específico (default: todos)")] = None,
+) -> None:
+    """Exporta ADRs do DB para arquivos Markdown no vault Obsidian."""
+    import datetime
+    from prometheus.store.session_store import SessionStore
+
+    vault_root = _RUNTIME.vault_root
+    adrs_dir = vault_root / "personal" / "adrs"
+    adrs_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _sync() -> None:
+        db = _get_db_path()
+        store = SessionStore(db)
+        await store.init()
+
+        if project:
+            projects_to_sync = [project]
+        else:
+            import aiosqlite
+            async with aiosqlite.connect(str(db)) as conn:
+                rows = await conn.execute_fetchall("SELECT DISTINCT project FROM adr")
+            projects_to_sync = [r[0] for r in rows]
+
+        if not projects_to_sync:
+            typer.echo("Nenhum ADR encontrado.")
+            return
+
+        synced = 0
+        for proj in projects_to_sync:
+            adrs = await store.get_adrs(proj, limit=100)
+            lines = [f"# ADRs — {proj}\n\n_Last synced: {datetime.date.today().isoformat()}_\n"]
+            for adr in adrs:
+                lines.append(f"\n## {adr.title}\n")
+                created = adr.created_at.strftime("%Y-%m-%d") if adr.created_at else "N/A"
+                lines.append(f"**Data:** {created}\n")
+                lines.append(f"**Decisão:** {adr.decision}\n\n**Racional:** {adr.rationale}\n\n**Contexto:** {adr.context}\n\n---\n")
+            content = "\n".join(lines)
+            out_path = adrs_dir / f"{proj}.md"
+            out_path.write_text(content, encoding="utf-8")
+            typer.echo(f"  {proj}: {len(adrs)} ADR(s) → {out_path}")
+            synced += 1
+
+        typer.echo(f"Sync concluído: {synced} projeto(s).")
+
+    asyncio.run(_sync())
+
+
+@adr_app.command("hook")
+def adr_hook_install(
+    path: Annotated[str | None, typer.Option("--path", help="Path do repositório git (default: cwd)")] = None,
+) -> None:
+    """Instala o hook post-commit para inferência automática de ADRs."""
+    import stat
+    repo_path = Path(path or os.getcwd())
+    hooks_dir = repo_path / ".git" / "hooks"
+
+    if not hooks_dir.exists():
+        typer.echo(f"Erro: {repo_path} não é um repositório git.", err=True)
+        raise typer.Exit(1)
+
+    hook_script_path = Path(__file__).parent.parent / "templates" / "post_commit_hook.sh"
+    hook_content = hook_script_path.read_text(encoding="utf-8")
+
+    target = hooks_dir / "post-commit"
+    if target.exists():
+        existing = target.read_text(encoding="utf-8")
+        if "prometheus" in existing.lower():
+            typer.echo("Hook já instalado (prometheus detectado). Nada a fazer.")
+            return
+        target.write_text(existing.rstrip() + "\n\n" + hook_content, encoding="utf-8")
+        typer.echo(f"Hook anexado ao post-commit existente: {target}")
+    else:
+        target.write_text(hook_content, encoding="utf-8")
+        typer.echo(f"Hook instalado: {target}")
+
+    target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+
+@adr_app.command("infer-commit")
+def adr_infer_commit(
+    project: Annotated[str, typer.Option("--project", "-p", help="Nome do projeto")],
+) -> None:
+    """Infere decisão arquitetural do último commit e salva ADR se detectado."""
+    import json as json_lib
+    from prometheus.store.session_store import ADR, SessionStore
+
+    template_path = Path(__file__).parent.parent / "templates" / "adr_classifier.txt"
+    classifier_prompt = template_path.read_text(encoding="utf-8")
+
+    async def _infer() -> None:
+        try:
+            commit_msg = subprocess.check_output(
+                ["git", "log", "-1", "--pretty=%s"], text=True
+            ).strip()
+            diff_stat = subprocess.check_output(
+                ["git", "log", "-1", "--stat", "--pretty="], text=True
+            ).strip()
+            diff_full = subprocess.check_output(
+                ["git", "diff", "HEAD~1", "HEAD", "--", ":(exclude)*.lock", ":(exclude)*.json"],
+                text=True,
+            )
+        except subprocess.CalledProcessError:
+            return
+
+        diff_summary = (diff_stat + "\n" + diff_full)[:3000]
+
+        prompt_text = classifier_prompt.format(
+            commit_message=commit_msg,
+            diff_summary=diff_summary,
+        )
+
+        try:
+            import litellm
+            response = await litellm.acompletion(
+                model="claude-haiku-4-5-20251001",
+                messages=[{"role": "user", "content": prompt_text}],
+                max_tokens=400,
+            )
+            raw = (response.choices[0].message.content or "").strip()
+        except Exception:
+            return
+
+        if not raw or raw.lower().startswith("null"):
+            return
+
+        try:
+            data = json_lib.loads(raw)
+        except json_lib.JSONDecodeError:
+            return
+
+        db = _get_db_path()
+        store = SessionStore(db)
+        await store.init()
+        adr = ADR(
+            project=project,
+            title=data.get("title", commit_msg[:60]),
+            context=data.get("context", ""),
+            decision=data.get("decision", ""),
+            rationale=data.get("rationale", ""),
+        )
+        await store.save_adr(adr)
+        typer.echo(f"[prometheus] ADR salvo: {adr.title}")
+
+    asyncio.run(_infer())
 
 
 # ---------------------------------------------------------------------------
@@ -1965,6 +2199,136 @@ def memory_smoke(
     except PermissionError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1)
+
+
+@app.command()
+def scan(
+    directory: Annotated[
+        str | None, typer.Argument(help="Diretório a escanear (default: ~/dev)")
+    ] = None,
+    depth: Annotated[int, typer.Option("--depth", help="Profundidade máxima de busca")] = 2,
+) -> None:
+    """Auto-descobre repositórios git e atualiza o manifesto de projetos."""
+    from prometheus.config.projects import ProjectEntry, write_project_manifest
+
+    LANG_MAP = {
+        ".py": "python",
+        ".java": "java",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".md": "markdown",
+        ".txt": "text",
+    }
+
+    scan_root = Path(directory or "~/dev").expanduser()
+    if not scan_root.exists():
+        typer.echo(f"Diretório não encontrado: {scan_root}", err=True)
+        raise typer.Exit(1)
+
+    manifest_path = _RUNTIME.engine_root / "config" / "projects.json"
+
+    existing_names: set[str] = set()
+    if manifest_path.exists():
+        try:
+            from prometheus.config.projects import load_project_manifest
+            existing = load_project_manifest(manifest_path)
+            existing_names = {e.name for e in existing}
+        except Exception:
+            pass
+
+    def find_repos(base: Path, current_depth: int) -> list[Path]:
+        repos = []
+        if current_depth > depth:
+            return repos
+        try:
+            for child in sorted(base.iterdir()):
+                if child.is_dir() and not child.name.startswith("."):
+                    if (child / ".git").exists():
+                        repos.append(child)
+                    else:
+                        repos.extend(find_repos(child, current_depth + 1))
+        except PermissionError:
+            pass
+        return repos
+
+    repos = find_repos(scan_root, 1)
+    new_repos = [r for r in repos if r.name not in existing_names]
+
+    if not new_repos:
+        typer.echo("Nenhum repositório novo encontrado.")
+        return
+
+    typer.echo(f"Repositórios encontrados em {scan_root}:\n")
+
+    def detect_language(repo: Path) -> str:
+        counts: dict[str, int] = {}
+        for f in repo.rglob("*"):
+            if f.is_file() and f.suffix in LANG_MAP:
+                lang = LANG_MAP[f.suffix]
+                counts[lang] = counts.get(lang, 0) + 1
+        return max(counts, key=lambda k: counts[k]) if counts else "python"
+
+    def detect_ctx(repo: Path) -> str:
+        if (repo / ".work").exists():
+            return "work"
+        return "personal"
+
+    to_add: list[ProjectEntry] = []
+    for repo in new_repos:
+        lang = detect_language(repo)
+        ctx = detect_ctx(repo)
+        answer = typer.prompt(
+            f"  [{repo.name}] {lang} ctx={ctx} — adicionar?",
+            default="y",
+        )
+        if answer.lower() in ("y", "yes", "s", "sim"):
+            to_add.append(
+                ProjectEntry(
+                    name=repo.name,
+                    path=repo,
+                    ctx=ctx,
+                    enabled=True,
+                    languages=(lang,),
+                )
+            )
+
+    if not to_add:
+        typer.echo("Nenhum repositório adicionado.")
+        return
+
+    write_project_manifest(manifest_path, to_add)
+    typer.echo(f"\n{len(to_add)} repositório(s) adicionado(s) ao manifesto.")
+
+    if typer.confirm("Indexar agora com pb index-dev?", default=True):
+        for entry in to_add:
+            typer.echo(f"Indexando {entry.name}...")
+
+            async def _index_one(entry: ProjectEntry = entry) -> None:
+                from prometheus.embedder.engine import EmbedderEngine
+                from prometheus.embedder.pipeline import index_path
+                from prometheus.store.graph_store import GraphStore
+                from prometheus.store.vector_store import VectorStore
+
+                engine = EmbedderEngine()
+                store = VectorStore(url=_RUNTIME.qdrant_url)
+                graph_store = GraphStore(url=_RUNTIME.redis_url)
+                try:
+                    await store.ensure_collections()
+                    await graph_store.connect()
+                    indexed, chunks = await index_path(
+                        entry.path,
+                        engine=engine,
+                        store=store,
+                        vault_root=_RUNTIME.vault_root,
+                        forced_ctx=entry.ctx,
+                        graph_store=graph_store,
+                    )
+                    typer.echo(f"  {entry.name}: {indexed} arquivo(s), {chunks} chunk(s)")
+                finally:
+                    await store.close()
+                    await graph_store.close()
+
+            asyncio.run(_index_one())
 
 
 @app.command()
