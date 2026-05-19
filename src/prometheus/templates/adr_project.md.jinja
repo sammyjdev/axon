@@ -1,0 +1,21 @@
+# ADRs — {{ project }}
+
+_Last synced: {{ sync_date }}_
+
+{% if adrs %}
+{% for adr in adrs %}
+## {{ adr.title }}
+
+**Data:** {{ adr.created_at.strftime('%Y-%m-%d') if adr.created_at else 'N/A' }}
+
+**Decisão:** {{ adr.decision }}
+
+**Racional:** {{ adr.rationale }}
+
+**Contexto:** {{ adr.context }}
+
+---
+{% endfor %}
+{% else %}
+_Nenhum ADR registrado._
+{% endif %}
