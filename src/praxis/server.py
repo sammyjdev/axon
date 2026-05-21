@@ -93,7 +93,7 @@ def replan(session_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def vulcan_resume_session(session_id: str) -> dict[str, Any]:
+def praxis_resume_session(session_id: str) -> dict[str, Any]:
     """Resume a session from its last checkpoint and report what to do next."""
     state = get_orchestrator().resume_session(session_id)
     if state is None:

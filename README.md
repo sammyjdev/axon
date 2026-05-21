@@ -1,239 +1,132 @@
-# Prometheus
+# Praxis
 
-Prometheus is a self-hosted context engine for engineers who want durable
-project memory, local semantic retrieval, and safer AI-assisted workflows
-without pushing their working context into a hosted knowledge base.
+Praxis is a LangGraph task-orchestration engine exposed over the Model Context
+Protocol (MCP). It turns a goal — or a structured Markdown spec — into an
+ordered plan of subtasks, hands them out one at a time, records their outcomes,
+and keeps the whole session on disk so it survives a process restart.
 
-It keeps notes and code-adjacent knowledge in an external Markdown vault,
-indexes that material into local stores, and exposes the result through a CLI
-(`pb`) and an MCP server for coding agents.
+A coding agent drives Praxis through seven MCP tools: it plans, asks for the
+next subtask, reports success or failure, and resumes exactly where it left off
+after a crash or restart.
 
-## Why Prometheus
+## Why Praxis
 
-- Keep long-running technical context outside chat history.
-- Retrieve only the relevant slices of knowledge for the current task.
-- Separate general and restricted contexts with explicit guardrails.
-- Compress retrieved context before handing it to larger models.
-- Run the full stack locally with Docker, Ollama, Qdrant, Redis, and Neo4j.
+- Keep multi-step task state outside the agent's context window.
+- Hand out subtasks one at a time, gated by their declared dependencies.
+- Persist every session to SQLite so a restart loses nothing.
+- Replan failed subtasks without discarding completed work.
+- Isolate each task on its own git worktree and `praxis/<id>` branch.
 
 ## Architecture
 
+Praxis is a single-step, action-routed `StateGraph`. Every MCP call routes on an
+`action` channel, runs exactly one node, and ends. State persists between calls
+through the checkpointer — that is what makes a session resumable.
+
 ```mermaid
 flowchart LR
-    V[External Markdown Vault<br/>~/vault] --> I[Indexing Pipeline]
-    I --> Q[Qdrant<br/>semantic chunks]
-    I --> R[Redis<br/>code dependency graph]
-    M[Mem0 Layer] --> N[Neo4j<br/>memory graph]
-    C[pb CLI] --> A[Prometheus Engine]
-    P[MCP Clients<br/>Claude Code / Copilot] --> A
-    A --> Q
-    A --> R
-    A --> N
-    A --> O[Ollama<br/>local compression / routing]
-    A --> L[LiteLLM Providers]
+    A[MCP Client<br/>Claude Code / agent] --> S[praxis-server<br/>FastMCP]
+    S --> O[Orchestrator]
+    O --> G[LangGraph StateGraph]
+    G -->|action: plan| P[plan node]
+    G -->|action: get_next| N[get_next node]
+    G -->|action: record| R[record node]
+    G -->|action: replan| RP[replan node]
+    O --> CP[SqliteSaver checkpoint<br/>.praxis/praxis.sqlite]
 ```
 
-```mermaid
-sequenceDiagram
-    participant U as User / Agent
-    participant PB as pb or MCP tool
-    participant DET as Context Detection
-    participant VS as Vector Search
-    participant CP as Compression Pipeline
-    participant OUT as Prompt / Answer
+| Module | Responsibility |
+| --- | --- |
+| `praxis/server.py` | FastMCP server exposing the seven MCP tools |
+| `praxis/orchestrator.py` | Seam between MCP tools and the graph |
+| `praxis/graph.py` | Action-routed `StateGraph` definition |
+| `praxis/nodes.py` | `plan` / `get_next` / `record` / `replan` node functions |
+| `praxis/state.py` | Serializable `TaskState` / `Subtask` / `History` schema |
+| `praxis/checkpoint.py` | SQLite-backed checkpointer |
+| `praxis/parser.py` | Markdown spec parser |
+| `praxis/worktree.py` | Per-task git worktree manager |
+| `praxis/health.py` | Health reporting (status / version / uptime) |
 
-    U->>PB: ask/search/index
-    PB->>DET: infer or validate context
-    DET->>VS: query allowed collections
-    VS-->>PB: top relevant chunks
-    PB->>CP: Caveman + RTK compression
-    CP-->>OUT: compact high-signal context
-    OUT-->>U: planner/executor-ready output
-```
+## MCP Tools
 
-## Core Capabilities
-
-- Semantic search across Markdown notes, code chunks, and project memory
-- Vault-first knowledge capture with TIL and HOW-TO workflows
-- MCP tools for editor and agent integrations
-- Code dependency graph storage in Redis
-- Mem0-backed memory workflows using Neo4j
-- Context isolation for restricted collections such as `work`
-- Automatic or on-demand reindexing with `pb watch` and `pb index`
+| Tool | Purpose |
+| --- | --- |
+| `praxis_health` | Report status, version, and uptime |
+| `plan_task` | Create a session from a `goal` or a Markdown `spec` |
+| `get_next_subtask` | Hand out the next actionable subtask |
+| `record_result` | Record a subtask's success or failure |
+| `replan` | Reset failed subtasks to pending for a retry |
+| `praxis_resume_session` | Resume a session from its last checkpoint |
+| `get_session_status` | Return the full current state of a session |
 
 ## Quick Start
 
-Prometheus expects an external vault and a local clone of the engine. Start
-with the quickstart for your OS:
-
-- [macOS quickstart](docs/QUICKSTART_MACOS.md)
-- [Linux quickstart](docs/QUICKSTART_LINUX.md)
-- [Windows with WSL2 quickstart](docs/QUICKSTART_WINDOWS_WSL2.md)
-
-A common manual setup is:
-
-- `PROMETHEUS_ENGINE=/path/to/prometheus`
-- `PROMETHEUS_VAULT=~/vault`
+Praxis runs on Python 3.11+ and is packaged with Poetry.
 
 ```bash
-git clone <your-fork-or-repo-url> /path/to/prometheus
-cd /path/to/prometheus
+git clone https://github.com/sammyjdev/Praxis
+cd Praxis
 
-# Optional: when the engine runs on a Mac but the infrastructure
-# (Qdrant/Redis/Neo4j/Ollama/Langfuse) lives on a desktop host
-export PROMETHEUS_INFRA_HOST=192.168.x.x
-
-./setup.sh
-pipx install --editable .
-
-set -a
-source .env.local
-set +a
-
-# required only for cloud-routed Anthropic calls
-export ANTHROPIC_API_KEY=your-anthropic-api-key
+poetry install
+poetry run praxis-server
 ```
 
-When `PROMETHEUS_INFRA_HOST` is set, `setup.sh` switches to remote-infra mode:
-it writes remote service URLs into `.env.local`, validates the remote HTTP
-endpoints it can reach, and skips local Docker startup and local Ollama model
-pulls.
+`praxis-server` defaults to the **stdio** transport for local MCP clients. Set
+`PRAXIS_TRANSPORT` to `streamable-http` or `sse` to run it as a networked
+service.
 
-Bootstrap the external vault:
+Run it with Docker instead — this also starts the Redis service:
 
 ```bash
-mkdir -p ~/vault/knowledge ~/vault/personal ~/vault/career
-pb index ~/vault/knowledge --ctx knowledge
+docker compose up --build
 ```
 
-Then run a first query:
+### Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PRAXIS_DB` | `.praxis/praxis.sqlite` | Checkpoint database path |
+| `PRAXIS_TRANSPORT` | `stdio` | `stdio`, `sse`, or `streamable-http` |
+| `PRAXIS_HOST` | `127.0.0.1` | Bind host for networked transports |
+| `PRAXIS_PORT` | `8000` | Bind port for networked transports |
+
+## Spec Format
+
+`plan_task` accepts a small, structured Markdown spec. See
+[`examples/spring-migration.md`](examples/spring-migration.md) for a worked
+example.
+
+- `# Heading` — the spec title.
+- `> Goal: ...` or `Goal: ...` — the goal statement.
+- `### N. Title` — one subtask; the leading number becomes its id.
+- `depends_on: a, b` inside a subtask — its dependency ids.
+
+Everything else under a subtask heading becomes its description.
+
+## Typical Flow
+
+```text
+plan_task(spec)            -> session_id + ordered subtasks
+get_next_subtask(id)       -> next subtask whose dependencies are all done
+record_result(id, ok)      -> outcome logged, progress advanced
+praxis_resume_session(id)  -> after a restart, continue from the checkpoint
+```
+
+## Development
 
 ```bash
-pb ask "How should I organize reusable technical notes?"
+poetry run pytest tests/praxis -q   # 23 tests, every acceptance criterion
+poetry run ruff check
+poetry run mypy src/praxis
 ```
 
-For the full vault layout, see [Vault setup](docs/VAULT_SETUP.md).
+## Legacy Prometheus Code
 
-## Typical Workflow
+This repository previously hosted Prometheus, a context engine. That code is
+**parked, not removed**: `src/prometheus`, `src/embedder`, `scripts`, and
+`docker-compose.prometheus.yml` remain on disk and are excluded from the Praxis
+linting, typing, and test scope.
 
-```bash
-# Create the first indexes
-pb index ~/vault/knowledge --ctx knowledge
-pb index ~/vault/personal --ctx personal
-pb index ~/vault/career --ctx career
+## License
 
-# Search and query
-pb search "qdrant uuid ids" --ctx knowledge
-pb ask "Summarize the current context for vector indexing"
-
-# Capture knowledge
-pb til "Qdrant rejects SHA1 hex ids; use uuid5 instead" --tags qdrant,ids
-pb til --promote-today
-
-# Keep the index warm
-pb watch ~/vault/knowledge --ctx knowledge
-```
-
-## Profiles
-
-Prometheus supports named profiles in `prometheus.toml` so you can switch
-between common operating shapes without editing runtime mode by hand. The
-current `pb configure` command is the guided entry point for that: it works as
-both a flag-driven recommender and a concise interactive flow, and it applies
-one of the built-in profiles while surfacing the capabilities that are useful
-versus overkill for that setup.
-
-Current built-ins:
-
-- `solo-dev` -> `hybrid-local`
-- `team-dev` -> `remote-infra`
-- `privacy-first` -> `minimal`
-
-Typical commands:
-
-```bash
-pb configure --use-case solo --privacy public --hardware mac-laptop
-pb profile list
-pb profile show
-pb profile use team-dev
-```
-
-For when to use each profile and how `configure`, `list`, `show`, `use`,
-`create`, and `export` fit together, including how optional profile fields map
-to real setup choices such as cloud policy, remote infra, lighter memory, and
-feature scope, see [Profiles](docs/PROFILES.md).
-
-## Context Model
-
-Prometheus organizes data into separate collections:
-
-| Context | Intended use |
-| --- | --- |
-| `knowledge` | technical notes, HOW-TOs, references |
-| `career` | interview prep, companies, goals |
-| `personal` | side projects, decisions, planning |
-| `work` | restricted professional context |
-
-`work` is intentionally guarded and should only be queried with explicit
-context.
-
-## CLI Surface
-
-Main commands exposed by the current CLI:
-
-- `pb ask`
-- `pb search`
-- `pb index`
-- `pb index-dev`
-- `pb watch`
-- `pb doctor`
-- `pb init`
-- `pb configure`
-- `pb profile list|show|use|create|export`
-- `pb portability export|import`
-- `pb setup`
-- `pb til`
-- `pb adr`
-- `pb deep`
-- `pb expand`
-- `pb memory smoke`
-- `pb cost`
-- `pb rtk-status`
-
-## Local Stack
-
-Prometheus runs on Python 3.11+ and uses:
-
-- Qdrant for vector search
-- Redis for code dependency relationships
-- Neo4j for Mem0 graph memory
-- Ollama for local model execution
-- LiteLLM for provider routing
-- Typer for the CLI
-- FastMCP for agent-facing tools
-
-`setup.sh` selects the Docker profile automatically:
-
-- `cpu` on macOS
-- `gpu` on Linux machines with NVIDIA support
-
-## Documentation
-
-- [Vault setup](docs/VAULT_SETUP.md)
-- [Profiles](docs/PROFILES.md)
-- [Extension docs](docs/P3_EXTENSION_DOCS.md)
-- [TIL automation](docs/TIL_AUTOMATION.md)
-- [Usage guide](docs/USAGE_GUIDE.md)
-- [Support matrix](docs/SUPPORT_MATRIX.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Architectural decisions](docs/ADR.md)
-- [Architectural requirements](docs/ARD.md)
-
-## Notes
-
-- The vault is external by design. Do not store vault content inside this
-  repository.
-- If you use non-default paths, export the matching environment variables
-  before running `pb`.
-- `setup.sh` generates `.env.local`, but it does not export those variables
-  into your current shell session.
+MIT — see [LICENSE](LICENSE).

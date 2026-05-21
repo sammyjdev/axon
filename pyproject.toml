@@ -23,8 +23,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sammyjdev/Prometheus"
-Repository = "https://github.com/sammyjdev/Prometheus"
+Homepage = "https://github.com/sammyjdev/Praxis"
+Repository = "https://github.com/sammyjdev/Praxis"
 
 [project.scripts]
 praxis-server = "praxis.server:main"

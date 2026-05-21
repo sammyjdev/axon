@@ -19,7 +19,7 @@ EXPECTED_TOOLS = {
     "get_next_subtask",
     "record_result",
     "replan",
-    "vulcan_resume_session",
+    "praxis_resume_session",
     "get_session_status",
 }
 
@@ -123,7 +123,7 @@ async def test_mock_flow_end_to_end_survives_restart(
     async with connected_session() as (session, _init):
         resumed = _payload(
             await session.call_tool(
-                "vulcan_resume_session", {"session_id": session_id}
+                "praxis_resume_session", {"session_id": session_id}
             )
         )
         assert resumed["found"] is True

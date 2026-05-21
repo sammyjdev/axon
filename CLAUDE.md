@@ -1,69 +1,64 @@
-# Prometheus Agent Guide
+# Praxis Agent Guide
 
 This is the canonical agent context file for contributors working in this
 repository. `AGENTS.md` points to this file.
 
 ## Project Overview
 
-Prometheus is a self-hosted context engine for local knowledge retrieval,
-context compression, and agent-facing workflows through a CLI (`pb`) and MCP.
+Praxis is a LangGraph task-orchestration engine exposed over the Model Context
+Protocol (MCP). It turns a goal — or a structured Markdown spec — into an
+ordered plan of subtasks, hands them out one at a time, records outcomes, and
+checkpoints the session to SQLite so it survives a process restart.
 
-The repository contains the engine and runtime code. User knowledge lives in an
-external Markdown vault, typically configured through:
-
-- `PROMETHEUS_ENGINE=/path/to/prometheus`
-- `PROMETHEUS_VAULT=~/vault`
+A coding agent drives Praxis through seven MCP tools served by `praxis-server`.
 
 ## Entry Points
 
 - [README.md](README.md): public project overview and quick start
-- [docs/VAULT_SETUP.md](docs/VAULT_SETUP.md): external vault bootstrap
-- [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md): CLI workflows
-- [docs/ADR.md](docs/ADR.md): active architectural decisions
-- [docs/ARD.md](docs/ARD.md): active architectural requirements
+- [src/praxis/server.py](src/praxis/server.py): the seven MCP tools
+- [src/praxis/graph.py](src/praxis/graph.py): the action-routed `StateGraph`
+- [examples/spring-migration.md](examples/spring-migration.md): a worked spec
 
 ## Stable Architectural Decisions
 
-### D1: Data and engine stay separate
+### D1: Single-step, action-routed graph
 
-- Vault data lives outside this repository.
-- Runtime code and configuration live in this repository.
-- Do not mix vault content into the engine tree.
+- Every MCP call routes on the `action` channel, runs exactly one node
+  (`plan` / `get_next` / `record` / `replan`), and ends.
+- The graph is not a long-running loop. Continuity comes from the checkpointer,
+  not from in-graph control flow.
 
-### D2: Task-based cloud routing
+### D2: Checkpoints stay plain JSON
 
-| Task type | Default model |
-| --- | --- |
-| trivial/completion | `claude-haiku-4-5-20251001` |
-| code analysis | `claude-sonnet-4-6` |
-| architecture/deep reasoning | `claude-opus-4-7` |
-| fallback | `claude-haiku-4-5-20251001` |
+- Every state type (`TaskState`, `Subtask`, `History`) round-trips through
+  `to_dict` / `from_dict`.
+- A reopened database must yield an identical `TaskState`. Do not put
+  non-serializable objects on the graph channels.
 
-### D3: Local Ollama defaults
+### D3: SQLite is the persistence boundary
 
-- `phi3:mini`: lightweight compression and local-first workflows
-- `gemma4:e4b`: local scoring and classification
-- `gemma4:26b`: heavier deep-suggestion workloads on larger hardware
+- Resumability is defined as reopening the same DB file in a fresh process.
+- Any change to `state.py` or `checkpoint.py` must keep restart-resume intact.
 
-### D4: Split graph backends
+### D4: Legacy Prometheus code is parked, not removed
 
-- Redis stores code dependency relationships.
-- Neo4j is reserved for Mem0-style memory relationships.
+- `src/prometheus`, `src/embedder`, `scripts`, and `docker-compose.prometheus.yml`
+  remain on disk and are excluded from Praxis ruff / mypy / pytest scope.
+- Do not revive parked code or mix it into the `praxis` package.
 
-### D5: Chunker quality is a release gate
+### D5: Per-task git worktrees
 
-- The Java chunker is a high-risk subsystem.
-- Structure-aware chunking and fixture coverage must remain intact.
-- Do not weaken chunker tests to make implementation changes pass.
+- Each task is isolated on its own worktree and `praxis/<id>` branch.
+- `WorktreeManager` cleanup must leave nothing behind (worktree, branch, prune).
 
 ## Code Conventions
 
-- Python 3.11+ with type hints
-- Prefer `dataclass` over ad-hoc dicts
-- Prefer async for I/O-heavy paths
-- Add comments only for non-obvious constraints or rationale
-- Keep public examples and docs machine-agnostic
-- `SessionStore` must be initialized explicitly with `.init()`
+- Python 3.11+ with full type hints (`mypy` runs with `disallow_untyped_defs`).
+- `from __future__ import annotations` at the top of every module.
+- Prefer `dataclass` over ad-hoc dicts.
+- Prefer async for I/O-heavy paths.
+- Add comments only for non-obvious constraints or rationale.
+- Keep public examples and docs machine-agnostic.
 
 ## Agent Rules
 
@@ -73,33 +68,24 @@ external Markdown vault, typically configured through:
 - Do not silence failing tests or guardrails to make a change appear complete.
 - Prefer the smallest coherent change that satisfies the behavior.
 
-## Restricted Context Rules
-
-- `work` is a restricted context.
-- Never access restricted context implicitly.
-- Use explicit `ctx=work` only when the task really requires it.
-- Do not copy restricted or proprietary material into the repository or public
-  documentation.
-
 ## Safety Rules
 
 - Never commit credentials, tokens, `.env` files, or user data.
-- Never move vault content into the engine repository.
-- Never weaken isolation around restricted contexts as a shortcut.
+- Never weaken the `tests/praxis` acceptance suite as a shortcut.
 - Investigate failing tests, hooks, or checks instead of bypassing them.
 
 ## Validation Defaults
 
-Use `rtk` where available. Typical validation commands:
+`tests/praxis` is the active Praxis suite. Use `rtk` where available:
 
 ```bash
-rtk pytest tests/ -q
+rtk pytest tests/praxis -q
 rtk ruff check
-rtk python3 -m compileall src
+rtk mypy src/praxis
 ```
 
 ## RTK Notes
 
-Prometheus is commonly used with RTK (Rust Token Killer) for compact command
+Praxis is commonly used with RTK (Rust Token Killer) for compact command
 output. Prefix commands with `rtk` when possible; if no specialized filter is
 available, RTK passes the command through unchanged.
