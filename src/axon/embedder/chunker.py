@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import ast
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 import tree_sitter_java as tsjava
+from pydantic import BaseModel, Field
 from tree_sitter import Language, Node, Parser
 
-ChunkType = Literal["method", "class", "interface", "enum", "annotation", "record"]
+ChunkType = Literal[
+    "method", "constructor", "function", "class", "interface", "enum", "annotation", "record"
+]
 
 _JAVA_LANGUAGE = Language(tsjava.language())
 _PARSER = Parser(_JAVA_LANGUAGE)
@@ -26,8 +28,7 @@ _CLASS_TYPES = {
 _MAX_CHUNK_LINES = 80
 
 
-@dataclass
-class Chunk:
+class Chunk(BaseModel):
     symbol: str
     chunk_type: ChunkType
     start_line: int  # 1-based
@@ -35,7 +36,7 @@ class Chunk:
     content: str
     file_path: str
     language: str = "java"
-    metadata: dict = field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
 
 
 def _get_identifier(node: Node) -> str:
