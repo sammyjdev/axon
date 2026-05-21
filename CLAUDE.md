@@ -11,8 +11,8 @@ context compression, and agent-facing workflows through a CLI (`pb`) and MCP.
 The repository contains the engine and runtime code. User knowledge lives in an
 external Markdown vault, typically configured through:
 
-- `PROMETHEUS_ENGINE=/path/to/prometheus`
-- `PROMETHEUS_VAULT=~/vault`
+- `AXON_ENGINE=/path/to/prometheus`
+- `AXON_VAULT=~/vault`
 
 ## Entry Points
 

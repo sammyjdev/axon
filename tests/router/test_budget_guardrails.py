@@ -4,17 +4,17 @@ from types import SimpleNamespace
 
 import pytest
 
-import prometheus.router.engine as engine
-from prometheus.router.classifier import TaskType
-from prometheus.router.engine import TaskRequest, complete, route
+import axon.router.engine as engine
+from axon.router.classifier import TaskType
+from axon.router.engine import TaskRequest, complete, route
 
 
 def test_route_downgrades_code_analysis_when_daily_budget_is_exhausted(monkeypatch) -> None:
     monkeypatch.setattr(
-        "prometheus.router.engine.classify_task_with_source",
+        "axon.router.engine.classify_task_with_source",
         lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
     )
-    monkeypatch.setattr("prometheus.router.engine.daily_cost", lambda: engine._BUDGET_USD)
+    monkeypatch.setattr("axon.router.engine.daily_cost", lambda: engine._BUDGET_USD)
 
     result = route(TaskRequest(content="analisar diff grande", ctx="knowledge"))
 
@@ -23,10 +23,10 @@ def test_route_downgrades_code_analysis_when_daily_budget_is_exhausted(monkeypat
 
 def test_route_downgrades_opus_when_request_is_not_explicit(monkeypatch) -> None:
     monkeypatch.setattr(
-        "prometheus.router.engine.classify_task_with_source",
+        "axon.router.engine.classify_task_with_source",
         lambda content, ctx=None: (TaskType.ARCHITECTURE, "local"),
     )
-    monkeypatch.setattr("prometheus.router.engine.daily_cost", lambda: engine._OPUS_BUDGET)
+    monkeypatch.setattr("axon.router.engine.daily_cost", lambda: engine._OPUS_BUDGET)
 
     result = route(TaskRequest(content="desenhar arquitetura", ctx="knowledge"))
 
@@ -52,22 +52,22 @@ async def test_complete_downgrades_to_haiku_when_projected_cost_crosses_budget(m
             return None
 
     monkeypatch.setattr(
-        "prometheus.router.engine.classify_task_with_source",
+        "axon.router.engine.classify_task_with_source",
         lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
     )
     monkeypatch.setattr(
-        "prometheus.router.engine.daily_cost",
+        "axon.router.engine.daily_cost",
         lambda: engine._BUDGET_USD - 0.005,
     )
-    monkeypatch.setattr("prometheus.router.engine.provider_for_model", lambda _model: "anthropic")
+    monkeypatch.setattr("axon.router.engine.provider_for_model", lambda _model: "anthropic")
     monkeypatch.setattr(
-        "prometheus.router.engine.validate_anthropic_cache_control", lambda _messages: None
+        "axon.router.engine.validate_anthropic_cache_control", lambda _messages: None
     )
     monkeypatch.setattr(
-        "prometheus.router.engine.count_tokens_for_provider", lambda _provider, _messages: 1000
+        "axon.router.engine.count_tokens_for_provider", lambda _provider, _messages: 1000
     )
-    monkeypatch.setattr("prometheus.router.engine._BREAKER", FakeBreaker())
-    monkeypatch.setattr("prometheus.router.engine.litellm.acompletion", fake_acompletion)
+    monkeypatch.setattr("axon.router.engine._BREAKER", FakeBreaker())
+    monkeypatch.setattr("axon.router.engine.litellm.acompletion", fake_acompletion)
 
     response = await complete(
         TaskRequest(content="investigar comportamento do pipeline", ctx="knowledge"),

@@ -72,8 +72,8 @@ with the quickstart for your OS:
 
 A common manual setup is:
 
-- `PROMETHEUS_ENGINE=/path/to/prometheus`
-- `PROMETHEUS_VAULT=~/vault`
+- `AXON_ENGINE=/path/to/prometheus`
+- `AXON_VAULT=~/vault`
 
 ```bash
 git clone <your-fork-or-repo-url> /path/to/prometheus
@@ -81,7 +81,7 @@ cd /path/to/prometheus
 
 # Optional: when the engine runs on a Mac but the infrastructure
 # (Qdrant/Redis/Neo4j/Ollama/Langfuse) lives on a desktop host
-export PROMETHEUS_INFRA_HOST=192.168.x.x
+export AXON_INFRA_HOST=192.168.x.x
 
 ./setup.sh
 pipx install --editable .
@@ -94,7 +94,7 @@ set +a
 export ANTHROPIC_API_KEY=your-anthropic-api-key
 ```
 
-When `PROMETHEUS_INFRA_HOST` is set, `setup.sh` switches to remote-infra mode:
+When `AXON_INFRA_HOST` is set, `setup.sh` switches to remote-infra mode:
 it writes remote service URLs into `.env.local`, validates the remote HTTP
 endpoints it can reach, and skips local Docker startup and local Ollama model
 pulls.

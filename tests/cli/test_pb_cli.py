@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from prometheus.cli import pb
-from prometheus.portability.exporter import ExportArtifact, ExportManifest
-from prometheus.router.classifier import TaskType
+from axon.cli import pb
+from axon.portability.exporter import ExportArtifact, ExportManifest
+from axon.router.classifier import TaskType
 
 runner = CliRunner()
 
@@ -63,7 +63,7 @@ def test_portability_export_invokes_exporter(monkeypatch, tmp_path: Path) -> Non
         )
 
     monkeypatch.setattr(
-        "prometheus.portability.exporter.export_portability_bundle",
+        "axon.portability.exporter.export_portability_bundle",
         fake_export_portability_bundle,
     )
 
@@ -96,7 +96,7 @@ def test_portability_import_invokes_importer(monkeypatch, tmp_path: Path) -> Non
         )
 
     monkeypatch.setattr(
-        "prometheus.portability.importer.import_portability_bundle",
+        "axon.portability.importer.import_portability_bundle",
         fake_import_portability_bundle,
     )
 
@@ -158,7 +158,7 @@ def test_search_applies_strategy_budget_and_prints_context_pack(monkeypatch) -> 
 
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr(
-        "prometheus.router.classifier.classify_task_with_source",
+        "axon.router.classifier.classify_task_with_source",
         lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
     )
 
@@ -194,7 +194,7 @@ def test_search_shows_all_requested_hits_even_when_context_pack_is_smaller(monke
 
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr(
-        "prometheus.router.classifier.classify_task_with_source",
+        "axon.router.classifier.classify_task_with_source",
         lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
     )
 
@@ -241,8 +241,8 @@ def test_search_surfaces_staleness_warnings(monkeypatch) -> None:
 
 
 def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> None:
-    from prometheus.config.platform import DoctorReport, PlatformConfig
-    from prometheus.config.runtime import (
+    from axon.config.platform import DoctorReport, PlatformConfig
+    from axon.config.runtime import (
         ExpansionBudgetConfig,
         ExpansionConfig,
         ExpansionPaths,
@@ -253,7 +253,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
         mode="full-local",
         engine_root=tmp_path / "engine",
         vault_root=tmp_path / "vault",
-        db_path=tmp_path / "engine" / "data" / "prometheus.db",
+        db_path=tmp_path / "engine" / "data" / "axon.db",
         qdrant_url="http://localhost:6333",
         redis_url="redis://localhost:6379",
         rtk_max_tokens=450,
@@ -291,7 +291,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
 
     monkeypatch.setattr(pb, "load_runtime_config", lambda: runtime)
     monkeypatch.setattr(
-        "prometheus.config.runtime.get_profile",
+        "axon.config.runtime.get_profile",
         lambda _name: {
             "name": "solo-dev",
             "description": "Single developer default",
@@ -303,7 +303,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
         },
     )
     monkeypatch.setattr(
-        "prometheus.config.platform.detect_platform",
+        "axon.config.platform.detect_platform",
         lambda: PlatformConfig(
             platform="pc",
             embedding_providers=["CUDAExecutionProvider"],
@@ -315,7 +315,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
         ),
     )
     monkeypatch.setattr(
-        "prometheus.config.platform.build_doctor_report",
+        "axon.config.platform.build_doctor_report",
         lambda runtime, platform_config, docker_available, ollama_available, **_kwargs: (
             DoctorReport(
                 platform=platform_config.platform,
@@ -350,13 +350,13 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
 
 
 def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> None:
-    from prometheus.config.platform import PlatformConfig
+    from axon.config.platform import PlatformConfig
 
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
 
     monkeypatch.setattr(
-        "prometheus.config.platform.detect_platform",
+        "axon.config.platform.detect_platform",
         lambda: PlatformConfig(
             platform="mac",
             embedding_providers=["CoreMLExecutionProvider", "CPUExecutionProvider"],
@@ -389,10 +389,10 @@ def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> Non
     assert config_file.exists()
     payload = env_file.read_text(encoding="utf-8")
     config_payload = config_file.read_text(encoding="utf-8")
-    assert f"PROMETHEUS_ENGINE={engine_root}" in payload
-    assert f"PROMETHEUS_VAULT={vault_root}" in payload
-    assert "PROMETHEUS_RUNTIME_MODE=hybrid-local" in payload
-    assert "PROMETHEUS_PLATFORM=mac" in payload
+    assert f"AXON_ENGINE={engine_root}" in payload
+    assert f"AXON_VAULT={vault_root}" in payload
+    assert "AXON_RUNTIME_MODE=hybrid-local" in payload
+    assert "AXON_PLATFORM=mac" in payload
     assert '[runtime]' in config_payload
     assert 'mode = "hybrid-local"' in config_payload
     assert f'engine_root = "{engine_root}"' in config_payload
@@ -400,15 +400,15 @@ def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> Non
 
 
 def test_init_refuses_to_overwrite_env_local_without_force(monkeypatch, tmp_path) -> None:
-    from prometheus.config.platform import PlatformConfig
+    from axon.config.platform import PlatformConfig
 
     engine_root = tmp_path / "engine"
     engine_root.mkdir()
     env_file = engine_root / ".env.local"
-    env_file.write_text("PROMETHEUS_RUNTIME_MODE=minimal\n", encoding="utf-8")
+    env_file.write_text("AXON_RUNTIME_MODE=minimal\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        "prometheus.config.platform.detect_platform",
+        "axon.config.platform.detect_platform",
         lambda: PlatformConfig(
             platform="pc",
             embedding_providers=["CUDAExecutionProvider"],
@@ -435,7 +435,7 @@ def test_init_refuses_to_overwrite_env_local_without_force(monkeypatch, tmp_path
 
     assert result.exit_code == 1
     assert "já existe" in result.stdout
-    assert env_file.read_text(encoding="utf-8") == "PROMETHEUS_RUNTIME_MODE=minimal\n"
+    assert env_file.read_text(encoding="utf-8") == "AXON_RUNTIME_MODE=minimal\n"
 
 
 def test_profile_list_shows_profiles_and_active_marker(monkeypatch, tmp_path) -> None:
@@ -461,7 +461,7 @@ def test_profile_list_shows_profiles_and_active_marker(monkeypatch, tmp_path) ->
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(pb.app, ["profile", "list"])
 
@@ -494,7 +494,7 @@ def test_profile_use_updates_config_file(monkeypatch, tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(pb.app, ["profile", "use", "team-dev"])
 
@@ -524,7 +524,7 @@ def test_profile_show_displays_active_profile(monkeypatch, tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(pb.app, ["profile", "show"])
 
@@ -563,7 +563,7 @@ def test_configure_applies_recommended_profile(monkeypatch, tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(
         pb.app,
@@ -601,7 +601,7 @@ def test_configure_works_with_minimal_runtime_only_config(monkeypatch, tmp_path)
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(
         pb.app,
@@ -652,7 +652,7 @@ def test_configure_interactive_applies_recommended_profile(monkeypatch, tmp_path
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(
         pb.app,
@@ -696,7 +696,7 @@ def test_configure_accepts_preferred_mode_override(monkeypatch, tmp_path) -> Non
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(
         pb.app,
@@ -746,7 +746,7 @@ def test_configure_rejects_invalid_restricted_remote_combination(monkeypatch, tm
         ]
     )
     config_path.write_text(original_payload, encoding="utf-8")
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(
         pb.app,
@@ -787,7 +787,7 @@ def test_profile_create_appends_new_profile(monkeypatch, tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(
         pb.app,
@@ -839,7 +839,7 @@ def test_profile_export_prints_toml_snippet(monkeypatch, tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     result = runner.invoke(pb.app, ["profile", "export", "team-dev"])
 
@@ -871,11 +871,11 @@ def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> 
             }
         ]
 
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
-    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path))
+    monkeypatch.setattr("axon.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr(
-        "prometheus.router.compressor.caveman_compress_guarded",
+        "axon.router.compressor.caveman_compress_guarded",
         lambda text, max_tokens, **_kwargs: asyncio.sleep(
             0,
             result=("caveman::get_search_collections compressed", None),
@@ -943,10 +943,10 @@ def test_ask_closes_store_when_no_hits(monkeypatch, tmp_path) -> None:
 
     fake_store = FakeStore()
 
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
-    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path))
+    monkeypatch.setattr("axon.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(
-        "prometheus.store.session_store.SessionStore",
+        "axon.store.session_store.SessionStore",
         lambda *_args, **_kwargs: fake_store,
     )
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
@@ -992,10 +992,10 @@ def test_ask_sends_chunk_content_within_limit_to_compressor(monkeypatch, tmp_pat
         captured["text"] = text
         return text, None
 
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
-    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path))
+    monkeypatch.setattr("axon.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
-    monkeypatch.setattr("prometheus.router.compressor.caveman_compress_guarded", fake_caveman)
+    monkeypatch.setattr("axon.router.compressor.caveman_compress_guarded", fake_caveman)
     monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, None))
 
     result = runner.invoke(
@@ -1039,10 +1039,10 @@ def test_ask_truncates_oversized_chunk_content_before_compression(monkeypatch, t
         captured["text"] = text
         return text, None
 
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
-    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path))
+    monkeypatch.setattr("axon.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
-    monkeypatch.setattr("prometheus.router.compressor.caveman_compress_guarded", fake_caveman)
+    monkeypatch.setattr("axon.router.compressor.caveman_compress_guarded", fake_caveman)
     monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, None))
 
     result = runner.invoke(
@@ -1079,11 +1079,11 @@ def test_ask_rejects_contaminated_rtk_output(monkeypatch, tmp_path) -> None:
             }
         ]
 
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
-    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path))
+    monkeypatch.setattr("axon.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr(
-        "prometheus.router.compressor.caveman_compress_guarded",
+        "axon.router.compressor.caveman_compress_guarded",
         lambda text, max_tokens, **_kwargs: asyncio.sleep(
             0,
             result=("clean compressed context for index_path", None),
@@ -1150,11 +1150,11 @@ def test_ask_falls_back_when_rtk_is_unavailable(monkeypatch, tmp_path) -> None:
             }
         ]
 
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path))
-    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path))
+    monkeypatch.setattr("axon.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr(
-        "prometheus.router.compressor.caveman_compress_guarded",
+        "axon.router.compressor.caveman_compress_guarded",
         lambda text, max_tokens, **_kwargs: asyncio.sleep(
             0,
             result=("caveman::get_search_collections compressed", None),
@@ -1290,10 +1290,10 @@ def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
         assert target.exists()
         return 2, 7
 
-    monkeypatch.setattr("prometheus.store.vector_store.VectorStore", FakeStore)
-    monkeypatch.setattr("prometheus.store.graph_store.GraphStore", FakeGraphStore)
-    monkeypatch.setattr("prometheus.embedder.engine.EmbedderEngine", FakeEngine)
-    monkeypatch.setattr("prometheus.embedder.pipeline.index_path", fake_index_path)
+    monkeypatch.setattr("axon.store.vector_store.VectorStore", FakeStore)
+    monkeypatch.setattr("axon.store.graph_store.GraphStore", FakeGraphStore)
+    monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", FakeEngine)
+    monkeypatch.setattr("axon.embedder.pipeline.index_path", fake_index_path)
 
     target = tmp_path / "knowledge"
     target.mkdir(parents=True, exist_ok=True)
@@ -1342,11 +1342,11 @@ def test_watch_reindexes_changed_files(monkeypatch, tmp_path) -> None:
     watch_target = tmp_path / "knowledge"
     watch_target.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr("prometheus.store.vector_store.VectorStore", FakeStore)
-    monkeypatch.setattr("prometheus.store.graph_store.GraphStore", FakeGraphStore)
-    monkeypatch.setattr("prometheus.embedder.engine.EmbedderEngine", FakeEngine)
-    monkeypatch.setattr("prometheus.embedder.pipeline.index_path", fake_index_path)
-    monkeypatch.setattr("prometheus.watcher.main.run_watcher", fake_run_watcher)
+    monkeypatch.setattr("axon.store.vector_store.VectorStore", FakeStore)
+    monkeypatch.setattr("axon.store.graph_store.GraphStore", FakeGraphStore)
+    monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", FakeEngine)
+    monkeypatch.setattr("axon.embedder.pipeline.index_path", fake_index_path)
+    monkeypatch.setattr("axon.watcher.main.run_watcher", fake_run_watcher)
 
     result = runner.invoke(pb.app, ["watch", str(watch_target), "--ctx", "knowledge"])
 
@@ -1412,8 +1412,8 @@ def test_memory_smoke_uses_mem0_helpers(monkeypatch) -> None:
         await asyncio.sleep(0)
         return [{"id": "mem-1"}]
 
-    monkeypatch.setattr("prometheus.memory.mem0_tool.add_memory", fake_add_memory)
-    monkeypatch.setattr("prometheus.memory.mem0_tool.get_memory", fake_get_memory)
+    monkeypatch.setattr("axon.memory.mem0_tool.add_memory", fake_add_memory)
+    monkeypatch.setattr("axon.memory.mem0_tool.get_memory", fake_get_memory)
 
     result = runner.invoke(pb.app, ["memory", "smoke", "--ctx", "knowledge", "--text", "hello"])
 

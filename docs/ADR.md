@@ -11,8 +11,8 @@ project.
 
 - Decision: keep the knowledge vault outside the engine repository.
 - Definition:
-  - `PROMETHEUS_VAULT=~/vault`
-  - `PROMETHEUS_ENGINE=/path/to/prometheus`
+  - `AXON_VAULT=~/vault`
+  - `AXON_ENGINE=/path/to/prometheus`
 - Rationale: prevents mixing user data with runtime code and reduces the risk
   of accidental disclosure.
 
@@ -38,6 +38,7 @@ project.
 
 ## ADR-004: Split graph backends by responsibility
 
+- Status: partially revoked by dec-101 (Neo4j dropped; see docs/decisions/).
 - Decision: use Redis for code dependency relationships and Neo4j only for
   Mem0-style memory relationships.
 - Rationale: the two graph use cases have different query patterns and

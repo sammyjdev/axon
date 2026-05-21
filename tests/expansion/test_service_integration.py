@@ -5,14 +5,14 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from prometheus.config.runtime import load_runtime_config
-from prometheus.expansion.models import SourceDefinition, SourceFormat
-from prometheus.expansion.registry import SourceRegistry
-from prometheus.expansion.scoring import ExpansionDecision
-from prometheus.expansion.service import ExpansionService
-from prometheus.expansion.staging import load_draft
-from prometheus.store.failure_store import FailureStore
-from prometheus.store.outcome_store import OutcomeStore
+from axon.config.runtime import load_runtime_config
+from axon.expansion.models import SourceDefinition, SourceFormat
+from axon.expansion.registry import SourceRegistry
+from axon.expansion.scoring import ExpansionDecision
+from axon.expansion.service import ExpansionService
+from axon.expansion.staging import load_draft
+from axon.store.failure_store import FailureStore
+from axon.store.outcome_store import OutcomeStore
 
 
 class FakeTransport:
@@ -21,7 +21,7 @@ class FakeTransport:
 
     async def fetch(self, url: str, source=None):
         _ = source
-        from prometheus.expansion.models import SourceResponse
+        from axon.expansion.models import SourceResponse
 
         return SourceResponse(
             url=url,
@@ -53,8 +53,8 @@ def _scored_candidates(candidates, decision=ExpansionDecision.KEEP):
 def test_run_includes_registered_web_sources_in_staging(monkeypatch, tmp_path: Path) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
 
     knowledge_root = vault_root / "knowledge"
     knowledge_root.mkdir(parents=True, exist_ok=True)
@@ -103,8 +103,8 @@ def test_run_includes_registered_web_sources_in_staging(monkeypatch, tmp_path: P
 def test_run_records_budget_when_cloud_review_is_used(monkeypatch, tmp_path: Path) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
 
     knowledge_root = vault_root / "knowledge"
     knowledge_root.mkdir(parents=True, exist_ok=True)
@@ -147,9 +147,9 @@ def test_run_records_budget_when_cloud_review_is_used(monkeypatch, tmp_path: Pat
             usage=SimpleNamespace(prompt_tokens=500, completion_tokens=100),
         )
 
-    monkeypatch.setattr("prometheus.expansion.service.litellm.acompletion", fake_acompletion)
+    monkeypatch.setattr("axon.expansion.service.litellm.acompletion", fake_acompletion)
     monkeypatch.setattr(
-        "prometheus.expansion.service.score_candidates",
+        "axon.expansion.service.score_candidates",
         lambda candidates, topic: [
             SimpleNamespace(
                 candidate=candidates[0],
@@ -203,8 +203,8 @@ def test_run_records_budget_when_cloud_review_is_used(monkeypatch, tmp_path: Pat
 def test_run_approve_reject_persist_outcomes(monkeypatch, tmp_path: Path) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
 
     knowledge_root = vault_root / "knowledge"
     knowledge_root.mkdir(parents=True, exist_ok=True)
@@ -219,7 +219,7 @@ def test_run_approve_reject_persist_outcomes(monkeypatch, tmp_path: Path) -> Non
 
     service = ExpansionService(load_runtime_config())
     monkeypatch.setattr(
-        "prometheus.expansion.service.score_candidates",
+        "axon.expansion.service.score_candidates",
         lambda candidates, topic: _scored_candidates(candidates),
     )
 
@@ -261,8 +261,8 @@ def test_approve_reindex_failures_are_persisted_for_repeated_failure_queries(
 ) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
 
     knowledge_root = vault_root / "knowledge"
     knowledge_root.mkdir(parents=True, exist_ok=True)
@@ -277,7 +277,7 @@ def test_approve_reindex_failures_are_persisted_for_repeated_failure_queries(
 
     service = ExpansionService(load_runtime_config())
     monkeypatch.setattr(
-        "prometheus.expansion.service.score_candidates",
+        "axon.expansion.service.score_candidates",
         lambda candidates, topic: _scored_candidates(candidates),
     )
 

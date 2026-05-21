@@ -10,12 +10,12 @@
 
 set -euo pipefail
 
-PROMETHEUS_ENGINE="${PROMETHEUS_ENGINE:-$HOME/dev/Prometheus}"
+AXON_ENGINE="${AXON_ENGINE:-$HOME/dev/Prometheus}"
 
 echo "Sincronizando vault..."
 
 # Promoção de TILs do dia (roda local antes de subir)
-if python3 "$PROMETHEUS_ENGINE/src/prometheus/vault/til_promoter.py" 2>/dev/null; then
+if python3 "$AXON_ENGINE/src/prometheus/vault/til_promoter.py" 2>/dev/null; then
     # Se promoter criou novos HOW-TOs, adiciona ao commit
     NEW_FILES=$(git status --porcelain | grep -c "howto-" || true)
     if [ "$NEW_FILES" -gt 0 ]; then

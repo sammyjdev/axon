@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from prometheus.benchmark.harness import run_benchmarks
-from prometheus.benchmark.setup_mode import (
+from axon.benchmark.harness import run_benchmarks
+from axon.benchmark.setup_mode import (
     SETUP_MODE_SANITY_BENCHMARK,
     build_setup_mode_benchmark_case,
 )

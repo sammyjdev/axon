@@ -3,21 +3,21 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from prometheus.config.runtime import load_runtime_config
-from prometheus.expansion.budget import (
+from axon.config.runtime import load_runtime_config
+from axon.expansion.budget import (
     BudgetEnforcement,
     BudgetUsageRecord,
     ExpansionBudgetManager,
 )
-from prometheus.expansion.telemetry import ExpansionExecutionRecord, ExpansionTelemetryStore
-from prometheus.memory.config import Mem0Config
+from axon.expansion.telemetry import ExpansionExecutionRecord, ExpansionTelemetryStore
+from axon.memory.config import Mem0Config
 
 
 def test_runtime_loads_expansion_defaults(monkeypatch, tmp_path) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
 
     runtime = load_runtime_config()
 
@@ -49,13 +49,13 @@ def test_mem0_config_prefers_qdrant_url_over_legacy_host(monkeypatch) -> None:
 def test_runtime_supports_remote_desktop_infra(monkeypatch, tmp_path) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
     monkeypatch.setenv("QDRANT_URL", "http://desktop.local:6333")
     monkeypatch.setenv("REDIS_URL", "redis://desktop.local:6379")
     monkeypatch.setenv("NEO4J_URI", "bolt://desktop.local:7687")
-    monkeypatch.setenv("PROMETHEUS_OLLAMA_LOCAL_HOST", "http://desktop.local:11434")
-    monkeypatch.setenv("PROMETHEUS_OLLAMA_REMOTE_HOST", "http://desktop.local:11434")
+    monkeypatch.setenv("AXON_OLLAMA_LOCAL_HOST", "http://desktop.local:11434")
+    monkeypatch.setenv("AXON_OLLAMA_REMOTE_HOST", "http://desktop.local:11434")
 
     runtime = load_runtime_config()
 
@@ -67,8 +67,8 @@ def test_runtime_supports_remote_desktop_infra(monkeypatch, tmp_path) -> None:
 
 
 def test_budget_manager_enforces_soft_cap_and_hard_stop(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path / "engine"))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(tmp_path / "vault"))
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path / "engine"))
+    monkeypatch.setenv("AXON_VAULT", str(tmp_path / "vault"))
 
     runtime = load_runtime_config()
     manager = ExpansionBudgetManager(runtime)
@@ -108,8 +108,8 @@ def test_budget_manager_enforces_soft_cap_and_hard_stop(monkeypatch, tmp_path) -
 
 
 def test_telemetry_store_appends_execution_records(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path / "engine"))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(tmp_path / "vault"))
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path / "engine"))
+    monkeypatch.setenv("AXON_VAULT", str(tmp_path / "vault"))
 
     store = ExpansionTelemetryStore(load_runtime_config())
     output = store.append(

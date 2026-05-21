@@ -4,16 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from prometheus.config.runtime import load_runtime_config
-from prometheus.expansion.service import ExpansionService
-from prometheus.expansion.staging import load_draft, render_draft
+from axon.config.runtime import load_runtime_config
+from axon.expansion.service import ExpansionService
+from axon.expansion.staging import load_draft, render_draft
 
 
 def test_approve_recomputes_publish_path_from_ctx_and_topic(monkeypatch, tmp_path: Path) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
 
     knowledge_root = vault_root / "knowledge"
     knowledge_root.mkdir(parents=True, exist_ok=True)
@@ -47,8 +47,8 @@ def test_approve_rejects_when_ctx_metadata_differs_from_staging_directory(
 ) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
 
     knowledge_root = vault_root / "knowledge"
     knowledge_root.mkdir(parents=True, exist_ok=True)
@@ -78,8 +78,8 @@ def test_approve_rejects_when_ctx_metadata_is_path_traversal(
 ) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
 
     knowledge_root = vault_root / "knowledge"
     knowledge_root.mkdir(parents=True, exist_ok=True)
@@ -109,8 +109,8 @@ def test_review_and_approve_reject_files_inside_staging_rejected(
 ) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(vault_root))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
 
     knowledge_root = vault_root / "knowledge"
     knowledge_root.mkdir(parents=True, exist_ok=True)

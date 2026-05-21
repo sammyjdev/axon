@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "prometheus-engine"
+name = "axon-mcp"
 version = "0.1.0"
 description = "Self-hosted second-brain engine for local context retrieval and tooling"
 requires-python = ">=3.11"
@@ -39,11 +39,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sammyjdev/Prometheus"
-Repository = "https://github.com/sammyjdev/Prometheus"
+Homepage = "https://github.com/sammyjdev/axon"
+Repository = "https://github.com/sammyjdev/axon"
 
 [project.scripts]
-pb = "prometheus.cli.pb:app"
+axon = "axon.cli.pb:app"
 
 [project.optional-dependencies]
 graph = [
@@ -59,7 +59,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/prometheus"]
+packages = ["src/axon"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

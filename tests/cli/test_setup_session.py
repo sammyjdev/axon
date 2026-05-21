@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from prometheus.cli.setup_session import SetupSession
+from axon.cli.setup_session import SetupSession
 
 
 def test_defaults():
