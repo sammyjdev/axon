@@ -1,7 +1,7 @@
 import os
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from pydantic import BaseModel, Field
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
@@ -21,8 +21,7 @@ _STALE_RANKING_PENALTY = 0.2
 COLLECTIONS = list(VALID_CONTEXTS)
 
 
-@dataclass
-class Chunk:
+class Chunk(BaseModel):
     id: str
     vector: list[float]
     file_path: str
@@ -33,7 +32,7 @@ class Chunk:
     ctx: str  # personal | career | knowledge | saas | work
     content: str
     git_commit: str = ""
-    modified_at: datetime = field(default_factory=datetime.utcnow)
+    modified_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class VectorStore:
