@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from prometheus.mcp import server
-from prometheus.router.classifier import TaskType
+from axon.mcp import server
+from axon.router.classifier import TaskType
 
 
 class _FakeVectorStore:
@@ -39,7 +39,7 @@ async def test_search_code_applies_strategy_budget_and_returns_context_pack(monk
     monkeypatch.setattr(server, "_get_vector_store", lambda: store)
     monkeypatch.setattr(server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1]))
     monkeypatch.setattr(
-        "prometheus.router.classifier.classify_task_with_source",
+        "axon.router.classifier.classify_task_with_source",
         lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
     )
     monkeypatch.setattr(
@@ -98,11 +98,11 @@ async def test_ask_surfaces_context_pack_and_skips_compression_for_minimal_strat
         raise AssertionError("compression should be skipped for minimal strategy")
 
     monkeypatch.setattr(server, "_get_session_store", lambda: FakeSessionStore())
-    monkeypatch.setattr("prometheus.context.detector.ContextDetector", FakeDetector)
+    monkeypatch.setattr("axon.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(server, "_get_vector_store", lambda: store)
     monkeypatch.setattr(server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1]))
     monkeypatch.setattr(
-        "prometheus.router.classifier.classify_task_with_source",
+        "axon.router.classifier.classify_task_with_source",
         lambda content, ctx=None: (TaskType.TRIVIAL_COMPLETION, "local"),
     )
     monkeypatch.setattr(server, "caveman_compress_guarded", fail_caveman)
@@ -155,7 +155,7 @@ async def test_search_code_surfaces_staleness_notes(monkeypatch) -> None:
     monkeypatch.setattr(server, "_get_vector_store", lambda: store)
     monkeypatch.setattr(server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1]))
     monkeypatch.setattr(
-        "prometheus.router.classifier.classify_task_with_source",
+        "axon.router.classifier.classify_task_with_source",
         lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
     )
     monkeypatch.setattr(

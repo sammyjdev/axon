@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from prometheus.config.projects import load_project_manifest
+from axon.config.projects import load_project_manifest
 
 
 def _write_manifest(path: Path, projects: list[dict[str, object]]) -> Path:

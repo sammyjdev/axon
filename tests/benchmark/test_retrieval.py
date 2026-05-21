@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from prometheus.benchmark.harness import run_benchmarks
-from prometheus.benchmark.retrieval import (
+from axon.benchmark.harness import run_benchmarks
+from axon.benchmark.retrieval import (
     FIRST_RETRIEVAL_BENCHMARK,
     build_retrieval_benchmark_case,
 )

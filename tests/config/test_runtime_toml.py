@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prometheus.config.runtime import load_runtime_config
+from axon.config.runtime import load_runtime_config
 
 
 def test_runtime_loads_mode_and_paths_from_prometheus_toml(monkeypatch, tmp_path: Path) -> None:
@@ -19,10 +19,10 @@ def test_runtime_loads_mode_and_paths_from_prometheus_toml(monkeypatch, tmp_path
         ),
         encoding="utf-8",
     )
-    monkeypatch.delenv("PROMETHEUS_ENGINE", raising=False)
-    monkeypatch.delenv("PROMETHEUS_VAULT", raising=False)
-    monkeypatch.delenv("PROMETHEUS_RUNTIME_MODE", raising=False)
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.delenv("AXON_ENGINE", raising=False)
+    monkeypatch.delenv("AXON_VAULT", raising=False)
+    monkeypatch.delenv("AXON_RUNTIME_MODE", raising=False)
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     runtime = load_runtime_config()
 
@@ -45,10 +45,10 @@ def test_runtime_env_vars_override_prometheus_toml(monkeypatch, tmp_path: Path) 
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
-    monkeypatch.setenv("PROMETHEUS_RUNTIME_MODE", "full-local")
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path / "engine-from-env"))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(tmp_path / "vault-from-env"))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_RUNTIME_MODE", "full-local")
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path / "engine-from-env"))
+    monkeypatch.setenv("AXON_VAULT", str(tmp_path / "vault-from-env"))
 
     runtime = load_runtime_config()
 

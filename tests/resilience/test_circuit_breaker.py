@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from prometheus.resilience.circuit_breaker import CircuitBreaker, CircuitState
+from axon.resilience.circuit_breaker import CircuitBreaker, CircuitState
 
 
 def test_circuit_breaker_opens_after_threshold() -> None:

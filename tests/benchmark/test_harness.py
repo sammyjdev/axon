@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from prometheus.benchmark.contracts import BenchmarkCheck, BenchmarkResult
-from prometheus.benchmark.harness import BenchmarkCase, run_benchmarks
+from axon.benchmark.contracts import BenchmarkCheck, BenchmarkResult
+from axon.benchmark.harness import BenchmarkCase, run_benchmarks
 
 
 @pytest.mark.asyncio

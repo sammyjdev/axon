@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-REMOTE_INFRA_HOST="${PROMETHEUS_INFRA_HOST:-${PROMETHEUS_DESKTOP_HOST:-}}"
+REMOTE_INFRA_HOST="${AXON_INFRA_HOST:-${AXON_DESKTOP_HOST:-}}"
 PYTHONPATH_PREFIX="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 
 resolve_setup_mode() {
@@ -16,8 +16,8 @@ resolve_setup_mode() {
 import shutil
 import sys
 
-from prometheus.config.platform import build_doctor_report, detect_platform
-from prometheus.config.runtime import get_runtime_sources, load_runtime_config
+from axon.config.platform import build_doctor_report, detect_platform
+from axon.config.runtime import get_runtime_sources, load_runtime_config
 
 remote_host = sys.argv[1].strip()
 runtime = load_runtime_config()
@@ -44,7 +44,7 @@ resolve_setup_plan() {
     PYTHONPATH="$PYTHONPATH_PREFIX" python3 - "$runtime_mode" "$remote_host" <<'PY'
 import sys
 
-from prometheus.config.platform import build_setup_plan, detect_platform
+from axon.config.platform import build_setup_plan, detect_platform
 
 runtime_mode = sys.argv[1]
 remote_host = sys.argv[2]
@@ -141,7 +141,7 @@ echo ""
 echo "==> Gerando .env.local a partir da plataforma..."
 GENERATED_ENV="$(mktemp)"
 PYTHONPATH="$PYTHONPATH_PREFIX" python3 - <<'PY' > "$GENERATED_ENV"
-from prometheus.config.platform import _to_dotenv, detect_platform
+from axon.config.platform import _to_dotenv, detect_platform
 
 print(_to_dotenv(detect_platform()), end="")
 PY
@@ -156,7 +156,7 @@ merge_env_file() {
 from pathlib import Path
 import sys
 
-from prometheus.config.platform import merge_env_files
+from axon.config.platform import merge_env_files
 
 merge_env_files(Path(sys.argv[1]), Path(sys.argv[2]), mode=sys.argv[3])
 PY
@@ -172,7 +172,7 @@ if [[ -f ".env.example" ]]; then
     merge_env_file ".env.example" "$GENERATED_ENV" "append-missing"
 fi
 
-upsert_env_var "$GENERATED_ENV" "PROMETHEUS_RUNTIME_MODE" "$SETUP_MODE"
+upsert_env_var "$GENERATED_ENV" "AXON_RUNTIME_MODE" "$SETUP_MODE"
 mv "$GENERATED_ENV" .env.local
 
 echo "    .env.local gerado"
@@ -191,7 +191,7 @@ check_service() {
 if [[ "$SETUP_MODE" == "remote-infra" ]]; then
     if [[ -z "$REMOTE_INFRA_HOST" ]]; then
         echo ""
-        echo "==> Erro: modo remote-infra exige PROMETHEUS_INFRA_HOST ou PROMETHEUS_DESKTOP_HOST."
+        echo "==> Erro: modo remote-infra exige AXON_INFRA_HOST ou AXON_DESKTOP_HOST."
         exit 1
     fi
     echo ""

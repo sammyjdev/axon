@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from prometheus.store.graph_namespace import neighbors_query, path_query, transform_cypher
+from axon.store.graph_namespace import neighbors_query, path_query, transform_cypher
 
 
 def test_transform_cypher_adds_prefix_to_simple_labels() -> None:

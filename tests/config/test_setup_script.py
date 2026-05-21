@@ -21,7 +21,7 @@ def test_setup_defaults_to_recommended_hybrid_local_mode_on_mac(tmp_path: Path) 
     env_payload = (workspace / ".env.local").read_text(encoding="utf-8")
     log_output = log_path.read_text(encoding="utf-8")
 
-    assert "PROMETHEUS_RUNTIME_MODE=hybrid-local" in env_payload
+    assert "AXON_RUNTIME_MODE=hybrid-local" in env_payload
     assert "docker compose --profile cpu up -d" in log_output
     assert "ollama pull phi3:mini" in log_output
     assert "ollama pull gemma4:e4b" in log_output
@@ -33,7 +33,7 @@ def test_setup_honors_minimal_mode_and_skips_local_bootstrap(tmp_path: Path) -> 
         tmp_path,
         extra_env={
             "OSTYPE": "darwin23",
-            "PROMETHEUS_RUNTIME_MODE": "minimal",
+            "AXON_RUNTIME_MODE": "minimal",
         },
         sysctl_bytes=34 * 1024 * 1024 * 1024,
     )
@@ -42,7 +42,7 @@ def test_setup_honors_minimal_mode_and_skips_local_bootstrap(tmp_path: Path) -> 
     env_payload = (workspace / ".env.local").read_text(encoding="utf-8")
     log_output = log_path.read_text(encoding="utf-8")
 
-    assert "PROMETHEUS_RUNTIME_MODE=minimal" in env_payload
+    assert "AXON_RUNTIME_MODE=minimal" in env_payload
     assert "docker compose" not in log_output
     assert "ollama pull" not in log_output
     assert "curl " not in log_output
@@ -53,15 +53,15 @@ def test_setup_remote_infra_mode_requires_remote_host(tmp_path: Path) -> None:
         tmp_path,
         extra_env={
             "OSTYPE": "darwin23",
-            "PROMETHEUS_RUNTIME_MODE": "remote-infra",
+            "AXON_RUNTIME_MODE": "remote-infra",
         },
         sysctl_bytes=34 * 1024 * 1024 * 1024,
     )
 
     assert result.returncode != 0
-    assert "modo remote-infra exige PROMETHEUS_INFRA_HOST" in result.stdout
+    assert "modo remote-infra exige AXON_INFRA_HOST" in result.stdout
     env_payload = (workspace / ".env.local").read_text(encoding="utf-8")
-    assert "PROMETHEUS_RUNTIME_MODE=remote-infra" in env_payload
+    assert "AXON_RUNTIME_MODE=remote-infra" in env_payload
 
 
 def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None:
@@ -69,7 +69,7 @@ def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None
         tmp_path,
         extra_env={
             "OSTYPE": "darwin23",
-            "PROMETHEUS_INFRA_HOST": "desktop.local",
+            "AXON_INFRA_HOST": "desktop.local",
         },
         sysctl_bytes=34 * 1024 * 1024 * 1024,
     )
@@ -78,7 +78,7 @@ def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None
     env_payload = (workspace / ".env.local").read_text(encoding="utf-8")
     log_output = log_path.read_text(encoding="utf-8")
 
-    assert "PROMETHEUS_RUNTIME_MODE=remote-infra" in env_payload
+    assert "AXON_RUNTIME_MODE=remote-infra" in env_payload
     assert "docker compose" not in log_output
     assert "ollama pull" not in log_output
     assert "curl -sf http://desktop.local:6333/collections" in log_output
@@ -90,7 +90,7 @@ def test_setup_full_local_without_nvidia_keeps_small_models_only(tmp_path: Path)
         tmp_path,
         extra_env={
             "OSTYPE": "linux-gnu",
-            "PROMETHEUS_RUNTIME_MODE": "full-local",
+            "AXON_RUNTIME_MODE": "full-local",
         },
         sysctl_bytes=34 * 1024 * 1024 * 1024,
     )
@@ -99,7 +99,7 @@ def test_setup_full_local_without_nvidia_keeps_small_models_only(tmp_path: Path)
     env_payload = (workspace / ".env.local").read_text(encoding="utf-8")
     log_output = log_path.read_text(encoding="utf-8")
 
-    assert "PROMETHEUS_RUNTIME_MODE=full-local" in env_payload
+    assert "AXON_RUNTIME_MODE=full-local" in env_payload
     assert "docker compose --profile cpu up -d" in log_output
     assert "ollama pull phi3:mini" in log_output
     assert "ollama pull gemma4:e4b" in log_output
@@ -156,20 +156,20 @@ def _run_setup(
     )
 
     env = os.environ.copy()
-    env.pop("PROMETHEUS_INFRA_HOST", None)
-    env.pop("PROMETHEUS_DESKTOP_HOST", None)
+    env.pop("AXON_INFRA_HOST", None)
+    env.pop("AXON_DESKTOP_HOST", None)
     env.update(
         {
             "HOME": str(tmp_path / "home"),
             "PATH": f"{fake_bin}:{env['PATH']}",
             "TEST_LOG": str(log_path),
-            "PROMETHEUS_ENGINE": str(workspace),
-            "PROMETHEUS_VAULT": str(tmp_path / "vault"),
+            "AXON_ENGINE": str(workspace),
+            "AXON_VAULT": str(tmp_path / "vault"),
         }
     )
     env.update(extra_env)
     Path(env["HOME"]).mkdir()
-    Path(env["PROMETHEUS_VAULT"]).mkdir()
+    Path(env["AXON_VAULT"]).mkdir()
 
     result = subprocess.run(
         ["bash", "setup.sh"],

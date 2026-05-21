@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from prometheus.portability.exporter import EXPORT_MANIFEST_VERSION, export_portability_bundle
+from axon.portability.exporter import EXPORT_MANIFEST_VERSION, export_portability_bundle
 
 
 def _sha256(path: Path) -> str:
@@ -30,11 +30,11 @@ def test_export_portability_bundle_writes_manifest_and_artifacts(
     outcomes_db.write_bytes(b"outcomes-db")
     config_path.write_text("[runtime]\nmode = \"hybrid-local\"\n", encoding="utf-8")
 
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(tmp_path / "vault"))
-    monkeypatch.setenv("PROMETHEUS_RUNTIME_MODE", "hybrid-local")
-    monkeypatch.setenv("PROMETHEUS_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434")
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_ENGINE", str(engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(tmp_path / "vault"))
+    monkeypatch.setenv("AXON_RUNTIME_MODE", "hybrid-local")
+    monkeypatch.setenv("AXON_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "secret-should-not-export")
 
     manifest = export_portability_bundle(
@@ -60,11 +60,11 @@ def test_export_portability_bundle_writes_manifest_and_artifacts(
     env_payload = json.loads(exported_env.read_text(encoding="utf-8"))
     assert env_payload == {
         "entries": [
-            {"name": "PROMETHEUS_CONFIG", "present": True, "source": "env"},
-            {"name": "PROMETHEUS_ENGINE", "present": True, "source": "env"},
-            {"name": "PROMETHEUS_OLLAMA_LOCAL_HOST", "present": True, "source": "env"},
-            {"name": "PROMETHEUS_RUNTIME_MODE", "present": True, "source": "env"},
-            {"name": "PROMETHEUS_VAULT", "present": True, "source": "env"},
+            {"name": "AXON_CONFIG", "present": True, "source": "env"},
+            {"name": "AXON_ENGINE", "present": True, "source": "env"},
+            {"name": "AXON_OLLAMA_LOCAL_HOST", "present": True, "source": "env"},
+            {"name": "AXON_RUNTIME_MODE", "present": True, "source": "env"},
+            {"name": "AXON_VAULT", "present": True, "source": "env"},
         ]
     }
     assert "ANTHROPIC_API_KEY" not in exported_env.read_text(encoding="utf-8")
@@ -128,8 +128,8 @@ def test_export_portability_bundle_omits_missing_optional_artifacts(
     export_root = tmp_path / "export"
 
     config_path.write_text("[runtime]\nmode = \"minimal\"\n", encoding="utf-8")
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
-    monkeypatch.setenv("PROMETHEUS_RUNTIME_MODE", "minimal")
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_RUNTIME_MODE", "minimal")
 
     export_portability_bundle(
         export_root,
@@ -166,9 +166,9 @@ def test_export_portability_bundle_writes_deterministic_json(
 ) -> None:
     config_path = tmp_path / "prometheus.toml"
     config_path.write_text("[runtime]\nmode = \"full-local\"\n", encoding="utf-8")
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(tmp_path / "engine"))
-    monkeypatch.setenv("PROMETHEUS_RUNTIME_MODE", "full-local")
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path / "engine"))
+    monkeypatch.setenv("AXON_RUNTIME_MODE", "full-local")
 
     runtime = SimpleNamespace(
         engine_root=tmp_path / "engine",

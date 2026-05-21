@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from prometheus.context.staleness import (
+from axon.context.staleness import (
     StaleReplacement,
     StalenessAssessment,
     assess_staleness,

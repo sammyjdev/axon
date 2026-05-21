@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prometheus.registry import PluginManifest, ToolDescriptor
+from axon.registry import PluginManifest, ToolDescriptor
 
 
 def test_plugin_manifest_normalizes_optional_collections() -> None:

@@ -56,9 +56,9 @@ echo "qdrant_url: ${QDRANT_URL}"
 echo
 
 echo "== Budgets (env) =="
-echo "PROMETHEUS_DAILY_BUDGET=${PROMETHEUS_DAILY_BUDGET:-<unset>}"
-echo "PROMETHEUS_OPUS_BUDGET=${PROMETHEUS_OPUS_BUDGET:-<unset>}"
-echo "PROMETHEUS_RTK_MAX_TOKENS=${PROMETHEUS_RTK_MAX_TOKENS:-<unset>}"
+echo "AXON_DAILY_BUDGET=${AXON_DAILY_BUDGET:-<unset>}"
+echo "AXON_OPUS_BUDGET=${AXON_OPUS_BUDGET:-<unset>}"
+echo "AXON_RTK_MAX_TOKENS=${AXON_RTK_MAX_TOKENS:-<unset>}"
 echo
 
 echo "== Qdrant collection stats (points_count) =="

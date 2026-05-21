@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from prometheus.context.contracts import (
+from axon.context.contracts import (
     DEFAULT_RETRIEVAL_STRATEGIES,
     ContextPack,
     select_default_retrieval_strategy,
 )
-from prometheus.context.registry import DEFAULT_SEARCH_CONTEXTS
-from prometheus.router.classifier import TaskType
+from axon.context.registry import DEFAULT_SEARCH_CONTEXTS
+from axon.router.classifier import TaskType
 
 
 def test_context_pack_exposes_joined_text_and_strategy_contract() -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from prometheus.embedder.chunker import Chunk
-from prometheus.embedder.graph_extractor import build_dependency_records
+from axon.embedder.chunker import Chunk
+from axon.embedder.graph_extractor import build_dependency_records
 
 
 def _chunk(symbol: str, content: str, language: str) -> Chunk:

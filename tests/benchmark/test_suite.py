@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from prometheus.benchmark.suite import build_default_benchmark_cases, run_default_benchmarks
+from axon.benchmark.suite import build_default_benchmark_cases, run_default_benchmarks
 
 
 def test_default_benchmark_suite_has_three_fixed_cases() -> None:

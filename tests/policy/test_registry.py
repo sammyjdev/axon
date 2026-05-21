@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from prometheus.policy.core import PolicyRegistry, ReasonCode
-from prometheus.observability.trace_store import TraceStore
+from axon.policy.core import PolicyRegistry, ReasonCode
+from axon.observability.trace_store import TraceStore
 
 
 def test_policy_allows_public_cloud_for_non_work_ctx() -> None:

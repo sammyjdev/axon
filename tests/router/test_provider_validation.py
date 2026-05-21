@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from prometheus.router.provider_validation import (
+from axon.router.provider_validation import (
     provider_for_model,
     validate_anthropic_cache_control,
     validate_openrouter_compliance,

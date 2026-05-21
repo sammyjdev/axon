@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from prometheus.benchmark.contracts import BenchmarkCheck, BenchmarkResult
+from axon.benchmark.contracts import BenchmarkCheck, BenchmarkResult
 
 
 def test_benchmark_result_computes_score_and_failures() -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from prometheus.domains import MANIFEST_FILENAME, load_domain_pack
+from axon.domains import MANIFEST_FILENAME, load_domain_pack
 
 
 def test_load_domain_pack_accepts_software_fixture() -> None:
