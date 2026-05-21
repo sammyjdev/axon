@@ -1,9 +1,9 @@
 import asyncio
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
+from pydantic import BaseModel, Field
 
 DDL = """
 CREATE TABLE IF NOT EXISTS adr (
@@ -42,57 +42,37 @@ CREATE TABLE IF NOT EXISTS session_note (
 """
 
 
-@dataclass
-class ADR:
+class ADR(BaseModel):
     project: str
     title: str
     context: str
     decision: str
     rationale: str
     id: int = 0
-    created_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        if self.created_at is None:
-            self.created_at = datetime.now(UTC)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-@dataclass
-class SessionMemory:
+class SessionMemory(BaseModel):
     project: str
     summary: str
     raw_turns: int
     id: int = 0
-    created_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        if self.created_at is None:
-            self.created_at = datetime.now(UTC)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-@dataclass
-class SessionNote:
+class SessionNote(BaseModel):
     project: str
     body: str
     id: int = 0
-    created_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        if self.created_at is None:
-            self.created_at = datetime.now(UTC)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-@dataclass
-class CodeChange:
+class CodeChange(BaseModel):
     commit_hash: str
     file_path: str
     diff_summary: str
     why: str = ""
-    changed_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        if self.changed_at is None:
-            self.changed_at = datetime.now(UTC)
+    changed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class SessionStore:
