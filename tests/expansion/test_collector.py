@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from prometheus.expansion import (
+from axon.expansion import (
     ExpansionCollector,
     JsonFieldMap,
     SourceDefinition,
@@ -11,7 +11,7 @@ from prometheus.expansion import (
     SourceResponse,
     UnknownSourceError,
 )
-from prometheus.expansion.registry import load_source_registry
+from axon.expansion.registry import load_source_registry
 
 
 class FakeTransport:

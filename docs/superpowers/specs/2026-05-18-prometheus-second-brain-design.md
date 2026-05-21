@@ -106,7 +106,7 @@ Automatically detect architectural decisions in git diffs and save ADRs without 
 Export ADRs from SQLite to Obsidian-readable Markdown files so they are navigable and linkable in the vault.
 
 ### Format
-One `.md` file per project at `$PROMETHEUS_VAULT/personal/adrs/<project>.md`.
+One `.md` file per project at `$AXON_VAULT/personal/adrs/<project>.md`.
 
 File structure:
 ```markdown

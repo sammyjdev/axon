@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from prometheus.router.compressor import caveman_compress, caveman_compress_guarded
+from axon.router.compressor import caveman_compress, caveman_compress_guarded
 
 _LONG_TEXT = " ".join(["word"] * 100)
 _SHORT_TEXT = " ".join(["word"] * 40)
@@ -17,7 +17,7 @@ async def test_compresses_long_text() -> None:
         choices=[SimpleNamespace(message=SimpleNamespace(content="compressed result"))]
     )
     with patch(
-        "prometheus.router.compressor.litellm.acompletion",
+        "axon.router.compressor.litellm.acompletion",
         new=AsyncMock(return_value=fake_response),
     ) as mock_llm:
         result, error = await caveman_compress(_LONG_TEXT, max_tokens=400)
@@ -34,7 +34,7 @@ async def test_strict_compression_includes_required_symbols() -> None:
         choices=[SimpleNamespace(message=SimpleNamespace(content="index_path preserved"))]
     )
     with patch(
-        "prometheus.router.compressor.litellm.acompletion",
+        "axon.router.compressor.litellm.acompletion",
         new=AsyncMock(return_value=fake_response),
     ) as mock_llm:
         result, error = await caveman_compress(
@@ -69,7 +69,7 @@ async def test_guarded_compression_retries_with_strict_symbol_preservation() -> 
             return "index_path + _semantic_search_hits compressed safely", None
         return "_semantic_search_hits only", None
 
-    with patch("prometheus.router.compressor.caveman_compress", new=fake_caveman):
+    with patch("axon.router.compressor.caveman_compress", new=fake_caveman):
         result, error = await caveman_compress_guarded(source, max_tokens=400)
 
     assert result == "index_path + _semantic_search_hits compressed safely"
@@ -95,7 +95,7 @@ async def test_guarded_compression_falls_back_when_retry_fails_quality() -> None
             return "## Your task: compress _semantic_search_hits", None
         return "_semantic_search_hits only", None
 
-    with patch("prometheus.router.compressor.caveman_compress", new=fake_caveman):
+    with patch("axon.router.compressor.caveman_compress", new=fake_caveman):
         result, error = await caveman_compress_guarded(source, max_tokens=400)
 
     assert result == source
@@ -111,7 +111,7 @@ async def test_guarded_compression_falls_back_when_confidence_is_too_low() -> No
         _ = (max_tokens, required_symbols, strict)
         return "brief summary only", None
 
-    with patch("prometheus.router.compressor.caveman_compress", new=fake_caveman):
+    with patch("axon.router.compressor.caveman_compress", new=fake_caveman):
         result, error = await caveman_compress_guarded(source, max_tokens=400)
 
     assert result == source
@@ -120,7 +120,7 @@ async def test_guarded_compression_falls_back_when_confidence_is_too_low() -> No
 
 @pytest.mark.asyncio
 async def test_skips_short_text() -> None:
-    with patch("prometheus.router.compressor.litellm.acompletion", new=AsyncMock()) as mock_llm:
+    with patch("axon.router.compressor.litellm.acompletion", new=AsyncMock()) as mock_llm:
         result, error = await caveman_compress(_SHORT_TEXT)
 
     assert result == _SHORT_TEXT
@@ -131,7 +131,7 @@ async def test_skips_short_text() -> None:
 @pytest.mark.asyncio
 async def test_fallback_on_error() -> None:
     with patch(
-        "prometheus.router.compressor.litellm.acompletion",
+        "axon.router.compressor.litellm.acompletion",
         new=AsyncMock(side_effect=RuntimeError("ollama unavailable")),
     ):
         result, error = await caveman_compress(_LONG_TEXT)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prometheus.config.runtime import (
+from axon.config.runtime import (
     create_profile,
     export_profile,
     get_profile,
@@ -14,7 +14,7 @@ from prometheus.config.runtime import (
 
 def test_list_profiles_reads_profile_metadata(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     profiles = list_profiles()
 
@@ -26,8 +26,8 @@ def test_list_profiles_reads_profile_metadata(tmp_path: Path, monkeypatch) -> No
 
 def test_use_profile_sets_active_profile_and_runtime_mode(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
-    monkeypatch.delenv("PROMETHEUS_RUNTIME_MODE", raising=False)
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
+    monkeypatch.delenv("AXON_RUNTIME_MODE", raising=False)
 
     use_profile("team-dev")
     runtime = load_runtime_config()
@@ -44,24 +44,24 @@ def test_use_profile_syncs_env_local_when_present(tmp_path: Path, monkeypatch) -
     env_file.write_text(
         "\n".join(
             [
-                "PROMETHEUS_ENGINE=/tmp/engine",
-                "PROMETHEUS_RUNTIME_MODE=hybrid-local",
+                "AXON_ENGINE=/tmp/engine",
+                "AXON_RUNTIME_MODE=hybrid-local",
                 "",
             ]
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     use_profile("team-dev")
 
     payload = env_file.read_text(encoding="utf-8")
-    assert "PROMETHEUS_RUNTIME_MODE=remote-infra" in payload
+    assert "AXON_RUNTIME_MODE=remote-infra" in payload
 
 
 def test_get_profile_returns_metadata_for_active_profile(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     profile = get_profile("solo-dev")
 
@@ -78,7 +78,7 @@ def test_get_profile_returns_metadata_for_active_profile(tmp_path: Path, monkeyp
 
 def test_create_profile_appends_new_profile_to_toml(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     create_profile(
         "support-lite",
@@ -94,7 +94,7 @@ def test_create_profile_appends_new_profile_to_toml(tmp_path: Path, monkeypatch)
 
 def test_create_profile_persists_optional_structured_fields(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     create_profile(
         "support-lite",
@@ -115,7 +115,7 @@ def test_create_profile_persists_optional_structured_fields(tmp_path: Path, monk
 
 def test_export_profile_returns_toml_snippet(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     exported = export_profile("team-dev")
 
@@ -142,7 +142,7 @@ def test_get_profile_reads_optional_structured_fields(tmp_path: Path, monkeypatc
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     profile = get_profile("privacy-first")
 
@@ -159,7 +159,7 @@ def test_get_profile_reads_optional_structured_fields(tmp_path: Path, monkeypatc
 
 def test_export_profile_includes_optional_structured_fields(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     create_profile(
         "support-lite",

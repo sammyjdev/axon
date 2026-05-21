@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prometheus.embedder.pipeline import iter_supported_files
+from axon.embedder.pipeline import iter_supported_files
 
 
 def test_iter_supported_files_skips_dependency_and_build_directories(tmp_path: Path) -> None:

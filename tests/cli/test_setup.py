@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from prometheus.cli.setup import format_next_steps, run_step_commit, run_step_domain, run_step_transport, run_step_vault
-from prometheus.cli.setup_session import SetupSession
+from axon.cli.setup import format_next_steps, run_step_commit, run_step_domain, run_step_transport, run_step_vault
+from axon.cli.setup_session import SetupSession
 
 
 def test_transport_stdio(monkeypatch):

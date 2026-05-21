@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prometheus.config.runtime import recommend_profile, select_capabilities, use_profile
+from axon.config.runtime import recommend_profile, select_capabilities, use_profile
 
 
 def test_recommend_profile_prefers_privacy_first_for_restricted_data() -> None:
@@ -76,7 +76,7 @@ def test_recommend_profile_prefers_minimal_when_memory_override_is_light() -> No
 
 def test_use_profile_can_apply_recommended_profile(tmp_path: Path, monkeypatch) -> None:
     config_path = _write_config(tmp_path)
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
 
     profile, _mode = recommend_profile(
         use_case="team",

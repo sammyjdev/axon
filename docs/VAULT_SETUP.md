@@ -16,8 +16,8 @@ docker compose ps
 
 Set these environment variables to match your machine:
 
-- `PROMETHEUS_ENGINE=/path/to/prometheus`
-- `PROMETHEUS_VAULT=~/vault`
+- `AXON_ENGINE=/path/to/prometheus`
+- `AXON_VAULT=~/vault`
 
 ## 1. Create the Vault Layout
 
@@ -105,7 +105,7 @@ Expected outcome:
 The repository ships a helper script for the vault post-commit hook:
 
 ```bash
-bash "$PROMETHEUS_ENGINE/scripts/install_vault_hook.sh"
+bash "$AXON_ENGINE/scripts/install_vault_hook.sh"
 ```
 
 This is useful if you want post-commit automation around vault workflows.
@@ -134,7 +134,7 @@ If you use Obsidian:
 | Symptom | Likely cause | What to do |
 | --- | --- | --- |
 | `pb search` returns no hits | no indexed content yet | add notes, then rerun `pb index` |
-| `Path not found` during indexing | wrong vault path | verify `PROMETHEUS_VAULT` and the target path |
+| `Path not found` during indexing | wrong vault path | verify `AXON_VAULT` and the target path |
 | `work` access asks for confirmation | expected behavior | pass `--ctx work` only when intended |
 | `pb ask` fails after setup | env not loaded in current shell | `set -a; source .env.local; set +a` |
 

@@ -37,5 +37,5 @@ async def index_vault(vault_path: Path) -> None:
 
 
 if __name__ == "__main__":
-    vault = Path(os.environ.get("PROMETHEUS_VAULT", Path.home() / "vault"))
+    vault = Path(os.environ.get("AXON_VAULT", Path.home() / "vault"))
     asyncio.run(index_vault(vault))

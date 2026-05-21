@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from prometheus.registry import discover_local_registry
+from axon.registry import discover_local_registry
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> Path:

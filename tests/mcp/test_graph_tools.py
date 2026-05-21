@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from prometheus.mcp import server
+from axon.mcp import server
 
 
 class FakeTelemetry:

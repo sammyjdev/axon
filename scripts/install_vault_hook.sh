@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VAULT_DIR="${PROMETHEUS_VAULT:-$HOME/vault}"
+VAULT_DIR="${AXON_VAULT:-$HOME/vault}"
 HOOK_DIR="$VAULT_DIR/.git/hooks"
 HOOK_PATH="$HOOK_DIR/post-commit"
 

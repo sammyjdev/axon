@@ -17,7 +17,7 @@ pb --help
 docker compose ps
 ```
 
-If your repository lives elsewhere, export `PROMETHEUS_ENGINE` first.
+If your repository lives elsewhere, export `AXON_ENGINE` first.
 
 ## Core Commands
 

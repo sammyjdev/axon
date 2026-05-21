@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from prometheus.context.cache_key import build_composite_cache_key
+from axon.context.cache_key import build_composite_cache_key
 
 
 def test_composite_cache_key_changes_with_policy_version() -> None:

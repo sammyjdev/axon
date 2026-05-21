@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from prometheus.benchmark.compression_fallback import (
+from axon.benchmark.compression_fallback import (
     COMPRESSION_FALLBACK_BENCHMARK,
     build_compression_fallback_benchmark_case,
 )
-from prometheus.benchmark.harness import run_benchmarks
+from axon.benchmark.harness import run_benchmarks
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prometheus.config.platform import (
+from axon.config.platform import (
     DoctorReport,
     PlatformConfig,
     SetupPlan,
@@ -11,11 +11,11 @@ from prometheus.config.platform import (
     build_setup_plan,
     merge_env_text,
 )
-from prometheus.config.runtime import ExpansionBudgetConfig, ExpansionConfig, ExpansionPaths, RuntimeConfig
+from axon.config.runtime import ExpansionBudgetConfig, ExpansionConfig, ExpansionPaths, RuntimeConfig
 
 
 def test_to_dotenv_uses_remote_infra_when_host_is_defined(monkeypatch) -> None:
-    monkeypatch.setenv("PROMETHEUS_INFRA_HOST", "desktop.local")
+    monkeypatch.setenv("AXON_INFRA_HOST", "desktop.local")
 
     config = PlatformConfig(
         platform="mac",
@@ -29,18 +29,18 @@ def test_to_dotenv_uses_remote_infra_when_host_is_defined(monkeypatch) -> None:
 
     payload = _to_dotenv(config)
 
-    assert "PROMETHEUS_INFRA_HOST=desktop.local" in payload
+    assert "AXON_INFRA_HOST=desktop.local" in payload
     assert "QDRANT_URL=http://desktop.local:6333" in payload
     assert "REDIS_URL=redis://desktop.local:6379" in payload
     assert "NEO4J_URI=bolt://desktop.local:7687" in payload
     assert "LANGFUSE_HOST=http://desktop.local:3000" in payload
-    assert "PROMETHEUS_OLLAMA_LOCAL_HOST=http://desktop.local:11434" in payload
-    assert "PROMETHEUS_OLLAMA_REMOTE_HOST=http://desktop.local:11434" in payload
+    assert "AXON_OLLAMA_LOCAL_HOST=http://desktop.local:11434" in payload
+    assert "AXON_OLLAMA_REMOTE_HOST=http://desktop.local:11434" in payload
 
 
 def test_to_dotenv_keeps_local_defaults_without_remote_host(monkeypatch) -> None:
-    monkeypatch.delenv("PROMETHEUS_INFRA_HOST", raising=False)
-    monkeypatch.delenv("PROMETHEUS_DESKTOP_HOST", raising=False)
+    monkeypatch.delenv("AXON_INFRA_HOST", raising=False)
+    monkeypatch.delenv("AXON_DESKTOP_HOST", raising=False)
 
     config = PlatformConfig(
         platform="pc",
@@ -54,9 +54,9 @@ def test_to_dotenv_keeps_local_defaults_without_remote_host(monkeypatch) -> None
 
     payload = _to_dotenv(config)
 
-    assert "PROMETHEUS_INFRA_HOST=" not in payload
+    assert "AXON_INFRA_HOST=" not in payload
     assert "QDRANT_URL=http://" not in payload
-    assert "PROMETHEUS_OLLAMA_REMOTE_HOST=" not in payload
+    assert "AXON_OLLAMA_REMOTE_HOST=" not in payload
 
 
 def test_build_doctor_report_prefers_remote_infra_when_host_is_configured(tmp_path: Path) -> None:
@@ -268,25 +268,25 @@ def test_build_setup_plan_for_full_local_includes_heavier_model_when_supported()
 
 
 def test_merge_env_text_replaces_generated_values_with_existing_overrides() -> None:
-    source = "PROMETHEUS_VAULT=/custom/vault\nANTHROPIC_API_KEY=secret\n"
-    target = "PROMETHEUS_VAULT=~/vault\nPROMETHEUS_PLATFORM=mac\n"
+    source = "AXON_VAULT=/custom/vault\nANTHROPIC_API_KEY=secret\n"
+    target = "AXON_VAULT=~/vault\nAXON_PLATFORM=mac\n"
 
     merged = merge_env_text(source, target, mode="replace")
 
-    assert "PROMETHEUS_VAULT=/custom/vault" in merged
-    assert "PROMETHEUS_PLATFORM=mac" in merged
+    assert "AXON_VAULT=/custom/vault" in merged
+    assert "AXON_PLATFORM=mac" in merged
     assert "ANTHROPIC_API_KEY=secret" in merged
 
 
 def test_merge_env_text_appends_only_missing_defaults() -> None:
-    source = "PROMETHEUS_ENGINE=~/dev/Prometheus\nPROMETHEUS_VAULT=~/vault\n"
-    target = "PROMETHEUS_ENGINE=/already/set\nPROMETHEUS_PLATFORM=pc\n"
+    source = "AXON_ENGINE=~/dev/Prometheus\nAXON_VAULT=~/vault\n"
+    target = "AXON_ENGINE=/already/set\nAXON_PLATFORM=pc\n"
 
     merged = merge_env_text(source, target, mode="append-missing")
 
-    assert "PROMETHEUS_ENGINE=/already/set" in merged
-    assert "PROMETHEUS_VAULT=~/vault" in merged
-    assert "PROMETHEUS_PLATFORM=pc" in merged
+    assert "AXON_ENGINE=/already/set" in merged
+    assert "AXON_VAULT=~/vault" in merged
+    assert "AXON_PLATFORM=pc" in merged
 
 
 def _runtime(
@@ -304,7 +304,7 @@ def _runtime(
         mode="full-local",
         engine_root=engine_root,
         vault_root=vault_root,
-        db_path=engine_root / "data" / "prometheus.db",
+        db_path=engine_root / "data" / "axon.db",
         qdrant_url="http://localhost:6333",
         redis_url="redis://localhost:6379",
         rtk_max_tokens=450,

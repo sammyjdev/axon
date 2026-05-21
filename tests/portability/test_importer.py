@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from prometheus.portability.exporter import export_portability_bundle
-from prometheus.portability.importer import import_portability_bundle
+from axon.portability.exporter import export_portability_bundle
+from axon.portability.importer import import_portability_bundle
 
 
 def _sha256(path: Path) -> str:
@@ -32,10 +32,10 @@ def test_import_portability_bundle_restores_bundle_into_fresh_engine_root(
     source_outcomes.write_bytes(b"outcomes-db")
     config_path.write_text("[runtime]\nmode = \"hybrid-local\"\n", encoding="utf-8")
 
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(source_engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(tmp_path / "vault"))
-    monkeypatch.setenv("PROMETHEUS_RUNTIME_MODE", "hybrid-local")
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_ENGINE", str(source_engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(tmp_path / "vault"))
+    monkeypatch.setenv("AXON_RUNTIME_MODE", "hybrid-local")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "secret-should-not-export")
 
     export_portability_bundle(
@@ -77,9 +77,9 @@ def test_import_portability_bundle_rejects_wrong_manifest_version(
     export_root = tmp_path / "bundle"
 
     config_path.write_text("[runtime]\nmode = \"minimal\"\n", encoding="utf-8")
-    monkeypatch.setenv("PROMETHEUS_CONFIG", str(config_path))
-    monkeypatch.setenv("PROMETHEUS_ENGINE", str(source_engine_root))
-    monkeypatch.setenv("PROMETHEUS_VAULT", str(tmp_path / "vault"))
+    monkeypatch.setenv("AXON_CONFIG", str(config_path))
+    monkeypatch.setenv("AXON_ENGINE", str(source_engine_root))
+    monkeypatch.setenv("AXON_VAULT", str(tmp_path / "vault"))
 
     export_portability_bundle(
         export_root,

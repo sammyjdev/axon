@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from prometheus.expansion.scoring import (
+from axon.expansion.scoring import (
     DEFAULT_LOCAL_MODEL,
     ExpansionCandidate,
     ExpansionDecision,
@@ -40,7 +40,7 @@ def test_score_candidate_uses_local_slm_by_default(monkeypatch) -> None:
                 }
             }
 
-    monkeypatch.setattr("prometheus.expansion.scoring.ollama.Client", FakeClient)
+    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
 
     candidate = ExpansionCandidate(
         title="Staged review for expansion",
@@ -89,7 +89,7 @@ def test_score_candidate_falls_back_when_model_invents_evidence(monkeypatch) -> 
                 }
             }
 
-    monkeypatch.setattr("prometheus.expansion.scoring.ollama.Client", FakeClient)
+    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
 
     candidate = ExpansionCandidate(
         title="Minimal notes",
@@ -113,7 +113,7 @@ def test_score_candidate_discards_unrelated_content_with_heuristics(monkeypatch)
         def chat(self, *, model: str, format: str, messages, options):
             raise RuntimeError("ollama offline")
 
-    monkeypatch.setattr("prometheus.expansion.scoring.ollama.Client", FakeClient)
+    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
 
     candidate = ExpansionCandidate(
         title="Gardening notes",
@@ -140,7 +140,7 @@ def test_score_candidate_returns_maybe_for_relevant_but_thin_content(monkeypatch
         def chat(self, *, model: str, format: str, messages, options):
             raise RuntimeError("use fallback")
 
-    monkeypatch.setattr("prometheus.expansion.scoring.ollama.Client", FakeClient)
+    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
 
     candidate = ExpansionCandidate(
         title="Java Streams gotcha",
@@ -165,7 +165,7 @@ def test_score_candidates_preserves_order(monkeypatch) -> None:
         def chat(self, *, model: str, format: str, messages, options):
             raise RuntimeError("fallback")
 
-    monkeypatch.setattr("prometheus.expansion.scoring.ollama.Client", FakeClient)
+    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
 
     candidates = [
         ExpansionCandidate(

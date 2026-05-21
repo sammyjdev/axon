@@ -13,12 +13,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from prometheus.store.collections import get_search_collections
-from prometheus.store.failure_store import FailureRecord, FailureStore
-from prometheus.store.graph_store import GraphStore
-from prometheus.store.outcome_store import OutcomeRecord, OutcomeStore
-from prometheus.store.session_store import ADR, CodeChange, SessionMemory, SessionStore
-from prometheus.store.vector_store import VectorStore
+from axon.store.collections import get_search_collections
+from axon.store.failure_store import FailureRecord, FailureStore
+from axon.store.graph_store import GraphStore
+from axon.store.outcome_store import OutcomeRecord, OutcomeStore
+from axon.store.session_store import ADR, CodeChange, SessionMemory, SessionStore
+from axon.store.vector_store import VectorStore
 
 # ── collections.py ─────────────────────────────────────────────────────────────
 
@@ -64,7 +64,7 @@ class TestVectorStoreSearch:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            "prometheus.store.vector_store._utcnow",
+            "axon.store.vector_store._utcnow",
             lambda: datetime(2026, 5, 8, tzinfo=UTC),
         )
         store = VectorStore.__new__(VectorStore)

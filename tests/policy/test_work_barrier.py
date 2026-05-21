@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from prometheus.embedder.chunker import Chunk
-from prometheus.embedder.pipeline import index_path
-from prometheus.store.collections import get_search_collections
+from axon.embedder.chunker import Chunk
+from axon.embedder.pipeline import index_path
+from axon.store.collections import get_search_collections
 
 
 class FakeEngine:
@@ -55,7 +55,7 @@ async def test_index_path_skips_work_tree_without_explicit_context(
             )
         ]
 
-    monkeypatch.setattr("prometheus.embedder.pipeline.chunk_source", fake_chunk_source)
+    monkeypatch.setattr("axon.embedder.pipeline.chunk_source", fake_chunk_source)
 
     store = FakeStore()
     indexed_files, total_chunks = await index_path(
@@ -93,7 +93,7 @@ async def test_index_path_allows_work_when_context_is_explicit(monkeypatch, tmp_
             )
         ]
 
-    monkeypatch.setattr("prometheus.embedder.pipeline.chunk_source", fake_chunk_source)
+    monkeypatch.setattr("axon.embedder.pipeline.chunk_source", fake_chunk_source)
 
     store = FakeStore()
     indexed_files, total_chunks = await index_path(

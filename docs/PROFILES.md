@@ -10,7 +10,7 @@ Today, the CLI uses a deliberately small built-in profile model:
 
 Using a profile updates the active profile in `[runtime]`, syncs the runtime
 `mode`, and, when `.env.local` exists next to `prometheus.toml`, also updates
-`PROMETHEUS_RUNTIME_MODE`.
+`AXON_RUNTIME_MODE`.
 
 Profiles do not currently enable or disable individual subsystems at runtime.
 They are the current way to choose the operating shape that best fits your

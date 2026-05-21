@@ -30,7 +30,7 @@ cd ~/dev/Prometheus
 ## 2. Point setup to the remote infra host
 
 ```bash
-export PROMETHEUS_INFRA_HOST=<remote-host-or-ip>
+export AXON_INFRA_HOST=<remote-host-or-ip>
 ./setup.sh
 pipx install --editable .
 ```
@@ -46,19 +46,19 @@ source .env.local
 set +a
 
 export ANTHROPIC_API_KEY=<your-key>
-export PROMETHEUS_ENGINE="$PWD"
-export PROMETHEUS_VAULT="$HOME/vault"
+export AXON_ENGINE="$PWD"
+export AXON_VAULT="$HOME/vault"
 ```
 
 ## 4. Create a small vault
 
 ```bash
 mkdir -p \
-  "$PROMETHEUS_VAULT/knowledge" \
-  "$PROMETHEUS_VAULT/personal" \
-  "$PROMETHEUS_VAULT/career"
+  "$AXON_VAULT/knowledge" \
+  "$AXON_VAULT/personal" \
+  "$AXON_VAULT/career"
 
-cat > "$PROMETHEUS_VAULT/knowledge/first-note.md" <<'EOF'
+cat > "$AXON_VAULT/knowledge/first-note.md" <<'EOF'
 # Prometheus
 
 Prometheus can run locally in WSL2 while retrieval infra lives on another host.
@@ -68,7 +68,7 @@ EOF
 ## 5. Index and ask
 
 ```bash
-pb index "$PROMETHEUS_VAULT/knowledge" --ctx knowledge
+pb index "$AXON_VAULT/knowledge" --ctx knowledge
 pb ask "What does this vault contain?"
 ```
 

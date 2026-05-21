@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from prometheus.context.compression_quality import (
+from axon.context.compression_quality import (
     CompressionConfidence,
     assess_compression_confidence,
     compression_contamination_note,

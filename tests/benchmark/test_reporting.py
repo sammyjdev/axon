@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from prometheus.benchmark.contracts import (
+from axon.benchmark.contracts import (
     BenchmarkCheck,
     BenchmarkResult,
     BenchmarkRunSummary,
 )
-from prometheus.benchmark.reporting import (
+from axon.benchmark.reporting import (
     compare_benchmark_runs,
     format_benchmark_comparison,
 )

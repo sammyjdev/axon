@@ -1,1 +1,1 @@
-from prometheus.embedder.chunker import *  # noqa: F403
+from axon.embedder.chunker import *  # noqa: F403
