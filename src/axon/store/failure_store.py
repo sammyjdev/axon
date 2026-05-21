@@ -1,10 +1,10 @@
 import asyncio
 import json
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
+from pydantic import BaseModel, Field
 
 DDL = """
 CREATE TABLE IF NOT EXISTS failure_record (
@@ -19,19 +19,14 @@ CREATE TABLE IF NOT EXISTS failure_record (
 """
 
 
-@dataclass
-class FailureRecord:
+class FailureRecord(BaseModel):
     project: str
     operation: str
     error_message: str
     probable_cause: str
     tags: list[str]
     id: int = 0
-    created_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        if self.created_at is None:
-            self.created_at = datetime.now(UTC)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class FailureStore:
