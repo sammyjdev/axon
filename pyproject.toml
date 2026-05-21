@@ -1,41 +1,25 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
-name = "prometheus-engine"
+name = "praxis"
 version = "0.1.0"
-description = "Self-hosted second-brain engine for local context retrieval and tooling"
-requires-python = ">=3.11"
+description = "Praxis — LangGraph task-orchestration engine with an MCP interface"
+requires-python = ">=3.11,<4.0"
 readme = "README.md"
-license = { text = "MIT" }
-authors = [{ name = "Prometheus contributors" }]
-keywords = ["rag", "cli", "knowledge-base", "local-first", "second-brain"]
+license = "MIT"
+authors = [{ name = "Praxis contributors" }]
+keywords = ["langgraph", "mcp", "orchestration", "agents", "task-graph"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "fastembed>=0.4.0",
-    "qdrant-client>=1.9.0",
-    "redis>=5.0.0",
-    "watchdog>=4.0.0",
-    "tree-sitter>=0.23.0",
-    "tree-sitter-java>=0.23.0",
-    "tree-sitter-python>=0.23.0",
-    "tree-sitter-typescript>=0.23.0",
-    "litellm>=1.40.0",
-    "mcp[cli]>=1.0.0",
+    "mcp[cli]>=1.2.0",
+    "langgraph>=0.2.0",
+    "langgraph-checkpoint-sqlite>=2.0.0",
     "typer>=0.12.0",
-    "ollama>=0.2.0",
-    "aiosqlite>=0.20.0",
     "python-dotenv>=1.0.0",
-    "mem0ai>=0.1.0",
 ]
 
 [project.urls]
@@ -43,32 +27,43 @@ Homepage = "https://github.com/sammyjdev/Prometheus"
 Repository = "https://github.com/sammyjdev/Prometheus"
 
 [project.scripts]
-pb = "prometheus.cli.pb:app"
+praxis-server = "praxis.server:main"
 
-[project.optional-dependencies]
-graph = [
-    "graphifyy",
-    "neo4j>=5.0.0",
-]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-cov>=5.0.0",
-    "ruff>=0.4.0",
-    "testcontainers[qdrant,redis]>=4.0.0",
-]
+[tool.poetry]
+packages = [{ include = "praxis", from = "src" }]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/prometheus"]
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0.0"
+pytest-asyncio = ">=0.23.0"
+ruff = ">=0.4.0"
+mypy = ">=1.10.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests"]
+testpaths = ["tests/praxis"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 100
+# Legacy Prometheus code is parked, not part of the Praxis project. The Praxis
+# test suite lives in tests/praxis and is linted via `ruff check tests/praxis`.
+extend-exclude = ["src/prometheus", "src/embedder", "scripts", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+exclude = '^src/(prometheus|embedder)/'

@@ -1,89 +1,47 @@
 services:
-  qdrant:
-    image: qdrant/qdrant:latest
-    volumes:
-      - ./data/qdrant:/qdrant/storage
-    ports:
-      - "6333:6333"
-    restart: unless-stopped
-
   redis:
     image: redis:7-alpine
-    volumes:
-      - ./data/redis:/data
     ports:
       - "6379:6379"
-    restart: unless-stopped
-
-  neo4j:
-    image: neo4j:5-community
-    environment:
-      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-change-me}
-      NEO4J_server_memory_heap_max__size: 1G
     volumes:
-      - ./data/neo4j:/data
-    ports:
-      - "7474:7474"
-      - "7687:7687"
+      - praxis-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
 
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-prometheus}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
-      POSTGRES_DB: ${POSTGRES_DB:-langfuse}
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  langfuse:
-    image: langfuse/langfuse:2
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-prometheus}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-langfuse}
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me}
-      NEXTAUTH_URL: ${LANGFUSE_HOST:-http://localhost:3000}
-      SALT: ${LANGFUSE_SALT:-change-me}
-      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
-    ports:
-      - "3000:3000"
+  praxis:
+    build:
+      context: .
+      dockerfile: Dockerfile
     depends_on:
-      - postgres
+      redis:
+        condition: service_healthy
+    environment:
+      PRAXIS_TRANSPORT: streamable-http
+      PRAXIS_HOST: 0.0.0.0
+      PRAXIS_PORT: "8000"
+      PRAXIS_DB: /data/praxis.sqlite
+      PRAXIS_REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - praxis-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys; from praxis.health import health_report; sys.exit(0 if health_report().get('status') == 'ok' else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
-  # NVIDIA-enabled Ollama profile
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ./data/ollama:/root/.ollama
-    ports:
-      - "11434:11434"
-    environment:
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
-      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
-      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [ gpu ]
-    profiles:
-      - gpu
-    restart: unless-stopped
-
-  # CPU-only Ollama profile
-  ollama-cpu:
-    image: ollama/ollama:latest
-    volumes:
-      - ./data/ollama:/root/.ollama
-    ports:
-      - "11434:11434"
-    environment:
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
-      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
-      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
-    profiles:
-      - cpu
-    restart: unless-stopped
+volumes:
+  praxis-data:
+  praxis-redis:

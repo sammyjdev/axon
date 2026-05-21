@@ -20,6 +20,9 @@ data/
 *.sqlite
 *.sqlite3
 
+# Praxis runtime state (checkpoints + task worktrees)
+.praxis/
+
 # Local article drafts
 docs/LINKEDIN_ARTICLE_NOTES.md
 
