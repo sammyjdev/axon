@@ -36,3 +36,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Benchmark outputs
+benchmarks/results/*.png
