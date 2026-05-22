@@ -15,18 +15,6 @@ services:
       - "6379:6379"
     restart: unless-stopped
 
-  neo4j:
-    image: neo4j:5-community
-    environment:
-      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-change-me}
-      NEO4J_server_memory_heap_max__size: 1G
-    volumes:
-      - ./data/neo4j:/data
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    restart: unless-stopped
-
   postgres:
     image: postgres:16-alpine
     environment:

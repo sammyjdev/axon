@@ -45,10 +45,12 @@ external Markdown vault, typically configured through:
 - `gemma4:e4b`: local scoring and classification
 - `gemma4:26b`: heavier deep-suggestion workloads on larger hardware
 
-### D4: Split graph backends
+### D4: Split graph backends (revised by dec-101)
 
-- Redis stores code dependency relationships.
-- Neo4j is reserved for Mem0-style memory relationships.
+- SQLite is the source-of-truth for the code graph and decisions.
+- Redis caches structural subgraphs for low-latency reads.
+- Mem0 runs vector-only over Qdrant. Neo4j was evaluated and dropped — see
+  `docs/decisions/dec-101-revoke-d4-drop-neo4j.md`.
 
 ### D5: Chunker quality is a release gate
 

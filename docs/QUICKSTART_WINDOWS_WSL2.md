@@ -16,8 +16,8 @@ Inside WSL2, install these first:
 
 You also need:
 
-- a reachable remote Prometheus infra host with Qdrant, Redis, Neo4j, Langfuse,
-  and Ollama running
+- a reachable remote AXON infra host with Qdrant, Redis, Langfuse, and Ollama
+  running
 - an `ANTHROPIC_API_KEY` for cloud-routed calls
 
 ## 1. Open WSL2 and clone the engine

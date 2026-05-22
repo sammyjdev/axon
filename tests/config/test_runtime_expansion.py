@@ -60,7 +60,6 @@ def test_runtime_supports_remote_desktop_infra(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AXON_VAULT", str(vault_root))
     monkeypatch.setenv("QDRANT_URL", "http://desktop.local:6333")
     monkeypatch.setenv("REDIS_URL", "redis://desktop.local:6379")
-    monkeypatch.setenv("NEO4J_URI", "bolt://desktop.local:7687")
     monkeypatch.setenv("AXON_OLLAMA_LOCAL_HOST", "http://desktop.local:11434")
     monkeypatch.setenv("AXON_OLLAMA_REMOTE_HOST", "http://desktop.local:11434")
 
