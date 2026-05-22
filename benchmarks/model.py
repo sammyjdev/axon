@@ -23,6 +23,12 @@ class SessionParams:
     growth_per_turn: int
     recall_budget: int
 
+    def __post_init__(self) -> None:
+        if self.turns < 1:
+            raise ValueError(f"turns must be >= 1, got {self.turns}")
+        if min(self.base_context, self.growth_per_turn, self.recall_budget) < 0:
+            raise ValueError("token counts must be non-negative")
+
 
 def turn_costs(params: SessionParams, *, mode: str) -> list[int]:
     """Input-token cost of each turn, 1-indexed, for the given mode."""
@@ -44,7 +50,11 @@ def session_total(params: SessionParams, *, mode: str) -> int:
 
 
 def savings(params: SessionParams) -> float:
-    """Fraction of baseline tokens removed by AXON (0.0-1.0)."""
+    """Fraction of baseline tokens removed by AXON.
+
+    Normally 0.0-1.0, but can be negative for very short sessions where the
+    fixed recall budget has not yet paid off against the growing baseline.
+    """
     base = session_total(params, mode="baseline")
     axon = session_total(params, mode="axon")
     return 1.0 - axon / base
