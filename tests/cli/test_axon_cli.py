@@ -77,3 +77,14 @@ def test_serve_starts_mcp_server(monkeypatch):
     result = runner.invoke(app, ["serve"])
     assert result.exit_code == 0
     assert called["ran"] is True
+
+
+def test_health_prints_subsystem_report(monkeypatch):
+    async def fake_health():
+        return "# AXON health\n- sqlite: ok\n- redis: down (boom)"
+
+    monkeypatch.setattr("axon.mcp.server.axon_health", fake_health)
+    result = runner.invoke(app, ["health"])
+    assert result.exit_code == 0
+    assert "AXON health" in result.stdout
+    assert "sqlite: ok" in result.stdout
