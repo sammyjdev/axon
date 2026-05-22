@@ -29,7 +29,7 @@ til_app = typer.Typer(help="TIL e HOW-TO — knowledge automation")
 deep_app = typer.Typer(help="Sugestões de aprofundamento técnico")
 expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
 memory_app = typer.Typer(help="Memória Mem0 / Neo4j")
-graph_app = typer.Typer(help="Grafo estrutural Graphify / Neo4j")
+graph_app = typer.Typer(help="Grafo estrutural de código (SQLite)")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
 portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
 
@@ -157,20 +157,6 @@ def _handle_expand_expected_error(exc: FileNotFoundError | ValueError) -> None:
     raise typer.Exit(1)
 
 
-def _neo4j_driver():
-    try:
-        from neo4j import GraphDatabase
-    except ImportError as exc:
-        raise typer.BadParameter(
-            "neo4j driver não instalado. Instale o extra graph: pip install -e '.[graph]'"
-        ) from exc
-
-    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
-    user = os.environ.get("NEO4J_USER", "neo4j")
-    password = os.environ.get("NEO4J_PASSWORD", "local-password")
-    return GraphDatabase.driver(uri, auth=(user, password))
-
-
 def _normalize_configure_value(
     field: str,
     value: str | None,
@@ -226,24 +212,6 @@ def _validate_configure_combination(
         )
     if cloud == "ok":
         raise typer.BadParameter("privacy=restricted is incompatible with cloud=ok")
-
-
-def _run_neo4j_write(cypher: str) -> None:
-    driver = _neo4j_driver()
-    try:
-        with driver.session() as session:
-            session.run(cypher)
-    finally:
-        driver.close()
-
-
-def _run_neo4j_read(cypher: str) -> list[dict]:
-    driver = _neo4j_driver()
-    try:
-        with driver.session() as session:
-            return [dict(record) for record in session.run(cypher)]
-    finally:
-        driver.close()
 
 
 def _build_planner_executor_prompts(
@@ -1709,82 +1677,78 @@ def _do_promote_today() -> None:
 
 @graph_app.command("index")
 def graph_index(
-    project: Annotated[str, typer.Option("--project", help="Project slug para namespace Neo4j")],
-    repo: Annotated[str, typer.Option("--repo", help="Repo a indexar com Graphify")],
+    repo: Annotated[str, typer.Option("--repo", help="Repo a indexar no grafo de código")],
 ) -> None:
-    """Indexa grafo estrutural via Graphify com namespace isolado por projeto."""
-    from axon.store.graph_namespace import transform_cypher
-
-    graphify_bin = shutil.which("graphify")
-    if graphify_bin is None:
-        typer.echo(
-            "graphifyy não instalado. "
-            "Instale com: pip install -e '.[graph]' ou pip install graphifyy",
-            err=True,
-        )
-        raise typer.Exit(1)
+    """Indexa símbolos e edges de um repo no grafo de código (SQLite)."""
+    from axon.code.indexer import index_repo
+    from axon.code.resolver import index_edges
+    from axon.store.session_store import SessionStore
 
     repo_path = Path(repo).expanduser()
     if not repo_path.exists():
         typer.echo(f"Repo não encontrado: {repo_path}", err=True)
         raise typer.Exit(1)
 
-    result = subprocess.run(
-        [graphify_bin, str(repo_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        typer.echo(result.stderr.strip() or "graphify falhou ao extrair Cypher.", err=True)
-        raise typer.Exit(result.returncode)
+    async def _index() -> tuple[int, int]:
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            symbols = await index_repo(repo_path, store=store)
+            edges = await index_edges(repo_path, store=store)
+            return len(symbols), len(edges)
+        finally:
+            await store.close()
 
-    cypher = result.stdout.strip()
-    if not cypher:
-        typer.echo("graphify não retornou Cypher para enviar ao Neo4j.", err=True)
-        raise typer.Exit(1)
-
-    namespaced = transform_cypher(cypher, project)
-    _run_neo4j_write(namespaced)
-    typer.echo(f"Grafo indexado: project={project} repo={repo_path}")
+    n_symbols, n_edges = asyncio.run(_index())
+    typer.echo(f"Grafo indexado: {n_symbols} símbolos, {n_edges} edges — {repo_path}")
 
 
 @graph_app.command("neighbors")
 def graph_neighbors(
     node: Annotated[str, typer.Argument(help="Nome/id/símbolo do nó")],
-    project: Annotated[str, typer.Option("--project", help="Project slug do namespace")],
     depth: Annotated[int, typer.Option("--depth", help="Profundidade de vizinhança")] = 1,
 ) -> None:
-    """Lista vizinhos de um nó no namespace Graphify do projeto."""
-    from axon.store.graph_namespace import neighbors_query
+    """Lista vizinhos de um nó no grafo de código (SQLite)."""
+    from axon.store.session_store import SessionStore
 
-    rows = _run_neo4j_read(neighbors_query(node, project, depth))
-    if not rows:
+    async def _neighbors() -> list[dict[str, str]]:
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            subgraph = await store.query_subgraph(node, depth=depth)
+            return subgraph["edges"]  # type: ignore[return-value]
+        finally:
+            await store.close()
+
+    edges = asyncio.run(_neighbors())
+    if not edges:
         typer.echo("Nenhum vizinho encontrado.")
         return
-    for row in rows:
-        typer.echo(f"{row.get('node')} -> {row.get('neighbor')}")
+    for edge in edges:
+        typer.echo(f"{edge['source']} -> {edge['target']}")
 
 
 @graph_app.command("path")
 def graph_path(
     from_node: Annotated[str, typer.Argument(help="Nó de origem")],
     to_node: Annotated[str, typer.Argument(help="Nó de destino")],
-    project: Annotated[str, typer.Option("--project", help="Project slug do namespace")],
 ) -> None:
-    """Mostra o caminho mais curto entre dois nós no namespace do projeto."""
-    from axon.store.graph_namespace import path_query
+    """Mostra o caminho mais curto entre dois nós no grafo de código (SQLite)."""
+    from axon.store.session_store import SessionStore
 
-    rows = _run_neo4j_read(path_query(from_node, to_node, project))
-    if not rows:
+    async def _path() -> list[str] | None:
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            return await store.shortest_path(from_node, to_node)
+        finally:
+            await store.close()
+
+    path = asyncio.run(_path())
+    if not path:
         typer.echo("Nenhum caminho encontrado.")
         return
-    for row in rows:
-        path = row.get("path")
-        if isinstance(path, list):
-            typer.echo(" -> ".join(str(item) for item in path))
-        else:
-            typer.echo(str(path))
+    typer.echo(" -> ".join(path))
 
 
 @til_app.command("howto")

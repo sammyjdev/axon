@@ -1208,52 +1208,63 @@ def test_rtk_init_codex_calls_expected_command(monkeypatch) -> None:
     assert commands == [["/usr/local/bin/rtk", "init", "-g", "--codex"]]
 
 
-def test_graph_index_fails_clearly_when_graphify_is_missing(monkeypatch, tmp_path) -> None:
+def _seed_edges(db: Path, edges: list[tuple[str, str]]) -> None:
+    """Insert calls edges into a fresh SQLite graph at ``db``."""
+
+    async def _run() -> None:
+        from axon.core.edge import Edge
+        from axon.store.session_store import SessionStore
+
+        store = SessionStore(db)
+        await store.init()
+        for source, target in edges:
+            await store.add_edge(Edge(source_id=source, target_id=target, type="calls"))
+        await store.close()
+
+    asyncio.run(_run())
+
+
+def test_graph_index_reports_counts(monkeypatch, tmp_path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    monkeypatch.setattr(pb.shutil, "which", lambda _name: None)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    (repo / "mod.py").write_text("def alpha():\n    return 1\n", encoding="utf-8")
+    monkeypatch.setattr(pb, "_get_db_path", lambda: tmp_path / "axon.db")
 
-    result = runner.invoke(
-        pb.app,
-        ["graph", "index", "--project", "rpg-master-ai", "--repo", str(repo)],
-    )
-
-    assert result.exit_code == 1
-    assert "graphifyy não instalado" in result.output
-
-
-def test_graph_neighbors_requires_project() -> None:
-    result = runner.invoke(pb.app, ["graph", "neighbors", "CampaignService"])
-
-    assert result.exit_code != 0
-    assert "Missing option" in result.output
-
-
-def test_graph_neighbors_prints_namespaced_results(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_read(query: str):
-        captured["query"] = query
-        return [{"node": "CampaignService", "neighbor": "CampaignRepository"}]
-
-    monkeypatch.setattr(pb, "_run_neo4j_read", fake_read)
-
-    result = runner.invoke(
-        pb.app,
-        [
-            "graph",
-            "neighbors",
-            "CampaignService",
-            "--project",
-            "rpg-master-ai",
-            "--depth",
-            "2",
-        ],
-    )
+    result = runner.invoke(pb.app, ["graph", "index", "--repo", str(repo)])
 
     assert result.exit_code == 0
-    assert "rpg_master_ai__" in str(captured["query"])
-    assert "CampaignRepository" in result.stdout
+    assert "símbolos" in result.output
+
+
+def test_graph_index_fails_for_missing_repo(tmp_path) -> None:
+    result = runner.invoke(
+        pb.app, ["graph", "index", "--repo", str(tmp_path / "nope")]
+    )
+    assert result.exit_code == 1
+    assert "não encontrado" in result.output
+
+
+def test_graph_neighbors_lists_edges(monkeypatch, tmp_path) -> None:
+    db = tmp_path / "axon.db"
+    monkeypatch.setattr(pb, "_get_db_path", lambda: db)
+    _seed_edges(db, [("A", "B")])
+
+    result = runner.invoke(pb.app, ["graph", "neighbors", "A"])
+
+    assert result.exit_code == 0
+    assert "A -> B" in result.output
+
+
+def test_graph_path_prints_route(monkeypatch, tmp_path) -> None:
+    db = tmp_path / "axon.db"
+    monkeypatch.setattr(pb, "_get_db_path", lambda: db)
+    _seed_edges(db, [("A", "B"), ("B", "C")])
+
+    result = runner.invoke(pb.app, ["graph", "path", "A", "C"])
+
+    assert result.exit_code == 0
+    assert "A -> B -> C" in result.output
 
 
 def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
