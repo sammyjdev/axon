@@ -2,30 +2,34 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field
 
 MANIFEST_FILENAME = "domain-pack.json"
 SCHEMA_VERSION = "1"
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
-@dataclass(frozen=True)
-class DomainSignals:
+class DomainSignals(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     languages: tuple[str, ...] = ()
     artifact_types: tuple[str, ...] = ()
     task_types: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True)
-class DomainPackExample:
+class DomainPackExample(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     name: str
     prompt: str | None = None
     template: str | None = None
 
 
-@dataclass(frozen=True)
-class DomainPackManifest:
+class DomainPackManifest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     schema_version: str
     version: str
     domain_id: str
@@ -34,8 +38,8 @@ class DomainPackManifest:
     signals: DomainSignals
     manifest_path: Path
     default_profiles: tuple[str, ...] = ()
-    retrieval_defaults: dict[str, object] = field(default_factory=dict)
-    policy_defaults: dict[str, object] = field(default_factory=dict)
+    retrieval_defaults: dict[str, object] = Field(default_factory=dict)
+    policy_defaults: dict[str, object] = Field(default_factory=dict)
     examples: tuple[DomainPackExample, ...] = ()
 
 

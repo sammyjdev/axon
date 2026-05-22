@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import ast
 import re
-from dataclasses import dataclass
+
+from pydantic import BaseModel, ConfigDict
 
 from axon.embedder.chunker import Chunk
 
@@ -36,8 +37,9 @@ _SKIP_CALLS = {
 }
 
 
-@dataclass(frozen=True)
-class DependencyRecord:
+class DependencyRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     symbol: str
     calls: list[str]
     called_by: list[str]

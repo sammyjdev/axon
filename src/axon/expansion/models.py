@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SourceFormat(StrEnum):
@@ -15,8 +16,9 @@ class ExtractionMode(StrEnum):
     ARTICLE = "article"
 
 
-@dataclass(frozen=True)
-class JsonFieldMap:
+class JsonFieldMap(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     title: tuple[str | int, ...]
     url: tuple[str | int, ...]
     published_at: tuple[str | int, ...] = ()
@@ -24,8 +26,9 @@ class JsonFieldMap:
     content: tuple[str | int, ...] = ()
 
 
-@dataclass(frozen=True)
-class SourceDefinition:
+class SourceDefinition(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     source_id: str
     name: str
     endpoint: str
@@ -38,16 +41,18 @@ class SourceDefinition:
     headers: tuple[tuple[str, str], ...] = ()
 
 
-@dataclass(frozen=True)
-class SourceResponse:
+class SourceResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     url: str
     status_code: int
     text: str
     content_type: str | None = None
 
 
-@dataclass(frozen=True)
-class SourceDocument:
+class SourceDocument(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     document_id: str
     source_id: str
     source_name: str
@@ -56,4 +61,4 @@ class SourceDocument:
     published_at: str | None
     summary: str
     content: str
-    metadata: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, str] = Field(default_factory=dict)
