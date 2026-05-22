@@ -126,13 +126,14 @@
 
         <div class="install-block">
           <button class="copy-btn" id="copy-btn" type="button" aria-label="Copy install commands">Copy</button>
-          <pre id="install-code"><span class="comment"># Install from source (not yet on PyPI)</span>
+          <pre id="install-code"><span class="comment"># Clone and install from source (not yet on PyPI)</span>
+<span class="cmd">git clone https://github.com/axon-ai/axon</span>
 <span class="cmd">pip install -e .</span>
 
 <span class="comment"># Initialise AXON in your project</span>
 <span class="cmd">axon init</span></pre>
         </div>
-        <p class="note">Requires Python 3.11+. Run these commands from the root of your project.</p>
+        <p class="note">Requires Python 3.11+. Run <code>pip install -e .</code> and <code>axon init</code> from the root of the cloned repo.</p>
 
         <!-- Token savings callout -->
         <div class="callout">
@@ -144,7 +145,7 @@
           </span>
           <div>
             <p class="callout-stat">52.3% fewer input tokens</p>
-            <p>In a modelled 20-turn coding session, AXON's context compression cut input token usage by 52.3% compared to naively forwarding full session history to the agent.</p>
+            <p>In a modelled 20-turn coding session, AXON's context compression cut input token usage by 52.3% compared to re-supplying the full project context every turn.</p>
           </div>
         </div>
 
@@ -171,7 +172,7 @@
       var code = document.getElementById('install-code');
       if (!btn || !code) return;
       btn.addEventListener('click', function () {
-        var text = 'pip install -e .\naxon init';
+        var text = 'git clone https://github.com/axon-ai/axon\npip install -e .\naxon init';
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(function () {
             btn.textContent = 'Copied!';

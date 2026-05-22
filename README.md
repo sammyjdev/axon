@@ -16,7 +16,7 @@ any agent.
 AXON is not yet on PyPI. Install from source:
 
 ```bash
-git clone https://github.com/samjrdev/axon.git
+git clone https://github.com/axon-ai/axon.git
 cd axon
 pip install -e .
 ```
@@ -59,6 +59,7 @@ flowchart LR
     subgraph Storage
         SQ[(SQLite\nsource of truth)]
         RD[(Redis\ngraph cache)]
+        QD[(Qdrant\ncode vectors + mem0 backend)]
         M0[(mem0\nsemantic memory)]
     end
 
@@ -76,7 +77,9 @@ flowchart LR
     GE --> SQ
     SH --> SQ
     SQ --> RD
+    SQ --> QD
     SQ --> M0
+    QD --> M0
     SQ --> MCP
     SQ --> CF
     MCP --> CC
@@ -90,8 +93,9 @@ Capture is **event-driven only** — git commit/push/init and agent session
 start/end. No background timer, no idle cost (see
 [dec-104](docs/decisions/dec-104-event-driven-not-time-driven.md)).
 
-Storage is: **SQLite** (source of truth) + **Redis** (graph cache) + **mem0**
-(semantic memory over Qdrant). Neo4j was evaluated and dropped
+Storage is: **SQLite** (source of truth) + **Redis** (graph cache) +
+**Qdrant** (code vector search and mem0 backend) + **mem0** (semantic memory).
+Neo4j was evaluated and dropped
 ([dec-101](docs/decisions/dec-101-revoke-d4-drop-neo4j.md)).
 
 The primary transport is **MCP (stdio)**. A `.axon/context.md` file in the repo
@@ -134,7 +138,7 @@ any manual ADR writing.
 | **Works across agents** | Yes (MCP + file fallback) | No (Aider-specific) | No (Cline-specific) | Needs custom integration |
 | **Git hook integration** | First-class (`axon install-hooks`) | First-class (core feature) | No | No |
 | **Self-hosted** | Yes | Yes | Depends on VS Code | Yes (open-source) |
-| **Storage** | SQLite + Redis + mem0 | Flat files + git | Flat files | Qdrant / Postgres |
+| **Storage** | SQLite + Redis + Qdrant + mem0 | Flat files + git | Flat files | Qdrant / Postgres |
 
 AXON's distinctive angle is agent-agnostic context continuity — it is not a
 replacement for Aider's editing workflow or Cline's VS Code integration. If you
