@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
@@ -15,10 +16,11 @@ from axon.observability.compression_telemetry import (
 )
 from axon.observability.trace_store import TraceStore
 from axon.policy.core import PolicyRegistry
+from axon.recall import recall_context
 from axon.router.compressor import caveman_compress_guarded
 from axon.store.collections import get_search_collections
 from axon.store.graph_store import GraphStore
-from axon.store.session_store import ADR, SessionStore
+from axon.store.session_store import ADR, SessionNote, SessionStore
 from axon.store.vector_store import VectorStore
 
 # ---------------------------------------------------------------------------
@@ -683,6 +685,71 @@ async def get_graph_path(
         response = "\n".join(lines)
     _record_mcp_tool_call("get_graph_path", f"{from_node}\n{to_node}", response)
     return response
+
+
+# ---------------------------------------------------------------------------
+# Session lifecycle (cross-agent)
+# ---------------------------------------------------------------------------
+
+
+def _detect_repo() -> str:
+    """Best-effort repo name from the working directory."""
+    import subprocess
+
+    try:
+        root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        return Path(root).name
+    except Exception:
+        return Path.cwd().name
+
+
+@mcp.tool()
+async def axon_session_start(agent: str, repo: str | None = None) -> str:
+    """Start an AXON session: recall context for the repo and return it.
+
+    The repo is detected from the working directory when not given. Returns
+    the session id followed by a compact recalled-context summary.
+    """
+    store = _get_session_store()
+    await store.init()
+    repo = repo or _detect_repo()
+    session_id = uuid.uuid4().hex[:12]
+    context = await recall_context(repo, store=store)
+    await store.save_session(session_id, agent, repo, context_payload=context)
+    return f"session: {session_id}\nrepo: {repo}\n\n{context}"
+
+
+@mcp.tool()
+async def axon_session_end(session_id: str, summary: str | None = None) -> str:
+    """End an AXON session. An optional summary is saved as a session note."""
+    store = _get_session_store()
+    await store.init()
+    repo = await store.end_session(session_id)
+    if repo is None:
+        return f"session {session_id} not found."
+    if summary:
+        await store.save_note(SessionNote(project=repo, body=summary))
+    return f"session {session_id} ended ({repo})."
+
+
+@mcp.tool()
+async def axon_capture_event(event_type: str, payload: dict) -> str:
+    """Universal event capture (file_edit, plan_end, test_pass, manual_note...).
+
+    The event is persisted as a session note for the payload's repo.
+    """
+    import json as _json
+
+    store = _get_session_store()
+    await store.init()
+    repo = str(payload.get("repo") or _detect_repo())
+    body = f"[{event_type}] {_json.dumps(payload, sort_keys=True, ensure_ascii=False)}"
+    await store.save_note(SessionNote(project=repo, body=body))
+    return f"captured {event_type} for {repo}."
 
 
 # ---------------------------------------------------------------------------
