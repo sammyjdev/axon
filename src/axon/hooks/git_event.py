@@ -18,8 +18,11 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from axon.code.diff_symbols import symbols_touched_by_commit
 from axon.core.decision import Decision
+from axon.core.edge import Edge
 from axon.hooks.file_bridge import update_context_file
+from axon.store.graph_store import GraphStore
 from axon.store.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -46,8 +49,44 @@ def _default_store() -> SessionStore:
     return SessionStore(db_path=load_runtime_config().data_root / "axon.db")
 
 
+async def _link_touched_symbols(
+    store: SessionStore,
+    decision_id: str,
+    root: Path,
+    commit_hash: str,
+    graph_store: GraphStore | None,
+) -> None:
+    """Link a Decision to the symbols its commit touched; refresh Redis cache."""
+    try:
+        touched = symbols_touched_by_commit(root, commit_hash)
+    except Exception as exc:  # symbol linking is best-effort, never fatal
+        logger.warning("symbol linking skipped: %s", exc)
+        return
+    if not touched:
+        return
+    graph = graph_store or GraphStore()
+    try:
+        for symbol in touched:
+            await store.add_node(
+                symbol.id,
+                "symbol",
+                label=symbol.id,
+                payload=symbol.model_dump(mode="json"),
+            )
+            await store.add_edge(
+                Edge(source_id=decision_id, target_id=symbol.id, type="touches")
+            )
+            await graph.invalidate(symbol.id)
+    finally:
+        if graph_store is None:
+            await graph.close()
+
+
 async def on_commit(
-    *, store: SessionStore | None = None, cwd: Path | None = None
+    *,
+    store: SessionStore | None = None,
+    cwd: Path | None = None,
+    graph_store: GraphStore | None = None,
 ) -> str | None:
     """Capture a draft Decision from the most recent commit.
 
@@ -74,6 +113,7 @@ async def on_commit(
             status="draft",
         )
         await store.save_decision(decision)
+        await _link_touched_symbols(store, decision.id, root, commit_hash, graph_store)
         try:
             await update_context_file(root, store=store)
         except Exception as exc:  # the .md mirror is a convenience, never fatal

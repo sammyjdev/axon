@@ -80,6 +80,42 @@ async def test_on_commit_rejects_unknown_agent(
     assert found[0].agent == "manual"  # unknown agent falls back to manual
 
 
+class _FakeGraph:
+    """Records invalidate() calls; stands in for GraphStore without Redis."""
+
+    def __init__(self) -> None:
+        self.invalidated: list[str] = []
+
+    async def invalidate(self, node_id: str) -> None:
+        self.invalidated.append(node_id)
+
+
+async def test_on_commit_links_touched_symbols(
+    store: SessionStore, tmp_path: Path
+) -> None:
+    repo = tmp_path / "linkrepo"
+    repo.mkdir()
+    _git(["init"], repo)
+    _git(["config", "user.email", "test@axon.dev"], repo)
+    _git(["config", "user.name", "AXON Test"], repo)
+    (repo / "mod.py").write_text("def alpha():\n    return 1\n", encoding="utf-8")
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "feat: add alpha"], repo)
+
+    graph = _FakeGraph()
+    decision_id = await on_commit(store=store, cwd=repo, graph_store=graph)
+    assert decision_id is not None
+
+    subgraph = await store.query_subgraph(decision_id, depth=1)
+    assert "alpha" in subgraph["nodes"]
+    assert {"source": decision_id, "target": "alpha", "type": "touches"} in subgraph[
+        "edges"
+    ]
+    assert "alpha" in graph.invalidated
+    node = await store.get_node("alpha")
+    assert node is not None and node["type"] == "symbol"
+
+
 async def test_on_push_and_on_init_are_safe_stubs(store: SessionStore) -> None:
     assert await on_push(store=store) is None
     assert await on_init(store=store) is None
