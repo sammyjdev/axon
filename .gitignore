@@ -39,3 +39,6 @@ Thumbs.db
 
 # Benchmark outputs
 benchmarks/results/*.png
+
+# Build artifacts
+dist/
