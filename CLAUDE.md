@@ -59,7 +59,9 @@ external Markdown vault, typically configured through:
 ## Code Conventions
 
 - Python 3.11+ with type hints
-- Prefer `dataclass` over ad-hoc dicts
+- Domain/data models (persisted or serialized) use Pydantic v2; internal
+  config and in-process value objects may use `dataclass`. Prefer either over
+  ad-hoc dicts. See `docs/decisions/dec-105-migrate-domain-models-to-pydantic.md`.
 - Prefer async for I/O-heavy paths
 - Add comments only for non-obvious constraints or rationale
 - Keep public examples and docs machine-agnostic
