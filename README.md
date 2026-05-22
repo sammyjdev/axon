@@ -1,239 +1,187 @@
-# Prometheus
+# AXON
 
-Prometheus is a self-hosted context engine for engineers who want durable
-project memory, local semantic retrieval, and safer AI-assisted workflows
-without pushing their working context into a hosted knowledge base.
+**Same context, any AI coding agent.**
 
-It keeps notes and code-adjacent knowledge in an external Markdown vault,
-indexes that material into local stores, and exposes the result through a CLI
-(`pb`) and an MCP server for coding agents.
+Every time you switch coding agents — from Claude Code to Codex to Cursor — or
+resume a project after a few days away, your AI assistant starts blank. AXON
+solves this by capturing context at the moments it crystallises (git commits,
+session boundaries) and surfacing it on demand over MCP or a plain
+`.axon/context.md` file that any agent can read. One install, continuous memory,
+any agent.
 
-## Why Prometheus
+---
 
-- Keep long-running technical context outside chat history.
-- Retrieve only the relevant slices of knowledge for the current task.
-- Separate general and restricted contexts with explicit guardrails.
-- Compress retrieved context before handing it to larger models.
-- Run the full stack locally with Docker, Ollama, Qdrant, Redis, and Neo4j.
+## Quickstart
 
-## Architecture
+AXON is not yet on PyPI. Install from source:
+
+```bash
+git clone https://github.com/samjrdev/axon.git
+cd axon
+pip install -e .
+```
+
+Initialize AXON in a repo (installs git hooks and indexes the code):
+
+```bash
+axon init /path/to/your-repo
+```
+
+Register the MCP server with your coding agent. For Claude Code, add this to
+your project's `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "axon": {
+      "command": "axon",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+`axon serve` runs the MCP server over stdio. Once registered, the tools
+`axon_get_context`, `axon_capture`, `axon_handoff`, `axon_search`,
+`axon_export_now`, and `axon_health` are available inside your agent session.
+
+---
+
+## How it works
 
 ```mermaid
 flowchart LR
-    V[External Markdown Vault<br/>~/vault] --> I[Indexing Pipeline]
-    I --> Q[Qdrant<br/>semantic chunks]
-    I --> R[Redis<br/>code dependency graph]
-    M[Mem0 Layer] --> N[Neo4j<br/>memory graph]
-    C[pb CLI] --> A[Prometheus Engine]
-    P[MCP Clients<br/>Claude Code / Copilot] --> A
-    A --> Q
-    A --> R
-    A --> N
-    A --> O[Ollama<br/>local compression / routing]
-    A --> L[LiteLLM Providers]
+    subgraph Capture
+        GE[git events\npost-commit / post-push / init]
+        SH[session hooks\nstart / end]
+    end
+
+    subgraph Storage
+        SQ[(SQLite\nsource of truth)]
+        RD[(Redis\ngraph cache)]
+        M0[(mem0\nsemantic memory)]
+    end
+
+    subgraph Recall
+        MCP[MCP tools\naxon_get_context\naxon_search\naxon_handoff]
+        CF[.axon/context.md\nfile fallback]
+    end
+
+    subgraph Agents
+        CC[Claude Code]
+        CX[Codex]
+        CU[Cursor]
+    end
+
+    GE --> SQ
+    SH --> SQ
+    SQ --> RD
+    SQ --> M0
+    SQ --> MCP
+    SQ --> CF
+    MCP --> CC
+    MCP --> CX
+    MCP --> CU
+    CF  --> CX
+    CF  --> CU
 ```
 
-```mermaid
-sequenceDiagram
-    participant U as User / Agent
-    participant PB as pb or MCP tool
-    participant DET as Context Detection
-    participant VS as Vector Search
-    participant CP as Compression Pipeline
-    participant OUT as Prompt / Answer
+Capture is **event-driven only** — git commit/push/init and agent session
+start/end. No background timer, no idle cost (see
+[dec-104](docs/decisions/dec-104-event-driven-not-time-driven.md)).
 
-    U->>PB: ask/search/index
-    PB->>DET: infer or validate context
-    DET->>VS: query allowed collections
-    VS-->>PB: top relevant chunks
-    PB->>CP: Caveman + RTK compression
-    CP-->>OUT: compact high-signal context
-    OUT-->>U: planner/executor-ready output
-```
+Storage is: **SQLite** (source of truth) + **Redis** (graph cache) + **mem0**
+(semantic memory over Qdrant). Neo4j was evaluated and dropped
+([dec-101](docs/decisions/dec-101-revoke-d4-drop-neo4j.md)).
 
-## Core Capabilities
+The primary transport is **MCP (stdio)**. A `.axon/context.md` file in the repo
+is kept in sync as a fallback for agents without MCP support
+([dec-103](docs/decisions/dec-103-cross-agent-mcp-primary.md)).
 
-- Semantic search across Markdown notes, code chunks, and project memory
-- Vault-first knowledge capture with TIL and HOW-TO workflows
-- MCP tools for editor and agent integrations
-- Code dependency graph storage in Redis
-- Mem0-backed memory workflows using Neo4j
-- Context isolation for restricted collections such as `work`
-- Automatic or on-demand reindexing with `pb watch` and `pb index`
+---
 
-## Quick Start
+## Use cases
 
-Prometheus expects an external vault and a local clone of the engine. Start
-with the quickstart for your OS:
+### Agent handoff without context loss
 
-- [macOS quickstart](docs/QUICKSTART_MACOS.md)
-- [Linux quickstart](docs/QUICKSTART_LINUX.md)
-- [Windows with WSL2 quickstart](docs/QUICKSTART_WINDOWS_WSL2.md)
+You spend an afternoon with Claude Code, push a branch, then continue the work
+in Codex the next day. Without AXON, Codex starts cold. With AXON, the MCP tool
+`axon_handoff` supplies Codex with the decisions, open questions, and code
+index from the previous session — no copy-pasting required.
 
-A common manual setup is:
+### Multi-day project continuity
 
-- `AXON_ENGINE=/path/to/prometheus`
-- `AXON_VAULT=~/vault`
+On a project that spans weeks, the important context is not your last five
+messages but the architectural decisions made three sprints ago. AXON captures
+decisions from commit messages and session summaries into SQLite, so `axon
+search` and `axon_get_context` return what actually matters, not stale history.
 
-```bash
-git clone <your-fork-or-repo-url> /path/to/prometheus
-cd /path/to/prometheus
+### Auto-generated architecture docs
 
-# Optional: when the engine runs on a Mac but the infrastructure
-# (Qdrant/Redis/Neo4j/Ollama/Langfuse) lives on a desktop host
-export AXON_INFRA_HOST=192.168.x.x
+AXON's LLM judge infers architectural decisions from commits and session events.
+`axon export adr` and `axon export architecture` write structured Markdown notes
+to an Obsidian vault, turning captured context into living documentation without
+any manual ADR writing.
 
-./setup.sh
-pipx install --editable .
+---
 
-set -a
-source .env.local
-set +a
+## How AXON compares
 
-# required only for cloud-routed Anthropic calls
-export ANTHROPIC_API_KEY=your-anthropic-api-key
-```
+| | AXON | Aider | Cline | mem0 (standalone) |
+|---|---|---|---|---|
+| **Primary goal** | Agent-agnostic context continuity | Git-native AI pair programmer | AI agent inside VS Code | General-purpose semantic memory |
+| **Context capture** | git events + session hooks | Conversation history | Conversation history | Explicit add/search API |
+| **Works across agents** | Yes (MCP + file fallback) | No (Aider-specific) | No (Cline-specific) | Needs custom integration |
+| **Git hook integration** | First-class (`axon install-hooks`) | First-class (core feature) | No | No |
+| **Self-hosted** | Yes | Yes | Depends on VS Code | Yes (open-source) |
+| **Storage** | SQLite + Redis + mem0 | Flat files + git | Flat files | Qdrant / Postgres |
 
-When `AXON_INFRA_HOST` is set, `setup.sh` switches to remote-infra mode:
-it writes remote service URLs into `.env.local`, validates the remote HTTP
-endpoints it can reach, and skips local Docker startup and local Ollama model
-pulls.
+AXON's distinctive angle is agent-agnostic context continuity — it is not a
+replacement for Aider's editing workflow or Cline's VS Code integration. If you
+only use one agent and one machine, those tools' built-in histories may be
+sufficient. AXON adds value when you switch agents, hand off between
+collaborators, or need decisions to survive across long project timelines.
 
-Bootstrap the external vault:
+---
 
-```bash
-mkdir -p ~/vault/knowledge ~/vault/personal ~/vault/career
-pb index ~/vault/knowledge --ctx knowledge
-```
+## Token savings
 
-Then run a first query:
+A modelled 20-turn coding session shows that AXON's selective context recall
+reduces input token consumption by **52.3%** compared to a baseline that
+re-supplies the full project context on every turn (87,000 tokens baseline vs.
+41,500 tokens with AXON). This is a deterministic cost model, not an
+instrumented live measurement — see [`benchmarks/README.md`](benchmarks/README.md)
+for the assumptions, caveats, and how to run it yourself.
 
-```bash
-pb ask "How should I organize reusable technical notes?"
-```
-
-For the full vault layout, see [Vault setup](docs/VAULT_SETUP.md).
-
-## Typical Workflow
-
-```bash
-# Create the first indexes
-pb index ~/vault/knowledge --ctx knowledge
-pb index ~/vault/personal --ctx personal
-pb index ~/vault/career --ctx career
-
-# Search and query
-pb search "qdrant uuid ids" --ctx knowledge
-pb ask "Summarize the current context for vector indexing"
-
-# Capture knowledge
-pb til "Qdrant rejects SHA1 hex ids; use uuid5 instead" --tags qdrant,ids
-pb til --promote-today
-
-# Keep the index warm
-pb watch ~/vault/knowledge --ctx knowledge
-```
-
-## Profiles
-
-Prometheus supports named profiles in `prometheus.toml` so you can switch
-between common operating shapes without editing runtime mode by hand. The
-current `pb configure` command is the guided entry point for that: it works as
-both a flag-driven recommender and a concise interactive flow, and it applies
-one of the built-in profiles while surfacing the capabilities that are useful
-versus overkill for that setup.
-
-Current built-ins:
-
-- `solo-dev` -> `hybrid-local`
-- `team-dev` -> `remote-infra`
-- `privacy-first` -> `minimal`
-
-Typical commands:
-
-```bash
-pb configure --use-case solo --privacy public --hardware mac-laptop
-pb profile list
-pb profile show
-pb profile use team-dev
-```
-
-For when to use each profile and how `configure`, `list`, `show`, `use`,
-`create`, and `export` fit together, including how optional profile fields map
-to real setup choices such as cloud policy, remote infra, lighter memory, and
-feature scope, see [Profiles](docs/PROFILES.md).
-
-## Context Model
-
-Prometheus organizes data into separate collections:
-
-| Context | Intended use |
-| --- | --- |
-| `knowledge` | technical notes, HOW-TOs, references |
-| `career` | interview prep, companies, goals |
-| `personal` | side projects, decisions, planning |
-| `work` | restricted professional context |
-
-`work` is intentionally guarded and should only be queried with explicit
-context.
-
-## CLI Surface
-
-Main commands exposed by the current CLI:
-
-- `pb ask`
-- `pb search`
-- `pb index`
-- `pb index-dev`
-- `pb watch`
-- `pb doctor`
-- `pb init`
-- `pb configure`
-- `pb profile list|show|use|create|export`
-- `pb portability export|import`
-- `pb setup`
-- `pb til`
-- `pb adr`
-- `pb deep`
-- `pb expand`
-- `pb memory smoke`
-- `pb cost`
-- `pb rtk-status`
-
-## Local Stack
-
-Prometheus runs on Python 3.11+ and uses:
-
-- Qdrant for vector search
-- Redis for code dependency relationships
-- Neo4j for Mem0 graph memory
-- Ollama for local model execution
-- LiteLLM for provider routing
-- Typer for the CLI
-- FastMCP for agent-facing tools
-
-`setup.sh` selects the Docker profile automatically:
-
-- `cpu` on macOS
-- `gpu` on Linux machines with NVIDIA support
+---
 
 ## Documentation
 
-- [Vault setup](docs/VAULT_SETUP.md)
-- [Profiles](docs/PROFILES.md)
-- [Extension docs](docs/P3_EXTENSION_DOCS.md)
-- [TIL automation](docs/TIL_AUTOMATION.md)
-- [Usage guide](docs/USAGE_GUIDE.md)
-- [Support matrix](docs/SUPPORT_MATRIX.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Architectural decisions](docs/ADR.md)
-- [Architectural requirements](docs/ARD.md)
+| Document | Contents |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | Architecture decisions, code conventions, agent rules |
+| [`docs/ADR.md`](docs/ADR.md) | Active architectural decision records |
+| [`docs/ARD.md`](docs/ARD.md) | Architectural requirements |
+| [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) | CLI workflows |
+| [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap |
+| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 – dec-105) |
+| [`benchmarks/README.md`](benchmarks/README.md) | Token savings benchmark |
 
-## Notes
+---
 
-- The vault is external by design. Do not store vault content inside this
-  repository.
-- If you use non-default paths, export the matching environment variables
-  before running `pb`.
-- `setup.sh` generates `.env.local`, but it does not export those variables
-  into your current shell session.
+## Contributing
+
+Start from tests. The repo uses TDD: bugfixes begin with a regression test,
+features need testable acceptance criteria before implementation.
+
+```bash
+pytest tests/ -q
+```
+
+See [`CLAUDE.md`](CLAUDE.md) for code conventions and agent rules.
+
+---
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
