@@ -336,6 +336,42 @@ class SessionStore:
             )
         return [Decision(**json.loads(row["frontmatter"])) for row in rows]
 
+    async def save_session(
+        self, session_id: str, agent: str, repo: str, *, context_payload: str = ""
+    ) -> None:
+        async with self._lock:
+            db = await self._connection()
+            await db.execute(
+                "INSERT OR REPLACE INTO sessions"
+                " (id, agent, repo, started_at, ended_at, context_payload)"
+                " VALUES (?, ?, ?, ?, NULL, ?)",
+                (
+                    session_id,
+                    agent,
+                    repo,
+                    datetime.now(UTC).isoformat(),
+                    json.dumps({"recall": context_payload}),
+                ),
+            )
+            await db.commit()
+
+    async def end_session(self, session_id: str) -> str | None:
+        """Mark a session ended; return its repo, or None if the id is unknown."""
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT repo FROM sessions WHERE id = ?", (session_id,)
+            )
+            row = await cursor.fetchone()
+            if row is not None:
+                await db.execute(
+                    "UPDATE sessions SET ended_at = ? WHERE id = ?",
+                    (datetime.now(UTC).isoformat(), session_id),
+                )
+                await db.commit()
+        return row["repo"] if row is not None else None
+
     async def next_decision_id(self) -> str:
         """Return the next sequential decision id (dec-NNN, zero-padded)."""
         async with self._lock:
