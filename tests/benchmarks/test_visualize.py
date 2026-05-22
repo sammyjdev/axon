@@ -2,7 +2,7 @@ import pytest
 
 matplotlib = pytest.importorskip("matplotlib")
 
-from benchmarks.visualize import render_chart
+from benchmarks.visualize import render_chart  # noqa: E402  (import after importorskip)
 
 
 def test_render_chart_writes_png(tmp_path):
