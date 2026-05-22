@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from axon.core.decision import Decision
+from axon.hooks.file_bridge import update_context_file
 from axon.store.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,10 @@ async def on_commit(
             status="draft",
         )
         await store.save_decision(decision)
+        try:
+            await update_context_file(root, store=store)
+        except Exception as exc:  # the .md mirror is a convenience, never fatal
+            logger.warning("context.md update skipped: %s", exc)
         logger.info("captured draft decision %s from commit %s", decision.id, commit_hash[:8])
         return decision.id
     finally:

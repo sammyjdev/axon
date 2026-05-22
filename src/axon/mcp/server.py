@@ -6,10 +6,11 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from axon.config.runtime import load_runtime_config
-from axon.context.contracts import ContextPack, select_default_retrieval_strategy
 from axon.context.compression_quality import compression_quality_note
+from axon.context.contracts import ContextPack, select_default_retrieval_strategy
 from axon.context.rtk import RTKError, compress_text_with_rtk
 from axon.embedder.engine import EmbedderEngine
+from axon.hooks.file_bridge import update_context_file
 from axon.observability.compression_telemetry import (
     CompressionRecord,
     CompressionTelemetryStore,
@@ -692,8 +693,8 @@ async def get_graph_path(
 # ---------------------------------------------------------------------------
 
 
-def _detect_repo() -> str:
-    """Best-effort repo name from the working directory."""
+def _detect_repo_root() -> Path | None:
+    """Best-effort git repo root from the working directory."""
     import subprocess
 
     try:
@@ -702,9 +703,15 @@ def _detect_repo() -> str:
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
-        return Path(root).name
+        return Path(root)
     except Exception:
-        return Path.cwd().name
+        return None
+
+
+def _detect_repo() -> str:
+    """Best-effort repo name from the working directory."""
+    root = _detect_repo_root()
+    return root.name if root is not None else Path.cwd().name
 
 
 @mcp.tool()
@@ -733,6 +740,9 @@ async def axon_session_end(session_id: str, summary: str | None = None) -> str:
         return f"session {session_id} not found."
     if summary:
         await store.save_note(SessionNote(project=repo, body=summary))
+    root = _detect_repo_root()
+    if root is not None and root.name == repo:
+        await update_context_file(root, store=store)
     return f"session {session_id} ended ({repo})."
 
 
