@@ -1218,10 +1218,13 @@ def note(
 @session_app.command("save")
 def session_save(
     cwd: Annotated[str | None, typer.Option("--cwd", help="Working directory da sessão")] = None,
-    transcript: Annotated[str | None, typer.Option("--transcript", help="Path do transcript JSON")] = None,
+    transcript: Annotated[
+        str | None, typer.Option("--transcript", help="Path do transcript JSON")
+    ] = None,
 ) -> None:
     """Comprime e salva session memory (chamado pelo PostStop hook do Claude Code)."""
     import json
+
     from axon.memory.session_compressor import SessionCompressor
     from axon.store.session_store import SessionMemory, SessionStore
 
@@ -1346,10 +1349,13 @@ def adr_add(
 
 @adr_app.command("sync")
 def adr_sync(
-    project: Annotated[str | None, typer.Option("--project", "-p", help="Projeto específico (default: todos)")] = None,
+    project: Annotated[
+        str | None, typer.Option("--project", "-p", help="Projeto específico (default: todos)")
+    ] = None,
 ) -> None:
     """Exporta ADRs do DB para arquivos Markdown no vault Obsidian."""
     import datetime
+
     from axon.store.session_store import SessionStore
 
     vault_root = _RUNTIME.vault_root
@@ -1381,7 +1387,10 @@ def adr_sync(
                 lines.append(f"\n## {adr.title}\n")
                 created = adr.created_at.strftime("%Y-%m-%d") if adr.created_at else "N/A"
                 lines.append(f"**Data:** {created}\n")
-                lines.append(f"**Decisão:** {adr.decision}\n\n**Racional:** {adr.rationale}\n\n**Contexto:** {adr.context}\n\n---\n")
+                lines.append(
+                    f"**Decisão:** {adr.decision}\n\n**Racional:** {adr.rationale}"
+                    f"\n\n**Contexto:** {adr.context}\n\n---\n"
+                )
             content = "\n".join(lines)
             out_path = adrs_dir / f"{proj}.md"
             out_path.write_text(content, encoding="utf-8")
@@ -1395,7 +1404,9 @@ def adr_sync(
 
 @adr_app.command("hook")
 def adr_hook_install(
-    path: Annotated[str | None, typer.Option("--path", help="Path do repositório git (default: cwd)")] = None,
+    path: Annotated[
+        str | None, typer.Option("--path", help="Path do repositório git (default: cwd)")
+    ] = None,
 ) -> None:
     """Instala o hook post-commit para inferência automática de ADRs."""
     import stat
@@ -1430,6 +1441,7 @@ def adr_infer_commit(
 ) -> None:
     """Infere decisão arquitetural do último commit e salva ADR se detectado."""
     import json as json_lib
+
     from axon.store.session_store import ADR, SessionStore
 
     template_path = Path(__file__).parent.parent / "templates" / "adr_classifier.txt"
