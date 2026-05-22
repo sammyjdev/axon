@@ -69,8 +69,8 @@ project.
 
 ## ADR-008: Local-first runtime stack
 
-- Decision: use Docker Compose with Qdrant, Redis, Neo4j, Postgres, Langfuse,
-  and Ollama, with CPU/GPU profiles.
+- Decision: use Docker Compose with Qdrant, Redis, Postgres, Langfuse, and
+  Ollama, with CPU/GPU profiles. (Neo4j was evaluated and dropped per dec-101.)
 - Rationale: provide a reproducible local environment across laptops and
   desktops.
 
