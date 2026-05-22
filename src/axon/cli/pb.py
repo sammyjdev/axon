@@ -28,7 +28,7 @@ cost_app = typer.Typer(help="Exibe custo de uso de LLMs")
 til_app = typer.Typer(help="TIL e HOW-TO — knowledge automation")
 deep_app = typer.Typer(help="Sugestões de aprofundamento técnico")
 expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
-memory_app = typer.Typer(help="Memória Mem0 / Neo4j")
+memory_app = typer.Typer(help="Memória Mem0 (Qdrant)")
 graph_app = typer.Typer(help="Grafo estrutural de código (SQLite)")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
 portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
@@ -2159,9 +2159,9 @@ def memory_smoke(
     text: Annotated[
         str,
         typer.Option("--text", help="Texto curto para gravar e recuperar"),
-    ] = "Prometheus Mem0 Neo4j smoke test",
+    ] = "AXON Mem0 (Qdrant) smoke test",
 ) -> None:
-    """Valida conexão Mem0 com Qdrant + Neo4j mantendo a barreira work."""
+    """Valida conexão Mem0 (Qdrant) mantendo a barreira work."""
 
     async def _smoke() -> None:
         from axon.memory.mem0_tool import add_memory, get_memory

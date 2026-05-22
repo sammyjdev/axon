@@ -31,7 +31,7 @@ Legenda: **SIM** = existe em código / **PARCIAL** = implementação incompleta 
 
 | Questão | Veredicto | Evidência |
 |---|---|---|
-| Grafo representa arquitetura ou relações textuais? | **PARCIAL** | Redis = code deps estruturais. Neo4j configurado para Mem0 mas não ativo para raciocínio causal. |
+| Grafo representa arquitetura ou relações textuais? | **PARCIAL** | Redis = cache de subgrafos estruturais; SQLite = source-of-truth do code graph. Neo4j foi descartado em dec-101. |
 | Inferência de impacto indireto entre módulos? | **PARCIAL** | `get_graph_neighbors` tem param `depth`. Multi-hop existe. Inferência de impacto não. |
 | Dependency traversal multi-hop? | **SIM** | Param `depth` em `get_graph_neighbors`. |
 | Retrieval considera relevância vetorial? | **SIM** | Qdrant COSINE. |
@@ -196,7 +196,7 @@ Legenda: **SIM** = existe em código / **PARCIAL** = implementação incompleta 
 O que sobreviveria à substituição de todos os modelos:
 
 - Memórias armazenadas (TILs, ADRs, session summaries)
-- Infraestrutura de retrieval (Qdrant, Redis, Neo4j)
+- Infraestrutura de retrieval (Qdrant, Redis, SQLite)
 - Pipeline de compressão com preservação de símbolo
 - Policy enforcement (`DENY_CORPORATE_CLOUD`, ctx isolation)
 - Dados do vault

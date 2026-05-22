@@ -120,7 +120,7 @@ pb career interview "kafka"
 pb memory smoke --ctx knowledge
 ```
 
-`pb memory smoke` is the fastest way to validate the Mem0 + Neo4j integration
+`pb memory smoke` is the fastest way to validate the Mem0 (Qdrant) integration
 path.
 
 ## Expansion and Deep Research

@@ -209,7 +209,7 @@ elif [[ "$SETUP_MODE" == "minimal" ]]; then
 elif [[ "$PLAN_START_LOCAL_STACK" == "1" ]]; then
     echo ""
     echo "==> Criando diretórios de dados..."
-    mkdir -p data/{qdrant,redis,neo4j,postgres,ollama}
+    mkdir -p data/{qdrant,redis,postgres,ollama}
 
     echo ""
     echo "==> Subindo stack Docker com profile: $COMPOSE_PROFILE"
