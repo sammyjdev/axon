@@ -75,5 +75,13 @@ def init(
     typer.echo(f"indexed {count} symbols from {repo_path}")
 
 
+@app.command()
+def serve() -> None:
+    """Start the AXON MCP server (stdio transport)."""
+    from axon.mcp.server import main as mcp_main
+
+    mcp_main()
+
+
 if __name__ == "__main__":
     app()
