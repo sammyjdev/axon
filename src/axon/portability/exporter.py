@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
+
+from pydantic import BaseModel, ConfigDict
 
 from axon.config.runtime import get_prometheus_config_path, load_runtime_config
 from axon.context.registry import VALID_CONTEXTS
@@ -28,22 +29,24 @@ class RuntimeLike(Protocol):
     def data_root(self) -> Path: ...
 
 
-@dataclass(frozen=True)
-class ExportArtifact:
+class ExportArtifact(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     kind: str
     path: str
     sha256: str
     size_bytes: int
 
 
-@dataclass(frozen=True)
-class ExportManifest:
+class ExportManifest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     manifest_version: str
     artifacts: tuple[ExportArtifact, ...]
 
     def to_payload(self) -> dict[str, object]:
         return {
-            "artifacts": [asdict(artifact) for artifact in self.artifacts],
+            "artifacts": [artifact.model_dump() for artifact in self.artifacts],
             "manifest_version": self.manifest_version,
         }
 
