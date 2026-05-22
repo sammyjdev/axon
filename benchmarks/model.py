@@ -48,3 +48,10 @@ def savings(params: SessionParams) -> float:
     base = session_total(params, mode="baseline")
     axon = session_total(params, mode="axon")
     return 1.0 - axon / base
+
+
+# Default session assumptions, shared by both scenario runners so the
+# baseline/axon comparison uses identical inputs.
+DEFAULT_SESSION = SessionParams(
+    turns=20, base_context=1500, growth_per_turn=300, recall_budget=2000
+)
