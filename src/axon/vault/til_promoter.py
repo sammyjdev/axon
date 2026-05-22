@@ -95,25 +95,33 @@ def promote_to_howto(til_path: Path) -> Path:
     return howto_path
 
 
-def run() -> None:
+def run() -> list[Path]:
+    """Promote eligible TILs of the day into HOW-TOs.
+
+    Returns the list of HOW-TO paths that were just created, in the order they
+    were produced. An empty list means nothing was promoted (no TILs pending,
+    or the LLM judged none worth promoting). The caller is expected to reindex
+    the returned paths if it wants them searchable immediately.
+    """
     tils = find_todays_tils()
     if not tils:
-        return
+        return []
 
     print(f"Analisando {len(tils)} TIL(s) do dia...")
-    promoted = 0
+    promoted_paths: list[Path] = []
 
     for til_path in tils:
         content = til_path.read_text()
         if should_promote(content):
             howto_path = promote_to_howto(til_path)
             print(f"  Promovido: {til_path.name} → {howto_path.name}")
-            promoted += 1
+            promoted_paths.append(howto_path)
         else:
             print(f"  Mantido como TIL: {til_path.name}")
 
-    if promoted:
-        print(f"\n{promoted} HOW-TO(s) criados. Revise quando quiser.")
+    if promoted_paths:
+        print(f"\n{len(promoted_paths)} HOW-TO(s) criados. Revise quando quiser.")
+    return promoted_paths
 
 
 if __name__ == "__main__":

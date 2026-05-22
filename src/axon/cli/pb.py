@@ -1677,10 +1677,65 @@ def _list_til_pending() -> None:
 def _do_promote_today() -> None:
     try:
         from axon.vault.til_promoter import run as promote_run
-
-        promote_run()
     except ImportError:
         typer.echo("[promote] til_promoter não disponível.")
+        return
+
+    howto_paths = promote_run()
+    if not howto_paths:
+        return
+    _reindex_howtos(howto_paths)
+
+
+def _reindex_howtos(howto_paths: list[Path]) -> None:
+    """Reindex promoted HOW-TOs so they appear in semantic search immediately.
+
+    Failures are reported but never derail promotion — the HOW-TO file on disk
+    is the source of truth; the index is an optimization.
+    """
+    try:
+        from axon.embedder.engine import EmbedderEngine
+        from axon.embedder.pipeline import index_path
+        from axon.store.vector_store import VectorStore
+    except ImportError as exc:
+        typer.echo(f"[promote] reindex pulado: {exc}")
+        return
+
+    async def _reindex() -> int:
+        engine = EmbedderEngine()
+        store = VectorStore(url=_RUNTIME.qdrant_url)
+        try:
+            await store.ensure_collections()
+            total_chunks = 0
+            for howto in howto_paths:
+                try:
+                    _, chunks = await index_path(
+                        howto,
+                        engine=engine,
+                        store=store,
+                        vault_root=_RUNTIME.vault_root,
+                        languages={"markdown"},
+                    )
+                    total_chunks += chunks
+                except Exception as exc:
+                    typer.echo(
+                        f"[promote] reindex falhou para {howto.name}: {exc}",
+                        err=True,
+                    )
+            return total_chunks
+        finally:
+            await store.close()
+
+    try:
+        chunks = asyncio.run(_reindex())
+    except Exception as exc:
+        typer.echo(f"[promote] reindex abortado: {exc}", err=True)
+        return
+    if chunks:
+        typer.echo(
+            f"[promote] {chunks} chunk(s) reindexado(s) "
+            f"a partir de {len(howto_paths)} HOW-TO(s)."
+        )
 
 
 # ---------------------------------------------------------------------------
