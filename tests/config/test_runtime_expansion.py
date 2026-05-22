@@ -46,6 +46,13 @@ def test_mem0_config_prefers_qdrant_url_over_legacy_host(monkeypatch) -> None:
     assert cfg.qdrant_port == 6333
 
 
+def test_mem0_config_has_no_graph_store() -> None:
+    # dec-101: mem0 runs vector-only over Qdrant; no Neo4j graph store.
+    cfg = Mem0Config().as_mem0_config()
+    assert "graph_store" not in cfg
+    assert cfg["vector_store"]["provider"] == "qdrant"
+
+
 def test_runtime_supports_remote_desktop_infra(monkeypatch, tmp_path) -> None:
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"

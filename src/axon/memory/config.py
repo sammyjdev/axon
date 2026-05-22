@@ -1,6 +1,7 @@
-"""Mem0 self-hosted configuration for Prometheus.
+"""Mem0 self-hosted configuration for AXON.
 
-Uses Qdrant (vector store) + Neo4j (graph store) as Mem0 backends.
+Uses Qdrant as the Mem0 vector backend, local-only. There is no graph store —
+see docs/decisions/dec-101-revoke-d4-drop-neo4j.md.
 """
 
 from __future__ import annotations
@@ -32,13 +33,6 @@ def _qdrant_port() -> int:
 class Mem0Config:
     qdrant_host: str = field(default_factory=_qdrant_host)
     qdrant_port: int = field(default_factory=_qdrant_port)
-    neo4j_uri: str = field(
-        default_factory=lambda: os.environ.get("NEO4J_URI", "bolt://localhost:7687")
-    )
-    neo4j_user: str = field(default_factory=lambda: os.environ.get("NEO4J_USER", "neo4j"))
-    neo4j_password: str = field(
-        default_factory=lambda: os.environ.get("NEO4J_PASSWORD", "local-password")
-    )
     collection_name: str = "mem0_memories"
     # Embed model for Mem0 (lightweight for speed)
     embed_model: str = "BAAI/bge-small-en-v1.5"
@@ -53,14 +47,6 @@ class Mem0Config:
                     "port": self.qdrant_port,
                     "collection_name": self.collection_name,
                     "embedding_model_dims": 384,
-                },
-            },
-            "graph_store": {
-                "provider": "neo4j",
-                "config": {
-                    "url": self.neo4j_uri,
-                    "username": self.neo4j_user,
-                    "password": self.neo4j_password,
                 },
             },
             "embedder": {
