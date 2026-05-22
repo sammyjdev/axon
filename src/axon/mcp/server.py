@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -9,6 +11,7 @@ from axon.config.runtime import load_runtime_config
 from axon.context.compression_quality import compression_quality_note
 from axon.context.contracts import ContextPack, select_default_retrieval_strategy
 from axon.context.rtk import RTKError, compress_text_with_rtk
+from axon.core.decision import Decision
 from axon.embedder.engine import EmbedderEngine
 from axon.hooks.file_bridge import update_context_file
 from axon.observability.compression_telemetry import (
@@ -16,6 +19,8 @@ from axon.observability.compression_telemetry import (
     CompressionTelemetryStore,
 )
 from axon.observability.trace_store import TraceStore
+from axon.obsidian.discovery import discover_vault
+from axon.obsidian.exporter import export_adr, export_architecture_doc
 from axon.policy.core import PolicyRegistry
 from axon.recall import recall_context
 from axon.router.compressor import caveman_compress_guarded
@@ -681,15 +686,25 @@ def _detect_repo() -> str:
     return root.name if root is not None else Path.cwd().name
 
 
+_DECISION_AGENTS = {"claude-code", "codex", "cursor", "manual"}
+
+
+def _detect_agent(explicit: str | None = None) -> str:
+    """Resolve the calling agent: explicit value, AXON_AGENT env, else 'unknown'."""
+    return explicit or os.environ.get("AXON_AGENT") or "unknown"
+
+
 @mcp.tool()
-async def axon_session_start(agent: str, repo: str | None = None) -> str:
+async def axon_session_start(agent: str | None = None, repo: str | None = None) -> str:
     """Start an AXON session: recall context for the repo and return it.
 
-    The repo is detected from the working directory when not given. Returns
-    the session id followed by a compact recalled-context summary.
+    The agent is detected from AXON_AGENT when not given; the repo is detected
+    from the working directory. Returns the session id followed by a compact
+    recalled-context summary.
     """
     store = _get_session_store()
     await store.init()
+    agent = _detect_agent(agent)
     repo = repo or _detect_repo()
     session_id = uuid.uuid4().hex[:12]
     context = await recall_context(repo, store=store)
@@ -727,6 +742,156 @@ async def axon_capture_event(event_type: str, payload: dict) -> str:
     body = f"[{event_type}] {_json.dumps(payload, sort_keys=True, ensure_ascii=False)}"
     await store.save_note(SessionNote(project=repo, body=body))
     return f"captured {event_type} for {repo}."
+
+
+# ---------------------------------------------------------------------------
+# Cross-agent tools (T6.1)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def axon_get_context(repo: str | None = None, token_budget: int = 2000) -> str:
+    """Recall compact, ranked project context (recent decisions) for a repo."""
+    store = _get_session_store()
+    await store.init()
+    repo = repo or _detect_repo()
+    return await recall_context(repo, store=store, token_budget=token_budget)
+
+
+@mcp.tool()
+async def axon_capture(
+    summary: str,
+    repo: str | None = None,
+    files: list[str] | None = None,
+    symbols: list[str] | None = None,
+    agent: str | None = None,
+) -> str:
+    """Capture a draft decision into AXON's store. Returns the new decision id."""
+    store = _get_session_store()
+    await store.init()
+    repo = repo or _detect_repo()
+    detected = _detect_agent(agent)
+    decision = Decision(
+        id=await store.next_decision_id(),
+        timestamp=datetime.now(UTC),
+        agent=detected if detected in _DECISION_AGENTS else "manual",
+        repo=repo,
+        files=[Path(f) for f in (files or [])],
+        symbols=symbols or [],
+        summary=summary[:80],
+        status="draft",
+    )
+    await store.save_decision(decision)
+    return f"captured {decision.id} for {repo}."
+
+
+@mcp.tool()
+async def axon_search(query: str, repo: str | None = None) -> str:
+    """Search captured decisions by summary text for a repo."""
+    store = _get_session_store()
+    await store.init()
+    repo = repo or _detect_repo()
+    decisions = await store.find_decisions_by_repo(repo, limit=200)
+    needle = query.lower()
+    hits = [d for d in decisions if needle in d.summary.lower()]
+    if not hits:
+        return f"no decisions matching {query!r} in {repo}."
+    return "\n".join(f"- {d.id} ({d.status}): {d.summary}" for d in hits)
+
+
+@mcp.tool()
+async def axon_handoff(to_agent: str, repo: str | None = None) -> str:
+    """Produce a handoff brief for another agent: recalled context + pointer."""
+    store = _get_session_store()
+    await store.init()
+    repo = repo or _detect_repo()
+    context = await recall_context(repo, store=store)
+    return (
+        f"# AXON handoff -> {to_agent}\n"
+        f"repo: {repo}\n\n{context}\n\n"
+        "Continue via the AXON MCP server or by reading .axon/context.md."
+    )
+
+
+async def _export_repo_docs(store: SessionStore, repo: str) -> str:
+    """Export a repo's decisions as ADR + architecture docs to the vault."""
+    vault = discover_vault()
+    if vault is None:
+        return "no Obsidian vault discovered — export skipped."
+    decisions = await store.find_decisions_by_repo(repo, limit=200)
+    for decision in decisions:
+        export_adr(decision, vault=vault)
+    arch = export_architecture_doc(decisions, vault=vault, name=repo)
+    return f"exported {len(decisions)} decision(s) for {repo} to {arch}."
+
+
+@mcp.tool()
+async def axon_export_now(repo: str | None = None) -> str:
+    """Export architecture + ADR docs for a repo's decisions to the vault."""
+    store = _get_session_store()
+    await store.init()
+    return await _export_repo_docs(store, repo or _detect_repo())
+
+
+@mcp.tool()
+async def axon_mark_done(repo: str | None = None) -> str:
+    """Mark the current work scope done, then export the repo's docs."""
+    store = _get_session_store()
+    await store.init()
+    repo = repo or _detect_repo()
+    await store.save_note(SessionNote(project=repo, body="[scope] marked done"))
+    return await _export_repo_docs(store, repo)
+
+
+@mcp.tool()
+async def axon_health() -> str:
+    """Report the health of each AXON subsystem.
+
+    Covers SQLite, Redis, Qdrant, mem0, the Obsidian vault and git.
+    """
+    import subprocess
+
+    lines = ["# AXON health"]
+
+    try:
+        await _get_session_store().init()
+        lines.append("- sqlite: ok")
+    except Exception as exc:
+        lines.append(f"- sqlite: down ({exc})")
+
+    try:
+        await _get_graph_store().connect()
+        lines.append("- redis: ok")
+    except Exception as exc:
+        lines.append(f"- redis: down ({exc})")
+
+    try:
+        await _get_vector_store().ensure_collections()
+        lines.append("- qdrant: ok")
+    except Exception as exc:
+        lines.append(f"- qdrant: down ({exc})")
+
+    try:
+        import mem0  # noqa: F401
+
+        lines.append("- mem0: installed")
+    except Exception:
+        lines.append("- mem0: not installed")
+
+    vault = discover_vault()
+    lines.append(f"- vault: {vault}" if vault else "- vault: not found")
+
+    try:
+        subprocess.check_output(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        lines.append("- git: ok")
+    except Exception:
+        lines.append("- git: not a repo")
+
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
