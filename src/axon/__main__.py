@@ -170,5 +170,39 @@ def export(
         raise typer.Exit(1)
 
 
+# ---------------------------------------------------------------------------
+# Surviving AXON-relevant commands, re-registered from the legacy pb.py CLI.
+# Cut commands (ask, index, watch, til, deep, expand, career, cost) are not
+# imported and therefore not surfaced.
+# ---------------------------------------------------------------------------
+from axon.cli.pb import (  # noqa: E402
+    adr_app,
+    git_proxy,
+    graph_app,
+    profile_app,
+    rtk,
+    rtk_init,
+    rtk_proxy,
+    rtk_status,
+    run_proxy,
+    scan,
+    search,
+    session_app,
+)
+
+app.add_typer(adr_app, name="adr")
+app.add_typer(graph_app, name="graph")
+app.add_typer(profile_app, name="profile")
+app.add_typer(session_app, name="session")
+
+app.command("scan")(scan)
+app.command("search")(search)
+app.command("rtk")(rtk)
+app.command("rtk-status")(rtk_status)
+app.command("rtk-init")(rtk_init)
+app.command("rtk-proxy")(rtk_proxy)
+app.command("run")(run_proxy)
+app.command("git")(git_proxy)
+
 if __name__ == "__main__":
     app()
