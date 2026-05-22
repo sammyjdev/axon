@@ -178,3 +178,33 @@ def test_export_rejects_unknown_doc_type(monkeypatch, tmp_path):
     result = runner.invoke(app, ["export", "bogus", "--repo", "Prometheus"])
     assert result.exit_code == 1
     assert "Unknown doc type" in result.stdout
+
+
+def _registered_command_names():
+    from typer.main import get_command
+
+    return set(get_command(app).commands.keys())
+
+
+def test_survivor_subapps_registered():
+    names = _registered_command_names()
+    for name in ("adr", "graph", "profile", "session"):
+        assert name in names
+
+
+def test_standalone_commands_registered():
+    names = _registered_command_names()
+    for name in ("scan", "search", "rtk", "rtk-status", "rtk-init", "rtk-proxy", "run", "git"):
+        assert name in names
+
+
+def test_cut_commands_absent():
+    names = _registered_command_names()
+    for name in ("ask", "index", "watch", "til", "deep", "expand", "career", "cost"):
+        assert name not in names
+
+
+def test_survivor_subapp_is_invocable():
+    result = runner.invoke(app, ["adr", "--help"])
+    assert result.exit_code == 0
+    assert "list" in result.stdout
