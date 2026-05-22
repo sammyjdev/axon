@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "axon-mcp"
 version = "0.1.0"
-description = "Self-hosted second-brain engine for local context retrieval and tooling"
+description = "Agent-agnostic context network — same context across any AI coding agent"
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "Prometheus contributors" }]
-keywords = ["rag", "cli", "knowledge-base", "local-first", "second-brain"]
+authors = [{ name = "AXON contributors" }]
+keywords = ["mcp", "coding-agent", "context", "ai-agents", "local-first", "developer-tools"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -42,8 +42,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sammyjdev/axon"
-Repository = "https://github.com/sammyjdev/axon"
+Homepage = "https://github.com/axon-ai/axon"
+Repository = "https://github.com/axon-ai/axon"
+Documentation = "https://github.com/axon-ai/axon#readme"
 
 [project.scripts]
 axon = "axon.__main__:app"
