@@ -22,8 +22,12 @@ from axon.code.diff_symbols import symbols_touched_by_commit
 from axon.core.decision import Decision
 from axon.core.edge import Edge
 from axon.hooks.file_bridge import update_context_file
+from axon.obsidian.discovery import discover_vault
+from axon.obsidian.exporter import export_adr, export_architecture_doc
 from axon.store.graph_store import GraphStore
 from axon.store.session_store import SessionStore
+from axon.triggers.scope_detector import detect_scope_end
+from axon.validation.judge import score_decision
 
 logger = logging.getLogger(__name__)
 
@@ -125,11 +129,53 @@ async def on_commit(
             await store.close()
 
 
+async def _judge_and_export(
+    store: SessionStore, root: Path, decisions: list[Decision]
+) -> None:
+    """Score unjudged draft decisions and export the repo's docs to the vault."""
+    scored: list[Decision] = []
+    for decision in decisions:
+        if decision.status == "draft" and decision.validation_score == 0.0:
+            score = await score_decision(decision)
+            if score is not None:
+                decision = decision.model_copy(
+                    update={"validation_score": score}
+                )
+                await store.save_decision(decision)
+        scored.append(decision)
+
+    vault = discover_vault()
+    if vault is None:
+        logger.info("push: scope ended but no vault discovered — export skipped")
+        return
+    for decision in scored:
+        export_adr(decision, vault=vault)
+    export_architecture_doc(scored, vault=vault, name=root.name)
+    logger.info("push: exported %d decision(s) to %s", len(scored), vault)
+
+
 async def on_push(
     *, store: SessionStore | None = None, cwd: Path | None = None
 ) -> None:
-    """Push milestone hook. Scope detection + LLM-judge land in Phase 5."""
-    logger.info("push event received (scope detection lands in Phase 5)")
+    """On push, if the work scope has closed, judge decisions and export docs."""
+    owns_store = store is None
+    store = store or _default_store()
+    try:
+        await store.init()
+        root = _repo_root(cwd)
+        decisions = await store.find_decisions_by_repo(root.name)
+        milestone = os.environ.get("AXON_MILESTONE", "") == "1"
+        signal = detect_scope_end(
+            root, milestone=milestone, decisions_since_export=len(decisions)
+        )
+        if signal is None:
+            logger.info("push: scope still open, no export")
+            return
+        logger.info("push: scope ended (%s: %s)", signal.reason, signal.detail)
+        await _judge_and_export(store, root, decisions)
+    finally:
+        if owns_store:
+            await store.close()
 
 
 async def on_init(
