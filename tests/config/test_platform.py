@@ -3,15 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 from axon.config.platform import (
-    DoctorReport,
     PlatformConfig,
-    SetupPlan,
     _to_dotenv,
     build_doctor_report,
     build_setup_plan,
     merge_env_text,
 )
-from axon.config.runtime import ExpansionBudgetConfig, ExpansionConfig, ExpansionPaths, RuntimeConfig
+from axon.config.runtime import (
+    ExpansionBudgetConfig,
+    ExpansionConfig,
+    ExpansionPaths,
+    RuntimeConfig,
+)
 
 
 def test_to_dotenv_uses_remote_infra_when_host_is_defined(monkeypatch) -> None:
@@ -126,7 +129,9 @@ def test_build_doctor_report_prefers_hybrid_local_for_mac(tmp_path: Path) -> Non
     assert report.recommended_mode == "hybrid-local"
 
 
-def test_build_doctor_report_falls_back_to_minimal_when_local_tooling_missing(tmp_path: Path) -> None:
+def test_build_doctor_report_falls_back_to_minimal_when_local_tooling_missing(
+    tmp_path: Path,
+) -> None:
     runtime = _runtime(tmp_path)
     platform_config = PlatformConfig(
         platform="pc",

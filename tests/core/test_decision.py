@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,7 @@ from axon.exceptions import ValidationError as AxonValidationError
 def _decision(**overrides: Any) -> Decision:
     base: dict[str, Any] = dict(
         id="dec-001",
-        timestamp=datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 5, 21, 12, 0, tzinfo=UTC),
         agent="claude-code",
         repo="axon",
         summary="rename prometheus to axon",
@@ -70,7 +70,7 @@ def test_tags_accepts_kebab_case() -> None:
 
 def test_naive_timestamp_coerced_to_utc() -> None:
     d = _decision(timestamp=datetime(2026, 5, 21, 12, 0))
-    assert d.timestamp.utcoffset() == timezone.utc.utcoffset(None)
+    assert d.timestamp.utcoffset() == UTC.utcoffset(None)
 
 
 def test_decision_is_frozen() -> None:
@@ -104,7 +104,7 @@ _decisions = st.builds(
     timestamp=st.datetimes(
         min_value=datetime(2000, 1, 1),
         max_value=datetime(2100, 1, 1),
-        timezones=st.just(timezone.utc),
+        timezones=st.just(UTC),
     ),
     agent=st.sampled_from(["claude-code", "codex", "cursor", "manual"]),
     repo=st.from_regex(r"[a-z][a-z0-9_-]{0,20}", fullmatch=True),

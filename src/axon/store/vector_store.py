@@ -12,8 +12,8 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from axon.context.staleness import assess_staleness, detect_stale_replacements
 from axon.context.registry import VALID_CONTEXTS
+from axon.context.staleness import assess_staleness, detect_stale_replacements
 
 VECTOR_SIZE = int(os.environ.get("AXON_VECTOR_SIZE", "384"))
 _STALE_RANKING_PENALTY = 0.2

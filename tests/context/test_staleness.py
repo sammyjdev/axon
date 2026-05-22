@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from axon.context.staleness import (
-    StaleReplacement,
     StalenessAssessment,
+    StaleReplacement,
     assess_staleness,
     detect_stale_replacements,
 )

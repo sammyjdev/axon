@@ -36,7 +36,7 @@ class TraceRecorder:
     def __init__(
         self,
         *,
-        store: "TraceStore",
+        store: TraceStore,
         trace_id: str,
         caller: str,
         ctx: str | None = None,
@@ -73,7 +73,7 @@ class TraceRecorder:
 
     def append_policy_decision(
         self,
-        decision: "PolicyDecision",
+        decision: PolicyDecision,
         *,
         payload: TracePayload | None = None,
         stage: str = "policy",

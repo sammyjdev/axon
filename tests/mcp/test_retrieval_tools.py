@@ -37,7 +37,9 @@ async def test_search_code_applies_strategy_budget_and_returns_context_pack(monk
     )
 
     monkeypatch.setattr(server, "_get_vector_store", lambda: store)
-    monkeypatch.setattr(server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1]))
+    monkeypatch.setattr(
+        server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
+    )
     monkeypatch.setattr(
         "axon.router.classifier.classify_task_with_source",
         lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
@@ -53,7 +55,9 @@ async def test_search_code_applies_strategy_budget_and_returns_context_pack(monk
         ),
     )
 
-    response = await server.search_code(query="upsert vector", ctx="knowledge", caller="claude-code")
+    response = await server.search_code(
+        query="upsert vector", ctx="knowledge", caller="claude-code"
+    )
 
     assert "trace_id:" in response
     assert captured["top_k"] == 8
@@ -66,7 +70,9 @@ async def test_search_code_applies_strategy_budget_and_returns_context_pack(monk
 
 
 @pytest.mark.asyncio
-async def test_ask_surfaces_context_pack_and_skips_compression_for_minimal_strategy(monkeypatch) -> None:
+async def test_ask_surfaces_context_pack_and_skips_compression_for_minimal_strategy(
+    monkeypatch,
+) -> None:
     class FakeSessionStore:
         async def init(self) -> None:
             return None
@@ -100,7 +106,9 @@ async def test_ask_surfaces_context_pack_and_skips_compression_for_minimal_strat
     monkeypatch.setattr(server, "_get_session_store", lambda: FakeSessionStore())
     monkeypatch.setattr("axon.context.detector.ContextDetector", FakeDetector)
     monkeypatch.setattr(server, "_get_vector_store", lambda: store)
-    monkeypatch.setattr(server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1]))
+    monkeypatch.setattr(
+        server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
+    )
     monkeypatch.setattr(
         "axon.router.classifier.classify_task_with_source",
         lambda content, ctx=None: (TaskType.TRIVIAL_COMPLETION, "local"),
@@ -111,7 +119,9 @@ async def test_ask_surfaces_context_pack_and_skips_compression_for_minimal_strat
         "_get_graph_store",
         lambda: SimpleNamespace(
             connect=lambda: _async_none(),
-            traverse=lambda symbol, max_depth, max_nodes: _async_result({"root": symbol, "nodes": []}),
+            traverse=lambda symbol, max_depth, max_nodes: _async_result(
+                {"root": symbol, "nodes": []}
+            ),
         ),
     )
 
@@ -153,7 +163,9 @@ async def test_search_code_surfaces_staleness_notes(monkeypatch) -> None:
     )
 
     monkeypatch.setattr(server, "_get_vector_store", lambda: store)
-    monkeypatch.setattr(server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1]))
+    monkeypatch.setattr(
+        server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
+    )
     monkeypatch.setattr(
         "axon.router.classifier.classify_task_with_source",
         lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
@@ -169,7 +181,9 @@ async def test_search_code_surfaces_staleness_notes(monkeypatch) -> None:
         ),
     )
 
-    response = await server.search_code(query="upsert vector", ctx="knowledge", caller="claude-code")
+    response = await server.search_code(
+        query="upsert vector", ctx="knowledge", caller="claude-code"
+    )
 
     assert "## Staleness" in response
     assert "- upsert stale -> replacement=fresh-hit (newer_record_in_family)" in response

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from axon.observability.trace_store import TraceRecord, TraceStore
 from axon.policy.core import (
     PolicyDecision,
     ReasonCode,
     RouteType,
     SensitivityLevel,
 )
-from axon.observability.trace_store import TraceRecord, TraceStore
 
 
 def test_trace_store_load_all_returns_empty_when_file_is_missing(tmp_path) -> None:
