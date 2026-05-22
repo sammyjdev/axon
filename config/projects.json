@@ -6,6 +6,13 @@
       "ctx": "personal",
       "enabled": true,
       "languages": ["python", "typescript", "java", "markdown", "text"]
+    },
+    {
+      "name": "Orion-AI",
+      "path": "/Users/samdev/dev/Orion-AI",
+      "ctx": "personal",
+      "enabled": true,
+      "languages": ["python", "markdown", "text"]
     }
   ]
 }
