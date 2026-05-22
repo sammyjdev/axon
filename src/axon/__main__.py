@@ -7,6 +7,9 @@ surfaced here.
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
+
 import typer
 
 app = typer.Typer(
@@ -39,6 +42,37 @@ def install_hooks_cmd(
     else:
         installed = install_hooks(path)
         typer.echo(f"installed: {', '.join(installed) or 'none'}")
+
+
+@app.command()
+def init(
+    repo: str = typer.Argument(".", help="Repo path to initialize AXON in"),
+) -> None:
+    """Initialize AXON in a repo: install git hooks and index its code."""
+    from axon.cli.pb import _get_db_path
+    from axon.code.indexer import index_repo
+    from axon.hooks.git_installer import install_hooks
+    from axon.store.session_store import SessionStore
+
+    repo_path = Path(repo).expanduser().resolve()
+    if not repo_path.exists():
+        typer.echo(f"Repo not found: {repo_path}", err=True)
+        raise typer.Exit(1)
+
+    installed = install_hooks(repo_path)
+    typer.echo(f"hooks installed: {', '.join(installed) or 'none'}")
+
+    async def _index() -> int:
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            symbols = await index_repo(repo_path, store=store)
+            return len(symbols)
+        finally:
+            await store.close()
+
+    count = asyncio.run(_index())
+    typer.echo(f"indexed {count} symbols from {repo_path}")
 
 
 if __name__ == "__main__":
