@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from axon.core.decision import Decision
 from axon.hooks.git_event import main, on_commit, on_init, on_push
 from axon.store.session_store import SessionStore
 
@@ -116,9 +118,63 @@ async def test_on_commit_links_touched_symbols(
     assert node is not None and node["type"] == "symbol"
 
 
-async def test_on_push_and_on_init_are_safe_stubs(store: SessionStore) -> None:
-    assert await on_push(store=store) is None
+async def test_on_init_is_a_safe_stub(store: SessionStore) -> None:
     assert await on_init(store=store) is None
+
+
+def _init_repo(path: Path) -> None:
+    path.mkdir()
+    _git(["init"], path)
+    _git(["config", "user.email", "test@axon.dev"], path)
+    _git(["config", "user.name", "AXON Test"], path)
+    (path / "f.py").write_text("x = 1\n", encoding="utf-8")
+    _git(["add", "."], path)
+    _git(["commit", "-m", "init"], path)
+
+
+async def test_on_push_exports_when_scope_ends(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "pushrepo"
+    _init_repo(repo)
+    _git(["tag", "v1.0"], repo)  # git-tag scope-end signal
+
+    await store.save_decision(
+        Decision(
+            id="dec-001",
+            timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+            agent="manual",
+            repo="pushrepo",
+            summary="a decision",
+        )
+    )
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+
+    async def no_judge(decision: Decision, context: str = "") -> None:
+        return None
+
+    monkeypatch.setattr("axon.hooks.git_event.discover_vault", lambda: vault)
+    monkeypatch.setattr("axon.hooks.git_event.score_decision", no_judge)
+
+    await on_push(store=store, cwd=repo)
+
+    assert (vault / "AXON" / "Architecture" / "pushrepo.md").exists()
+    assert (vault / "AXON" / "Decisions" / "dec-001.md").exists()
+
+
+async def test_on_push_skips_export_when_scope_open(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "openrepo"
+    _init_repo(repo)  # no tag, no milestone, no decisions
+
+    calls: list[int] = []
+    monkeypatch.setattr(
+        "axon.hooks.git_event.discover_vault", lambda: calls.append(1)
+    )
+    await on_push(store=store, cwd=repo)
+    assert calls == []
 
 
 def test_main_unknown_event_returns_zero() -> None:
