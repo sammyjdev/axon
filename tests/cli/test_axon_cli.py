@@ -88,3 +88,49 @@ def test_health_prints_subsystem_report(monkeypatch):
     assert result.exit_code == 0
     assert "AXON health" in result.stdout
     assert "sqlite: ok" in result.stdout
+
+
+def test_status_reports_latest_decision(monkeypatch):
+    class FakeDecision:
+        id = "dec-200"
+        summary = "adopt event-driven capture"
+
+    class FakeStore:
+        def __init__(self, db_path):
+            pass
+
+        async def init(self):
+            return None
+
+        async def close(self):
+            return None
+
+        async def find_decisions_by_repo(self, repo, limit=20):
+            return [FakeDecision()]
+
+    monkeypatch.setattr("axon.store.session_store.SessionStore", FakeStore)
+    result = runner.invoke(app, ["status", "--repo", "Prometheus"])
+    assert result.exit_code == 0
+    assert "repo: Prometheus" in result.stdout
+    assert "decisions: 1" in result.stdout
+    assert "dec-200" in result.stdout
+
+
+def test_status_handles_no_decisions(monkeypatch):
+    class FakeStore:
+        def __init__(self, db_path):
+            pass
+
+        async def init(self):
+            return None
+
+        async def close(self):
+            return None
+
+        async def find_decisions_by_repo(self, repo, limit=20):
+            return []
+
+    monkeypatch.setattr("axon.store.session_store.SessionStore", FakeStore)
+    result = runner.invoke(app, ["status", "--repo", "empty"])
+    assert result.exit_code == 0
+    assert "latest: none" in result.stdout
