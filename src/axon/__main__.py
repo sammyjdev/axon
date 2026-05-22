@@ -34,14 +34,19 @@ def install_hooks_cmd(
     ),
 ) -> None:
     """Install (or remove) AXON git hooks in a repo. Idempotent."""
+    from axon.exceptions import GitAnchorError
     from axon.hooks.git_installer import install_hooks, uninstall_hooks
 
-    if uninstall:
-        removed = uninstall_hooks(path)
-        typer.echo(f"removed: {', '.join(removed) or 'none'}")
-    else:
-        installed = install_hooks(path)
-        typer.echo(f"installed: {', '.join(installed) or 'none'}")
+    try:
+        if uninstall:
+            removed = uninstall_hooks(path)
+            typer.echo(f"removed: {', '.join(removed) or 'none'}")
+        else:
+            installed = install_hooks(path)
+            typer.echo(f"installed: {', '.join(installed) or 'none'}")
+    except GitAnchorError as exc:
+        typer.echo(f"Not a git repository: {path} ({exc})", err=True)
+        raise typer.Exit(1) from exc
 
 
 @app.command()
@@ -51,6 +56,7 @@ def init(
     """Initialize AXON in a repo: install git hooks and index its code."""
     from axon.cli.pb import _get_db_path
     from axon.code.indexer import index_repo
+    from axon.exceptions import GitAnchorError
     from axon.hooks.git_installer import install_hooks
     from axon.store.session_store import SessionStore
 
@@ -59,7 +65,11 @@ def init(
         typer.echo(f"Repo not found: {repo_path}", err=True)
         raise typer.Exit(1)
 
-    installed = install_hooks(repo_path)
+    try:
+        installed = install_hooks(repo_path)
+    except GitAnchorError as exc:
+        typer.echo(f"Not a git repository: {repo_path} ({exc})", err=True)
+        raise typer.Exit(1) from exc
     typer.echo(f"hooks installed: {', '.join(installed) or 'none'}")
 
     async def _index() -> int:
