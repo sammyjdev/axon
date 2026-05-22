@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import BaseModel, ConfigDict, field_validator
 
-@dataclass(frozen=True)
-class PluginManifest:
+
+class PluginManifest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     plugin_id: str
     name: str
     version: str
@@ -16,14 +18,20 @@ class PluginManifest:
     capability_tags: tuple[str, ...] = ()
     tool_descriptors: tuple[Path, ...] = ()
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "contexts", _unique_sorted(self.contexts))
-        object.__setattr__(self, "capability_tags", _unique_sorted(self.capability_tags))
-        object.__setattr__(self, "tool_descriptors", _unique_paths(self.tool_descriptors))
+    @field_validator("contexts", "capability_tags")
+    @classmethod
+    def _normalize_tags(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return _unique_sorted(value)
+
+    @field_validator("tool_descriptors")
+    @classmethod
+    def _normalize_descriptors(cls, value: tuple[Path, ...]) -> tuple[Path, ...]:
+        return _unique_paths(value)
 
 
-@dataclass(frozen=True)
-class ToolDescriptor:
+class ToolDescriptor(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     tool_id: str
     plugin_id: str
     name: str
@@ -33,10 +41,10 @@ class ToolDescriptor:
     packs: tuple[str, ...] = ()
     capability_tags: tuple[str, ...] = ()
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "contexts", _unique_sorted(self.contexts))
-        object.__setattr__(self, "packs", _unique_sorted(self.packs))
-        object.__setattr__(self, "capability_tags", _unique_sorted(self.capability_tags))
+    @field_validator("contexts", "packs", "capability_tags")
+    @classmethod
+    def _normalize_tags(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return _unique_sorted(value)
 
 
 def _unique_sorted(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
