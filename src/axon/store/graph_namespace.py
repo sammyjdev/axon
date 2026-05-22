@@ -1,3 +1,10 @@
+"""DEAD CODE — Neo4j/Cypher graph namespacing.
+
+Unused since T4.4 closed dec-101: the structural code graph moved to SQLite
+(``SessionStore`` nodes/edges) and the Neo4j backend was dropped. Kept only
+for historical reference; no runtime path imports this module.
+"""
+
 from __future__ import annotations
 
 import re

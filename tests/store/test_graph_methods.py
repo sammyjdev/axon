@@ -58,6 +58,31 @@ async def test_query_subgraph_respects_depth(store: SessionStore) -> None:
     assert len(sg["edges"]) == 1
 
 
+async def test_shortest_path_finds_route(store: SessionStore) -> None:
+    await store.add_edge(Edge(source_id="a", target_id="b", type="calls"))
+    await store.add_edge(Edge(source_id="b", target_id="c", type="calls"))
+    await store.add_edge(Edge(source_id="a", target_id="c", type="calls"))
+    assert await store.shortest_path("a", "c") == ["a", "c"]
+
+
+async def test_shortest_path_multi_hop(store: SessionStore) -> None:
+    await store.add_edge(Edge(source_id="a", target_id="b", type="calls"))
+    await store.add_edge(Edge(source_id="b", target_id="c", type="calls"))
+    assert await store.shortest_path("a", "c") == ["a", "b", "c"]
+
+
+async def test_shortest_path_no_route(store: SessionStore) -> None:
+    await store.add_edge(Edge(source_id="a", target_id="b", type="calls"))
+    assert await store.shortest_path("a", "z") is None
+
+
+async def test_get_node_returns_payload(store: SessionStore) -> None:
+    await store.add_node("a", "symbol", label="A", payload={"language": "python"})
+    node = await store.get_node("a")
+    assert node is not None and node["payload"] == {"language": "python"}
+    assert await store.get_node("missing") is None
+
+
 async def test_save_and_find_decision_by_symbol(store: SessionStore) -> None:
     decision = _decision(id="dec-010", symbols=["axon.core.decision.Decision"])
     await store.save_decision(decision)

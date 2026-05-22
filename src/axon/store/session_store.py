@@ -315,6 +315,47 @@ class SessionStore:
                 frontier = next_frontier
         return {"root": node_id, "nodes": sorted(visited), "edges": edges}
 
+    async def shortest_path(
+        self, from_node: str, to_node: str, max_depth: int = 10
+    ) -> list[str] | None:
+        """Shortest directed path between two nodes (BFS over edges).
+
+        Returns the node ids from ``from_node`` to ``to_node`` inclusive, or
+        None if no path exists within ``max_depth`` hops.
+        """
+        if from_node == to_node:
+            return [from_node]
+        visited: set[str] = {from_node}
+        parent: dict[str, str] = {}
+        frontier: list[str] = [from_node]
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            for _ in range(max_depth):
+                if not frontier:
+                    break
+                placeholders = ",".join("?" * len(frontier))
+                rows = await db.execute_fetchall(
+                    "SELECT source_id, target_id FROM edges"
+                    f" WHERE source_id IN ({placeholders})",
+                    tuple(frontier),
+                )
+                next_frontier: list[str] = []
+                for row in rows:
+                    target = row["target_id"]
+                    if target in visited:
+                        continue
+                    visited.add(target)
+                    parent[target] = row["source_id"]
+                    if target == to_node:
+                        path = [to_node]
+                        while path[-1] != from_node:
+                            path.append(parent[path[-1]])
+                        return list(reversed(path))
+                    next_frontier.append(target)
+                frontier = next_frontier
+        return None
+
     async def save_decision(self, decision: Decision) -> None:
         async with self._lock:
             db = await self._connection()
