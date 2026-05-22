@@ -5,41 +5,27 @@ from pathlib import Path
 import aiosqlite
 from pydantic import BaseModel, Field
 
-DDL = """
-CREATE TABLE IF NOT EXISTS adr (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    project     TEXT    NOT NULL,
-    title       TEXT    NOT NULL,
-    context     TEXT    NOT NULL,
-    decision    TEXT    NOT NULL,
-    rationale   TEXT    NOT NULL,
-    created_at  TEXT    NOT NULL
-);
+_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
-CREATE TABLE IF NOT EXISTS session_memory (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    project     TEXT    NOT NULL,
-    summary     TEXT    NOT NULL,
-    raw_turns   INTEGER NOT NULL,
-    created_at  TEXT    NOT NULL
-);
 
-CREATE TABLE IF NOT EXISTS code_change (
-    commit_hash TEXT    NOT NULL,
-    file_path   TEXT    NOT NULL,
-    diff_summary TEXT   NOT NULL,
-    why         TEXT    NOT NULL DEFAULT '',
-    changed_at  TEXT    NOT NULL,
-    PRIMARY KEY (commit_hash, file_path)
-);
-
-CREATE TABLE IF NOT EXISTS session_note (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    project    TEXT NOT NULL,
-    body       TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-"""
+async def _apply_migrations(db: aiosqlite.Connection) -> None:
+    """Apply pending SQL migrations in filename order, tracked in schema_version."""
+    await db.execute(
+        "CREATE TABLE IF NOT EXISTS schema_version ("
+        " version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    await db.commit()
+    cursor = await db.execute("SELECT version FROM schema_version")
+    applied = {row[0] for row in await cursor.fetchall()}
+    for path in sorted(_MIGRATIONS_DIR.glob("*.sql")):
+        if path.stem in applied:
+            continue
+        await db.executescript(path.read_text(encoding="utf-8"))
+        await db.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (path.stem, datetime.now(UTC).isoformat()),
+        )
+        await db.commit()
 
 
 class ADR(BaseModel):
@@ -90,8 +76,7 @@ class SessionStore:
         Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         async with self._lock:
             db = await self._connection()
-            await db.executescript(DDL)
-            await db.commit()
+            await _apply_migrations(db)
 
     # ── ADR ──────────────────────────────────────────────────────────────────
 
