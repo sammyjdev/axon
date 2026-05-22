@@ -1,0 +1,50 @@
+"""Deterministic token-cost model for an AXON benchmark session.
+
+This is an explicit MODEL, not an instrumented capture. A session is `turns`
+turns long. `baseline` mode re-supplies the whole (growing) project context
+every turn; `axon` mode retrieves the project context once, then issues one
+fixed-budget recall per turn. Constants are session assumptions, not tuned to
+hit a target.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+MODES = ("baseline", "axon")
+
+
+@dataclass(frozen=True)
+class SessionParams:
+    """Assumptions for a modelled coding session."""
+
+    turns: int
+    base_context: int
+    growth_per_turn: int
+    recall_budget: int
+
+
+def turn_costs(params: SessionParams, *, mode: str) -> list[int]:
+    """Input-token cost of each turn, 1-indexed, for the given mode."""
+    if mode == "baseline":
+        return [
+            params.base_context + params.growth_per_turn * k
+            for k in range(params.turns)
+        ]
+    if mode == "axon":
+        costs = [params.recall_budget] * params.turns
+        costs[0] += params.base_context
+        return costs
+    raise ValueError(f"unknown mode: {mode!r} (expected one of {MODES})")
+
+
+def session_total(params: SessionParams, *, mode: str) -> int:
+    """Total input tokens across the whole session."""
+    return sum(turn_costs(params, mode=mode))
+
+
+def savings(params: SessionParams) -> float:
+    """Fraction of baseline tokens removed by AXON (0.0-1.0)."""
+    base = session_total(params, mode="baseline")
+    axon = session_total(params, mode="axon")
+    return 1.0 - axon / base
