@@ -37,3 +37,31 @@ def test_install_hooks_uninstall(monkeypatch):
     assert result.exit_code == 0
     assert "removed" in result.stdout
     assert "post-commit" in result.stdout
+
+
+def test_init_installs_hooks_and_indexes(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "axon.hooks.git_installer.install_hooks",
+        lambda repo_path=".": ["post-commit"],
+    )
+
+    class FakeStore:
+        def __init__(self, db_path):
+            pass
+
+        async def init(self):
+            return None
+
+        async def close(self):
+            return None
+
+    async def fake_index_repo(repo_path, *, store):
+        return ["sym1", "sym2", "sym3"]
+
+    monkeypatch.setattr("axon.store.session_store.SessionStore", FakeStore)
+    monkeypatch.setattr("axon.code.indexer.index_repo", fake_index_repo)
+
+    result = runner.invoke(app, ["init", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "post-commit" in result.stdout
+    assert "3 symbols" in result.stdout
