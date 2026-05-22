@@ -134,3 +134,47 @@ def test_status_handles_no_decisions(monkeypatch):
     result = runner.invoke(app, ["status", "--repo", "empty"])
     assert result.exit_code == 0
     assert "latest: none" in result.stdout
+
+
+def _export_store(monkeypatch, decisions):
+    class FakeStore:
+        def __init__(self, db_path):
+            pass
+
+        async def init(self):
+            return None
+
+        async def close(self):
+            return None
+
+        async def find_decisions_by_repo(self, repo, limit=20):
+            return decisions
+
+    monkeypatch.setattr("axon.store.session_store.SessionStore", FakeStore)
+
+
+def test_export_architecture(monkeypatch, tmp_path):
+    monkeypatch.setattr("axon.obsidian.discovery.discover_vault", lambda **kw: tmp_path)
+    monkeypatch.setattr(
+        "axon.obsidian.exporter.export_architecture_doc",
+        lambda decisions, *, vault, name="architecture": vault / f"{name}.md",
+    )
+    _export_store(monkeypatch, [object()])
+    result = runner.invoke(app, ["export", "architecture", "--repo", "Prometheus"])
+    assert result.exit_code == 0
+    assert "architecture doc" in result.stdout
+
+
+def test_export_aborts_without_vault(monkeypatch):
+    monkeypatch.setattr("axon.obsidian.discovery.discover_vault", lambda **kw: None)
+    result = runner.invoke(app, ["export", "adr"])
+    assert result.exit_code == 1
+    assert "vault not found" in result.stdout
+
+
+def test_export_rejects_unknown_doc_type(monkeypatch, tmp_path):
+    monkeypatch.setattr("axon.obsidian.discovery.discover_vault", lambda **kw: tmp_path)
+    _export_store(monkeypatch, [object()])
+    result = runner.invoke(app, ["export", "bogus", "--repo", "Prometheus"])
+    assert result.exit_code == 1
+    assert "Unknown doc type" in result.stdout

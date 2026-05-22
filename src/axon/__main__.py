@@ -119,5 +119,56 @@ def status(
         typer.echo("latest: none")
 
 
+@app.command()
+def export(
+    doc_type: str = typer.Argument(..., help="adr | architecture | summary"),
+    repo: str = typer.Option(None, "--repo", help="Repo name (default: cwd basename)"),
+) -> None:
+    """Export a repo's decisions to the Obsidian vault."""
+    from datetime import date
+
+    from axon.cli.pb import _get_db_path
+    from axon.obsidian.discovery import discover_vault
+    from axon.obsidian.exporter import (
+        export_adr,
+        export_architecture_doc,
+        export_project_summary,
+    )
+    from axon.store.session_store import SessionStore
+
+    vault = discover_vault()
+    if vault is None:
+        typer.echo("Obsidian vault not found (set AXON_VAULT).", err=True)
+        raise typer.Exit(1)
+
+    repo_name = repo or Path.cwd().name
+
+    async def _decisions():
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            return await store.find_decisions_by_repo(repo_name, limit=100)
+        finally:
+            await store.close()
+
+    decisions = asyncio.run(_decisions())
+    if not decisions:
+        typer.echo(f"No decisions for repo '{repo_name}'.")
+        return
+
+    if doc_type == "adr":
+        paths = [export_adr(d, vault=vault) for d in decisions]
+        typer.echo(f"exported {len(paths)} ADR notes to {vault}")
+    elif doc_type == "architecture":
+        path = export_architecture_doc(decisions, vault=vault, name=repo_name)
+        typer.echo(f"exported architecture doc: {path}")
+    elif doc_type == "summary":
+        path = export_project_summary(repo_name, date.today(), decisions, vault=vault)
+        typer.echo(f"exported summary: {path}")
+    else:
+        typer.echo(f"Unknown doc type: {doc_type} (adr|architecture|summary)", err=True)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
