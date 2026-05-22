@@ -16,7 +16,7 @@ any agent.
 AXON is not yet on PyPI. Install from source:
 
 ```bash
-git clone https://github.com/axon-ai/axon.git
+git clone https://github.com/sammyjdev/axon.git
 cd axon
 pip install -e .
 ```

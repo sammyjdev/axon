@@ -53,7 +53,7 @@ The original design target was >60% savings. This model reaches 52.3% under
 conservative assumptions. I didn't adjust the parameters to hit the target.
 The benchmark README explains this explicitly.
 
-Methodology and all assumptions: github.com/axon-ai/axon/blob/main/benchmarks/README.md
+Methodology and all assumptions: github.com/sammyjdev/axon/blob/master/benchmarks/README.md
 
 ---
 
@@ -73,4 +73,4 @@ Posting here because I want feedback on the benchmark model specifically —
 are the baseline assumptions (300 tokens/turn growth, 20 turns) representative
 of how your agents behave?
 
-Repo: https://github.com/axon-ai/axon — MIT, fully self-hosted.
+Repo: https://github.com/sammyjdev/axon — MIT, fully self-hosted.

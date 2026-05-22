@@ -61,5 +61,5 @@ posting here to get feedback on the design before cutting a proper release.
    (+300 tokens/turn). Is that conservative or generous relative to how your
    agents actually behave?
 
-Repo: https://github.com/axon-ai/axon
+Repo: https://github.com/sammyjdev/axon
 License: MIT, self-hosted only — no telemetry, no cloud dependency.

@@ -16,7 +16,7 @@
       <ul class="nav-links">
         <li><a href="#how-it-works">How it works</a></li>
         <li><a href="#install">Install</a></li>
-        <li><a href="https://github.com/axon-ai/axon">GitHub</a></li>
+        <li><a href="https://github.com/sammyjdev/axon">GitHub</a></li>
       </ul>
     </div>
   </nav>
@@ -34,7 +34,7 @@
           <span style="font-size:0.88em;">Pick up exactly where you left off — whether you switch to Codex, Cursor, or Claude Code mid-session.</span>
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="https://github.com/axon-ai/axon">
+          <a class="btn btn-primary" href="https://github.com/sammyjdev/axon">
             <!-- GitHub icon (inline SVG) -->
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
               <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
@@ -48,7 +48,7 @@
             </svg>
             View on GitHub
           </a>
-          <a class="btn btn-secondary" href="https://github.com/axon-ai/axon/tree/main/docs">
+          <a class="btn btn-secondary" href="https://github.com/sammyjdev/axon/tree/master/docs">
             Documentation
           </a>
         </div>
@@ -128,7 +128,7 @@
         <div class="install-block">
           <button class="copy-btn" id="copy-btn" type="button" aria-label="Copy install commands">Copy</button>
           <pre id="install-code"><span class="comment"># Clone and install from source (not yet on PyPI)</span>
-<span class="cmd">git clone https://github.com/axon-ai/axon</span>
+<span class="cmd">git clone https://github.com/sammyjdev/axon</span>
 <span class="cmd">pip install -e .</span>
 
 <span class="comment"># Initialise AXON in your project</span>
@@ -160,8 +160,8 @@
     <div class="footer-inner">
       <span>MIT licensed &mdash; AXON project</span>
       <nav class="footer-links" aria-label="Footer links">
-        <a href="https://github.com/axon-ai/axon">GitHub</a>
-        <a href="https://github.com/axon-ai/axon/tree/main/docs">Docs</a>
+        <a href="https://github.com/sammyjdev/axon">GitHub</a>
+        <a href="https://github.com/sammyjdev/axon/tree/master/docs">Docs</a>
       </nav>
     </div>
   </footer>
@@ -173,7 +173,7 @@
       var code = document.getElementById('install-code');
       if (!btn || !code) return;
       btn.addEventListener('click', function () {
-        var text = 'git clone https://github.com/axon-ai/axon\npip install -e .\naxon init';
+        var text = 'git clone https://github.com/sammyjdev/axon\npip install -e .\naxon init';
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(function () {
             btn.textContent = 'Copied!';

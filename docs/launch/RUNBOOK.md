@@ -17,29 +17,11 @@ Step-by-step guide for the human maintainer. Execute these in order.
 
 ## Phase 1 — Pre-Launch Checklist
 
-### 1.1 Replace the placeholder GitHub URL
+### 1.1 GitHub URL — done
 
-The repository URL `https://github.com/axon-ai/axon` is a placeholder used
-throughout the codebase. Replace it with your real GitHub repository URL before
-doing anything else. Files to update:
-
-- `README.md` — install `git clone` instruction
-- `site/index.html` — any links in the landing page
-- `pyproject.toml` — `Homepage`, `Repository`, `Documentation` fields under
-  `[project.urls]`
-- `docs/launch/posts/hn-show-hn.md`
-- `docs/launch/posts/reddit-claudeai.md`
-- `docs/launch/posts/reddit-cursor.md`
-- `docs/launch/posts/linkedin.md`
-- `docs/launch/posts/bluesky-thread.md`
-- `docs/launch/beta.md` — the install URL in the invitation template
-
-Verify no stale placeholder remains:
-```bash
-grep -r "axon-ai/axon" .
-```
-
-Commit the URL replacements before proceeding.
+The repository is public at `https://github.com/sammyjdev/axon`, and that URL is
+already set throughout the codebase (`README.md`, `site/`, `pyproject.toml`, the
+launch posts, and this runbook). No action needed.
 
 ### 1.2 Confirm the license
 
@@ -173,9 +155,8 @@ issues for everything so the community can see what's tracked.
 
 ## Phase 4 — Public Launch Posts
 
-All posts are in `docs/launch/posts/`. Confirm each file has its real GitHub URL
-and PyPI install command before posting (grep for `axon-ai/axon` again as a
-final check).
+All posts are in `docs/launch/posts/`. Confirm each file has the real GitHub URL
+(`sammyjdev/axon`) and the PyPI install command before posting.
 
 ### 4.1 Hacker News — Show HN
 

@@ -42,9 +42,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/axon-ai/axon"
-Repository = "https://github.com/axon-ai/axon"
-Documentation = "https://github.com/axon-ai/axon#readme"
+Homepage = "https://github.com/sammyjdev/axon"
+Repository = "https://github.com/sammyjdev/axon"
+Documentation = "https://github.com/sammyjdev/axon#readme"
 
 [project.scripts]
 axon = "axon.__main__:app"

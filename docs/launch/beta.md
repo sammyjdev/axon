@@ -24,7 +24,7 @@ What I'm asking: install it, try it on a real project for a few days, and answer
 a short feedback form (~10 questions). That's it. No commitment beyond that.
 
 Install takes about 5 minutes:
-https://github.com/axon-ai/axon  ← replace with real URL before sending
+https://github.com/sammyjdev/axon
 
 Interested? Reply here or reach me at [CONTACT].
 
@@ -40,7 +40,7 @@ friction is itself useful feedback.
 
 - [ ] **Clone and install**
   ```bash
-  git clone https://github.com/axon-ai/axon.git   # real URL
+  git clone https://github.com/sammyjdev/axon.git
   cd axon
   pip install -e .
   axon --version   # confirm install succeeded
