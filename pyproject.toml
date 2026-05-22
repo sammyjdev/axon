@@ -46,7 +46,7 @@ Homepage = "https://github.com/sammyjdev/axon"
 Repository = "https://github.com/sammyjdev/axon"
 
 [project.scripts]
-axon = "axon.cli.pb:app"
+axon = "axon.__main__:app"
 
 [project.optional-dependencies]
 dev = [
