@@ -99,6 +99,19 @@ nav {
   line-height: 1.1;
   margin-bottom: 0.6rem;
 }
+.hero-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 100px;
+  padding: 0.2rem 0.7rem;
+  margin-bottom: 1.25rem;
+}
 .hero-tagline {
   font-size: clamp(1.1rem, 3vw, 1.4rem);
   color: var(--muted);
