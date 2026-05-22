@@ -65,3 +65,15 @@ def test_init_installs_hooks_and_indexes(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert "post-commit" in result.stdout
     assert "3 symbols" in result.stdout
+
+
+def test_serve_starts_mcp_server(monkeypatch):
+    called = {"ran": False}
+
+    def fake_main():
+        called["ran"] = True
+
+    monkeypatch.setattr("axon.mcp.server.main", fake_main)
+    result = runner.invoke(app, ["serve"])
+    assert result.exit_code == 0
+    assert called["ran"] is True
