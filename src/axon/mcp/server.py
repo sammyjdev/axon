@@ -117,22 +117,6 @@ def _record_mcp_tool_call(
     )
 
 
-async def _run_neo4j_read(cypher: str) -> list[dict]:
-    import os
-
-    from neo4j import GraphDatabase
-
-    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
-    user = os.environ.get("NEO4J_USER", "neo4j")
-    password = os.environ.get("NEO4J_PASSWORD", "local-password")
-    driver = GraphDatabase.driver(uri, auth=(user, password))
-    try:
-        with driver.session() as session:
-            return [dict(record) for record in session.run(cypher)]
-    finally:
-        driver.close()
-
-
 def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
     try:
         return compress_text_with_rtk(text, max_tokens=max_tokens), None
@@ -646,44 +630,27 @@ async def ask(
 
 
 @mcp.tool()
-async def get_graph_neighbors(
-    node: str,
-    project: str,
-    depth: int = 1,
-) -> str:
-    """Retorna vizinhos do grafo estrutural Graphify no namespace do projeto."""
-    from axon.store.graph_namespace import neighbors_query
-
-    rows = await _run_neo4j_read(neighbors_query(node, project, depth))
-    if not rows:
+async def get_graph_neighbors(node: str, depth: int = 1) -> str:
+    """Retorna vizinhos de um nó no grafo estrutural de código (SQLite)."""
+    store = _get_session_store()
+    await store.init()
+    subgraph = await store.query_subgraph(node, depth=depth)
+    edges = subgraph["edges"]
+    if not edges:
         response = "Nenhum vizinho encontrado."
     else:
-        response = "\n".join(f"{row.get('node')} -> {row.get('neighbor')}" for row in rows)
+        response = "\n".join(f"{e['source']} -> {e['target']}" for e in edges)
     _record_mcp_tool_call("get_graph_neighbors", node, response)
     return response
 
 
 @mcp.tool()
-async def get_graph_path(
-    from_node: str,
-    to_node: str,
-    project: str,
-) -> str:
-    """Retorna o caminho mais curto no grafo estrutural Graphify do projeto."""
-    from axon.store.graph_namespace import path_query
-
-    rows = await _run_neo4j_read(path_query(from_node, to_node, project))
-    if not rows:
-        response = "Nenhum caminho encontrado."
-    else:
-        lines = []
-        for row in rows:
-            path = row.get("path")
-            if isinstance(path, list):
-                lines.append(" -> ".join(str(item) for item in path))
-            else:
-                lines.append(str(path))
-        response = "\n".join(lines)
+async def get_graph_path(from_node: str, to_node: str) -> str:
+    """Retorna o caminho mais curto entre dois nós no grafo de código (SQLite)."""
+    store = _get_session_store()
+    await store.init()
+    path = await store.shortest_path(from_node, to_node)
+    response = " -> ".join(path) if path else "Nenhum caminho encontrado."
     _record_mcp_tool_call("get_graph_path", f"{from_node}\n{to_node}", response)
     return response
 
