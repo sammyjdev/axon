@@ -262,6 +262,28 @@ class SessionStore:
             )
             await db.commit()
 
+    async def get_node(self, node_id: str) -> dict[str, object] | None:
+        """Return a node by id with its payload parsed, or None if absent."""
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT id, type, label, payload, created_at, updated_at"
+                " FROM nodes WHERE id = ?",
+                (node_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "type": row["type"],
+            "label": row["label"],
+            "payload": json.loads(row["payload"]) if row["payload"] else {},
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
     async def query_subgraph(self, node_id: str, depth: int = 2) -> dict[str, object]:
         visited: set[str] = {node_id}
         frontier: set[str] = {node_id}
