@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class ComplianceEvent:
+class ComplianceEvent(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     decision_id: str
     reason_code: str
     policy_version: str
@@ -18,8 +20,8 @@ class ComplianceEvent:
     caller: str | None = None
     ctx: str | None = None
     allowed: bool = False
-    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 def emit_compliance_event(event: ComplianceEvent) -> None:
-    logger.info("compliance_event=%s", json.dumps(asdict(event), ensure_ascii=True))
+    logger.info("compliance_event=%s", json.dumps(event.model_dump(), ensure_ascii=True))
