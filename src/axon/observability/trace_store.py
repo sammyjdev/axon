@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from axon.config.runtime import RuntimeConfig, load_runtime_config
 
@@ -16,18 +17,19 @@ TracePayloadValue = str | int | float | bool | None
 TracePayload = dict[str, TracePayloadValue]
 
 
-@dataclass(frozen=True)
-class TraceRecord:
+class TraceRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     trace_id: str
     stage: str
     caller: str
-    ts: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    ts: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     ctx: str | None = None
     policy_decision_id: str | None = None
     policy_version: str | None = None
     route: str | None = None
     model: str | None = None
-    payload: TracePayload = field(default_factory=dict)
+    payload: TracePayload = Field(default_factory=dict)
 
 
 class TraceRecorder:
@@ -108,7 +110,7 @@ class TraceStore:
     def append(self, record: TraceRecord) -> None:
         self._file.parent.mkdir(parents=True, exist_ok=True)
         with self._file.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(asdict(record), sort_keys=True) + "\n")
+            fh.write(json.dumps(record.model_dump(), sort_keys=True) + "\n")
 
     def recorder(
         self,

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict
 
 from axon.config.runtime import RuntimeConfig, load_runtime_config
 
 
-@dataclass(frozen=True)
-class CompressionRecord:
+class CompressionRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     ts: str
     engine: str  # e.g. "caveman/phi3+rtk", "caveman/phi3", "fallback"
     caller: str  # "claude-code", "codex", "cli"
@@ -31,7 +33,7 @@ class CompressionTelemetryStore:
     def append(self, record: CompressionRecord) -> None:
         self._file.parent.mkdir(parents=True, exist_ok=True)
         with self._file.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(asdict(record), sort_keys=True) + "\n")
+            fh.write(json.dumps(record.model_dump(), sort_keys=True) + "\n")
 
     def load_all(self) -> list[CompressionRecord]:
         if not self._file.exists():

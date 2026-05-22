@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict
 
 from axon.expansion.scoring import ExpansionDecision, ExpansionScoreResult
 
@@ -15,8 +16,9 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-@dataclass(frozen=True)
-class StagedSource:
+class StagedSource(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     title: str
     source_url: str
     published_at: str | None
@@ -24,11 +26,12 @@ class StagedSource:
     score: dict[str, float]
     decision: str
     reasoning: str
-    evidence_quotes: tuple[str, ...] = field(default_factory=tuple)
+    evidence_quotes: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True)
-class ExpansionDraft:
+class ExpansionDraft(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     draft_id: str
     status: str
     ctx: str
@@ -53,8 +56,8 @@ class ExpansionDraft:
 
     def to_payload(self) -> dict[str, object]:
         return {
-            **asdict(self),
-            "sources": [asdict(item) for item in self.sources],
+            **self.model_dump(),
+            "sources": [item.model_dump() for item in self.sources],
         }
 
     @classmethod

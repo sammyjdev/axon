@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from axon.config.runtime import RuntimeConfig, load_runtime_config
 
@@ -30,16 +32,17 @@ class ExpansionBudgetStatus:
         return self.enforcement is BudgetEnforcement.CLOUD_ALLOWED
 
 
-@dataclass(frozen=True)
-class BudgetUsageRecord:
+class BudgetUsageRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     execution_id: str
     amount_usd: float
     model: str
     ctx: str
     topic: str | None = None
     source: str = "cloud"
-    occurred_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
-    metadata: dict[str, Any] = field(default_factory=dict)
+    occurred_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExpansionBudgetManager:
@@ -88,7 +91,7 @@ class ExpansionBudgetManager:
         budget_file = self.budget_file(month_date)
         payload = self._read_budget_file(budget_file)
         entries = list(payload.get("entries", []))
-        entries.append(asdict(record))
+        entries.append(record.model_dump())
         payload = {
             "month": month_date.strftime("%Y-%m"),
             "spent_usd": round(float(payload.get("spent_usd", 0.0)) + record.amount_usd, 6),
