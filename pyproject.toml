@@ -57,6 +57,9 @@ dev = [
     "testcontainers[qdrant,redis]>=4.0.0",
     "hypothesis>=6.0",
 ]
+bench = [
+    "matplotlib>=3.8",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/axon"]
