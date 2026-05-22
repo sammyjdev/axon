@@ -91,5 +91,33 @@ def health() -> None:
     typer.echo(asyncio.run(axon_health()))
 
 
+@app.command()
+def status(
+    repo: str = typer.Option(None, "--repo", help="Repo name (default: cwd basename)"),
+) -> None:
+    """Show the current repo, its decision count, and the latest decision."""
+    from axon.cli.pb import _get_db_path
+    from axon.store.session_store import SessionStore
+
+    repo_name = repo or Path.cwd().name
+
+    async def _decisions():
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            return await store.find_decisions_by_repo(repo_name, limit=20)
+        finally:
+            await store.close()
+
+    decisions = asyncio.run(_decisions())
+    typer.echo(f"repo: {repo_name}")
+    typer.echo(f"decisions: {len(decisions)}")
+    if decisions:
+        latest = decisions[0]
+        typer.echo(f"latest: {latest.summary} ({latest.id})")
+    else:
+        typer.echo("latest: none")
+
+
 if __name__ == "__main__":
     app()
