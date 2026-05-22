@@ -336,6 +336,15 @@ class SessionStore:
             )
         return [Decision(**json.loads(row["frontmatter"])) for row in rows]
 
+    async def next_decision_id(self) -> str:
+        """Return the next sequential decision id (dec-NNN, zero-padded)."""
+        async with self._lock:
+            db = await self._connection()
+            cursor = await db.execute("SELECT COUNT(*) FROM decisions")
+            row = await cursor.fetchone()
+        count = row[0] if row else 0
+        return f"dec-{count + 1:03d}"
+
     async def close(self) -> None:
         async with self._lock:
             if self._conn is not None:
