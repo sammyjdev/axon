@@ -23,5 +23,23 @@ def main() -> None:
     pass
 
 
+@app.command("install-hooks")
+def install_hooks_cmd(
+    path: str = typer.Option(".", "--path", help="Repo path"),
+    uninstall: bool = typer.Option(
+        False, "--uninstall", help="Remove AXON-managed hooks instead of installing"
+    ),
+) -> None:
+    """Install (or remove) AXON git hooks in a repo. Idempotent."""
+    from axon.hooks.git_installer import install_hooks, uninstall_hooks
+
+    if uninstall:
+        removed = uninstall_hooks(path)
+        typer.echo(f"removed: {', '.join(removed) or 'none'}")
+    else:
+        installed = install_hooks(path)
+        typer.echo(f"installed: {', '.join(installed) or 'none'}")
+
+
 if __name__ == "__main__":
     app()
