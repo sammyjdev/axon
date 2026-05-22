@@ -55,11 +55,15 @@ def assess_compression_confidence(source_text: str, compressed_text: str) -> Com
 
     if not compressed_text.strip():
         reasons.append("empty_output")
-        return CompressionConfidence(score=0.0, reasons=tuple(reasons), fallback_to_full_context=True)
+        return CompressionConfidence(
+            score=0.0, reasons=tuple(reasons), fallback_to_full_context=True
+        )
 
     if compression_contamination_note(compressed_text):
         reasons.append("prompt_contamination")
-        return CompressionConfidence(score=0.0, reasons=tuple(reasons), fallback_to_full_context=True)
+        return CompressionConfidence(
+            score=0.0, reasons=tuple(reasons), fallback_to_full_context=True
+        )
 
     missing = missing_required_symbols(source_text, compressed_text)
     if missing:

@@ -114,7 +114,8 @@ def build_doctor_report(
     notes: list[str] = []
     if runtime.active_profile and profile_mode and profile_mode != runtime.mode:
         notes.append(
-            f"Profile '{runtime.active_profile}' expects mode '{profile_mode}', but runtime is '{runtime.mode}'."
+            f"Profile '{runtime.active_profile}' expects mode '{profile_mode}',"
+            f" but runtime is '{runtime.mode}'."
         )
     if runtime.mode != recommended_mode:
         notes.append(
@@ -193,7 +194,8 @@ def build_setup_plan(
     return SetupPlan(
         runtime_mode=runtime_mode,
         compose_profile="gpu"
-        if runtime_mode == "full-local" and "CUDAExecutionProvider" in platform_config.embedding_providers
+        if runtime_mode == "full-local"
+        and "CUDAExecutionProvider" in platform_config.embedding_providers
         else "cpu",
         start_local_stack=True,
         validate_remote_services=False,
@@ -265,7 +267,9 @@ if __name__ == "__main__":
         merge_env_files(Path(sys.argv[2]), Path(sys.argv[3]), mode=sys.argv[4])
     elif len(sys.argv) > 1 and sys.argv[1] == "--setup-plan":
         if len(sys.argv) != 4:
-            raise SystemExit("usage: platform.py --setup-plan <runtime-mode> <remote-infra-host-or-dash>")
+            raise SystemExit(
+                "usage: platform.py --setup-plan <runtime-mode> <remote-infra-host-or-dash>"
+            )
         mode = sys.argv[2].strip().lower()
         if mode not in {"full-local", "hybrid-local", "remote-infra", "minimal"}:
             raise SystemExit(f"invalid runtime mode: {mode}")

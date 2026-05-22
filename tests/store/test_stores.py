@@ -492,6 +492,8 @@ class TestOutcomeStore:
                 )
             )
 
-        outcomes = await outcome_store.find_outcomes_by_tag("playbook", project="prometheus", limit=2)
+        outcomes = await outcome_store.find_outcomes_by_tag(
+            "playbook", project="prometheus", limit=2
+        )
         assert len(outcomes) == 2
         assert all("playbook" in outcome.tags for outcome in outcomes)

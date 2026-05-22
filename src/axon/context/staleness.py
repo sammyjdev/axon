@@ -93,7 +93,9 @@ def detect_stale_replacements(
     for family, family_records in records_by_family.items():
         replacement = latest_by_family[family]
         replacement_id = str(replacement.get("id", "")).strip()
-        replacement_ts = _parse_timestamp(replacement.get("modified_at") or replacement.get("updated_at"))
+        replacement_ts = _parse_timestamp(
+            replacement.get("modified_at") or replacement.get("updated_at")
+        )
         if not replacement_id or replacement_ts is None:
             continue
 
