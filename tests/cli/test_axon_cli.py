@@ -147,7 +147,7 @@ def _export_store(monkeypatch, decisions):
         async def close(self):
             return None
 
-        async def find_decisions_by_repo(self, repo, limit=20):
+        async def find_decisions_by_repo(self, repo, limit=100):
             return decisions
 
     monkeypatch.setattr("axon.store.session_store.SessionStore", FakeStore)
@@ -208,3 +208,51 @@ def test_survivor_subapp_is_invocable():
     result = runner.invoke(app, ["adr", "--help"])
     assert result.exit_code == 0
     assert "list" in result.stdout
+
+
+def test_install_hooks_aborts_on_non_git_path(monkeypatch):
+    from axon.exceptions import GitAnchorError
+
+    def boom(repo_path="."):
+        raise GitAnchorError("not a git repository", repo=str(repo_path))
+
+    monkeypatch.setattr("axon.hooks.git_installer.install_hooks", boom)
+    result = runner.invoke(app, ["install-hooks", "--path", "/tmp/not-a-repo"])
+    assert result.exit_code == 1
+    assert "Not a git repository" in result.stdout
+
+
+def test_init_aborts_on_non_git_path(monkeypatch, tmp_path):
+    from axon.exceptions import GitAnchorError
+
+    def boom(repo_path="."):
+        raise GitAnchorError("not a git repository", repo=str(repo_path))
+
+    monkeypatch.setattr("axon.hooks.git_installer.install_hooks", boom)
+    result = runner.invoke(app, ["init", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "Not a git repository" in result.stdout
+
+
+def test_export_adr(monkeypatch, tmp_path):
+    monkeypatch.setattr("axon.obsidian.discovery.discover_vault", lambda **kw: tmp_path)
+    monkeypatch.setattr(
+        "axon.obsidian.exporter.export_adr",
+        lambda decision, *, vault: vault / "note.md",
+    )
+    _export_store(monkeypatch, [object(), object()])
+    result = runner.invoke(app, ["export", "adr", "--repo", "Prometheus"])
+    assert result.exit_code == 0
+    assert "exported 2 ADR notes" in result.stdout
+
+
+def test_export_summary(monkeypatch, tmp_path):
+    monkeypatch.setattr("axon.obsidian.discovery.discover_vault", lambda **kw: tmp_path)
+    monkeypatch.setattr(
+        "axon.obsidian.exporter.export_project_summary",
+        lambda repo, since, decisions, *, vault: vault / "summary.md",
+    )
+    _export_store(monkeypatch, [object()])
+    result = runner.invoke(app, ["export", "summary", "--repo", "Prometheus"])
+    assert result.exit_code == 0
+    assert "exported summary" in result.stdout
