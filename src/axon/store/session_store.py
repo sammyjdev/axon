@@ -1,9 +1,13 @@
 import asyncio
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
 from pydantic import BaseModel, Field
+
+from axon.core.decision import Decision
+from axon.core.edge import Edge
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -218,6 +222,119 @@ class SessionStore:
             )
             for r in rows
         ]
+
+    # ── Graph / Decisions ─────────────────────────────────────────────────────
+
+    async def add_node(
+        self,
+        node_id: str,
+        node_type: str,
+        *,
+        label: str = "",
+        payload: dict | None = None,
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        async with self._lock:
+            db = await self._connection()
+            await db.execute(
+                "INSERT INTO nodes (id, type, label, payload, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET"
+                " type=excluded.type, label=excluded.label,"
+                " payload=excluded.payload, updated_at=excluded.updated_at",
+                (node_id, node_type, label, json.dumps(payload or {}), now, now),
+            )
+            await db.commit()
+
+    async def add_edge(self, edge: Edge) -> None:
+        async with self._lock:
+            db = await self._connection()
+            await db.execute(
+                "INSERT INTO edges (source_id, target_id, type, payload, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    edge.source_id,
+                    edge.target_id,
+                    edge.type,
+                    json.dumps(edge.payload) if edge.payload is not None else None,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            await db.commit()
+
+    async def query_subgraph(self, node_id: str, depth: int = 2) -> dict[str, object]:
+        visited: set[str] = {node_id}
+        frontier: set[str] = {node_id}
+        edges: list[dict[str, str]] = []
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            for _ in range(depth):
+                if not frontier:
+                    break
+                placeholders = ",".join("?" * len(frontier))
+                rows = await db.execute_fetchall(
+                    "SELECT source_id, target_id, type FROM edges"
+                    f" WHERE source_id IN ({placeholders})",
+                    tuple(frontier),
+                )
+                next_frontier: set[str] = set()
+                for row in rows:
+                    edges.append(
+                        {
+                            "source": row["source_id"],
+                            "target": row["target_id"],
+                            "type": row["type"],
+                        }
+                    )
+                    if row["target_id"] not in visited:
+                        visited.add(row["target_id"])
+                        next_frontier.add(row["target_id"])
+                frontier = next_frontier
+        return {"root": node_id, "nodes": sorted(visited), "edges": edges}
+
+    async def save_decision(self, decision: Decision) -> None:
+        async with self._lock:
+            db = await self._connection()
+            await db.execute(
+                "INSERT OR REPLACE INTO decisions"
+                " (id, frontmatter, body, vault_path, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    decision.id,
+                    json.dumps(decision.model_dump(mode="json")),
+                    decision.summary,
+                    None,
+                    decision.timestamp.isoformat(),
+                ),
+            )
+            await db.commit()
+
+    async def find_decisions_by_symbol(self, symbol_id: str) -> list[Decision]:
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            rows = await db.execute_fetchall(
+                "SELECT frontmatter FROM decisions"
+                " WHERE EXISTS ("
+                "   SELECT 1 FROM json_each(decisions.frontmatter, '$.symbols')"
+                "   WHERE value = ?)"
+                " ORDER BY created_at DESC",
+                (symbol_id,),
+            )
+        return [Decision(**json.loads(row["frontmatter"])) for row in rows]
+
+    async def find_decisions_by_repo(self, repo: str, limit: int = 20) -> list[Decision]:
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            rows = await db.execute_fetchall(
+                "SELECT frontmatter FROM decisions"
+                " WHERE json_extract(frontmatter, '$.repo') = ?"
+                " ORDER BY created_at DESC LIMIT ?",
+                (repo, limit),
+            )
+        return [Decision(**json.loads(row["frontmatter"])) for row in rows]
 
     async def close(self) -> None:
         async with self._lock:
