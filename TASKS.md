@@ -487,6 +487,80 @@ Cada task segue este schema:
 - branch: feat/phase-7-mem0-compressor
 - depends_on: [T-102]
 
+## T-104: [BUG] CompressionRecord polluted by graph tool I/O
+
+- phase: 7
+- agent: claude-code
+- status: open
+- branch: fix/compression-telemetry-pollution
+- notes:
+  `src/axon/mcp/server.py:99-122` reuses `CompressionRecord` to log I/O from
+  `get_graph_path` and `get_graph_neighbors`. These are not compression events.
+
+  **Impact**: `data/compression/stats.jsonl` mixes two populations. Aggregation
+  without engine filtering produces misleading averages (2% vs. 55% real). Of
+  197 records in production, 119 are graph-tool I/O, not compression.
+
+  **Fix options**:
+  - Separate stream: `data/observability/tool_io.jsonl` with its own schema.
+  - Or add `kind: "compression" | "tool_io"` field to `CompressionRecord`
+    and filter on read.
+
+  **Workaround until fixed**: aggregators must filter
+  `engine IN ("caveman/phi3+rtk", "caveman/phi3", "rtk", "fallback", "disabled")`
+  before computing any statistic.
+
+## T-105: [PERF] Caveman compression dominates pb ask latency with 100% reject rate
+
+- phase: 7
+- agent: claude-code
+- status: open
+- branch: fix/caveman-quality-gate-or-skip
+- depends_on: [T-104]
+- notes:
+  Stage-by-stage breakdown of `pb ask` (3 in-process iterations, query
+  "what is the hexagonal architecture decision for this project", ctx=knowledge,
+  ~1.4K tokens of retrieved context):
+
+  ```
+  stage                   iter1 (cold)  iter2 (warm)  iter3 (warm)
+  context_detection             0.001s        0.000s        0.000s
+  strategy_select               3.306s        0.000s        0.000s
+  retrieval                     1.051s        0.308s        0.310s
+  context_pack_build            0.000s        0.000s        0.000s
+  compression                   6.469s       10.978s        6.787s   ← always dominant
+  prompt_build                  0.000s        0.000s        0.000s
+  _wall                        10.827s       11.287s        7.098s
+  ```
+
+  **Observed behavior**: every iteration prints
+  `caveman_note: compression output rejected: missing source symbol(s): …`
+  and `tokens aprox: N -> N (-0.0%)`. Caveman calls `phi3:mini` via Ollama
+  (6-11s), output is rejected by `compression_quality_note` (preservation
+  check), system falls back to RTK with ~0% net reduction.
+
+  This is consistent with production telemetry: 7 of 78 real compression
+  attempts in `stats.jsonl` produced any reduction. The other 71 paid the
+  caveman cost for no gain.
+
+  **Likely fixes** (not yet investigated):
+  - Tighten the input gate so caveman only runs when symbol-preservation
+    is feasible (e.g., skip when the input is mostly file-list snippets,
+    as in the retrieved-context case).
+  - Relax `compression_quality_note` symbol-preservation rule for
+    retrieval-context inputs (where symbols are file paths, not code).
+  - Make caveman opt-in per strategy instead of default-on.
+
+  **Article impact**: Documented in T6 launch post — "Retrieval pipeline
+  warm path: p50 = 0.3s. End-to-end `pb ask` includes a compression step
+  under active investigation (this issue) that adds 6-11s per call due to
+  a quality-gate rejection issue."
+
+  **Reproduction**: `python3 -m axon.cli.pb ask "<query>"` with Ollama up
+  and `gemma4:e4b`/`phi3:mini` loaded. Inspect the `compression:` block in
+  the stdout — note the `caveman_note: compression output rejected` and
+  `(-0.0%)` token reduction.
+
 ---
 
 # Quadro resumo por agente
