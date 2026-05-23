@@ -1,5 +1,7 @@
 # AXON
 
+![AXON — context orchestration for AI coding agents](https://raw.githubusercontent.com/sammyjdev/axon/master/docs/assets/axon-hero.png)
+
 **Same context, any AI coding agent.**
 
 > *Agent-agnostic eXecution and cONtext Network.*
