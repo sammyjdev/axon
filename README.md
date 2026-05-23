@@ -2,6 +2,8 @@
 
 **Same context, any AI coding agent.**
 
+> *Agent-agnostic eXecution and cONtext Network.*
+
 Every time you switch coding agents — from Claude Code to Codex to Cursor — or
 resume a project after a few days away, your AI assistant starts blank. AXON
 solves this by capturing context at the moments it crystallises (git commits,
@@ -153,9 +155,16 @@ collaborators, or need decisions to survive across long project timelines.
 A modelled 20-turn coding session shows that AXON's selective context recall
 reduces input token consumption by **52.3%** compared to a baseline that
 re-supplies the full project context on every turn (87,000 tokens baseline vs.
-41,500 tokens with AXON). This is a deterministic cost model, not an
-instrumented live measurement — see [`benchmarks/README.md`](benchmarks/README.md)
-for the assumptions, caveats, and how to run it yourself.
+41,500 tokens with AXON). This is a deterministic cost model — see
+[`benchmarks/README.md`](benchmarks/README.md) for the assumptions, caveats,
+and how to run it yourself.
+
+Production telemetry across sessions where the compression pipeline fires
+(inputs above ~180 tokens) reproduces the modelled number: **p50 = 52.6%**,
+**mean = 55%**, **max = 91.6%** (n=7 real sessions). The pipeline is gated by
+`strategy.enable_compression` and skips inputs too small to benefit, so the
+aggregate average across all sessions is lower — see the issue tracker for
+the active work on extending the gate's coverage (T-105).
 
 ---
 
