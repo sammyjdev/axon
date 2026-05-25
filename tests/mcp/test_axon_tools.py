@@ -98,6 +98,37 @@ async def test_axon_health_reports_subsystems(store: SessionStore) -> None:
         assert subsystem in report
 
 
+async def test_axon_health_does_not_hang_when_backends_unreachable(
+    store: SessionStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: axon_health must time-bound each external probe.
+
+    When Qdrant/Redis are unreachable (e.g. wrong host, offline VPN), the
+    probes used to block indefinitely. Each probe must now fail fast with a
+    timeout marker so `axon health` always returns within a few seconds.
+    """
+    import asyncio
+    import time
+
+    class _Hanging:
+        async def connect(self) -> None:
+            await asyncio.sleep(60)
+
+        async def ensure_collections(self) -> None:
+            await asyncio.sleep(60)
+
+    monkeypatch.setattr(server, "_get_graph_store", lambda: _Hanging())
+    monkeypatch.setattr(server, "_get_vector_store", lambda: _Hanging())
+
+    started = time.monotonic()
+    report = await server.axon_health()
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 5.0, f"axon_health took {elapsed:.1f}s — must be time-bounded"
+    assert "redis: down (timeout)" in report
+    assert "qdrant: down (timeout)" in report
+
+
 def test_detect_agent_prefers_explicit_then_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
