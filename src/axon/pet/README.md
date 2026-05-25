@@ -23,7 +23,7 @@ python -m axon.pet
 ```
 
 Resolves `AXON_ROOT` via env var, then by walking up looking for
-`data/axon.db`, then falls back to `~/dev/Prometheus`.
+`data/axon.db`, then falls back to `~/dev/axon`.
 
 Ctrl+C to exit. Restores cursor on exit.
 

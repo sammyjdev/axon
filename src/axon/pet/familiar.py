@@ -10,7 +10,7 @@ v3 wires the demo to actual AXON state instead of fake events:
   - ghost filter: 30 min (was 12h) — closer to "actually visible".
   - state: WORKING if any dendrite fired in last 5s; AWAKE otherwise.
 
-Hard-coded paths point at /Users/samdev/dev/Prometheus. For v0 inside
+Hard-coded paths point at /Users/samdev/dev/axon. For v0 inside
 src/axon/pet/ this would come from RuntimeConfig.
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ from pathlib import Path
 # Resolution order:
 #   1. $AXON_ROOT env var
 #   2. walk up from cwd looking for data/axon.db
-#   3. fallback: ~/dev/Prometheus
+#   3. fallback: ~/dev/axon
 #
 # v0 should pull from axon.config.runtime.load_runtime_config() instead.
 
@@ -49,7 +49,7 @@ def _find_axon_root() -> Path:
         if cur.parent == cur:
             break
         cur = cur.parent
-    return Path.home() / "dev" / "Prometheus"
+    return Path.home() / "dev" / "axon"
 
 AXON_ROOT = _find_axon_root()
 AXON_DB = AXON_ROOT / "data" / "axon.db"
