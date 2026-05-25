@@ -1,0 +1,94 @@
+name: ci
+
+# Validacao obrigatoria pro repo: lint, compile, e router/resilience tests
+# sob os dois provider profiles (FREE e PAID). dec-106 define o profile system.
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install ruff
+        run: pip install "ruff>=0.4.0"
+      - name: ruff check
+        run: ruff check src/ tests/
+
+  compile:
+    name: compileall
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: compileall src
+        run: python3 -m compileall -q src
+
+  test:
+    name: pytest (${{ matrix.profile }} / py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+        profile: [free, paid]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: install project + dev deps
+        run: pip install -e ".[dev]"
+      - name: pytest router + resilience
+        env:
+          AXON_PROVIDER_PROFILE: ${{ matrix.profile }}
+        run: python3 -m pytest tests/router tests/resilience -q
+
+  profile-smoke:
+    name: profile import smoke (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [free, paid]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: install project
+        run: pip install -e .
+      - name: import and resolve profile
+        env:
+          AXON_PROVIDER_PROFILE: ${{ matrix.profile }}
+        run: |
+          python3 -c "
+          from axon.router.profiles import get_profile, available_profiles
+          from axon.router.engine import _MODEL_MAP, _COST_PER_1K, _PROFILE
+          assert _PROFILE.name == '${{ matrix.profile }}'
+          assert _MODEL_MAP, 'model map empty'
+          assert all(v for v in _MODEL_MAP.values()), 'unmapped task type'
+          print('profile:', _PROFILE.name)
+          print('models:', dict(_MODEL_MAP))
+          "
