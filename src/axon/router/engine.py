@@ -11,6 +11,7 @@ from axon.config.runtime import load_runtime_config
 from axon.context.cache_key import build_composite_cache_key
 from axon.policy.core import PolicyRegistry, ReasonCode
 from axon.resilience.circuit_breaker import CircuitBreaker
+from axon.resilience.rate_limiter import RateLimiter, spec_from_env
 from axon.router.classifier import TaskType, classify_task_with_source
 from axon.router.profiles import get_profile
 from axon.router.provider_validation import (
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 _RUNTIME = load_runtime_config()
 _POLICY = PolicyRegistry(_RUNTIME)
 _BREAKER = CircuitBreaker(redis_url=_RUNTIME.redis_url)
+_RATE_LIMITER = RateLimiter(redis_url=_RUNTIME.redis_url)
 
 # Mapping task -> model é selecionado pelo profile ativo (free | paid).
 # D2 (Haiku/Sonnet/Opus) é preservado pelo profile PAID via OpenRouter.
@@ -223,6 +225,12 @@ async def complete(task: TaskRequest, messages: list[dict]) -> str:
     if result.task_type is TaskType.CODE_ANALYSIS:
         if (daily_cost() + projected_cost) > _BUDGET_USD:
             result.model = _bottom_tier_model()
+
+    # Recomputa provider apos eventual downgrade (Opus->Sonnet pode cruzar provedores).
+    provider = provider_for_model(result.model)
+    rate_spec = spec_from_env(provider)
+    if not _RATE_LIMITER.allow_call(provider, rate_spec):
+        raise RuntimeError(ReasonCode.DENY_RATE_LIMIT.value)
 
     breaker_key = f"router:{result.model}"
     if not _BREAKER.allow_call(breaker_key):

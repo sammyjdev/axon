@@ -6,8 +6,10 @@ from functools import lru_cache
 import litellm
 
 from axon.config.runtime import load_runtime_config
-from axon.policy.core import PolicyRegistry
+from axon.policy.core import PolicyRegistry, ReasonCode
 from axon.resilience.circuit_breaker import CircuitBreaker
+from axon.resilience.rate_limiter import RateLimiter, spec_from_env
+from axon.router.provider_validation import provider_for_model
 
 
 class TaskType(StrEnum):
@@ -35,6 +37,7 @@ Responda apenas com uma das categorias acima, sem texto extra.
 _RUNTIME = load_runtime_config()
 _POLICY = PolicyRegistry(_RUNTIME)
 _BREAKER = CircuitBreaker(redis_url=_RUNTIME.redis_url)
+_RATE_LIMITER = RateLimiter(redis_url=_RUNTIME.redis_url)
 
 
 def _normalize_task_type(raw: str) -> TaskType:
@@ -74,6 +77,11 @@ def _classify_cached(content: str, ctx: str | None) -> tuple[TaskType, str]:
             "classifier bloqueado pela policy: "
             f"{decision.reason_code.value}"
         )
+
+    provider = provider_for_model(classifier_model)
+    rate_spec = spec_from_env(provider)
+    if not _RATE_LIMITER.allow_call(provider, rate_spec):
+        raise RuntimeError(ReasonCode.DENY_RATE_LIMIT.value)
 
     breaker_key = f"classifier:{classifier_model}"
     if not _BREAKER.allow_call(breaker_key):
