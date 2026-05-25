@@ -1,5 +1,12 @@
 # AXON Profiles
 
+> **Disambiguation.** This document describes **operating-mode profiles**
+> (`solo-dev`, `team-dev`, `privacy-first`) stored in `axon.toml`.
+> These are different from **provider profiles** (`free`, `paid`) selected
+> via `AXON_PROVIDER_PROFILE`, which choose the LLM provider mapping
+> (Groq + NIM vs. OpenRouter Claude). See
+> [`dec-106`](decisions/dec-106-routing-profiles.md) for provider profiles.
+
 Profiles are named setup presets stored in `axon.toml`.
 
 Today, the CLI uses a deliberately small built-in profile model:

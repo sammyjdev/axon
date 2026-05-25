@@ -18,23 +18,35 @@ project.
 
 ## ADR-002: Task-based model routing
 
+- Status: extended by dec-106 (concrete models now come from the active
+  provider profile; tier shape preserved).
 - Decision: route cloud models by task type with an explicit fallback.
-- Definition:
-  - trivial/completion -> `claude-haiku-4-5-20251001`
-  - code analysis -> `claude-sonnet-4-6`
-  - architecture/deep reasoning -> `claude-opus-4-7`
-  - fallback -> `claude-haiku-4-5-20251001`
-- Rationale: keeps cost and quality predictable.
+- Definition (tier shape):
+  - trivial/completion -> Haiku-class model
+  - code analysis -> Sonnet-class model
+  - architecture/deep reasoning -> Opus-class model
+  - fallback -> Haiku-class model
+- Concrete models per profile:
+  - PAID: `openrouter/anthropic/claude-{haiku,sonnet,opus}-4` (D2 verbatim)
+  - FREE: `groq/llama-3.1-8b-instant`, `groq/llama-3.3-70b-versatile`,
+    `nvidia_nim/meta/llama-3.1-70b-instruct`
+- Rationale: keeps cost and quality predictable; profile system lets users
+  pick between zero-spend free tiers and paid Claude tiers without changing
+  the tier semantics.
 
 ## ADR-003: Local Ollama models
 
+- Status: opt-in as of dec-106 (default `AXON_PROVIDER_OLLAMA=0`).
 - Decision: standardize on lightweight local models for classification and
   compression, with heavier models reserved for larger hardware.
-- Default models:
+- Default models when enabled:
   - `phi3:mini`
   - `gemma4:e4b`
   - `gemma4:26b`
 - Rationale: reduce cloud cost and preserve low-latency local operation.
+  Default off because the recommended onboarding hardware (16 GB laptop)
+  does not run these models comfortably; users with capable hosts re-enable
+  explicitly.
 
 ## ADR-004: Split graph backends by responsibility
 

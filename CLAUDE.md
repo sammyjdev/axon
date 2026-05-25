@@ -32,18 +32,33 @@ external Markdown vault, typically configured through:
 
 ### D2: Task-based cloud routing
 
-| Task type | Default model |
-| --- | --- |
-| trivial/completion | `claude-haiku-4-5-20251001` |
-| code analysis | `claude-sonnet-4-6` |
-| architecture/deep reasoning | `claude-opus-4-7` |
-| fallback | `claude-haiku-4-5-20251001` |
+D2 defines the **tiering shape** (trivial → mid → top). The concrete model per
+tier is selected by the active provider profile (see dec-106). The PAID profile
+preserves D2 verbatim via OpenRouter; the FREE profile substitutes equivalent
+free-tier models.
 
-### D3: Local Ollama defaults
+| Task type | PAID profile (D2 verbatim) | FREE profile |
+| --- | --- | --- |
+| trivial/completion | `openrouter/anthropic/claude-haiku-4` | `groq/llama-3.1-8b-instant` |
+| code analysis | `openrouter/anthropic/claude-sonnet-4` | `groq/llama-3.3-70b-versatile` |
+| architecture/deep reasoning | `openrouter/anthropic/claude-opus-4` | `nvidia_nim/meta/llama-3.1-70b-instruct` |
+| fallback | trivial of the active profile | trivial of the active profile |
+
+Downgrade is task-type-driven (top→mid when Opus budget is exceeded; mid→bottom
+when daily budget is exceeded) and works identically under both profiles. See
+`docs/decisions/dec-106-routing-profiles.md`.
+
+### D3: Local Ollama defaults (opt-in)
+
+Ollama is **opt-in** as of dec-106 (`AXON_PROVIDER_OLLAMA=1`). When enabled,
+the supported models are:
 
 - `phi3:mini`: lightweight compression and local-first workflows
 - `gemma4:e4b`: local scoring and classification
 - `gemma4:26b`: heavier deep-suggestion workloads on larger hardware
+
+Default profiles (FREE/PAID) never route to Ollama; enable it explicitly for
+`ctx=work` or any other path that requires local-only execution.
 
 ### D4: Split graph backends (revised by dec-101)
 

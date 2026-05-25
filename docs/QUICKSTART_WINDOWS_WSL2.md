@@ -17,8 +17,15 @@ Inside WSL2, install these first:
 You also need:
 
 - a reachable remote AXON infra host with Qdrant, Redis, Langfuse, and Ollama
-  running
-- an `ANTHROPIC_API_KEY` for cloud-routed calls
+  running (Ollama is optional unless you use `ctx=work` or another local-only
+  path)
+- API keys for the active provider profile (default is `free`):
+  - `GROQ_API_KEY` from <https://console.groq.com/keys>
+  - `NVIDIA_NIM_API_KEY` from <https://build.nvidia.com>
+
+For paid Claude routing, set `AXON_PROVIDER_PROFILE=paid` and provide
+`OPENROUTER_API_KEY` instead of NIM. See
+`docs/decisions/dec-106-routing-profiles.md`.
 
 ## 1. Open WSL2 and clone the engine
 
@@ -45,7 +52,9 @@ set -a
 source .env.local
 set +a
 
-export ANTHROPIC_API_KEY=<your-key>
+export AXON_PROVIDER_PROFILE=free
+export GROQ_API_KEY=<your-groq-key>
+export NVIDIA_NIM_API_KEY=<your-nim-key>
 export AXON_ENGINE="$PWD"
 export AXON_VAULT="$HOME/vault"
 ```

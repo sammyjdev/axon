@@ -25,6 +25,11 @@ excluded from the public repository.
 
 - The router must enforce budget limits before provider calls.
 - Model fallback must remain deterministic under budget pressure.
+- The router must enforce per-provider rate limits before provider calls
+  (dec-106). Rate-limited calls must fail with `DENY_RATE_LIMIT` and must
+  not be recorded as model failures (the circuit breaker stays closed).
+- Rate limits are configurable per provider via
+  `AXON_<PROVIDER>_MAX_RPM` and `AXON_<PROVIDER>_MAX_RPD`.
 
 ## ARD-005: Cross-platform operation
 
