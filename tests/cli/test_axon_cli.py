@@ -17,6 +17,19 @@ def test_app_with_no_args_shows_help():
     assert "Usage" in result.stdout
 
 
+def test_doctor_runs_and_reports_presence(monkeypatch, tmp_path):
+    # Isolate from the real user's data: empty store + telemetry dirs.
+    monkeypatch.setattr("axon.cli.pb._get_db_path", lambda: tmp_path / "axon.db")
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path))
+    result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 0
+    assert "AXON doctor" in result.stdout
+    assert "Presence" in result.stdout
+    assert "Liveness" in result.stdout
+    assert "axon: ok" in result.stdout
+    assert "caveman engine: ok" in result.stdout
+
+
 def test_install_hooks_reports_installed(monkeypatch):
     monkeypatch.setattr(
         "axon.hooks.git_installer.install_hooks",
