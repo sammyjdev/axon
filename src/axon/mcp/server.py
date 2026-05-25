@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from datetime import UTC, datetime
@@ -848,26 +849,42 @@ async def axon_health() -> str:
     """Report the health of each AXON subsystem.
 
     Covers SQLite, Redis, Qdrant, mem0, the Obsidian vault and git.
+
+    Each external probe is time-bounded so an unreachable backend cannot hang
+    the whole report — important when AXON is configured against a host that
+    is offline (e.g. an unreachable LAN/Tailscale IP).
     """
     import subprocess
+
+    # Each external probe is wrapped in this budget so the command can never
+    # block on a dead socket / unrouteable host.
+    _PROBE_TIMEOUT = 2.0
 
     lines = ["# AXON health"]
 
     try:
-        await _get_session_store().init()
+        await asyncio.wait_for(_get_session_store().init(), timeout=_PROBE_TIMEOUT)
         lines.append("- sqlite: ok")
+    except asyncio.TimeoutError:
+        lines.append("- sqlite: down (timeout)")
     except Exception as exc:
         lines.append(f"- sqlite: down ({exc})")
 
     try:
-        await _get_graph_store().connect()
+        await asyncio.wait_for(_get_graph_store().connect(), timeout=_PROBE_TIMEOUT)
         lines.append("- redis: ok")
+    except asyncio.TimeoutError:
+        lines.append("- redis: down (timeout)")
     except Exception as exc:
         lines.append(f"- redis: down ({exc})")
 
     try:
-        await _get_vector_store().ensure_collections()
+        await asyncio.wait_for(
+            _get_vector_store().ensure_collections(), timeout=_PROBE_TIMEOUT
+        )
         lines.append("- qdrant: ok")
+    except asyncio.TimeoutError:
+        lines.append("- qdrant: down (timeout)")
     except Exception as exc:
         lines.append(f"- qdrant: down ({exc})")
 
