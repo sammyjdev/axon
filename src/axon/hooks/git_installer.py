@@ -9,7 +9,9 @@ Note: git has no ``post-push`` hook — the push event is captured by
 
 from __future__ import annotations
 
+import shlex
 import stat
+import sys
 from pathlib import Path
 
 from axon.exceptions import GitAnchorError
@@ -22,10 +24,14 @@ _END = "# <<< AXON git hook <<<"
 
 
 def _block(event: str) -> str:
+    # Bake in the interpreter that has `axon` installed (typically the pipx
+    # venv). `command -v python` is unreliable on machines where the system
+    # `python`/`python3` is a different env without the axon package.
+    py = shlex.quote(sys.executable)
     return (
         f"{_BEGIN}\n"
         "# managed by `axon install-hooks` — failure never blocks git\n"
-        f"python -m axon.hooks.git_event {event} 2>/dev/null || true\n"
+        f"{py} -m axon.hooks.git_event {event} 2>/dev/null || true\n"
         f"{_END}\n"
     )
 
@@ -37,6 +43,26 @@ def _hooks_dir(repo_path: Path | str) -> Path:
     hooks_dir = repo / ".git" / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
     return hooks_dir
+
+
+def _replace_block(text: str, new_block: str) -> str:
+    """Replace the AXON-managed block in `text` with `new_block` in place."""
+    out: list[str] = []
+    skipping = False
+    replaced = False
+    for line in text.splitlines():
+        if line.strip() == _BEGIN:
+            skipping = True
+            if not replaced:
+                out.append(new_block.rstrip("\n"))
+                replaced = True
+            continue
+        if line.strip() == _END:
+            skipping = False
+            continue
+        if not skipping:
+            out.append(line)
+    return "\n".join(out) + "\n"
 
 
 def _strip_block(text: str) -> str:
@@ -65,13 +91,17 @@ def install_hooks(repo_path: Path | str = ".") -> list[str]:
     installed: list[str] = []
     for hook_name, event in HOOKS.items():
         target = hooks_dir / hook_name
+        desired_block = _block(event)
         if target.exists():
             existing = target.read_text(encoding="utf-8")
             if _BEGIN in existing:
-                continue  # already installed
-            new_text = existing.rstrip() + "\n\n" + _block(event)
+                new_text = _replace_block(existing, desired_block)
+                if new_text == existing:
+                    continue  # already up to date
+            else:
+                new_text = existing.rstrip() + "\n\n" + desired_block
         else:
-            new_text = "#!/usr/bin/env bash\n" + _block(event)
+            new_text = "#!/usr/bin/env bash\n" + desired_block
         target.write_text(new_text, encoding="utf-8")
         target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
         installed.append(hook_name)
