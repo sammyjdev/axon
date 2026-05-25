@@ -7,11 +7,11 @@ capture, recall, and handoff start working immediately.
 
 1. AXON CLI installed and on `$PATH`:
    ```bash
-   pipx install -e /path/to/Prometheus
+   pipx install -e /path/to/axon
    ```
 2. Backends running locally:
    ```bash
-   cd /path/to/Prometheus && docker compose up -d qdrant redis
+   cd /path/to/axon && docker compose up -d qdrant redis
    ```
 3. `axon health` returns all subsystems `ok` (sqlite, redis, qdrant, mem0,
    vault, git). If `redis`/`qdrant` report `down (timeout)`, check that
@@ -20,7 +20,7 @@ capture, recall, and handoff start working immediately.
 ## Per-repo bootstrap
 
 ```bash
-/path/to/Prometheus/scripts/axon-bootstrap.sh /path/to/your-repo [agent]
+/path/to/axon/scripts/axon-bootstrap.sh /path/to/your-repo [agent]
 ```
 
 `agent` defaults to `claude-code`. The script is idempotent.
@@ -41,8 +41,8 @@ After the script exits clean, restart your coding agent and make a commit —
 
 | Concern | Location |
 |---|---|
-| AXON code, hooks, indexer | Prometheus repo (engine) |
-| Backends (Qdrant, Redis) | `docker compose` in Prometheus repo |
+| AXON code, hooks, indexer | axon repo (engine) |
+| Backends (Qdrant, Redis) | `docker compose` in axon repo |
 | Per-repo capture / hooks | `.git/hooks/post-commit`, `.git/hooks/pre-push` |
 | Agent MCP registration | `.claude/settings.json` in target repo |
 | Vault (optional, for ADR export) | `$AXON_VAULT` (defaults to `~/vault`) |
@@ -55,5 +55,5 @@ axon install-hooks --remove
 rm .claude/settings.json   # only if it only contained AXON
 ```
 
-The SQLite store at `/path/to/Prometheus/data/axon.db` retains captured
+The SQLite store at `/path/to/axon/data/axon.db` retains captured
 decisions across all repos; remove that file to wipe global memory.

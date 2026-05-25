@@ -8,6 +8,7 @@ surfaced here.
 from __future__ import annotations
 
 import asyncio
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 
 import typer
@@ -20,8 +21,23 @@ app = typer.Typer(
 )
 
 
+def _version_callback(value: bool) -> None:
+    if not value:
+        return
+    try:
+        v = _pkg_version("axon-mcp")
+    except PackageNotFoundError:
+        v = "unknown"
+    typer.echo(f"axon {v}")
+    raise typer.Exit()
+
+
 @app.callback(invoke_without_command=True)
-def main() -> None:
+def main(
+    version: bool = typer.Option(
+        False, "--version", callback=_version_callback, is_eager=True, help="Show version and exit."
+    ),
+) -> None:
     """AXON — same context, any AI coding agent."""
     pass
 
