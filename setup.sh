@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# setup.sh — bootstrap da infra Prometheus
+# setup.sh — bootstrap da infra AXON
 # Funciona igual no Mac M1 e no PC com NVIDIA
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

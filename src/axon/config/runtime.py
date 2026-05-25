@@ -125,7 +125,7 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def _load_toml_runtime_overrides() -> dict[str, str]:
-    config_path = get_prometheus_config_path()
+    config_path = get_axon_config_path()
     if not config_path.exists():
         return {}
 
@@ -161,13 +161,21 @@ def get_runtime_sources() -> dict[str, str]:
     }
 
 
-def get_prometheus_config_path() -> Path:
+def get_axon_config_path() -> Path:
     config_env = os.environ.get("AXON_CONFIG")
-    return Path(config_env).expanduser() if config_env else Path.cwd() / "prometheus.toml"
+    if config_env:
+        return Path(config_env).expanduser()
+    new_path = Path.cwd() / "axon.toml"
+    legacy_path = Path.cwd() / "prometheus.toml"
+    # Compat: read legacy prometheus.toml if axon.toml ainda nao existe.
+    # Migration: rename file localmente. Sem warning duro pra nao poluir CLI.
+    if not new_path.exists() and legacy_path.exists():
+        return legacy_path
+    return new_path
 
 
 def _load_toml_payload() -> dict:
-    config_path = get_prometheus_config_path()
+    config_path = get_axon_config_path()
     if not config_path.exists():
         return {}
     return tomllib.loads(config_path.read_text(encoding="utf-8"))
@@ -397,7 +405,7 @@ def use_profile(name: str) -> None:
     if mode not in _RUNTIME_MODES:
         raise ValueError(f"Profile {name!r} has invalid mode {mode!r}")
 
-    config_path = get_prometheus_config_path()
+    config_path = get_axon_config_path()
     lines = config_path.read_text(encoding="utf-8").splitlines()
     lines = _ensure_builtin_profile_lines(lines)
     in_runtime = False
@@ -475,7 +483,7 @@ def create_profile(
     normalized_mode = mode.strip().lower()
     if normalized_mode not in _RUNTIME_MODES:
         raise ValueError(f"Invalid mode: {mode}")
-    config_path = get_prometheus_config_path()
+    config_path = get_axon_config_path()
     payload = _load_toml_payload()
     profiles = payload.get("profiles")
     if isinstance(profiles, dict) and name in profiles:
@@ -582,7 +590,7 @@ def load_runtime_config() -> RuntimeConfig:
     overrides = _load_toml_runtime_overrides()
     engine_root = _env_path(
         "AXON_ENGINE",
-        Path(overrides.get("engine_root", str(Path.home() / "dev/Prometheus"))),
+        Path(overrides.get("engine_root", str(Path.home() / "dev/axon"))),
     )
     vault_root = _env_path(
         "AXON_VAULT",

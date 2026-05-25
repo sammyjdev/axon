@@ -285,7 +285,7 @@ def test_merge_env_text_replaces_generated_values_with_existing_overrides() -> N
 
 
 def test_merge_env_text_appends_only_missing_defaults() -> None:
-    source = "AXON_ENGINE=~/dev/Prometheus\nAXON_VAULT=~/vault\n"
+    source = "AXON_ENGINE=~/dev/axon\nAXON_VAULT=~/vault\n"
     target = "AXON_ENGINE=/already/set\nAXON_PLATFORM=pc\n"
 
     merged = merge_env_text(source, target, mode="append-missing")

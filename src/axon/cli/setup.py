@@ -12,7 +12,7 @@ _TRANSPORT_OPTIONS = ("1", "2", "3")
 
 def run_step_transport(session: SetupSession) -> SetupSession:
     typer.echo("\n── Step 1/3: Deployment ──────────────────────────────")
-    typer.echo("Where will Prometheus run?\n")
+    typer.echo("Where will AXON run?\n")
     typer.echo("  [1] Local (Claude Code / Copilot / Cursor)  → stdio")
     typer.echo("  [2] Local with Claude Web/App               → HTTP + tunnel")
     typer.echo("  [3] Server / VPS                            → HTTP direct\n")
@@ -153,7 +153,7 @@ def run_step_commit(
 ) -> list[str]:
     messages: list[str] = []
 
-    # 1. Write [mcp] section to prometheus.toml
+    # 1. Write [mcp] section to axon.toml
     _write_mcp_section(session, config_path)
     messages.append(f"Config updated: {config_path}")
 
@@ -189,7 +189,7 @@ def run_step_commit(
             messages.append(f"Domain packs validated: {', '.join(loaded)}")
 
     # 4. Smoke test: compile src
-    src_root = Path(__file__).parents[3] / "src" / "prometheus"
+    src_root = Path(__file__).parents[3] / "src" / "axon"
     result = _sp.run(
         ["python3", "-m", "compileall", "-q", str(src_root)],
         capture_output=True,
@@ -208,10 +208,10 @@ def run_step_commit(
 def format_next_steps(session: SetupSession) -> str:
     if session.transport == "stdio":
         return (
-            'Add Prometheus to your MCP config:\n\n'
+            'Add AXON to your MCP config:\n\n'
             '  {\n'
             '    "mcpServers": {\n'
-            '      "prometheus": {\n'
+            '      "axon": {\n'
             '        "command": "pb",\n'
             '        "args": ["mcp", "serve"]\n'
             '      }\n'
@@ -247,7 +247,7 @@ def run_setup(
     packs_root: Path,
 ) -> None:
     typer.echo("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    typer.echo("  Prometheus Setup Wizard")
+    typer.echo("  AXON Setup Wizard")
     typer.echo("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
     session = SetupSession()

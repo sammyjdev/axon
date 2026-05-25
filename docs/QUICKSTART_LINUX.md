@@ -2,7 +2,7 @@
 
 Recommended mode: `full-local`
 
-Linux is the strongest path for a full local Prometheus install: engine,
+Linux is the strongest path for a full local AXON install: engine,
 stores, and local models on the same machine.
 
 ## Before you start
@@ -20,8 +20,8 @@ An `ANTHROPIC_API_KEY` is still recommended for cloud-routed calls.
 ## 1. Clone the engine
 
 ```bash
-git clone <your-repo-url> ~/dev/Prometheus
-cd ~/dev/Prometheus
+git clone <your-repo-url> ~/dev/axon
+cd ~/dev/axon
 ```
 
 ## 2. Run setup
@@ -55,9 +55,9 @@ mkdir -p \
   "$AXON_VAULT/career"
 
 cat > "$AXON_VAULT/knowledge/first-note.md" <<'EOF'
-# Prometheus
+# AXON
 
-Prometheus indexes Markdown notes from an external vault.
+AXON indexes Markdown notes from an external vault.
 EOF
 ```
 

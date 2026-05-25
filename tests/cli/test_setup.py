@@ -103,7 +103,7 @@ def test_vault_all_contexts_no_work(monkeypatch):
 
 
 def test_commit_writes_mcp_section(tmp_path):
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text("[runtime]\nmode = \"full-local\"\n", encoding="utf-8")
     vault_root = tmp_path / "vault"
 
@@ -118,7 +118,7 @@ def test_commit_writes_mcp_section(tmp_path):
 
 
 def test_commit_scaffolds_vault_dirs(tmp_path):
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text("[runtime]\nmode = \"full-local\"\n", encoding="utf-8")
     vault_root = tmp_path / "vault"
 
@@ -136,7 +136,7 @@ def test_commit_scaffolds_vault_dirs(tmp_path):
 
 
 def test_commit_validates_domain_packs(tmp_path):
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text("[runtime]\nmode = \"full-local\"\n", encoding="utf-8")
     vault_root = tmp_path / "vault"
 
@@ -160,7 +160,7 @@ def test_commit_validates_domain_packs(tmp_path):
 
 
 def test_commit_returns_messages_list(tmp_path):
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text("[runtime]\nmode = \"full-local\"\n", encoding="utf-8")
     vault_root = tmp_path / "vault"
 

@@ -21,7 +21,7 @@ def _decision(**overrides: Any) -> Decision:
         timestamp=datetime(2026, 5, 21, 12, 0, tzinfo=UTC),
         agent="claude-code",
         repo="axon",
-        summary="rename prometheus to axon",
+        summary="rename axon to axon",
     )
     base.update(overrides)
     return Decision(**base)

@@ -3,7 +3,7 @@
 Recommended mode: `hybrid-local`
 
 This is the fastest product-facing macOS path to a working `pb ask`: run the
-engine on your Mac, let Prometheus provision the local CPU stack, and keep
+engine on your Mac, let AXON provision the local CPU stack, and keep
 cloud-routed calls available for heavier reasoning.
 
 ## Before you start
@@ -21,8 +21,8 @@ You also need an `ANTHROPIC_API_KEY` for cloud-routed calls.
 ## 1. Clone the engine
 
 ```bash
-git clone <your-repo-url> ~/dev/Prometheus
-cd ~/dev/Prometheus
+git clone <your-repo-url> ~/dev/axon
+cd ~/dev/axon
 ```
 
 ## 2. Run setup
@@ -55,9 +55,9 @@ mkdir -p \
   "$AXON_VAULT/career"
 
 cat > "$AXON_VAULT/knowledge/first-note.md" <<'EOF'
-# Prometheus
+# AXON
 
-Prometheus keeps technical notes in an external vault and retrieves them with `pb ask`.
+AXON keeps technical notes in an external vault and retrieves them with `pb ask`.
 EOF
 ```
 

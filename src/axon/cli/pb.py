@@ -18,7 +18,7 @@ from axon.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
 
 app = typer.Typer(
     name="pb",
-    help="Prometheus CLI — segundo cérebro do Sammy",
+    help="AXON CLI — segundo cérebro do Sammy",
     no_args_is_help=True,
 )
 adr_app = typer.Typer(help="Gerencia ADRs (Architectural Decision Records)")
@@ -225,7 +225,7 @@ def _build_planner_executor_prompts(
         "Cada task deve conter: task_id, objective, files, dependencies, "
         "acceptance_criteria, tests, risk, rollback.\n"
         "Não execute código. Não omita riscos.\n\n"
-        f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
+        f"Contexto AXON (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Solicitação do usuário: {query}"
     )
 
@@ -235,7 +235,7 @@ def _build_planner_executor_prompts(
         "Saída obrigatória: resumo de mudanças, arquivos alterados, comandos executados, "
         "resultados de teste, próximos passos.\n"
         "Se houver bloqueio, pare e reporte causa raiz com alternativa segura.\n\n"
-        "Contexto Prometheus comprimido:\n"
+        "Contexto AXON comprimido:\n"
         f"{compressed_context}\n\n"
         "Task a executar: <COLE_A_TASK_JSON_AQUI>"
     )
@@ -246,7 +246,7 @@ def _build_planner_executor_prompts(
         "sem decisões arquiteturais finais.\n"
         "Formato: título, resumo, passos práticos, exemplos curtos, "
         "perguntas para aprofundamento.\n\n"
-        f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
+        f"Contexto AXON (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Tema alvo: {query}"
     )
 
@@ -707,7 +707,7 @@ def doctor() -> None:
         sources=get_runtime_sources(),
     )
 
-    typer.echo("Prometheus doctor")
+    typer.echo("AXON doctor")
     typer.echo(f"platform: {report.platform}")
     typer.echo(f"configured_mode: {report.configured_mode or runtime.mode}")
     typer.echo(f"recommended_mode: {report.recommended_mode}")
@@ -739,7 +739,7 @@ def doctor() -> None:
 
 @app.command()
 def init(
-    engine: Annotated[str, typer.Option("--engine", help="Diretório do engine Prometheus")],
+    engine: Annotated[str, typer.Option("--engine", help="Diretório do engine AXON")],
     vault: Annotated[str, typer.Option("--vault", help="Diretório do vault externo")],
     mode: Annotated[
         str, typer.Option("--mode", help="Modo operacional")
@@ -775,7 +775,7 @@ def init(
         f"{platform_payload}"
     )
     env_file.write_text(payload, encoding="utf-8")
-    config_file = engine_root / "prometheus.toml"
+    config_file = engine_root / "axon.toml"
     config_file.write_text(
         "\n".join(
             [
@@ -813,13 +813,13 @@ def init(
 
 @profile_app.command("list")
 def profile_list() -> None:
-    """Lista perfis conhecidos em `prometheus.toml`."""
+    """Lista perfis conhecidos em `axon.toml`."""
     from axon.config.runtime import get_active_profile, list_profiles
 
     active = get_active_profile()
     profiles = list_profiles()
     if not profiles:
-        typer.echo("Nenhum profile encontrado em prometheus.toml")
+        typer.echo("Nenhum profile encontrado em axon.toml")
         raise typer.Exit(1)
     for name, description, mode in profiles:
         marker = "*" if name == active else "-"
@@ -830,7 +830,7 @@ def profile_list() -> None:
 def profile_use(
     name: Annotated[str, typer.Argument(help="Nome do profile")],
 ) -> None:
-    """Define o profile ativo e sincroniza o modo no `prometheus.toml`."""
+    """Define o profile ativo e sincroniza o modo no `axon.toml`."""
     from axon.config.runtime import use_profile
 
     try:
@@ -842,12 +842,12 @@ def profile_use(
 
 @profile_app.command("show")
 def profile_show() -> None:
-    """Exibe o profile ativo definido em `prometheus.toml`."""
+    """Exibe o profile ativo definido em `axon.toml`."""
     from axon.config.runtime import get_active_profile, get_profile, select_capabilities
 
     active = get_active_profile()
     if not active:
-        typer.echo("Nenhum profile ativo em prometheus.toml")
+        typer.echo("Nenhum profile ativo em axon.toml")
         raise typer.Exit(1)
     try:
         profile = get_profile(active)
@@ -889,7 +889,7 @@ def profile_create(
         str | None, typer.Option("--enabled-features", help="Lista separada por vírgulas")
     ] = None,
 ) -> None:
-    """Cria um novo profile simples em `prometheus.toml`."""
+    """Cria um novo profile simples em `axon.toml`."""
     from axon.config.runtime import create_profile
 
     normalized_cloud_policy = _normalize_configure_value(
@@ -1251,7 +1251,7 @@ def session_save(
                 pass
 
         if len(turns) < 2:
-            typer.echo(f"[prometheus] Sessão muito curta ({len(turns)} turns), skip.", err=True)
+            typer.echo(f"[axon] Sessão muito curta ({len(turns)} turns), skip.", err=True)
             return
 
         turns = turns[-50:]
@@ -1263,7 +1263,7 @@ def session_save(
         try:
             summary = await compressor.compress()
         except Exception as e:
-            typer.echo(f"[prometheus] Erro ao comprimir sessão: {e}", err=True)
+            typer.echo(f"[axon] Erro ao comprimir sessão: {e}", err=True)
             return
 
         db = _get_db_path()
@@ -1271,7 +1271,7 @@ def session_save(
         await store.init()
         mem = SessionMemory(project=project, summary=summary, raw_turns=len(turns))
         await store.save_session_memory(mem)
-        typer.echo(f"[prometheus] Session memory salva: {project} ({len(turns)} turns)")
+        typer.echo(f"[axon] Session memory salva: {project} ({len(turns)} turns)")
 
     asyncio.run(_save())
 
@@ -1423,8 +1423,8 @@ def adr_hook_install(
     target = hooks_dir / "post-commit"
     if target.exists():
         existing = target.read_text(encoding="utf-8")
-        if "prometheus" in existing.lower():
-            typer.echo("Hook já instalado (prometheus detectado). Nada a fazer.")
+        if "axon" in existing.lower():
+            typer.echo("Hook já instalado (axon detectado). Nada a fazer.")
             return
         target.write_text(existing.rstrip() + "\n\n" + hook_content, encoding="utf-8")
         typer.echo(f"Hook anexado ao post-commit existente: {target}")
@@ -1499,7 +1499,7 @@ def adr_infer_commit(
             rationale=data.get("rationale", ""),
         )
         await store.save_adr(adr)
-        typer.echo(f"[prometheus] ADR salvo: {adr.title}")
+        typer.echo(f"[axon] ADR salvo: {adr.title}")
 
     asyncio.run(_infer())
 
@@ -2367,9 +2367,9 @@ def scan(
 def setup() -> None:
     """Wizard de configuração pós-clone. Execute uma vez após clonar o repositório."""
     from axon.cli.setup import run_setup
-    from axon.config.runtime import get_prometheus_config_path
+    from axon.config.runtime import get_axon_config_path
 
-    config_path = get_prometheus_config_path()
+    config_path = get_axon_config_path()
     run_setup(
         config_path=config_path,
         vault_root=_RUNTIME.vault_root,

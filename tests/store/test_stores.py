@@ -334,7 +334,7 @@ async def failure_store(tmp_path) -> AsyncGenerator[FailureStore, None]:
 class TestFailureStore:
     async def test_save_and_get_recent_failures(self, failure_store) -> None:
         record = FailureRecord(
-            project="prometheus",
+            project="axon",
             operation="til-promotion",
             error_message="promotion failed after duplicate note match",
             probable_cause="duplicate detection threshold too low",
@@ -342,7 +342,7 @@ class TestFailureStore:
         )
         record_id = await failure_store.save_failure(record)
 
-        failures = await failure_store.get_recent_failures("prometheus")
+        failures = await failure_store.get_recent_failures("axon")
         assert record_id > 0
         assert len(failures) == 1
         assert failures[0].probable_cause == "duplicate detection threshold too low"
@@ -352,7 +352,7 @@ class TestFailureStore:
         for index in range(4):
             await failure_store.save_failure(
                 FailureRecord(
-                    project="prometheus",
+                    project="axon",
                     operation=f"task-{index}",
                     error_message=f"failure {index}",
                     probable_cause="shared cause",
@@ -369,14 +369,14 @@ class TestFailureStore:
             )
         )
 
-        failures = await failure_store.get_recent_failures("prometheus", limit=3)
+        failures = await failure_store.get_recent_failures("axon", limit=3)
         assert len(failures) == 3
-        assert all(f.project == "prometheus" for f in failures)
+        assert all(f.project == "axon" for f in failures)
 
     async def test_find_failures_by_tag_filters_project(self, failure_store) -> None:
         await failure_store.save_failure(
             FailureRecord(
-                project="prometheus",
+                project="axon",
                 operation="retrieve",
                 error_message="timeout",
                 probable_cause="network jitter",
@@ -393,14 +393,14 @@ class TestFailureStore:
             )
         )
 
-        failures = await failure_store.find_failures_by_tag("retry", project="prometheus")
+        failures = await failure_store.find_failures_by_tag("retry", project="axon")
         assert len(failures) == 1
-        assert failures[0].project == "prometheus"
+        assert failures[0].project == "axon"
 
     async def test_get_repeated_failures_groups_by_probable_cause(self, failure_store) -> None:
         await failure_store.save_failure(
             FailureRecord(
-                project="prometheus",
+                project="axon",
                 operation="retrieve",
                 error_message="timeout",
                 probable_cause="network jitter",
@@ -409,7 +409,7 @@ class TestFailureStore:
         )
         await failure_store.save_failure(
             FailureRecord(
-                project="prometheus",
+                project="axon",
                 operation="compress",
                 error_message="timeout",
                 probable_cause="network jitter",
@@ -418,7 +418,7 @@ class TestFailureStore:
         )
         await failure_store.save_failure(
             FailureRecord(
-                project="prometheus",
+                project="axon",
                 operation="index",
                 error_message="duplicate",
                 probable_cause="bad dedupe config",
@@ -426,7 +426,7 @@ class TestFailureStore:
             )
         )
 
-        repeated = await failure_store.get_repeated_failures("prometheus", min_occurrences=2)
+        repeated = await failure_store.get_repeated_failures("axon", min_occurrences=2)
         assert repeated == [("network jitter", 2)]
 
 
@@ -442,7 +442,7 @@ async def outcome_store(tmp_path) -> AsyncGenerator[OutcomeStore, None]:
 class TestOutcomeStore:
     async def test_save_and_get_outcomes_for_context(self, outcome_store) -> None:
         record = OutcomeRecord(
-            project="prometheus",
+            project="axon",
             context="knowledge",
             summary="Java chunking fixture review prevented a bad merge",
             outcome="kept structure-aware chunking intact",
@@ -450,7 +450,7 @@ class TestOutcomeStore:
         )
         record_id = await outcome_store.save_outcome(record)
 
-        outcomes = await outcome_store.get_outcomes_for_context("prometheus", "knowledge")
+        outcomes = await outcome_store.get_outcomes_for_context("axon", "knowledge")
         assert record_id > 0
         assert len(outcomes) == 1
         assert outcomes[0].outcome == "kept structure-aware chunking intact"
@@ -459,7 +459,7 @@ class TestOutcomeStore:
     async def test_get_outcomes_for_context_filters_project(self, outcome_store) -> None:
         await outcome_store.save_outcome(
             OutcomeRecord(
-                project="prometheus",
+                project="axon",
                 context="knowledge",
                 summary="kept fixture coverage stable",
                 outcome="tests caught a parser regression",
@@ -476,15 +476,15 @@ class TestOutcomeStore:
             )
         )
 
-        outcomes = await outcome_store.get_outcomes_for_context("prometheus", "knowledge")
+        outcomes = await outcome_store.get_outcomes_for_context("axon", "knowledge")
         assert len(outcomes) == 1
-        assert outcomes[0].project == "prometheus"
+        assert outcomes[0].project == "axon"
 
     async def test_find_outcomes_by_tag_and_limit(self, outcome_store) -> None:
         for index in range(4):
             await outcome_store.save_outcome(
                 OutcomeRecord(
-                    project="prometheus",
+                    project="axon",
                     context="saas",
                     summary=f"outcome {index}",
                     outcome=f"result {index}",
@@ -493,7 +493,7 @@ class TestOutcomeStore:
             )
 
         outcomes = await outcome_store.find_outcomes_by_tag(
-            "playbook", project="prometheus", limit=2
+            "playbook", project="axon", limit=2
         )
         assert len(outcomes) == 2
         assert all("playbook" in outcome.tags for outcome in outcomes)

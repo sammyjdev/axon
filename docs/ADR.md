@@ -1,4 +1,4 @@
-# Prometheus ADRs
+# AXON ADRs
 
 Status: active public summary
 
@@ -12,7 +12,7 @@ project.
 - Decision: keep the knowledge vault outside the engine repository.
 - Definition:
   - `AXON_VAULT=~/vault`
-  - `AXON_ENGINE=/path/to/prometheus`
+  - `AXON_ENGINE=/path/to/axon`
 - Rationale: prevents mixing user data with runtime code and reduces the risk
   of accidental disclosure.
 
@@ -86,22 +86,22 @@ project.
 
 - Decision: context compression is accepted only when it preserves required
   anchors and avoids prompt contamination.
-- Consequence: Prometheus may keep the original context when compression is not
+- Consequence: AXON may keep the original context when compression is not
   trustworthy.
 - Rationale: token savings are only useful when retrieval fidelity survives the
   compression pipeline.
 
-## ADR-011: Prometheus stays agent-agnostic; Odisseu is an optional consumer
+## ADR-011: AXON stays agent-agnostic; Odisseu is an optional consumer
 
-- Decision: position Prometheus as a self-hosted context, memory, and
+- Decision: position AXON as a self-hosted context, memory, and
   governance engine for AI systems rather than as a deep agent runtime.
 - Shape:
-  - Prometheus exposes CLI, MCP, and future API/profile surfaces;
-  - Odisseu may consume Prometheus, but Prometheus must remain useful without
+  - AXON exposes CLI, MCP, and future API/profile surfaces;
+  - Odisseu may consume AXON, but AXON must remain useful without
     Odisseu;
-  - Odisseu must remain free to support non-Prometheus backends.
+  - Odisseu must remain free to support non-AXON backends.
 - Rationale: deep-agent-first positioning would narrow adoption, overfit the
-  engine to one consumer, and reduce Prometheus's value as shared
+  engine to one consumer, and reduce AXON's value as shared
   infrastructure for other developers and teams.
 
 ## ADR-012: Distribution-first roadmap for external developer adoption
@@ -114,6 +114,6 @@ project.
     machines;
   - provide `pb init`, `pb doctor`, profiles, and profile-driven defaults
     before broader domain-pack expansion.
-- Rationale: Prometheus only becomes a credible shared tool when another
+- Rationale: AXON only becomes a credible shared tool when another
   developer can install, size, and use it without inheriting the author's
   machine assumptions.

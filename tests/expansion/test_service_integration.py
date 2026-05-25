@@ -237,7 +237,7 @@ def test_run_approve_reject_persist_outcomes(monkeypatch, tmp_path: Path) -> Non
 
     store = OutcomeStore(engine_root / "data" / "outcomes.db")
     asyncio.run(store.init())
-    outcomes = asyncio.run(store.get_outcomes_for_context("prometheus", "knowledge", limit=10))
+    outcomes = asyncio.run(store.get_outcomes_for_context("axon", "knowledge", limit=10))
     asyncio.run(store.close())
 
     assert publish_path.exists()
@@ -295,8 +295,8 @@ def test_approve_reindex_failures_are_persisted_for_repeated_failure_queries(
 
     store = FailureStore(engine_root / "data" / "failures.db")
     asyncio.run(store.init())
-    failures = asyncio.run(store.get_recent_failures("prometheus", limit=10))
-    repeated = asyncio.run(store.get_repeated_failures("prometheus", min_occurrences=2, limit=10))
+    failures = asyncio.run(store.get_recent_failures("axon", limit=10))
+    repeated = asyncio.run(store.get_repeated_failures("axon", min_occurrences=2, limit=10))
     asyncio.run(store.close())
 
     assert first_status == "reindex_skipped"

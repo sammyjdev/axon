@@ -292,7 +292,7 @@ class ExpansionService:
             asyncio.run(
                 self.outcome_store.save_outcome(
                     OutcomeRecord(
-                        project="prometheus",
+                        project="axon",
                         context=ctx,
                         summary=summary,
                         outcome=outcome,
@@ -321,7 +321,7 @@ class ExpansionService:
             asyncio.run(
                 self.failure_store.save_failure(
                     FailureRecord(
-                        project="prometheus",
+                        project="axon",
                         operation=operation,
                         error_message=error_message,
                         probable_cause=probable_cause,
