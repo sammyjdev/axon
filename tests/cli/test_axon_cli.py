@@ -109,9 +109,9 @@ def test_status_reports_latest_decision(monkeypatch):
             return [FakeDecision()]
 
     monkeypatch.setattr("axon.store.session_store.SessionStore", FakeStore)
-    result = runner.invoke(app, ["status", "--repo", "Prometheus"])
+    result = runner.invoke(app, ["status", "--repo", "AXON"])
     assert result.exit_code == 0
-    assert "repo: Prometheus" in result.stdout
+    assert "repo: AXON" in result.stdout
     assert "decisions: 1" in result.stdout
     assert "dec-200" in result.stdout
 
@@ -160,7 +160,7 @@ def test_export_architecture(monkeypatch, tmp_path):
         lambda decisions, *, vault, name="architecture": vault / f"{name}.md",
     )
     _export_store(monkeypatch, [object()])
-    result = runner.invoke(app, ["export", "architecture", "--repo", "Prometheus"])
+    result = runner.invoke(app, ["export", "architecture", "--repo", "AXON"])
     assert result.exit_code == 0
     assert "architecture doc" in result.stdout
 
@@ -175,7 +175,7 @@ def test_export_aborts_without_vault(monkeypatch):
 def test_export_rejects_unknown_doc_type(monkeypatch, tmp_path):
     monkeypatch.setattr("axon.obsidian.discovery.discover_vault", lambda **kw: tmp_path)
     _export_store(monkeypatch, [object()])
-    result = runner.invoke(app, ["export", "bogus", "--repo", "Prometheus"])
+    result = runner.invoke(app, ["export", "bogus", "--repo", "AXON"])
     assert result.exit_code == 1
     assert "Unknown doc type" in result.stdout
 
@@ -241,7 +241,7 @@ def test_export_adr(monkeypatch, tmp_path):
         lambda decision, *, vault: vault / "note.md",
     )
     _export_store(monkeypatch, [object(), object()])
-    result = runner.invoke(app, ["export", "adr", "--repo", "Prometheus"])
+    result = runner.invoke(app, ["export", "adr", "--repo", "AXON"])
     assert result.exit_code == 0
     assert "exported 2 ADR notes" in result.stdout
 
@@ -253,6 +253,6 @@ def test_export_summary(monkeypatch, tmp_path):
         lambda repo, since, decisions, *, vault: vault / "summary.md",
     )
     _export_store(monkeypatch, [object()])
-    result = runner.invoke(app, ["export", "summary", "--repo", "Prometheus"])
+    result = runner.invoke(app, ["export", "summary", "--repo", "AXON"])
     assert result.exit_code == 0
     assert "exported summary" in result.stdout

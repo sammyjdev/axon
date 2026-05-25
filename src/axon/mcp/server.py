@@ -47,7 +47,7 @@ _REDIS_URL = _RUNTIME.redis_url
 _RTK_MAX_TOKENS = _RUNTIME.rtk_max_tokens
 _COMPRESSION_TELEMETRY = CompressionTelemetryStore(_RUNTIME)
 
-mcp = FastMCP("prometheus-context-engine")
+mcp = FastMCP("axon-context-engine")
 
 # Stores são inicializados lazy no primeiro uso
 _vector_store: VectorStore | None = None
@@ -140,20 +140,20 @@ def _build_planner_executor_prompts(
         "Retorne JSON válido com: goal, assumptions, tasks[].\n"
         "Cada task deve conter: task_id, objective, files, dependencies, "
         "acceptance_criteria, tests, risk, rollback.\n\n"
-        f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
+        f"Contexto AXON (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Solicitação: {query}"
     )
     executor = (
         "Você é o executor Codex. Execute apenas a task recebida.\n"
         "Saída obrigatória: mudanças, arquivos, comandos, testes, próximos passos.\n\n"
-        f"Contexto Prometheus comprimido:\n{compressed_context}\n\n"
+        f"Contexto AXON comprimido:\n{compressed_context}\n\n"
         "Task: <COLE_A_TASK_JSON_AQUI>"
     )
     local_knowledge = (
         "Você é um assistente local para preencher arquivos de knowledge vazios "
         "com rascunho útil.\n"
         "Formato: resumo, passos, exemplos curtos, perguntas para aprofundamento.\n\n"
-        f"Contexto Prometheus (ctx={ctx_label}):\n{compressed_context}\n\n"
+        f"Contexto AXON (ctx={ctx_label}):\n{compressed_context}\n\n"
         f"Tema: {query}"
     )
     return planner, executor, local_knowledge

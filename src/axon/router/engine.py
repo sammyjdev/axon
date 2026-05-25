@@ -163,7 +163,7 @@ def _context_layers(task: TaskRequest) -> tuple[str, str, str]:
         static_layer, semi_static = cached_layers
     else:
         static_layer = (
-            "Você opera no Prometheus com políticas fixas de isolamento e orçamento. "
+            "Você opera no AXON com políticas fixas de isolamento e orçamento. "
             "Nunca exponha contexto corporativo fora de work."
         )
         semi_static = (

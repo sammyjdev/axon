@@ -20,7 +20,7 @@ def test_load_project_manifest_accepts_valid_project(tmp_path: Path) -> None:
         tmp_path / "projects.json",
         [
             {
-                "name": "Prometheus",
+                "name": "AXON",
                 "path": str(project_root),
                 "ctx": "knowledge",
                 "enabled": True,
@@ -32,7 +32,7 @@ def test_load_project_manifest_accepts_valid_project(tmp_path: Path) -> None:
     projects = load_project_manifest(manifest)
 
     assert len(projects) == 1
-    assert projects[0].name == "Prometheus"
+    assert projects[0].name == "AXON"
     assert projects[0].path == project_root
     assert projects[0].ctx == "knowledge"
     assert projects[0].enabled is True

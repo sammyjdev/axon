@@ -3,10 +3,10 @@
 This page documents the current extension surfaces that already exist in the
 codebase:
 
-- domain packs in `src/prometheus/domains/pack.py`
-- portability export/import in `src/prometheus/portability/`
-- local plugin/tool registry contracts in `src/prometheus/registry/`
-- benchmark harness code in `src/prometheus/benchmark/`
+- domain packs in `src/axon/domains/pack.py`
+- portability export/import in `src/axon/portability/`
+- local plugin/tool registry contracts in `src/axon/registry/`
+- benchmark harness code in `src/axon/benchmark/`
 
 ## 1. Create a domain pack
 
@@ -74,7 +74,7 @@ pb portability import <bundle-dir> <engine-root>
 Export writes a bundle rooted at the destination directory with:
 
 - `manifest.json`
-- `config/prometheus.toml` when the config file exists
+- `config/axon.toml` when the config file exists
 - `metadata/env.json`
 - `metadata/indexed-contexts.json`
 - optional store files under `stores/`
@@ -96,7 +96,7 @@ There is no separate registration command. Discovery is filesystem-based:
 
 ```python
 from pathlib import Path
-from prometheus.registry import discover_local_registry
+from axon.registry import discover_local_registry
 
 registry = discover_local_registry(Path("/path/to/plugins"))
 ```
@@ -142,7 +142,7 @@ Run the current benchmark suite through tests:
 rtk pytest tests/benchmark -q
 ```
 
-The default benchmark suite in `prometheus.benchmark.suite` contains three
+The default benchmark suite in `axon.benchmark.suite` contains three
 fixed cases:
 
 - retrieval
@@ -154,7 +154,7 @@ You can also call it directly from Python:
 ```python
 import asyncio
 
-from prometheus.benchmark import run_default_benchmarks
+from axon.benchmark import run_default_benchmarks
 
 summary = asyncio.run(run_default_benchmarks())
 print(summary.total, summary.passed, summary.failed, summary.score)
@@ -163,7 +163,7 @@ print(summary.total, summary.passed, summary.failed, summary.score)
 For comparisons against a baseline, use:
 
 ```python
-from prometheus.benchmark import compare_benchmark_runs, format_benchmark_comparison
+from axon.benchmark import compare_benchmark_runs, format_benchmark_comparison
 ```
 
 Current limitation: the harness has no persistence or CLI wrapper; the tests

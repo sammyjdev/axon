@@ -1,6 +1,6 @@
 # Vault Setup
 
-This guide bootstraps the external Markdown vault used by Prometheus. The vault
+This guide bootstraps the external Markdown vault used by AXON. The vault
 is your data layer. This repository is only the engine.
 
 ## Before You Start
@@ -8,7 +8,7 @@ is your data layer. This repository is only the engine.
 Make sure the engine is already installed and the local stack is up:
 
 ```bash
-cd /path/to/prometheus
+cd /path/to/axon
 
 pb --help
 docker compose ps
@@ -16,7 +16,7 @@ docker compose ps
 
 Set these environment variables to match your machine:
 
-- `AXON_ENGINE=/path/to/prometheus`
+- `AXON_ENGINE=/path/to/axon`
 - `AXON_VAULT=~/vault`
 
 ## 1. Create the Vault Layout

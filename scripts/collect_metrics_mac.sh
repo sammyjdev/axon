@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prometheus — metrics snapshot (Mac client -> Desktop infra)
+# AXON — metrics snapshot (Mac client -> Desktop infra)
 #
 # Collects:
 # - pb ask latency (N runs)
@@ -45,7 +45,7 @@ fi
 
 QDRANT_URL="${QDRANT_URL:-http://${DESKTOP_IP}:6333}"
 
-echo "== Prometheus metrics snapshot =="
+echo "== AXON metrics snapshot =="
 echo "ts_utc: $(python3 - <<'PY'
 from datetime import datetime, timezone
 print(datetime.now(timezone.utc).isoformat())

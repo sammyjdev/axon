@@ -1,9 +1,9 @@
-# Prometheus Roadmap
+# AXON Roadmap
 
 Status: active execution plan
 
 This roadmap turns the current product direction into concrete tasks. The near
-term goal is simple: make Prometheus usable by other developers on different
+term goal is simple: make AXON usable by other developers on different
 machines without assuming Odisseu, Claude, or the author's hardware.
 
 Current execution state as of 2026-05-11:
@@ -25,7 +25,7 @@ Current execution state as of 2026-05-11:
 
 ## Product Direction
 
-- Prometheus: self-hosted context, memory, retrieval, and governance engine.
+- AXON: self-hosted context, memory, retrieval, and governance engine.
 - Odisseu: advanced autonomous consumer, not the center of the engine.
 - Integration between them: explicit adapter boundary, not product identity.
 
@@ -34,7 +34,7 @@ Current execution state as of 2026-05-11:
 - `full-local`: all infra and local models on the same machine.
 - `hybrid-local`: local engine plus reduced local infra and optional cloud
   fallback.
-- `remote-infra`: Prometheus local, heavy services on another machine.
+- `remote-infra`: AXON local, heavy services on another machine.
 - `minimal`: smallest supported stack for low-resource laptops and first-time
   setup.
 
@@ -42,9 +42,9 @@ Current execution state as of 2026-05-11:
 
 - A new developer can choose a mode, run setup, and complete first indexing and
   first query without manual author intervention.
-- Prometheus can explain when a machine is undersized and recommend a safer
+- AXON can explain when a machine is undersized and recommend a safer
   mode.
-- Prometheus can hide advanced components when they are overkill for the
+- AXON can hide advanced components when they are overkill for the
   user's problem.
 
 ## P0: Distribution Foundation
@@ -52,7 +52,7 @@ Current execution state as of 2026-05-11:
 | ID | Task | Deliverable | Depends on | Done when |
 | --- | --- | --- | --- | --- |
 | P0-T1 | Define support matrix | `docs/SUPPORT_MATRIX.md` covering macOS, Linux, Windows/WSL2, CPU, AMD, NVIDIA | none | each OS/mode combination has status, caveats, and recommended path |
-| P0-T2 | Define runtime mode schema | `prometheus.toml` schema for `full-local`, `hybrid-local`, `remote-infra`, `minimal` | P0-T1 | config loader can validate mode and fail with clear errors |
+| P0-T2 | Define runtime mode schema | `axon.toml` schema for `full-local`, `hybrid-local`, `remote-infra`, `minimal` | P0-T1 | config loader can validate mode and fail with clear errors |
 | P0-T3 | Add `pb init` | guided bootstrap command for engine path, vault path, mode, and profile | P0-T2 | fresh machine can generate local config and env scaffold |
 | P0-T4 | Add `pb doctor` | environment and hardware probe for Docker, Python, Ollama, RAM, GPU, service reachability | P0-T2 | command emits pass/warn/fail plus recommended operating mode |
 | P0-T5 | Split setup paths by mode | setup flow for local-only, remote-infra, and minimal installs | P0-T2 | setup no longer assumes one infra shape |
@@ -77,7 +77,7 @@ Current interpretation of P1:
   interactively when they are omitted from the command line.
 - P1-T3 is implemented: `pb configure` recommends and applies a profile through
   both flags and prompts.
-- P1-T4 is implemented at the advisory layer: Prometheus can classify
+- P1-T4 is implemented at the advisory layer: AXON can classify
   capabilities as useful versus overkill, and surface that in inspection and
   recommendation flows.
 - P1-T5 is implemented: the docs now explain both the shipped customization
@@ -132,7 +132,7 @@ Remaining refinement beyond P2:
 Planned P3 execution order:
 
 - P3-A1: define domain-pack filesystem layout and manifest contract
-- P3-A2: implement import/export for `prometheus.toml`, trace/failure/outcome
+- P3-A2: implement import/export for `axon.toml`, trace/failure/outcome
   stores, and metadata manifests
 - P3-A3: define plugin/tool registry contracts and local discovery rules
 - P3-A4: add a benchmark harness for retrieval, compression fallback, and setup
@@ -161,7 +161,7 @@ Remaining refinement beyond P3:
 
 ## Not In Scope For This Phase
 
-- making Prometheus itself the deep-agent runtime
+- making AXON itself the deep-agent runtime
 - coupling core workflows to Claude-specific hooks
 - requiring Odisseu for setup, planning, or retrieval
 - shipping every advanced subsystem to every user by default

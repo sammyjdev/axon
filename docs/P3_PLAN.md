@@ -3,7 +3,7 @@
 Status: implemented foundation batch after `P2`
 
 This plan turns the `P3` roadmap into execution-ready slices for parallel
-agents. The goal is to make Prometheus extensible without collapsing back into
+agents. The goal is to make AXON extensible without collapsing back into
 one author-specific layout or one agent-specific workflow.
 
 ## P3 Goals
@@ -42,7 +42,7 @@ Suggested initial packs:
 
 Scope:
 - export:
-  - `prometheus.toml`
+  - `axon.toml`
   - `.env`-relevant metadata without secrets
   - trace/failure/outcome store contents
   - lightweight manifest of indexed contexts
@@ -88,7 +88,7 @@ Scope:
 - how to run the benchmark harness
 
 Done when:
-- a third party can extend Prometheus without reading large parts of the code
+- a third party can extend AXON without reading large parts of the code
 
 Current implementation status:
 
@@ -112,7 +112,7 @@ Current implementation status:
 
 ## Guardrails
 
-- keep Prometheus engine-first
+- keep AXON engine-first
 - do not re-center docs around Odisseu or Claude
 - keep manifests declarative
 - avoid hidden magic in pack loading or registry discovery

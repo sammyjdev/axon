@@ -1,17 +1,17 @@
-# Prometheus Agent Guide
+# AXON Agent Guide
 
 This is the canonical agent context file for contributors working in this
 repository. `AGENTS.md` points to this file.
 
 ## Project Overview
 
-Prometheus is a self-hosted context engine for local knowledge retrieval,
+AXON is a self-hosted context engine for local knowledge retrieval,
 context compression, and agent-facing workflows through a CLI (`pb`) and MCP.
 
 The repository contains the engine and runtime code. User knowledge lives in an
 external Markdown vault, typically configured through:
 
-- `AXON_ENGINE=/path/to/prometheus`
+- `AXON_ENGINE=/path/to/axon`
 - `AXON_VAULT=~/vault`
 
 ## Entry Points
@@ -104,6 +104,6 @@ rtk python3 -m compileall src
 
 ## RTK Notes
 
-Prometheus is commonly used with RTK (Rust Token Killer) for compact command
+AXON is commonly used with RTK (Rust Token Killer) for compact command
 output. Prefix commands with `rtk` when possible; if no specialized filter is
 available, RTK passes the command through unchanged.
