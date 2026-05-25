@@ -4,7 +4,6 @@ from enum import StrEnum
 from functools import lru_cache
 
 import litellm
-import ollama
 
 from axon.config.runtime import load_runtime_config
 from axon.policy.core import PolicyRegistry
@@ -46,21 +45,9 @@ def _normalize_task_type(raw: str) -> TaskType:
     return TaskType.UNKNOWN
 
 
-def _classify_with_ollama(host: str, content: str) -> TaskType:
-    client = ollama.Client(host=host)
-    response = client.chat(
-        model="phi3:mini",
-        messages=[
-            {"role": "system", "content": _CLASSIFIER_PROMPT},
-            {"role": "user", "content": content},
-        ],
-    )
-    return _normalize_task_type(response["message"]["content"])
-
-
-def _classify_with_cloud(content: str) -> TaskType:
+def _classify_with_litellm(model: str, content: str) -> TaskType:
     response = litellm.completion(
-        model=_RUNTIME.classifier_cloud_model,
+        model=model,
         messages=[
             {"role": "system", "content": _CLASSIFIER_PROMPT},
             {"role": "user", "content": content},
@@ -74,42 +61,26 @@ def _classify_with_cloud(content: str) -> TaskType:
 
 @lru_cache(maxsize=256)
 def _classify_cached(content: str, ctx: str | None) -> tuple[TaskType, str]:
-    hosts: list[tuple[str, str]] = []
-    if _RUNTIME.ollama_remote_host:
-        hosts.append(("remote", _RUNTIME.ollama_remote_host))
-    hosts.append(("local", _RUNTIME.ollama_local_host))
+    classifier_model = _RUNTIME.classifier_cloud_model
 
-    for source, host in hosts:
-        breaker_key = f"classifier:ollama:{host}"
-        if not _BREAKER.allow_call(breaker_key):
-            continue
-        try:
-            result = _classify_with_ollama(host, content)
-            _BREAKER.record_success(breaker_key)
-            return result, source
-        except Exception:
-            _BREAKER.record_failure(breaker_key)
-            continue
-
-    cloud_model = _RUNTIME.classifier_cloud_model
-    cloud_decision = _POLICY.decide(
+    decision = _POLICY.decide(
         ctx=ctx,
-        model=cloud_model,
+        model=classifier_model,
         caller="classifier",
         force_cloud=True,
     )
-    if not cloud_decision.allowed:
+    if not decision.allowed:
         raise RuntimeError(
-            "classifier local indisponivel e fallback cloud bloqueado pela policy: "
-            f"{cloud_decision.reason_code.value}"
+            "classifier bloqueado pela policy: "
+            f"{decision.reason_code.value}"
         )
 
-    breaker_key = f"classifier:cloud:{cloud_model}"
+    breaker_key = f"classifier:{classifier_model}"
     if not _BREAKER.allow_call(breaker_key):
         return TaskType.CODE_ANALYSIS, "fallback"
 
     try:
-        result = _classify_with_cloud(content)
+        result = _classify_with_litellm(classifier_model, content)
         _BREAKER.record_success(breaker_key)
         return result, "cloud"
     except Exception:

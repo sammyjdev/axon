@@ -6,15 +6,15 @@ def provider_for_model(model: str) -> str:
         return "ollama"
     if model.startswith("openrouter/"):
         return "openrouter"
+    if model.startswith("groq/"):
+        return "groq"
+    if model.startswith("nvidia_nim/"):
+        return "nvidia_nim"
     return "anthropic"
 
 
 def count_tokens_for_provider(provider: str, messages: list[dict]) -> int:
     text = "\n".join(str(msg.get("content", "")) for msg in messages)
-    if provider == "openrouter":
-        return max(1, len(text) // 4)
-    if provider == "anthropic":
-        return max(1, len(text) // 4)
     return max(1, len(text) // 4)
 
 
