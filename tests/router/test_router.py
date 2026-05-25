@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from axon.router.classifier import TaskType
@@ -148,6 +150,23 @@ async def test_complete_blocks_pre_send_budget(monkeypatch) -> None:
             TaskRequest(content="x" * 500, ctx="knowledge"),
             messages=[{"role": "user", "content": "mensagem extensa"}],
         )
+
+
+def test_classifier_raises_when_rate_limited(monkeypatch) -> None:
+    """Classifier deve levantar DENY_RATE_LIMIT antes de chamar LiteLLM."""
+    import axon.router.classifier as classifier
+
+    # Conteudo unico pra escapar do lru_cache (256 entries shared entre testes).
+    unique_content = f"classifier_rate_limit_probe_{time.time()}"
+
+    class DenyingLimiter:
+        def allow_call(self, provider, spec):
+            return False
+
+    monkeypatch.setattr(classifier, "_RATE_LIMITER", DenyingLimiter())
+
+    with pytest.raises(RuntimeError, match="DENY_RATE_LIMIT"):
+        classifier.classify_task_with_source(unique_content, ctx="knowledge")
 
 
 def test_unknown_profile_raises() -> None:
