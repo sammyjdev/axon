@@ -114,6 +114,27 @@ def test_request_opus_bypasses_opus_budget_gate(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_complete_blocks_when_rate_limiter_denies(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "axon.router.engine.classify_task_with_source",
+        lambda content, ctx=None: (TaskType.TRIVIAL_COMPLETION, "cloud"),
+    )
+    monkeypatch.setattr("axon.router.engine.daily_cost", lambda: 0.0)
+
+    class DenyingLimiter:
+        def allow_call(self, provider, spec):
+            return False
+
+    monkeypatch.setattr("axon.router.engine._RATE_LIMITER", DenyingLimiter())
+
+    with pytest.raises(RuntimeError, match="DENY_RATE_LIMIT"):
+        await complete(
+            TaskRequest(content="oi", ctx="knowledge"),
+            messages=[{"role": "user", "content": "x"}],
+        )
+
+
+@pytest.mark.asyncio
 async def test_complete_blocks_pre_send_budget(monkeypatch) -> None:
     monkeypatch.setattr(
         "axon.router.engine.classify_task_with_source",
