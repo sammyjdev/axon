@@ -83,3 +83,21 @@ pb memory smoke --ctx knowledge
   the default setup target.
 - Use `remote-infra` as the pressure-release valve whenever local hardware,
   drivers, or laptop thermals turn `full-local` into operational overhead.
+
+## Provider Profiles (dec-106)
+
+Cloud routing is selected by the provider profile, orthogonal to the
+operating mode above.
+
+| Profile | Status | Required keys | Best fit |
+| --- | --- | --- | --- |
+| `free` (default) | recommended | `GROQ_API_KEY`, `NVIDIA_NIM_API_KEY` | onboarding without API spend; 16 GB laptops |
+| `paid` | supported | `OPENROUTER_API_KEY`, `GROQ_API_KEY` | higher quality and quotas via Claude (D2 verbatim) |
+
+- Both profiles route exclusively to cloud — `ctx=work` (restricted) needs
+  Ollama enabled (`AXON_PROVIDER_OLLAMA=1`) and an `AXON_CLASSIFIER_CLOUD_MODEL`
+  pointing at a local Ollama model. Work-ctx support is currently out of scope.
+- Per-provider rate caps default conservatively (Groq 25 RPM / 13000 RPD,
+  NIM 50 RPM / 950 RPD). Tune via `AXON_<PROVIDER>_MAX_RPM` and
+  `AXON_<PROVIDER>_MAX_RPD`. Exceeding a cap fails the call with
+  `DENY_RATE_LIMIT` without tripping the circuit breaker.

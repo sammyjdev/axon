@@ -51,6 +51,36 @@ your project's `.claude/settings.json`:
 
 ---
 
+## Provider profiles
+
+AXON routes cloud calls through a **profile** chosen by `AXON_PROVIDER_PROFILE`.
+Two are built in:
+
+| Profile | Models | When to use |
+|---|---|---|
+| `free` (default) | Groq Llama 3.1/3.3 + NVIDIA NIM Llama 3.1 70B (free tiers) | No API spend; rate-limited; fine on a 16 GB laptop without local models |
+| `paid` | OpenRouter Claude Haiku/Sonnet/Opus (D2 tiers) + Groq paid | Higher quality and quotas; unified billing via OpenRouter |
+
+Minimum setup (free):
+
+```bash
+export AXON_PROVIDER_PROFILE=free
+export GROQ_API_KEY=gsk_...
+export NVIDIA_NIM_API_KEY=nvapi-...
+```
+
+Each provider has a **rate-limit gate** (defaults: Groq 25/min and 13000/day,
+NIM 50/min and 950/day) configurable via `AXON_<PROVIDER>_MAX_RPM` /
+`AXON_<PROVIDER>_MAX_RPD`. When a cap is hit, calls fail with
+`DENY_RATE_LIMIT` instead of being swallowed as model failures. See
+[`dec-106`](docs/decisions/dec-106-routing-profiles.md) and
+[`.env.example`](.env.example) for the full configuration surface.
+
+Local Ollama is **opt-in** as of dec-106 (`AXON_PROVIDER_OLLAMA=1`). It remains
+supported for users with capable hardware; D3 is unchanged.
+
+---
+
 ## How it works
 
 ```mermaid
@@ -179,7 +209,8 @@ the active work on extending the gate's coverage (T-105).
 | [`docs/ARD.md`](docs/ARD.md) | Architectural requirements |
 | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) | CLI workflows |
 | [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap |
-| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 – dec-105) |
+| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 – dec-106) |
+| [`docs/decisions/dec-106-routing-profiles.md`](docs/decisions/dec-106-routing-profiles.md) | FREE/PAID provider profiles + rate limit gate |
 | [`benchmarks/README.md`](benchmarks/README.md) | Token savings benchmark |
 
 ---
