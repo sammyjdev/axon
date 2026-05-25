@@ -85,9 +85,10 @@ Crédito pago, preserva D2 via OpenRouter.
 
 - **ARD-001 (context isolation) reforçado por incompatibilidade**: profiles
   FREE/PAID são puramente cloud. Para `ctx=work` (restricted), policy
-  bloqueia cloud — então essas tasks falham. Comportamento correto: work
-  ctx exige Ollama local ou self-hosted (habilitar `AXON_PROVIDER_OLLAMA=1`
-  e configurar `AXON_CLASSIFIER_CLOUD_MODEL=ollama/<modelo>`).
+  bloqueia cloud — então essas tasks falham. **Suporte a work ctx fica
+  fora de escopo deste roadmap** (ver Out-of-scope abaixo). Os guardrails
+  em `policy/core.py` e a marca `.ctxguard` continuam ativos: work ctx
+  segue protegido contra cloud, só não há caminho de execução.
 - **Rate limit gate implementado** em `axon/resilience/rate_limiter.py`
   (fixed-window por minuto e por dia, Redis com memory fallback).
   Configurável via `AXON_<PROVIDER>_MAX_RPM` / `AXON_<PROVIDER>_MAX_RPD`.
@@ -104,6 +105,17 @@ Crédito pago, preserva D2 via OpenRouter.
 - **`expansion/service.py` continua usando `_RUNTIME.classifier_cloud_model`**
   — agora resolve pelo profile, então custo estimado pode ficar 0 (Groq
   free). Aceitável.
+
+## Out-of-scope
+
+- **Suporte a `ctx=work` neste roadmap.** Hardware-alvo (Mac 16GB) não
+  comporta Ollama em modelo útil, e cloud é vedada por ARD-001. Habilitar
+  work ctx exigiria infra remota dedicada (Ollama self-hosted em outra
+  máquina via `AXON_OLLAMA_REMOTE_HOST`), o que está fora do foco atual.
+  Guardrails ficam ativos — tasks com `ctx=work` continuam sendo bloqueadas
+  pela policy, comportamento correto.
+- **Suporte multi-profile dinâmico** (trocar de profile mid-session). Profile
+  é lido na carga do módulo; restart resolve.
 
 ## Migration
 
