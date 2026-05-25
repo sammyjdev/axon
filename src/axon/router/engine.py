@@ -12,6 +12,7 @@ from axon.context.cache_key import build_composite_cache_key
 from axon.policy.core import PolicyRegistry, ReasonCode
 from axon.resilience.circuit_breaker import CircuitBreaker
 from axon.router.classifier import TaskType, classify_task_with_source
+from axon.router.profiles import get_profile
 from axon.router.provider_validation import (
     count_tokens_for_provider,
     provider_for_model,
@@ -24,32 +25,30 @@ _RUNTIME = load_runtime_config()
 _POLICY = PolicyRegistry(_RUNTIME)
 _BREAKER = CircuitBreaker(redis_url=_RUNTIME.redis_url)
 
-# ---------------------------------------------------------------------------
-# Modelos (D2 — decisão travada)
-# ---------------------------------------------------------------------------
-
+# Mapping task -> model é selecionado pelo profile ativo (free | paid).
+# D2 (Haiku/Sonnet/Opus) é preservado pelo profile PAID via OpenRouter.
+_PROFILE = get_profile(_RUNTIME.provider_profile)
 _MODEL_MAP: dict[TaskType, str] = {
-    TaskType.TRIVIAL_COMPLETION: "claude-haiku-4-5-20251001",
-    TaskType.CODE_ANALYSIS: "claude-sonnet-4-6",
-    TaskType.ARCHITECTURE: "claude-opus-4-7",
-    TaskType.DEEP_REASONING: "claude-opus-4-7",
-    TaskType.LOCAL_ONLY: "ollama/phi3:mini",
-    TaskType.UNKNOWN: "claude-haiku-4-5-20251001",
+    task: _PROFILE.models[task.value] for task in TaskType
 }
 
 _BUDGET_USD: float = float(os.environ.get("AXON_DAILY_BUDGET", "5.0"))
 _OPUS_BUDGET: float = float(os.environ.get("AXON_OPUS_BUDGET", "2.0"))
 _MAX_PRE_SEND_TOKENS: int = int(os.environ.get("AXON_MAX_PRE_SEND_TOKENS", "8000"))
 
-# Custo aproximado por 1k tokens (input+output médio)
-_COST_PER_1K: dict[str, float] = {
-    "claude-haiku-4-5-20251001": 0.001,
-    "claude-sonnet-4-6": 0.01,
-    "claude-opus-4-7": 0.05,
-    "ollama/phi3:mini": 0.0,
-    "ollama/gemma4:e4b": 0.0,
-    "ollama/gemma4:26b": 0.0,
-}
+_COST_PER_1K: dict[str, float] = dict(_PROFILE.cost_per_1k)
+
+
+def _top_tier_model() -> str:
+    return _MODEL_MAP[TaskType.ARCHITECTURE]
+
+
+def _mid_tier_model() -> str:
+    return _MODEL_MAP[TaskType.CODE_ANALYSIS]
+
+
+def _bottom_tier_model() -> str:
+    return _MODEL_MAP[TaskType.TRIVIAL_COMPLETION]
 
 
 @dataclass
@@ -102,16 +101,8 @@ def route(task: TaskRequest) -> RouteResult:
     task_type, source = classify_task_with_source(task.content, ctx=task.ctx)
     cost_today = daily_cost()
 
-    model = _MODEL_MAP.get(task_type, "claude-haiku-4-5-20251001")
-
-    # Downgrade se budget esgotado
-    if model == "claude-sonnet-4-6" and cost_today >= _BUDGET_USD:
-        model = "claude-haiku-4-5-20251001"
-
-    # Opus só com flag explícito ou dentro do budget específico
-    if model == "claude-opus-4-7":
-        if not task.request_opus and cost_today >= _OPUS_BUDGET:
-            model = "claude-sonnet-4-6"
+    model = _MODEL_MAP.get(task_type, _bottom_tier_model())
+    model = _maybe_downgrade_for_budget(task_type, model, cost_today, task.request_opus)
 
     decision = _POLICY.decide(
         ctx=task.ctx,
@@ -143,6 +134,26 @@ def route(task: TaskRequest) -> RouteResult:
         reason_code=decision.reason_code.value,
         policy_version=decision.policy_version,
     )
+
+
+def _maybe_downgrade_for_budget(
+    task_type: TaskType,
+    model: str,
+    cost_today: float,
+    request_opus: bool,
+) -> str:
+    """Tier downgrade por budget, agnostico ao profile.
+
+    Top-tier (ARCHITECTURE/DEEP_REASONING) cai pra mid-tier quando estoura
+    `_OPUS_BUDGET` (a menos que `request_opus=True` force).
+    Mid-tier (CODE_ANALYSIS) cai pra bottom-tier quando estoura `_BUDGET_USD`.
+    """
+    if task_type in (TaskType.ARCHITECTURE, TaskType.DEEP_REASONING):
+        if not request_opus and cost_today >= _OPUS_BUDGET:
+            return _mid_tier_model()
+    if task_type is TaskType.CODE_ANALYSIS and cost_today >= _BUDGET_USD:
+        return _bottom_tier_model()
+    return model
 
 
 def _context_layers(task: TaskRequest) -> tuple[str, str, str]:
@@ -190,7 +201,7 @@ async def complete(task: TaskRequest, messages: list[dict]) -> str:
     provider = provider_for_model(result.model)
     if provider == "anthropic":
         validate_anthropic_cache_control(layered_messages)
-    if provider == "openrouter":
+    if provider == "openrouter" and _RUNTIME.openrouter_compliance_required:
         validate_openrouter_compliance(task.extra)
 
     provider_enabled = {
@@ -206,10 +217,12 @@ async def complete(task: TaskRequest, messages: list[dict]) -> str:
         raise RuntimeError(ReasonCode.DENY_BUDGET_PRE_SEND.value)
 
     projected_cost = _COST_PER_1K.get(result.model, 0.0) * (approx_tokens / 1000)
-    if result.model == "claude-opus-4-7" and (daily_cost() + projected_cost) > _OPUS_BUDGET:
-        result.model = "claude-sonnet-4-6"
-    if result.model == "claude-sonnet-4-6" and (daily_cost() + projected_cost) > _BUDGET_USD:
-        result.model = "claude-haiku-4-5-20251001"
+    if result.task_type in (TaskType.ARCHITECTURE, TaskType.DEEP_REASONING):
+        if not task.request_opus and (daily_cost() + projected_cost) > _OPUS_BUDGET:
+            result.model = _mid_tier_model()
+    if result.task_type is TaskType.CODE_ANALYSIS:
+        if (daily_cost() + projected_cost) > _BUDGET_USD:
+            result.model = _bottom_tier_model()
 
     breaker_key = f"router:{result.model}"
     if not _BREAKER.allow_call(breaker_key):

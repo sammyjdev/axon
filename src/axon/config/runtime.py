@@ -93,6 +93,8 @@ class RuntimeConfig:
     provider_anthropic_enabled: bool
     provider_openrouter_enabled: bool
     provider_ollama_enabled: bool
+    provider_profile: str
+    openrouter_compliance_required: bool
     expansion: ExpansionConfig
     active_profile: str | None = None
 
@@ -612,16 +614,37 @@ def load_runtime_config() -> RuntimeConfig:
             "AXON_CAVEMAN_MODEL",
             os.environ.get("OLLAMA_MODEL_PRIMARY", "phi3:mini"),
         ),
-        classifier_cloud_model=os.environ.get(
-            "AXON_CLASSIFIER_CLOUD_MODEL", "claude-haiku-4-5-20251001"
-        ),
+        classifier_cloud_model=_resolve_classifier_model(),
         classifier_timeout_seconds=float(os.environ.get("AXON_CLASSIFIER_TIMEOUT", "4.0")),
         policy_version=os.environ.get("AXON_POLICY_VERSION", "2026-04-21"),
         provider_anthropic_enabled=os.environ.get("AXON_PROVIDER_ANTHROPIC", "1") == "1",
         provider_openrouter_enabled=os.environ.get("AXON_PROVIDER_OPENROUTER", "1") == "1",
-        provider_ollama_enabled=os.environ.get("AXON_PROVIDER_OLLAMA", "1") == "1",
+        provider_ollama_enabled=os.environ.get("AXON_PROVIDER_OLLAMA", "0") == "1",
+        provider_profile=_resolve_provider_profile(),
+        openrouter_compliance_required=_env_bool("AXON_OPENROUTER_COMPLIANCE", False),
         expansion=_load_expansion_config(engine_root),
     )
+
+
+def _resolve_provider_profile() -> str:
+    from axon.router.profiles import available_profiles
+
+    raw = os.environ.get("AXON_PROVIDER_PROFILE", "free").strip().lower()
+    if raw not in available_profiles():
+        raise ValueError(
+            f"AXON_PROVIDER_PROFILE invalido: {raw!r}. Disponiveis: {available_profiles()}"
+        )
+    return raw
+
+
+def _resolve_classifier_model() -> str:
+    from axon.router.profiles import get_profile
+
+    override = os.environ.get("AXON_CLASSIFIER_CLOUD_MODEL")
+    if override:
+        return override
+    profile = get_profile(_resolve_provider_profile())
+    return profile.classifier_model
 
 
 def is_corporate_context(ctx: str | None) -> bool:
