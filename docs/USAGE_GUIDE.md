@@ -19,6 +19,21 @@ docker compose ps
 
 If your repository lives elsewhere, export `AXON_ENGINE` first.
 
+## Provider Profile
+
+`pb ask` and any other command that hits an LLM uses the active provider
+profile (`AXON_PROVIDER_PROFILE`, default `free`).
+
+| Profile | Required env | What it routes to |
+| --- | --- | --- |
+| `free` | `GROQ_API_KEY`, `NVIDIA_NIM_API_KEY` | Groq + NVIDIA NIM free tiers |
+| `paid` | `OPENROUTER_API_KEY`, `GROQ_API_KEY` | OpenRouter Claude (D2 tiers) + Groq paid |
+
+The rate-limit gate is on by default for free-tier providers — if your daily
+workflow includes heavy ingest, monitor for `DENY_RATE_LIMIT` errors and tune
+`AXON_GROQ_MAX_RPM` / `AXON_GROQ_MAX_RPD` (or move to the `paid` profile).
+Full reference: `docs/decisions/dec-106-routing-profiles.md`.
+
 ## Core Commands
 
 ### Ask for context
