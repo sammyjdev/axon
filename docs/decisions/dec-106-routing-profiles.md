@@ -88,9 +88,13 @@ Crédito pago, preserva D2 via OpenRouter.
   bloqueia cloud — então essas tasks falham. Comportamento correto: work
   ctx exige Ollama local ou self-hosted (habilitar `AXON_PROVIDER_OLLAMA=1`
   e configurar `AXON_CLASSIFIER_CLOUD_MODEL=ollama/<modelo>`).
-- **Rate limit gate não existe ainda.** Groq free é ~30 req/min,
-  ~14k req/dia. Ingest pesado estoura. TODO: adicionar `axon/resilience/`
-  rate limiter por provider — issue separada, não bloqueia este dec.
+- **Rate limit gate implementado** em `axon/resilience/rate_limiter.py`
+  (fixed-window por minuto e por dia, Redis com memory fallback).
+  Configurável via `AXON_<PROVIDER>_MAX_RPM` / `AXON_<PROVIDER>_MAX_RPD`.
+  Defaults: Groq 25/min e 13000/dia (margem sob 30/14400 reais), NIM
+  50/min e 950/dia. Quando estoura, `complete()` e classifier levantam
+  `RuntimeError(DENY_RATE_LIMIT)` — não conta como falha de modelo (não
+  abre o circuit breaker).
 - **Custo do PAID profile não bate exatamente com D2 nativa.** OpenRouter
   adiciona ~10% sobre Anthropic direto. `_COST_PER_1K` em `profiles.py`
   reflete estimativa OpenRouter, não preço Anthropic nativo.
