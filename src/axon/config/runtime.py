@@ -582,7 +582,7 @@ def load_runtime_config() -> RuntimeConfig:
     overrides = _load_toml_runtime_overrides()
     engine_root = _env_path(
         "AXON_ENGINE",
-        Path(overrides.get("engine_root", str(Path.home() / "dev/Prometheus"))),
+        Path(overrides.get("engine_root", str(Path.home() / "dev/axon"))),
     )
     vault_root = _env_path(
         "AXON_VAULT",
