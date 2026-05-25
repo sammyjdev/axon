@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from axon.config.runtime import RuntimeConfig, load_runtime_config
 
 
-class BudgetEnforcement(str, Enum):
+class BudgetEnforcement(StrEnum):
     CLOUD_ALLOWED = "cloud_allowed"
     LOCAL_ONLY = "local_only"
     HARD_STOP = "hard_stop"

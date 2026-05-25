@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 import ollama
 
@@ -34,7 +34,7 @@ Formato esperado:
 """
 
 
-class ExpansionDecision(str, Enum):
+class ExpansionDecision(StrEnum):
     KEEP = "keep"
     MAYBE = "maybe"
     DISCARD = "discard"

@@ -2,25 +2,25 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 from axon.config.runtime import RuntimeConfig, is_corporate_context, load_runtime_config
 from axon.observability.compliance import ComplianceEvent, emit_compliance_event
 from axon.observability.trace_store import TracePayload, TraceStore
 
 
-class SensitivityLevel(str, Enum):
+class SensitivityLevel(StrEnum):
     PUBLIC = "PUBLIC"
     CONFIDENTIAL = "CONFIDENTIAL"
     RESTRICTED = "RESTRICTED"
 
 
-class RouteType(str, Enum):
+class RouteType(StrEnum):
     LOCAL = "local"
     CLOUD = "cloud"
 
 
-class ReasonCode(str, Enum):
+class ReasonCode(StrEnum):
     ALLOW_PUBLIC = "ALLOW_PUBLIC"
     ALLOW_LOCAL = "ALLOW_LOCAL"
     DENY_CORPORATE_CLOUD = "DENY_CORPORATE_CLOUD"

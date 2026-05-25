@@ -1,6 +1,6 @@
 # Usage Guide
 
-This guide covers the day-to-day Prometheus workflow after the engine and vault
+This guide covers the day-to-day AXON workflow after the engine and vault
 are already set up.
 
 ## Session Checklist
@@ -8,7 +8,7 @@ are already set up.
 Before starting a work session:
 
 ```bash
-cd /path/to/prometheus
+cd /path/to/axon
 set -a
 source .env.local
 set +a
@@ -61,7 +61,7 @@ Redis.
 
 ```bash
 pb index-dev --dry-run
-pb index-dev --project prometheus
+pb index-dev --project axon
 ```
 
 Use `--dry-run` first when validating a manifest-driven setup.
@@ -104,8 +104,8 @@ pb til howto --from knowledge/daily/2026-05-05/til-example.md
 ## ADR Workflow
 
 ```bash
-pb adr add --project prometheus --title "Use UUID5 for deterministic Qdrant ids"
-pb adr list --project prometheus
+pb adr add --project axon --title "Use UUID5 for deterministic Qdrant ids"
+pb adr list --project axon
 ```
 
 Use ADRs for decisions that should remain queryable later.
@@ -149,7 +149,7 @@ as expected over time.
 
 ## RTK Helpers
 
-Prometheus includes helper commands around the external RTK binary when it is
+AXON includes helper commands around the external RTK binary when it is
 installed:
 
 ```bash
@@ -159,7 +159,7 @@ pb rtk-proxy "git status"
 pb rtk "git diff"
 ```
 
-If RTK is not installed, the main Prometheus workflows still work.
+If RTK is not installed, the main AXON workflows still work.
 
 ## Context Safety
 
@@ -193,7 +193,7 @@ pb til --promote-today
 
 ## MCP Usage
 
-Prometheus also exposes the same knowledge through MCP for agentic tools such
+AXON also exposes the same knowledge through MCP for agentic tools such
 as Claude Code and Copilot. The local CLI remains the easiest way to validate
 behavior before relying on editor integrations.
 

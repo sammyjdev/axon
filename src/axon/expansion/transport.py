@@ -16,7 +16,7 @@ class UrllibSourceTransport:
         self.timeout_seconds = timeout_seconds
 
     async def fetch(self, url: str, source: SourceDefinition | None = None) -> SourceResponse:
-        headers = {"User-Agent": "PrometheusExpansion/1.0"}
+        headers = {"User-Agent": "AxonExpansion/1.0"}
         if source:
             headers.update(dict(source.headers))
         return await asyncio.to_thread(self._fetch_sync, url, headers)

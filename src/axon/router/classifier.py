@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 
 import litellm
@@ -11,7 +11,7 @@ from axon.policy.core import PolicyRegistry
 from axon.resilience.circuit_breaker import CircuitBreaker
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     TRIVIAL_COMPLETION = "TRIVIAL_COMPLETION"
     CODE_ANALYSIS = "CODE_ANALYSIS"
     ARCHITECTURE = "ARCHITECTURE"

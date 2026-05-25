@@ -87,8 +87,8 @@ def test_portability_import_invokes_importer(monkeypatch, tmp_path: Path) -> Non
             manifest_version="1",
             artifacts=(
                 ExportArtifact(
-                    kind="config/prometheus_toml",
-                    path="config/prometheus.toml",
+                    kind="config/axon_toml",
+                    path="config/axon.toml",
                     sha256="def",
                     size_bytes=24,
                 ),
@@ -339,7 +339,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
     result = runner.invoke(pb.app, ["doctor"])
 
     assert result.exit_code == 0
-    assert "Prometheus doctor" in result.stdout
+    assert "AXON doctor" in result.stdout
     assert "recommended_mode: full-local" in result.stdout
     assert "mode_source: env" in result.stdout
     assert "active_profile: solo-dev" in result.stdout
@@ -382,7 +382,7 @@ def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> Non
     )
 
     env_file = engine_root / ".env.local"
-    config_file = engine_root / "prometheus.toml"
+    config_file = engine_root / "axon.toml"
 
     assert result.exit_code == 0
     assert env_file.exists()
@@ -439,7 +439,7 @@ def test_init_refuses_to_overwrite_env_local_without_force(monkeypatch, tmp_path
 
 
 def test_profile_list_shows_profiles_and_active_marker(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -472,7 +472,7 @@ def test_profile_list_shows_profiles_and_active_marker(monkeypatch, tmp_path) ->
 
 
 def test_profile_use_updates_config_file(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -506,7 +506,7 @@ def test_profile_use_updates_config_file(monkeypatch, tmp_path) -> None:
 
 
 def test_profile_show_displays_active_profile(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -537,7 +537,7 @@ def test_profile_show_displays_active_profile(monkeypatch, tmp_path) -> None:
 
 
 def test_configure_applies_recommended_profile(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -587,7 +587,7 @@ def test_configure_applies_recommended_profile(monkeypatch, tmp_path) -> None:
 
 
 def test_configure_works_with_minimal_runtime_only_config(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -626,7 +626,7 @@ def test_configure_works_with_minimal_runtime_only_config(monkeypatch, tmp_path)
 
 
 def test_configure_interactive_applies_recommended_profile(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -670,7 +670,7 @@ def test_configure_interactive_applies_recommended_profile(monkeypatch, tmp_path
 
 
 def test_configure_accepts_preferred_mode_override(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -722,7 +722,7 @@ def test_configure_accepts_preferred_mode_override(monkeypatch, tmp_path) -> Non
 
 
 def test_configure_rejects_invalid_restricted_remote_combination(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     original_payload = "\n".join(
         [
             "[runtime]",
@@ -769,7 +769,7 @@ def test_configure_rejects_invalid_restricted_remote_combination(monkeypatch, tm
 
 
 def test_profile_create_appends_new_profile(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -821,7 +821,7 @@ def test_profile_create_appends_new_profile(monkeypatch, tmp_path) -> None:
 
 
 def test_profile_export_prints_toml_snippet(monkeypatch, tmp_path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -1109,8 +1109,8 @@ def test_ask_rejects_contaminated_rtk_output(monkeypatch, tmp_path) -> None:
 
 def test_rtk_reduces_and_prints_summary() -> None:
     text = (
-        "Prometheus indexa contexto técnico. "
-        "Prometheus indexa contexto técnico. "
+        "AXON indexa contexto técnico. "
+        "AXON indexa contexto técnico. "
         "Use prompts curtos para reduzir custo sem perder precisão."
     )
 

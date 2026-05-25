@@ -18,7 +18,7 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-prometheus}
+      POSTGRES_USER: ${POSTGRES_USER:-axon}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
       POSTGRES_DB: ${POSTGRES_DB:-langfuse}
     volumes:
@@ -28,7 +28,7 @@ services:
   langfuse:
     image: langfuse/langfuse:2
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-prometheus}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-langfuse}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-axon}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-langfuse}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me}
       NEXTAUTH_URL: ${LANGFUSE_HOST:-http://localhost:3000}
       SALT: ${LANGFUSE_SALT:-change-me}

@@ -21,7 +21,7 @@ def test_export_portability_bundle_writes_manifest_and_artifacts(
     trace_file = data_root / "trace" / "records.jsonl"
     failures_db = data_root / "failures.db"
     outcomes_db = data_root / "outcomes.db"
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     export_root = tmp_path / "export"
 
     trace_file.parent.mkdir(parents=True, exist_ok=True)
@@ -42,7 +42,7 @@ def test_export_portability_bundle_writes_manifest_and_artifacts(
         runtime=SimpleNamespace(engine_root=engine_root, data_root=data_root),
     )
 
-    exported_config = export_root / "config" / "prometheus.toml"
+    exported_config = export_root / "config" / "axon.toml"
     exported_env = export_root / "metadata" / "env.json"
     exported_indexed_contexts = export_root / "metadata" / "indexed-contexts.json"
     exported_trace = export_root / "stores" / "trace" / "records.jsonl"
@@ -79,8 +79,8 @@ def test_export_portability_bundle_writes_manifest_and_artifacts(
     assert manifest_payload == {
         "artifacts": [
             {
-                "kind": "config/prometheus_toml",
-                "path": "config/prometheus.toml",
+                "kind": "config/axon_toml",
+                "path": "config/axon.toml",
                 "sha256": _sha256(exported_config),
                 "size_bytes": exported_config.stat().st_size,
             },
@@ -124,7 +124,7 @@ def test_export_portability_bundle_omits_missing_optional_artifacts(
     monkeypatch,
 ) -> None:
     engine_root = tmp_path / "engine"
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     export_root = tmp_path / "export"
 
     config_path.write_text("[runtime]\nmode = \"minimal\"\n", encoding="utf-8")
@@ -140,10 +140,10 @@ def test_export_portability_bundle_omits_missing_optional_artifacts(
 
     assert manifest_payload["artifacts"] == [
         {
-            "kind": "config/prometheus_toml",
-            "path": "config/prometheus.toml",
-            "sha256": _sha256(export_root / "config" / "prometheus.toml"),
-            "size_bytes": (export_root / "config" / "prometheus.toml").stat().st_size,
+            "kind": "config/axon_toml",
+            "path": "config/axon.toml",
+            "sha256": _sha256(export_root / "config" / "axon.toml"),
+            "size_bytes": (export_root / "config" / "axon.toml").stat().st_size,
         },
         {
             "kind": "metadata/env",
@@ -164,7 +164,7 @@ def test_export_portability_bundle_writes_deterministic_json(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text("[runtime]\nmode = \"full-local\"\n", encoding="utf-8")
     monkeypatch.setenv("AXON_CONFIG", str(config_path))
     monkeypatch.setenv("AXON_ENGINE", str(tmp_path / "engine"))

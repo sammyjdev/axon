@@ -5,8 +5,8 @@ from pathlib import Path
 from axon.config.runtime import load_runtime_config
 
 
-def test_runtime_loads_mode_and_paths_from_prometheus_toml(monkeypatch, tmp_path: Path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+def test_runtime_loads_mode_and_paths_from_axon_toml(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [
@@ -31,8 +31,8 @@ def test_runtime_loads_mode_and_paths_from_prometheus_toml(monkeypatch, tmp_path
     assert runtime.vault_root == tmp_path / "vault"
 
 
-def test_runtime_env_vars_override_prometheus_toml(monkeypatch, tmp_path: Path) -> None:
-    config_path = tmp_path / "prometheus.toml"
+def test_runtime_env_vars_override_axon_toml(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [

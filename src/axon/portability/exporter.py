@@ -8,7 +8,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from axon.config.runtime import get_prometheus_config_path, load_runtime_config
+from axon.config.runtime import get_axon_config_path, load_runtime_config
 from axon.context.registry import VALID_CONTEXTS
 
 EXPORT_MANIFEST_VERSION = "1"
@@ -61,14 +61,14 @@ def export_portability_bundle(
     export_root.mkdir(parents=True, exist_ok=True)
 
     artifacts: list[ExportArtifact] = []
-    config_path = get_prometheus_config_path()
+    config_path = get_axon_config_path()
     if config_path.exists():
         artifacts.append(
             _write_copied_artifact(
                 source_path=config_path,
                 export_root=export_root,
-                relative_path=Path("config") / "prometheus.toml",
-                kind="config/prometheus_toml",
+                relative_path=Path("config") / "axon.toml",
+                kind="config/axon_toml",
             )
         )
 

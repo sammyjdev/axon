@@ -22,7 +22,7 @@ def test_import_portability_bundle_restores_bundle_into_fresh_engine_root(
     source_trace = source_data_root / "trace" / "records.jsonl"
     source_failures = source_data_root / "failures.db"
     source_outcomes = source_data_root / "outcomes.db"
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     export_root = tmp_path / "bundle"
     imported_engine_root = tmp_path / "imported-engine"
 
@@ -45,7 +45,7 @@ def test_import_portability_bundle_restores_bundle_into_fresh_engine_root(
 
     manifest = import_portability_bundle(export_root, imported_engine_root)
 
-    imported_config = imported_engine_root / "config" / "prometheus.toml"
+    imported_config = imported_engine_root / "config" / "axon.toml"
     imported_env = imported_engine_root / "metadata" / "env.json"
     imported_indexed_contexts = imported_engine_root / "metadata" / "indexed-contexts.json"
     imported_trace = imported_engine_root / "data" / "trace" / "records.jsonl"
@@ -73,7 +73,7 @@ def test_import_portability_bundle_rejects_wrong_manifest_version(
 ) -> None:
     source_engine_root = tmp_path / "engine"
     source_data_root = source_engine_root / "data"
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     export_root = tmp_path / "bundle"
 
     config_path.write_text("[runtime]\nmode = \"minimal\"\n", encoding="utf-8")

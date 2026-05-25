@@ -1,4 +1,4 @@
-# Prometheus — Backlog de Tasks
+# AXON — Backlog de Tasks
 
 Fonte da verdade para atribuição de trabalho entre Claude Code, Codex e Copilot.
 
@@ -127,7 +127,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: GPT-5.3-Codex
 - status: done
-- spec: prometheus-context-detection-crossplatform.md:324-381
+- spec: axon-context-detection-crossplatform.md:324-381
 - branch: feat/phase-1-docker-infra
 - depends_on: [T-020]
 
@@ -137,7 +137,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: GPT-5.3-Codex
 - status: done
-- spec: prometheus-context-detection-crossplatform.md:395-433
+- spec: axon-context-detection-crossplatform.md:395-433
 - branch: feat/phase-1-docker-infra
 - depends_on: [T-021]
 
@@ -147,7 +147,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: Gemini 2.5 Pro
 - status: done
-- spec: prometheus-context-detection-crossplatform.md:271-318
+- spec: axon-context-detection-crossplatform.md:271-318
 - branch: feat/phase-1-docker-infra
 - depends_on: [T-020]
 - notes: lê spec inteira + detecta plataforma — Gemini context window ajuda
@@ -178,7 +178,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: GPT-5.3-Codex
 - status: done
-- spec: prometheus-context-engine.md:114-139
+- spec: axon-context-engine.md:114-139
 - branch: feat/phase-2-store-layer
 
 ## T-031: src/store/graph_store.py (Redis, deps de código)
@@ -187,7 +187,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: GPT-5.3-Codex
 - status: done
-- spec: prometheus-context-engine.md:143-154
+- spec: axon-context-engine.md:143-154
 - branch: feat/phase-2-store-layer
 
 ## T-032: src/store/session_store.py (SQLite: adr, session_memory, code_change)
@@ -196,7 +196,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: GPT-5.3-Codex
 - status: done
-- spec: prometheus-context-engine.md:158-187
+- spec: axon-context-engine.md:158-187
 - branch: feat/phase-2-store-layer
 
 ## T-033: src/store/collections.py com barreira work
@@ -204,7 +204,7 @@ Cada task segue este schema:
 - phase: 2
 - agent: claude-code
 - status: done
-- spec: prometheus-context-isolation.md:154-171
+- spec: axon-context-isolation.md:154-171
 - branch: feat/phase-2-store-layer
 - notes: barreira é crítica — só Claude Code edita
 
@@ -243,7 +243,7 @@ Cada task segue este schema:
 - phase: 3
 - agent: claude-code
 - status: done
-- spec: prometheus-context-engine.md:94-102
+- spec: axon-context-engine.md:94-102
 - branch: feat/phase-3a-chunker-java
 - depends_on: [T-041]
 
@@ -253,7 +253,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: Claude Opus 4.6
 - status: done
-- spec: prometheus-context-engine.md:94-102
+- spec: axon-context-engine.md:94-102
 - branch: feat/phase-3a-chunker-java-copilot
 - depends_on: [T-041]
 - notes: corre em paralelo com T-042. Ao final comparar diffs; pegar o melhor ou fazer cherry-pick. Merge apenas da versão escolhida.
@@ -276,7 +276,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: Claude Sonnet 4.6
 - status: done
-- spec: prometheus-context-engine.md:83-106
+- spec: axon-context-engine.md:83-106
 - branch: feat/phase-3b-embedder-watcher
 - depends_on: [T-042]
 
@@ -286,7 +286,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: Gemini 3 Flash
 - status: done
-- spec: prometheus-context-engine.md:51-70
+- spec: axon-context-engine.md:51-70
 - branch: feat/phase-3b-embedder-watcher
 - depends_on: [T-051]
 
@@ -317,7 +317,7 @@ Cada task segue este schema:
 - phase: 4
 - agent: claude-code
 - status: done
-- spec: prometheus-context-engine.md:242-275, prometheus-context-isolation.md:178-228
+- spec: axon-context-engine.md:242-275, axon-context-isolation.md:178-228
 - branch: feat/phase-4-mcp-gateway
 - notes: tools search_code, get_adrs, save_adr, get_session_memory, get_dependencies
 
@@ -326,7 +326,7 @@ Cada task segue este schema:
 - phase: 4
 - agent: claude-code
 - status: done
-- spec: prometheus-context-engine.md:279-284
+- spec: axon-context-engine.md:279-284
 - branch: feat/phase-4-mcp-gateway
 - depends_on: [T-060]
 
@@ -347,7 +347,7 @@ Cada task segue este schema:
 - phase: 5
 - agent: claude-code
 - status: done
-- spec: prometheus-context-detection-crossplatform.md:32-163
+- spec: axon-context-detection-crossplatform.md:32-163
 - branch: feat/phase-5a-detector-router
 
 ## T-071: src/router/classifier.py (phi3:mini local)
@@ -355,7 +355,7 @@ Cada task segue este schema:
 - phase: 5
 - agent: claude-code
 - status: done
-- spec: prometheus-context-engine.md:202-207
+- spec: axon-context-engine.md:202-207
 - branch: feat/phase-5a-detector-router
 
 ## T-072: src/router/engine.py (LiteLLM + budget gate + Langfuse)
@@ -363,7 +363,7 @@ Cada task segue este schema:
 - phase: 5
 - agent: claude-code
 - status: done
-- spec: prometheus-context-engine.md:209-231 (+ D2 para IDs atuais)
+- spec: axon-context-engine.md:209-231 (+ D2 para IDs atuais)
 - branch: feat/phase-5a-detector-router
 - depends_on: [T-071]
 
@@ -372,7 +372,7 @@ Cada task segue este schema:
 - phase: 5
 - agent: claude-code
 - status: done
-- spec: prometheus-context-detection-crossplatform.md:171-207
+- spec: axon-context-detection-crossplatform.md:171-207
 - branch: feat/phase-5a-detector-router
 - depends_on: [T-070, T-072]
 
@@ -386,7 +386,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: GPT-5.3-Codex
 - status: done
-- spec: prometheus-context-isolation.md:386-412, prometheus-vault-final.md:386-402
+- spec: axon-context-isolation.md:386-412, axon-vault-final.md:386-402
 - branch: feat/phase-5b-cli-pb
 - notes: pb ask, search, adr, session, cost
 
@@ -408,7 +408,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: GPT-5.3-Codex
 - status: done
-- spec: prometheus-vault-final.md:237-352
+- spec: axon-vault-final.md:237-352
 - branch: feat/phase-6-knowledge-automation
 
 ## T-091: Git hook post-commit no vault
@@ -417,7 +417,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: Gemini 3 Flash
 - status: done
-- spec: prometheus-vault-final.md:358-379
+- spec: axon-vault-final.md:358-379
 - branch: feat/phase-6-knowledge-automation
 - depends_on: [T-090]
 
@@ -427,7 +427,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: GPT-5.3-Codex
 - status: done
-- spec: prometheus-vault-final.md:386-402
+- spec: axon-vault-final.md:386-402
 - branch: feat/phase-6-knowledge-automation
 - depends_on: [T-080]
 
@@ -437,7 +437,7 @@ Cada task segue este schema:
 - agent: copilot
 - model: Gemini 2.5 Pro
 - status: done
-- spec: prometheus-knowledge-split.md:128-188
+- spec: axon-knowledge-split.md:128-188
 - branch: feat/phase-6-knowledge-automation
 - notes: precisa ler muitas notas de uma vez — janela 1M do Gemini ideal
 
@@ -459,7 +459,7 @@ Cada task segue este schema:
 - phase: 7
 - agent: claude-code
 - status: done
-- spec: prometheus-context-isolation.md:256-287
+- spec: axon-context-isolation.md:256-287
 - branch: feat/phase-7-mem0-compressor
 
 ## T-101: Tool MCP get_memory(query, ctx) com filtro work
@@ -467,7 +467,7 @@ Cada task segue este schema:
 - phase: 7
 - agent: claude-code
 - status: done
-- spec: prometheus-context-isolation.md:201-211
+- spec: axon-context-isolation.md:201-211
 - branch: feat/phase-7-mem0-compressor
 - depends_on: [T-100]
 
@@ -476,7 +476,7 @@ Cada task segue este schema:
 - phase: 7
 - agent: claude-code
 - status: done
-- spec: prometheus-context-engine.md:303-314
+- spec: axon-context-engine.md:303-314
 - branch: feat/phase-7-mem0-compressor
 
 ## T-103: Hook fim-de-sessão → resumo no daily note

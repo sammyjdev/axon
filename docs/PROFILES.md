@@ -1,6 +1,6 @@
-# Prometheus Profiles
+# AXON Profiles
 
-Profiles are named setup presets stored in `prometheus.toml`.
+Profiles are named setup presets stored in `axon.toml`.
 
 Today, the CLI uses a deliberately small built-in profile model:
 
@@ -9,7 +9,7 @@ Today, the CLI uses a deliberately small built-in profile model:
 - a runtime `mode`
 
 Using a profile updates the active profile in `[runtime]`, syncs the runtime
-`mode`, and, when `.env.local` exists next to `prometheus.toml`, also updates
+`mode`, and, when `.env.local` exists next to `axon.toml`, also updates
 `AXON_RUNTIME_MODE`.
 
 Profiles do not currently enable or disable individual subsystems at runtime.
@@ -20,7 +20,7 @@ metadata, not as a finished feature-flag system.
 
 ## Built-in Profiles
 
-Prometheus currently uses three built-in profile names:
+AXON currently uses three built-in profile names:
 
 | Profile | Mode | Use it when |
 | --- | --- | --- |
@@ -38,8 +38,8 @@ If you need `full-local`, create a custom profile for it.
 
 ## Profile Manifest
 
-Prometheus can store more than the three core fields above in
-`prometheus.toml`.
+AXON can store more than the three core fields above in
+`axon.toml`.
 
 Supported profile keys today:
 
@@ -64,7 +64,7 @@ memory_tier = "light"
 enabled_features = ["rtk", "local-rag"]
 ```
 
-This richer shape matters for P1 because it lets Prometheus represent user
+This richer shape matters for P1 because it lets AXON represent user
 choices in language that is closer to actual setup decisions, even though the
 current CLI still applies only the profile name and `mode`.
 
@@ -112,7 +112,7 @@ What it does today:
 
 1. Recommends a profile and mode.
 2. Applies that profile immediately.
-3. Writes the chosen profile back into `prometheus.toml`.
+3. Writes the chosen profile back into `axon.toml`.
 
 When any of the core fields are omitted, `pb configure` falls back to a concise
 interactive flow using the same logic in question form:
@@ -128,7 +128,7 @@ scriptable for automation.
 
 ### Capability Selection And Overkill Hiding
 
-P1 introduces the idea that Prometheus should hide advanced pieces when they do
+P1 introduces the idea that AXON should hide advanced pieces when they do
 not solve the user's immediate problem. The current implementation expresses
 that through a capability selector fed by profile metadata and recommendation
 inputs.
@@ -151,7 +151,7 @@ What is not implemented yet:
 
 ### `pb profile list`
 
-Shows the profiles defined in `prometheus.toml` and marks the active one.
+Shows the profiles defined in `axon.toml` and marks the active one.
 
 ```bash
 pb profile list
@@ -188,7 +188,7 @@ Use this when you already know which mode you want.
 
 ### `pb profile create`
 
-Creates a new profile entry in `prometheus.toml`.
+Creates a new profile entry in `axon.toml`.
 
 ```bash
 pb profile create support-lite \
@@ -211,7 +211,7 @@ This command only writes a profile entry. It does not activate it unless you
 follow with `pb profile use`.
 
 The CLI variant of `create` can now write all supported structured fields. You
-can still edit `prometheus.toml` directly when you want more control, then use
+can still edit `axon.toml` directly when you want more control, then use
 `pb profile export` to verify the resulting shape.
 
 ### `pb profile export`
@@ -224,14 +224,14 @@ pb profile export team-dev
 
 Use it when you want to:
 
-- copy a known-good profile into another machine's `prometheus.toml`
+- copy a known-good profile into another machine's `axon.toml`
 - share a profile in team docs or onboarding notes
 
 ## Worked Examples
 
 ### 1. Check the current setup and switch modes
 
-Use this when Prometheus is already installed and you want to confirm the
+Use this when AXON is already installed and you want to confirm the
 active operating shape.
 
 ```bash
@@ -244,7 +244,7 @@ pb profile show
 Result: the active profile becomes `privacy-first`, the runtime mode becomes
 `minimal`, and `.env.local` is updated if it exists.
 
-### 2. Let Prometheus recommend a profile for a shared team setup
+### 2. Let AXON recommend a profile for a shared team setup
 
 ```bash
 pb configure \
@@ -296,6 +296,6 @@ For most users, the shortest path is:
 2. Verify with `pb profile show`.
 3. Switch later with `pb profile use` if your setup changes.
 4. Add a custom profile with `pb profile create` when the built-ins are not enough.
-5. Add optional profile metadata through `pb profile create` or directly in `prometheus.toml` when you need a custom setup shape.
+5. Add optional profile metadata through `pb profile create` or directly in `axon.toml` when you need a custom setup shape.
 
 For broader environment guidance, see [Support matrix](SUPPORT_MATRIX.md).

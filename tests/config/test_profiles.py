@@ -180,7 +180,7 @@ def test_export_profile_includes_optional_structured_fields(tmp_path: Path, monk
 
 
 def _write_config(tmp_path: Path) -> Path:
-    config_path = tmp_path / "prometheus.toml"
+    config_path = tmp_path / "axon.toml"
     config_path.write_text(
         "\n".join(
             [

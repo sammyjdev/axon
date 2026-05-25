@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 try:
     import redis
@@ -10,7 +10,7 @@ except Exception:  # pragma: no cover
     redis = None
 
 
-class CircuitState(str, Enum):
+class CircuitState(StrEnum):
     CLOSED = "CLOSED"
     OPEN = "OPEN"
     HALF_OPEN = "HALF_OPEN"

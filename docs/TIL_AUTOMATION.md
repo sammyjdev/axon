@@ -9,7 +9,7 @@ review.
 
 ## Current Capabilities
 
-Prometheus already supports four useful TIL automation steps:
+AXON already supports four useful TIL automation steps:
 
 - capture a TIL into `knowledge/daily/<date>/`
 - list pending TILs that were not promoted yet

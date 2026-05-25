@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prometheus ADR inference hook
+# AXON ADR inference hook
 # Installed by: pb adr hook install
 
 PROJECT=$(basename "$(git rev-parse --show-toplevel)")

@@ -1,4 +1,4 @@
-# Prometheus — Cognitive Capability Audit
+# AXON — Cognitive Capability Audit
 
 **Data:** 2026-05-08
 **Escopo:** código real em `src/`, `tests/`, `docs/`
@@ -97,7 +97,7 @@ Legenda: **SIM** = existe em código / **PARCIAL** = implementação incompleta 
 | Recupera workflows similares? | **NÃO** | Semantic search poderia, mas sem schema de planos para buscar. |
 | Representação explícita de goals/subgoals? | **NÃO** | `pb plan` tem stages, sem persistência de goal state. |
 | Dependency-aware planning support? | **NÃO** | Ausente. |
-| Identifica tasks de alto risco? | **NÃO** | Apenas no spec do Odisseu, não no Prometheus. |
+| Identifica tasks de alto risco? | **NÃO** | Apenas no spec do Odisseu, não no AXON. |
 | Architecture-aware planning? | **PARCIAL** | ADRs ajudam. Sem enforcement automático de constraints arquiteturais. |
 | Detecta scope explosion? | **NÃO** | Ausente. |
 | Heurísticas de simplificação? | **PARCIAL** | Regra comportamental no CLAUDE.md. Não estrutural. |
@@ -209,7 +209,7 @@ O que desapareceria:
 - Recuperação de erros com raciocínio
 - Interpretação de ADRs como restrições ativas
 
-**Diagnóstico:** Prometheus é augmentation infrastructure — eleva a inteligência do modelo via contexto de qualidade. Não é inteligência autônoma. É um exosqueleto cognitivo, não uma mente. O conhecimento persiste; o comportamento não.
+**Diagnóstico:** AXON é augmentation infrastructure — eleva a inteligência do modelo via contexto de qualidade. Não é inteligência autônoma. É um exosqueleto cognitivo, não uma mente. O conhecimento persiste; o comportamento não.
 
 ---
 

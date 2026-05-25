@@ -1,7 +1,7 @@
 """AXON CLI — agent-agnostic execution & context network.
 
 Same context, any AI coding agent. This is the focused `axon` entry point
-(T6.3). Legacy Prometheus-vault commands live in `axon.cli.pb` and are not
+(T6.3). Legacy AXON-vault commands live in `axon.cli.pb` and are not
 surfaced here.
 """
 
