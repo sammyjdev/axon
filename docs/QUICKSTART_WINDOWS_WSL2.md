@@ -23,8 +23,8 @@ You also need:
 ## 1. Open WSL2 and clone the engine
 
 ```bash
-git clone <your-repo-url> ~/dev/Prometheus
-cd ~/dev/Prometheus
+git clone <your-repo-url> ~/dev/axon
+cd ~/dev/axon
 ```
 
 ## 2. Point setup to the remote infra host
@@ -59,9 +59,9 @@ mkdir -p \
   "$AXON_VAULT/career"
 
 cat > "$AXON_VAULT/knowledge/first-note.md" <<'EOF'
-# Prometheus
+# AXON
 
-Prometheus can run locally in WSL2 while retrieval infra lives on another host.
+AXON can run locally in WSL2 while retrieval infra lives on another host.
 EOF
 ```
 
