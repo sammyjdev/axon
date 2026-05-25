@@ -18,7 +18,7 @@ def test_route_downgrades_code_analysis_when_daily_budget_is_exhausted(monkeypat
 
     result = route(TaskRequest(content="analisar diff grande", ctx="knowledge"))
 
-    assert result.model == "claude-haiku-4-5-20251001"
+    assert result.model == engine._MODEL_MAP[TaskType.TRIVIAL_COMPLETION]
 
 
 def test_route_downgrades_opus_when_request_is_not_explicit(monkeypatch) -> None:
@@ -30,7 +30,7 @@ def test_route_downgrades_opus_when_request_is_not_explicit(monkeypatch) -> None
 
     result = route(TaskRequest(content="desenhar arquitetura", ctx="knowledge"))
 
-    assert result.model == "claude-sonnet-4-6"
+    assert result.model == engine._MODEL_MAP[TaskType.CODE_ANALYSIS]
 
 
 @pytest.mark.asyncio
@@ -59,6 +59,8 @@ async def test_complete_downgrades_to_haiku_when_projected_cost_crosses_budget(m
         "axon.router.engine.daily_cost",
         lambda: engine._BUDGET_USD - 0.005,
     )
+    ca_model = engine._MODEL_MAP[TaskType.CODE_ANALYSIS]
+    monkeypatch.setattr("axon.router.engine._COST_PER_1K", {ca_model: 0.01})
     monkeypatch.setattr("axon.router.engine.provider_for_model", lambda _model: "anthropic")
     monkeypatch.setattr(
         "axon.router.engine.validate_anthropic_cache_control", lambda _messages: None
@@ -75,4 +77,4 @@ async def test_complete_downgrades_to_haiku_when_projected_cost_crosses_budget(m
     )
 
     assert response == "ok"
-    assert requested_models == ["claude-haiku-4-5-20251001"]
+    assert requested_models == [engine._MODEL_MAP[TaskType.TRIVIAL_COMPLETION]]
