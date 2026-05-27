@@ -122,6 +122,56 @@ async def test_on_init_is_a_safe_stub(store: SessionStore) -> None:
     assert await on_init(store=store) is None
 
 
+async def test_on_commit_is_idempotent_for_same_sha(
+    store: SessionStore, git_repo: Path
+) -> None:
+    first_id = await on_commit(store=store, cwd=git_repo)
+    second_id = await on_commit(store=store, cwd=git_repo)
+
+    assert first_id is not None
+    assert second_id == first_id
+    found = await store.find_decisions_by_repo("myrepo")
+    assert len(found) == 1
+
+
+async def test_on_commit_relinks_symbols_after_partial_failure(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "resumerepo"
+    repo.mkdir()
+    _git(["init"], repo)
+    _git(["config", "user.email", "test@axon.dev"], repo)
+    _git(["config", "user.name", "AXON Test"], repo)
+    (repo / "mod.py").write_text("def beta():\n    return 2\n", encoding="utf-8")
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "feat: add beta"], repo)
+
+    calls = {"n": 0}
+    original = __import__("axon.hooks.git_event", fromlist=["_link_touched_symbols"])._link_touched_symbols
+
+    async def flaky_link(store, decision_id, root, commit_hash, graph_store):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("graph unavailable")
+        return await original(store, decision_id, root, commit_hash, graph_store)
+
+    monkeypatch.setattr("axon.hooks.git_event._link_touched_symbols", flaky_link)
+
+    graph = _FakeGraph()
+    with pytest.raises(RuntimeError):
+        await on_commit(store=store, cwd=repo, graph_store=graph)
+
+    # second run with same SHA must NOT duplicate the Decision and must
+    # complete the linking step that previously failed.
+    decision_id = await on_commit(store=store, cwd=repo, graph_store=graph)
+    assert decision_id is not None
+
+    found = await store.find_decisions_by_repo("resumerepo")
+    assert len(found) == 1
+    subgraph = await store.query_subgraph(decision_id, depth=1)
+    assert "beta" in subgraph["nodes"]
+
+
 def _init_repo(path: Path) -> None:
     path.mkdir()
     _git(["init"], path)
