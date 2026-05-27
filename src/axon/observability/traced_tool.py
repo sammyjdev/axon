@@ -56,8 +56,14 @@ def _sha8(value: str) -> str:
 
 def _summarize_args(bound: inspect.BoundArguments) -> TracePayload:
     payload: TracePayload = {}
-    for name, value in bound.arguments.items():
-        if len(payload) >= _MAX_PAYLOAD_KEYS:
+    truncated = False
+    items = list(bound.arguments.items())
+    for idx, (name, value) in enumerate(items):
+        if len(payload) >= _MAX_PAYLOAD_KEYS - 1:
+            # leave room for the _truncated marker and stop iterating;
+            # accounting for remaining args being silently dropped.
+            if idx < len(items):
+                truncated = True
             break
         if value is None:
             payload[name] = None
@@ -80,7 +86,28 @@ def _summarize_args(bound: inspect.BoundArguments) -> TracePayload:
             continue
         # fallback: only record type
         payload[f"{name}_type"] = type(value).__name__
+    if truncated:
+        payload["_truncated"] = True
     return payload
+
+
+def _process_arguments(
+    sig: inspect.Signature, args: tuple, kwargs: dict
+) -> tuple[TracePayload, Any]:
+    """Bind args, summarize them, and extract the ctx value.
+
+    Returns (arg_payload, raw_ctx_value). Raw ctx is returned unprocessed
+    so the caller can run its own coercion / warning. If bind_partial
+    rejects the call (e.g. unexpected kwarg), we return empty payload and
+    None ctx — the wrapped function will then raise the real TypeError
+    when the caller forwards the args to it.
+    """
+    try:
+        bound = sig.bind_partial(*args, **kwargs)
+        bound.apply_defaults()
+    except TypeError:
+        return {}, None
+    return _summarize_args(bound), bound.arguments.get("ctx")
 
 
 def _estimate_tokens(result: Any) -> int:
@@ -140,13 +167,8 @@ def traced_tool(
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             trace_store = _resolve_store(store)
             trace_id = uuid.uuid4().hex
-            try:
-                bound = sig.bind_partial(*args, **kwargs)
-                bound.apply_defaults()
-                arg_payload = _summarize_args(bound)
-            except TypeError:
-                arg_payload = {}
-            ctx_str = _coerce_ctx(bound.arguments.get("ctx") if "ctx" in bound.arguments else None, tool_name=tool_name)
+            arg_payload, raw_ctx = _process_arguments(sig, args, kwargs)
+            ctx_str = _coerce_ctx(raw_ctx, tool_name=tool_name)
 
             recorder = trace_store.recorder(
                 trace_id=trace_id,
