@@ -1805,16 +1805,19 @@ def adr_review(
         async def _promote() -> None:
             store = SessionStore(_get_db_path())
             await store.init()
-            adr = ADR(
-                project=project,
-                title=record.title,
-                context=record.context,
-                decision=record.decision,
-                rationale=record.rationale,
-            )
-            await store.save_adr(adr)
-            path.unlink()
-            typer.echo(f"[axon] Draft promovido: {record.title}")
+            try:
+                adr = ADR(
+                    project=project,
+                    title=record.title,
+                    context=record.context,
+                    decision=record.decision,
+                    rationale=record.rationale,
+                )
+                await store.save_adr(adr)
+                path.unlink()
+                typer.echo(f"[axon] Draft promovido: {record.title}")
+            finally:
+                await store.close()
 
         asyncio.run(_promote())
         return
@@ -1932,11 +1935,14 @@ def pending_drain() -> None:
     async def _drain() -> None:
         store = SessionStore(_get_db_path())
         await store.init()
-        result = await store.drain_pending()
-        typer.echo(
-            f"drain: processed={result.processed} "
-            f"quarantined={result.quarantined} retried={result.retried}"
-        )
+        try:
+            result = await store.drain_pending()
+            typer.echo(
+                f"drain: processed={result.processed} "
+                f"quarantined={result.quarantined} retried={result.retried}"
+            )
+        finally:
+            await store.close()
 
     asyncio.run(_drain())
 
