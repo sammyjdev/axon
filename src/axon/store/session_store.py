@@ -387,6 +387,20 @@ class SessionStore:
             )
         return [Decision(**json.loads(row["frontmatter"])) for row in rows]
 
+    async def find_decision_by_git_hash(self, git_hash: str) -> Decision | None:
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            rows = await db.execute_fetchall(
+                "SELECT frontmatter FROM decisions"
+                " WHERE json_extract(frontmatter, '$.git_hash') = ?"
+                " LIMIT 1",
+                (git_hash,),
+            )
+        if not rows:
+            return None
+        return Decision(**json.loads(rows[0]["frontmatter"]))
+
     async def find_decisions_by_repo(self, repo: str, limit: int = 20) -> list[Decision]:
         async with self._lock:
             db = await self._connection()

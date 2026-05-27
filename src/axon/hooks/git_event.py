@@ -102,6 +102,18 @@ async def on_commit(
         await store.init()
         root = _repo_root(cwd)
         commit_hash = _git(["log", "-1", "--pretty=%H"], root)
+        existing = await store.find_decision_by_git_hash(commit_hash)
+        if existing is not None:
+            await _link_touched_symbols(
+                store, existing.id, root, commit_hash, graph_store
+            )
+            logger.info(
+                "idempotent skip: decision %s already captured for commit %s",
+                existing.id,
+                commit_hash[:8],
+            )
+            return existing.id
+
         subject = _git(["log", "-1", "--pretty=%s"], root)
         files = _git(
             ["log", "-1", "--name-only", "--format=", "HEAD"], root
