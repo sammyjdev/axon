@@ -32,6 +32,7 @@ memory_app = typer.Typer(help="Memória Mem0 (Qdrant)")
 graph_app = typer.Typer(help="Grafo estrutural de código (SQLite)")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
 portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
+pending_app = typer.Typer(help="Gerencia o backlog .axon/pending/ (dec-112)")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -44,6 +45,7 @@ app.add_typer(memory_app, name="memory")
 app.add_typer(graph_app, name="graph")
 app.add_typer(profile_app, name="profile")
 app.add_typer(portability_app, name="portability")
+app.add_typer(pending_app, name="pending")
 
 QDRANT_DEFAULT_URL = "http://localhost:6333"
 _MAX_CHUNK_INPUT_CHARS = 4_000
@@ -1573,6 +1575,216 @@ def adr_infer_commit(
         typer.echo(f"[axon] ADR salvo: {adr.title}")
 
     asyncio.run(_infer())
+
+
+@adr_app.command("review")
+def adr_review(
+    dormant: Annotated[
+        bool,
+        typer.Option("--dormant", help="Include dormant drafts in listing."),
+    ] = False,
+    weak_passes: Annotated[
+        bool,
+        typer.Option("--weak-passes", help="Show recent weak-pass entries."),
+    ] = False,
+    promote: Annotated[
+        str | None,
+        typer.Option(
+            "--promote",
+            help="Promote draft with given commit_hash to SessionStore.",
+        ),
+    ] = None,
+    project: Annotated[
+        str,
+        typer.Option(
+            "--project", "-p",
+            help="Project name used when promoting (defaults to 'axon').",
+        ),
+    ] = "axon",
+) -> None:
+    """Review the ADR draft pool (dec-111)."""
+    from axon.adr.audit import read_audit
+    from axon.adr.draft_pool import (
+        DraftRecord,
+        list_drafts,
+        read_draft,
+    )
+
+    if promote:
+        from axon.store.session_store import ADR, SessionStore
+
+        draft_dir = Path(os.environ.get("AXON_DATA_ROOT", ".axon")) / "adr-draft"
+        path = draft_dir / f"{promote}.md"
+        if not path.exists():
+            typer.echo(f"Draft '{promote}' não encontrado em {draft_dir}/.")
+            raise typer.Exit(1)
+        record: DraftRecord = read_draft(path)
+
+        async def _promote() -> None:
+            store = SessionStore(_get_db_path())
+            await store.init()
+            adr = ADR(
+                project=project,
+                title=record.title,
+                context=record.context,
+                decision=record.decision,
+                rationale=record.rationale,
+            )
+            await store.save_adr(adr)
+            path.unlink()
+            typer.echo(f"[axon] Draft promovido: {record.title}")
+
+        asyncio.run(_promote())
+        return
+
+    drafts = list_drafts(include_dormant=dormant)
+    if not drafts:
+        typer.echo("Nenhum draft de ADR pendente.")
+    else:
+        typer.echo(f"=== Drafts ({len(drafts)}) ===")
+        for record in drafts:
+            tag = "[DORMANT]" if record.dormant else "[ACTIVE]"
+            mode = " [STRUCTURAL]" if record.structural_mode else ""
+            typer.echo(
+                f"{tag}{mode} {record.commit_hash[:10]}  "
+                f"{record.failed_layer:>10}  {record.title}"
+            )
+
+    if weak_passes:
+        entries = read_audit(kinds=("weak_pass",))
+        typer.echo(f"\n=== Weak passes ({len(entries)}) ===")
+        for e in entries[-10:]:
+            typer.echo(f"  {e.get('commit_hash', '')[:10]}  {e.get('title', '')}")
+
+
+@adr_app.command("audit")
+def adr_audit(
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="Filter entries since ISO timestamp (e.g. 7d)."),
+    ] = None,
+    weak_passes: Annotated[
+        bool, typer.Option("--weak-passes", help="Only show weak passes.")
+    ] = False,
+) -> None:
+    """Show the ADR audit log (dec-111)."""
+    from datetime import UTC
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+
+    from axon.adr.audit import read_audit
+
+    since_dt = None
+    if since is not None:
+        if since.endswith("d") and since[:-1].isdigit():
+            since_dt = _dt.now(UTC) - _td(days=int(since[:-1]))
+        else:
+            try:
+                since_dt = _dt.fromisoformat(since)
+            except ValueError:
+                typer.echo(f"--since inválido: {since!r}")
+                raise typer.Exit(1) from None
+
+    kinds = ("weak_pass",) if weak_passes else ("rejection", "weak_pass")
+    entries = read_audit(since=since_dt, kinds=kinds)
+    if not entries:
+        typer.echo("Nenhuma entrada no audit log.")
+        return
+    typer.echo(f"=== Audit ({len(entries)} entradas) ===")
+    for e in entries:
+        kind = e.get("kind", "?")
+        layer = e.get("layer", "")
+        sm = " STRUCT" if e.get("structural_mode") else ""
+        typer.echo(
+            f"  [{kind:>10}{sm}] {e.get('commit_hash', '')[:10]} "
+            f"{layer:>10}  {e.get('title', '')}"
+        )
+
+
+@adr_app.command("validate-drafts")
+def adr_validate_drafts() -> None:
+    """Run L1-full against pending drafts (dec-111).
+
+    L1-full is currently a stub (Fase 2d follow-up wires the tree-sitter
+    graph). This command exposes the entry point so triggers can call
+    it; the body updates ``last_l1_full_at`` on each draft to clear the
+    ``stale-pending`` state surfaced by ``pb doctor``.
+    """
+    from datetime import UTC
+    from datetime import datetime as _dt
+
+    from axon.adr.draft_pool import list_drafts, write_draft
+    from axon.adr.gates.l1 import l1_full
+
+    drafts = list_drafts(include_dormant=False)
+    if not drafts:
+        typer.echo("Nenhum draft para revalidar.")
+        return
+
+    promoted = 0
+    demoted = 0
+    held = 0
+    for record in drafts:
+        passed, _details = l1_full(
+            f"{record.title}\n{record.context}\n{record.decision}\n{record.rationale}",
+            repo_root=Path.cwd(),
+        )
+        record.last_l1_full_at = _dt.now(UTC)
+        if not passed:
+            record.dormant = True
+            demoted += 1
+        else:
+            held += 1
+        write_draft(record)
+
+    typer.echo(
+        f"validate-drafts: promoted={promoted} demoted={demoted} held={held}"
+    )
+
+
+@pending_app.command("drain")
+def pending_drain() -> None:
+    """Drain .axon/pending/ into the SessionStore (dec-112)."""
+    from axon.store.session_store import SessionStore
+
+    async def _drain() -> None:
+        store = SessionStore(_get_db_path())
+        await store.init()
+        result = await store.drain_pending()
+        typer.echo(
+            f"drain: processed={result.processed} "
+            f"quarantined={result.quarantined} retried={result.retried}"
+        )
+
+    asyncio.run(_drain())
+
+
+@pending_app.command("recover")
+def pending_recover(
+    id_: Annotated[
+        str | None,
+        typer.Option("--id", help="Specific quarantine file basename to retry."),
+    ] = None,
+) -> None:
+    """Re-attempt a quarantined payload (dec-112)."""
+    root = Path(os.environ.get("AXON_DATA_ROOT", ".axon"))
+    q_dir = root / "pending-quarantine"
+    pending_dir = root / "pending"
+    if not q_dir.exists():
+        typer.echo("Sem quarantine.")
+        return
+    files = sorted(q_dir.iterdir())
+    if id_:
+        files = [f for f in files if f.name.startswith(id_)]
+    if not files:
+        typer.echo(f"Nenhum match para --id={id_!r}")
+        return
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    for f in files:
+        target = pending_dir / f.name.rsplit(".", 1)[0]
+        os.replace(f, target)
+        typer.echo(f"recovered: {f.name} → {target.name}")
+    typer.echo(f"Recovered {len(files)} file(s); run `pb pending drain`.")
 
 
 # ---------------------------------------------------------------------------
