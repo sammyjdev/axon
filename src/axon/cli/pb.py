@@ -1438,10 +1438,24 @@ def adr_hook_install(
 @adr_app.command("infer-commit")
 def adr_infer_commit(
     project: Annotated[str, typer.Option("--project", "-p", help="Nome do projeto")],
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Bypass dec-110 commit signal gate (arch:/decision:/trailer).",
+        ),
+    ] = False,
 ) -> None:
-    """Infere decisão arquitetural do último commit e salva ADR se detectado."""
+    """Infere decisão arquitetural do último commit e salva ADR se detectado.
+
+    Per dec-110, inference only fires when the commit subject starts with
+    ``arch:`` / ``decision:`` (Conventional Commits compatible) or carries
+    an ``ADR-Decision:`` trailer. ``--force`` bypasses the gate for manual
+    invocations.
+    """
     import json as json_lib
 
+    from axon.adr.signal import detect as detect_signal
     from axon.store.session_store import ADR, SessionStore
 
     template_path = Path(__file__).parent.parent / "templates" / "adr_classifier.txt"
@@ -1449,6 +1463,10 @@ def adr_infer_commit(
 
     async def _infer() -> None:
         try:
+            # Full commit message (subject + body) for signal detection
+            commit_msg_full = subprocess.check_output(
+                ["git", "log", "-1", "--pretty=%B"], text=True
+            ).rstrip("\n")
             commit_msg = subprocess.check_output(
                 ["git", "log", "-1", "--pretty=%s"], text=True
             ).strip()
@@ -1461,6 +1479,12 @@ def adr_infer_commit(
             )
         except subprocess.CalledProcessError:
             return
+
+        # dec-110 gate: only infer if commit carries an architectural signal
+        if not force:
+            signal = detect_signal(commit_msg_full)
+            if signal is None:
+                return
 
         diff_summary = (diff_stat + "\n" + diff_full)[:3000]
 
