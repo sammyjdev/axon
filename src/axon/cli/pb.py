@@ -33,6 +33,7 @@ graph_app = typer.Typer(help="Grafo estrutural de código (SQLite)")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
 portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
 pending_app = typer.Typer(help="Gerencia o backlog .axon/pending/ (dec-112)")
+hooks_app = typer.Typer(help="Instala hooks AXON (dec-113, opt-in com --apply)")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -46,6 +47,7 @@ app.add_typer(graph_app, name="graph")
 app.add_typer(profile_app, name="profile")
 app.add_typer(portability_app, name="portability")
 app.add_typer(pending_app, name="pending")
+app.add_typer(hooks_app, name="hooks")
 
 QDRANT_DEFAULT_URL = "http://localhost:6333"
 _MAX_CHUNK_INPUT_CHARS = 4_000
@@ -1410,7 +1412,20 @@ def adr_hook_install(
         str | None, typer.Option("--path", help="Path do repositório git (default: cwd)")
     ] = None,
 ) -> None:
-    """Instala o hook post-commit para inferência automática de ADRs."""
+    """[deprecated] Use ``pb hooks install --apply`` (dec-113)."""
+    import warnings
+
+    warnings.warn(
+        "`pb adr hook` is deprecated. Use `pb hooks install --apply`. "
+        "See dec-113 for the new diagnostic-first flow.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    typer.echo(
+        "[axon] `pb adr hook` is deprecated — use `pb hooks install --apply`."
+    )
+    # Backwards-compatible behaviour: keep installing the old single hook
+    # so existing users don't break mid-upgrade.
     import stat
     repo_path = Path(path or os.getcwd())
     hooks_dir = repo_path / ".git" / "hooks"
@@ -1435,6 +1450,115 @@ def adr_hook_install(
         typer.echo(f"Hook instalado: {target}")
 
     target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+
+@hooks_app.command("install")
+def hooks_install(
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Mutate files. Without this, the command only previews.",
+        ),
+    ] = False,
+    path: Annotated[
+        str | None,
+        typer.Option("--path", help="Repo path (default: cwd)."),
+    ] = None,
+) -> None:
+    """Install AXON git hooks (dec-113).
+
+    Detects the active hook toolchain (pre-commit framework / husky /
+    none / custom) and emits an integration plan. ``--apply`` is
+    required to mutate anything. Refuses to run with ``--apply`` in a
+    non-interactive environment.
+    """
+    from axon.hooks.husky_integration import dry_run_message as husky_msg
+    from axon.hooks.precommit_integration import (
+        dry_run_message as pc_msg,
+    )
+    from axon.hooks.precommit_integration import (
+        merge_into as pc_merge,
+    )
+    from axon.hooks.toolchain_detector import Toolchain, detect
+
+    repo_root = Path(path or os.getcwd())
+    if not (repo_root / ".git").exists():
+        typer.echo(f"Erro: {repo_root} não é um repositório git.", err=True)
+        raise typer.Exit(1)
+
+    def _is_tty() -> bool:
+        try:
+            return os.isatty(0)
+        except (OSError, ValueError):
+            return False
+
+    if apply and not _is_tty():
+        typer.echo(
+            "Erro: `--apply` requer TTY interativo. Use `pb hooks install` "
+            "para preview, ou rode manualmente em um shell.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    toolchain = detect(repo_root)
+
+    if toolchain is Toolchain.PRE_COMMIT_FRAMEWORK:
+        cfg = repo_root / ".pre-commit-config.yaml"
+        if not cfg.exists():
+            cfg = repo_root / ".pre-commit-config.yml"
+        typer.echo(pc_msg(cfg))
+        if apply:
+            if pc_merge(cfg):
+                typer.echo(f"\n[axon] Entries adicionados em {cfg}")
+            else:
+                typer.echo("\n[axon] AXON entries já presentes — nada a fazer.")
+        return
+
+    if toolchain is Toolchain.HUSKY:
+        typer.echo(husky_msg())
+        if apply:
+            typer.echo(
+                "\n[axon] husky requires manual paste — AXON refuses to "
+                "mutate .husky/ silently. Copy the wrappers above."
+            )
+        return
+
+    if toolchain is Toolchain.CUSTOM:
+        typer.echo(
+            "Custom hooks detected in .git/hooks/. AXON will not overwrite "
+            "them. Either delete the custom hooks first, or integrate "
+            "AXON manually using the snippet below:\n"
+        )
+        from axon.hooks.husky_integration import wrapper_text
+        for event in ("post-commit", "pre-push", "post-merge", "post-checkout"):
+            typer.echo(f"# .git/hooks/{event}:")
+            typer.echo(wrapper_text(event).rstrip())
+            typer.echo("")
+        return
+
+    # Toolchain.NONE
+    typer.echo(
+        "No hook toolchain detected. AXON can either:\n"
+        "  (a) write directly to .git/hooks/ (recommended for solo repos)\n"
+        "  (b) you can install pre-commit framework first:\n"
+        "      pip install pre-commit && pre-commit install\n"
+    )
+    if apply:
+        from axon.hooks.git_installer import install_hooks
+        installed = install_hooks(repo_root)
+        typer.echo(f"[axon] Installed: {', '.join(installed) or '(none new)'}")
+    else:
+        typer.echo("Run again with --apply to write to .git/hooks/.")
+
+
+@hooks_app.command("status")
+def hooks_status() -> None:
+    """Show the detected hook toolchain and current install state."""
+    from axon.hooks.toolchain_detector import detect
+
+    toolchain = detect()
+    typer.echo(f"toolchain: {toolchain}")
 
 
 @adr_app.command("infer-commit")

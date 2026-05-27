@@ -15,10 +15,9 @@ import logging
 import os
 import subprocess
 import sys
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-
-import uuid
 
 from axon.code.diff_symbols import symbols_touched_by_commit
 from axon.config.runtime import load_runtime_config
@@ -231,7 +230,44 @@ async def on_init(
     logger.info("init event received (code indexing lands in Phase 4)")
 
 
-_HANDLERS = {"commit": on_commit, "push": on_push, "init": on_init}
+async def on_post_merge_or_checkout(
+    *, store: SessionStore | None = None, cwd: Path | None = None
+) -> None:
+    """Trigger L1-full revalidation of pending ADR drafts (dec-111).
+
+    Re-runs L1-full against every active draft and updates
+    ``last_l1_full_at`` so the doctor's ``stale-pending`` check clears.
+    Background task — failure is never fatal.
+    """
+    try:
+        from datetime import UTC as _UTC
+        from datetime import datetime as _dt
+        from pathlib import Path as _Path
+
+        from axon.adr.draft_pool import list_drafts, write_draft
+        from axon.adr.gates.l1 import l1_full
+
+        for record in list_drafts(include_dormant=False):
+            passed, _ = l1_full(
+                f"{record.title}\n{record.context}\n"
+                f"{record.decision}\n{record.rationale}",
+                repo_root=_Path.cwd(),
+            )
+            record.last_l1_full_at = _dt.now(_UTC)
+            if not passed:
+                record.dormant = True
+            write_draft(record)
+    except Exception as exc:  # never block git
+        logger.warning("on_post_merge_or_checkout failed: %s", exc)
+
+
+_HANDLERS = {
+    "commit": on_commit,
+    "push": on_push,
+    "init": on_init,
+    "post-merge": on_post_merge_or_checkout,
+    "post-checkout": on_post_merge_or_checkout,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
