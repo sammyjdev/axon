@@ -686,8 +686,52 @@ def git_proxy(
 
 
 @app.command()
-def doctor() -> None:
-    """Inspeciona ambiente local e recomenda o modo operacional mais seguro."""
+def doctor(
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Interactive: prompt to apply suggested fixes. Requires TTY.",
+        ),
+    ] = False,
+    ci: Annotated[
+        bool,
+        typer.Option(
+            "--ci",
+            help="JSON output to stdout, exit 0 always (for CI pipelines).",
+        ),
+    ] = False,
+) -> None:
+    """Inspeciona ambiente local e recomenda o modo operacional mais seguro.
+
+    Three modes (dec-114):
+      - default: read-only diagnostic, exit code reflects severity
+      - --apply: interactive prompts for fixes (TTY required, never in CI)
+      - --ci:    JSON output, exit 0 always
+    """
+    if apply and ci:
+        typer.echo("Erro: --apply e --ci são mutuamente exclusivos.", err=True)
+        raise typer.Exit(2)
+
+    if apply:
+        try:
+            tty = os.isatty(0)
+        except (OSError, ValueError):
+            tty = False
+        if not tty:
+            typer.echo(
+                "Erro: --apply requer TTY interativo.", err=True
+            )
+            raise typer.Exit(1)
+
+    if ci:
+        from axon.doctor import run_all_checks
+        from axon.doctor.formatters.json import format_results as json_format
+
+        results = run_all_checks()
+        typer.echo(json_format(results))
+        raise typer.Exit(0)
+
     from axon.config.platform import build_doctor_report, detect_platform
     from axon.config.runtime import get_profile, get_runtime_sources, select_capabilities
 
@@ -739,6 +783,20 @@ def doctor() -> None:
         typer.echo("capabilities:")
         typer.echo(f"- enabled: {', '.join(capability_selection.enabled_features) or '(none)'}")
         typer.echo(f"- overkill: {', '.join(capability_selection.overkill_features) or '(none)'}")
+
+    # dec-114 capture/adr/toolchain checks
+    from axon.doctor import CheckStatus, max_severity, run_all_checks
+    from axon.doctor.formatters.human import format_results as human_format
+
+    results = run_all_checks()
+    typer.echo("\ncapture & adr checks (dec-114):")
+    typer.echo(human_format(results))
+
+    severity = max_severity(results)
+    if severity is CheckStatus.FAIL:
+        raise typer.Exit(2)
+    if severity is CheckStatus.WARN:
+        raise typer.Exit(1)
 
 
 @app.command()
