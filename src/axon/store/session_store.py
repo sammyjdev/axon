@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,8 +9,41 @@ from pydantic import BaseModel, Field
 
 from axon.core.decision import Decision
 from axon.core.edge import Edge
+from axon.store.pending import (
+    DrainResult,
+    PendingPaths,
+    emit_capture_warning,
+    write_pending,
+)
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+
+
+def _is_db_locked(exc: Exception) -> bool:
+    """Return True if ``exc`` indicates SQLite write contention."""
+    if not isinstance(exc, aiosqlite.OperationalError):
+        return False
+    msg = str(exc).lower()
+    return "locked" in msg or "busy" in msg
+
+
+def _pending_paths() -> PendingPaths:
+    """Resolve the pending/quarantine layout under ``AXON_DATA_ROOT``.
+
+    Defaults to ``./.axon`` when the env var is unset. Kept centralised so
+    every fallback writes to the same location regardless of caller.
+    """
+    root = Path(os.environ.get("AXON_DATA_ROOT", ".axon"))
+    return PendingPaths(
+        pending_dir=root / "pending",
+        quarantine_dir=root / "pending-quarantine",
+        quarantine_log=root / "quarantine.jsonl",
+    )
+
+
+def _warnings_log() -> Path:
+    root = Path(os.environ.get("AXON_DATA_ROOT", ".axon"))
+    return root / "capture-warnings.jsonl"
 
 
 async def _apply_migrations(db: aiosqlite.Connection) -> None:
@@ -74,6 +108,13 @@ class SessionStore:
     async def _connection(self) -> aiosqlite.Connection:
         if self._conn is None:
             self._conn = await aiosqlite.connect(self._path)
+            # PRAGMAs from dec-112: WAL enables concurrent readers during
+            # writes; busy_timeout lets SQLite internally retry under
+            # contention; synchronous=NORMAL is safe with WAL.
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+            await self._conn.execute("PRAGMA busy_timeout=5000")
+            await self._conn.execute("PRAGMA synchronous=NORMAL")
+            await self._conn.commit()
         return self._conn
 
     async def init(self) -> None:
@@ -84,7 +125,7 @@ class SessionStore:
 
     # ── ADR ──────────────────────────────────────────────────────────────────
 
-    async def save_adr(self, adr: ADR) -> int:
+    async def _save_adr_inner(self, adr: ADR) -> int:
         async with self._lock:
             db = await self._connection()
             cursor = await db.execute(
@@ -101,6 +142,35 @@ class SessionStore:
             )
             await db.commit()
             return cursor.lastrowid  # type: ignore[return-value]
+
+    async def save_adr(self, adr: ADR) -> int:
+        try:
+            return await self._save_adr_inner(adr)
+        except aiosqlite.OperationalError as exc:
+            if not _is_db_locked(exc):
+                raise
+            # Fallback (dec-112): persist to pending, warn, return 0
+            paths = _pending_paths()
+            await write_pending(
+                payload={
+                    "kind": "adr",
+                    "project": adr.project,
+                    "title": adr.title,
+                    "context": adr.context,
+                    "decision": adr.decision,
+                    "rationale": adr.rationale,
+                    "created_at": adr.created_at.isoformat(),
+                },
+                commit_hash=adr.project,
+                paths=paths,
+            )
+            emit_capture_warning(
+                _warnings_log(),
+                kind="adr",
+                commit_hash=adr.project,
+                reason=str(exc),
+            )
+            return 0
 
     async def get_adrs(self, project: str, limit: int = 10) -> list[ADR]:
         async with self._lock:
@@ -187,7 +257,7 @@ class SessionStore:
 
     # ── Code Change ───────────────────────────────────────────────────────────
 
-    async def save_code_change(self, change: CodeChange) -> None:
+    async def _save_code_change_inner(self, change: CodeChange) -> None:
         async with self._lock:
             db = await self._connection()
             await db.execute(
@@ -203,6 +273,32 @@ class SessionStore:
                 ),
             )
             await db.commit()
+
+    async def save_code_change(self, change: CodeChange) -> None:
+        try:
+            await self._save_code_change_inner(change)
+        except aiosqlite.OperationalError as exc:
+            if not _is_db_locked(exc):
+                raise
+            paths = _pending_paths()
+            await write_pending(
+                payload={
+                    "kind": "code_change",
+                    "commit_hash": change.commit_hash,
+                    "file_path": change.file_path,
+                    "diff_summary": change.diff_summary,
+                    "why": change.why,
+                    "changed_at": change.changed_at.isoformat(),
+                },
+                commit_hash=change.commit_hash,
+                paths=paths,
+            )
+            emit_capture_warning(
+                _warnings_log(),
+                kind="code_change",
+                commit_hash=change.commit_hash,
+                reason=str(exc),
+            )
 
     async def get_recent_changes(self, file_path: str, limit: int = 5) -> list[CodeChange]:
         async with self._lock:
@@ -470,3 +566,42 @@ class SessionStore:
             if self._conn is not None:
                 await self._conn.close()
                 self._conn = None
+
+    async def drain_pending(self) -> DrainResult:
+        """Drain ``.axon/pending/`` into the DB (dec-112).
+
+        Each payload is dispatched to its kind-specific writer. Retryable
+        DB errors leave the file in place; malformed files are quarantined.
+        Returns the structured drain result.
+        """
+        from axon.store.pending import drain_pending as _drain
+
+        paths = _pending_paths()
+
+        async def sink(payload: dict) -> None:
+            kind = payload.get("kind")
+            if kind == "code_change":
+                await self._save_code_change_inner(
+                    CodeChange(
+                        commit_hash=payload["commit_hash"],
+                        file_path=payload["file_path"],
+                        diff_summary=payload["diff_summary"],
+                        why=payload.get("why", ""),
+                        changed_at=datetime.fromisoformat(payload["changed_at"]),
+                    )
+                )
+            elif kind == "adr":
+                await self._save_adr_inner(
+                    ADR(
+                        project=payload["project"],
+                        title=payload["title"],
+                        context=payload["context"],
+                        decision=payload["decision"],
+                        rationale=payload["rationale"],
+                        created_at=datetime.fromisoformat(payload["created_at"]),
+                    )
+                )
+            else:
+                raise ValueError(f"unknown payload kind: {kind!r}")
+
+        return await _drain(paths, sink=sink, is_retryable=_is_db_locked)
