@@ -1512,15 +1512,62 @@ def adr_infer_commit(
         except json_lib.JSONDecodeError:
             return
 
+        # dec-111 gate pipeline: structural + L1-light + L2 + L3 + density.
+        # Failure routes the ADR to the draft pool instead of SessionStore.
+        from axon.adr.audit import record_rejection
+        from axon.adr.commit_context import from_head
+        from axon.adr.draft_pool import DraftRecord, write_draft
+        from axon.adr.gates import ADRPayload, GateConfig, evaluate
+
+        payload = ADRPayload(
+            title=data.get("title", commit_msg[:60]),
+            context=data.get("context", ""),
+            decision=data.get("decision", ""),
+            rationale=data.get("rationale", ""),
+        )
+        try:
+            commit_ctx = from_head()
+        except Exception:
+            commit_ctx = None
+
+        outcome = None
+        if commit_ctx is not None and commit_ctx.commit_hash:
+            outcome = evaluate(
+                payload, commit_ctx, GateConfig(repo_root=commit_ctx.repo_root)
+            )
+
+        if outcome is not None and not outcome.passed:
+            draft = DraftRecord(
+                commit_hash=commit_ctx.commit_hash,
+                title=payload.title,
+                context=payload.context,
+                decision=payload.decision,
+                rationale=payload.rationale,
+                failed_layer=str(outcome.failed_layer) if outcome.failed_layer else "",
+                failed_reason=outcome.reason or "",
+                structural_mode=outcome.structural_mode,
+            )
+            write_draft(draft)
+            record_rejection(
+                commit_hash=commit_ctx.commit_hash,
+                title=payload.title,
+                outcome=outcome,
+            )
+            typer.echo(
+                f"[axon] ADR rebaixado para draft "
+                f"({outcome.failed_layer}): {payload.title}"
+            )
+            return
+
         db = _get_db_path()
         store = SessionStore(db)
         await store.init()
         adr = ADR(
             project=project,
-            title=data.get("title", commit_msg[:60]),
-            context=data.get("context", ""),
-            decision=data.get("decision", ""),
-            rationale=data.get("rationale", ""),
+            title=payload.title,
+            context=payload.context,
+            decision=payload.decision,
+            rationale=payload.rationale,
         )
         await store.save_adr(adr)
         typer.echo(f"[axon] ADR salvo: {adr.title}")
