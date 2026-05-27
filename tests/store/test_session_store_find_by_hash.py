@@ -49,3 +49,29 @@ async def test_find_decision_by_git_hash_returns_none_when_absent(
         assert await store.find_decision_by_git_hash("nope") is None
     finally:
         await store.close()
+
+
+@pytest.mark.asyncio
+async def test_find_decision_by_git_hash_filters_by_repo(tmp_path: Path) -> None:
+    store = SessionStore(db_path=tmp_path / "axon.db")
+    await store.init()
+    try:
+        await store.save_decision(
+            _decision(id="dec-001", git_hash="shared", repo="alpha")
+        )
+        await store.save_decision(
+            _decision(id="dec-002", git_hash="shared", repo="beta")
+        )
+
+        # Without repo filter: matches some row (non-deterministic which).
+        # With repo filter: matches the right one deterministically.
+        a = await store.find_decision_by_git_hash("shared", repo="alpha")
+        b = await store.find_decision_by_git_hash("shared", repo="beta")
+
+        assert a is not None and a.id == "dec-001"
+        assert b is not None and b.id == "dec-002"
+
+        # cross-repo lookup returns None
+        assert await store.find_decision_by_git_hash("shared", repo="gamma") is None
+    finally:
+        await store.close()

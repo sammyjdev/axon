@@ -108,11 +108,20 @@ async def on_commit(
         await store.init()
         root = _repo_root(cwd)
         commit_hash = _git(["log", "-1", "--pretty=%H"], root)
-        existing = await store.find_decision_by_git_hash(commit_hash)
+        existing = await store.find_decision_by_git_hash(commit_hash, repo=root.name)
         if existing is not None:
+            current_agent = _detect_agent()
+            if existing.agent != current_agent:
+                refreshed = existing.model_copy(update={"agent": current_agent})
+                await store.save_decision(refreshed)
+                existing = refreshed
             await _link_touched_symbols(
                 store, existing.id, root, commit_hash, graph_store
             )
+            try:
+                await update_context_file(root, store=store)
+            except Exception as exc:
+                logger.warning("context.md update skipped: %s", exc)
             logger.info(
                 "idempotent skip: decision %s already captured for commit %s",
                 existing.id,

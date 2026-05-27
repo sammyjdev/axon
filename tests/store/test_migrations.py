@@ -46,6 +46,7 @@ async def test_schema_version_records_each_migration(tmp_path: Path) -> None:
     assert sorted(await _applied_versions(db_path)) == [
         "000_baseline",
         "001_axon_graph",
+        "002_unique_edges",
     ]
 
 
@@ -57,4 +58,4 @@ async def test_init_is_idempotent(tmp_path: Path) -> None:
     await store.close()
 
     versions = await _applied_versions(db_path)
-    assert len(versions) == len(set(versions)) == 2
+    assert len(versions) == len(set(versions)) == 3

@@ -250,7 +250,8 @@ class SessionStore:
         async with self._lock:
             db = await self._connection()
             await db.execute(
-                "INSERT INTO edges (source_id, target_id, type, payload, created_at)"
+                "INSERT OR IGNORE INTO edges"
+                " (source_id, target_id, type, payload, created_at)"
                 " VALUES (?, ?, ?, ?, ?)",
                 (
                     edge.source_id,
@@ -387,15 +388,21 @@ class SessionStore:
             )
         return [Decision(**json.loads(row["frontmatter"])) for row in rows]
 
-    async def find_decision_by_git_hash(self, git_hash: str) -> Decision | None:
+    async def find_decision_by_git_hash(
+        self, git_hash: str, *, repo: str | None = None
+    ) -> Decision | None:
         async with self._lock:
             db = await self._connection()
             db.row_factory = aiosqlite.Row
+            where = "WHERE json_extract(frontmatter, '$.git_hash') = ?"
+            params: list[object] = [git_hash]
+            if repo is not None:
+                where += " AND json_extract(frontmatter, '$.repo') = ?"
+                params.append(repo)
             rows = await db.execute_fetchall(
-                "SELECT frontmatter FROM decisions"
-                " WHERE json_extract(frontmatter, '$.git_hash') = ?"
-                " LIMIT 1",
-                (git_hash,),
+                f"SELECT frontmatter FROM decisions {where}"
+                " ORDER BY created_at DESC LIMIT 1",
+                tuple(params),
             )
         if not rows:
             return None
