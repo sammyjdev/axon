@@ -878,17 +878,17 @@ async def axon_validation_stats(
 
     store = _get_session_store()
     await store.init()
-    repo = repo or _detect_repo()
     stats = await pass_rate(store=store, repo=repo, threshold=threshold)
     if stats is None:
-        return f"no decisions for {repo}."
+        scope = repo if repo is not None else "workspace"
+        return f"no decisions for {scope}."
 
     trace = current_trace_recorder()
     if trace is not None:
         trace.append_stage(
             "validation_result",
             payload={
-                "repo": repo,
+                "repo": repo if repo is not None else "",
                 "threshold": threshold,
                 "n_total": stats.n_total,
                 "n_scored": stats.n_scored,

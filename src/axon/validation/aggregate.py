@@ -21,6 +21,12 @@ async def pass_rate(
     repo: str | None = None,
     threshold: float = 3.5,
 ) -> ValidationStats | None:
+    if threshold <= 0:
+        raise ValueError(
+            f"threshold must be > 0, got {threshold} — 0 or negative would count "
+            "every unscored draft as passing"
+        )
+
     import aiosqlite
 
     async with store._lock:
@@ -34,9 +40,10 @@ async def pass_rate(
         rows = await db.execute_fetchall(
             "SELECT"
             " COUNT(*) AS n_total,"
-            " SUM(CASE WHEN json_extract(frontmatter, '$.validation_score') > 0"
+            " SUM(CASE WHEN json_extract(frontmatter, '$.judged') = 1"
             "          THEN 1 ELSE 0 END) AS n_scored,"
-            " SUM(CASE WHEN json_extract(frontmatter, '$.validation_score') >= ?"
+            " SUM(CASE WHEN json_extract(frontmatter, '$.judged') = 1"
+            "           AND json_extract(frontmatter, '$.validation_score') >= ?"
             "          THEN 1 ELSE 0 END) AS n_passed"
             f" FROM decisions{where}",
             (threshold, *params),

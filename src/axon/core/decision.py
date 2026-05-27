@@ -37,6 +37,7 @@ class Decision(BaseModel):
     symbols: list[str] = Field(default_factory=list)
     summary: str = Field(max_length=80)
     validation_score: float = Field(default=0.0, ge=0.0, le=5.0)
+    judged: bool = False
     git_hash: str | None = None
     linked_decisions: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
