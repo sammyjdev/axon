@@ -20,6 +20,7 @@ from axon.observability.compression_telemetry import (
     CompressionTelemetryStore,
 )
 from axon.observability.trace_store import TraceStore
+from axon.observability.traced_tool import current_trace_recorder, traced_tool
 from axon.obsidian.discovery import discover_vault
 from axon.obsidian.exporter import export_adr, export_architecture_doc
 from axon.policy.core import PolicyRegistry
@@ -46,6 +47,7 @@ _QDRANT_URL = _RUNTIME.qdrant_url
 _REDIS_URL = _RUNTIME.redis_url
 _RTK_MAX_TOKENS = _RUNTIME.rtk_max_tokens
 _COMPRESSION_TELEMETRY = CompressionTelemetryStore(_RUNTIME)
+_TRACE_STORE = TraceStore(_RUNTIME)
 
 mcp = FastMCP("axon-context-engine")
 
@@ -337,6 +339,7 @@ async def _retrieve_context(
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def search_code(
     query: str,
     ctx: str | None = None,
@@ -354,8 +357,7 @@ async def search_code(
     Sem ctx, busca em personal + career + knowledge + saas.
     caller: claude-code | copilot (afeta budget de tokens retornados)
     """
-    trace_id = str(uuid.uuid4())
-    trace = TraceStore(_RUNTIME).recorder(trace_id=trace_id, caller="mcp", ctx=ctx)
+    trace = current_trace_recorder()
     response, pack, hits = await _retrieve_context(
         query=query,
         ctx=ctx,
@@ -364,20 +366,23 @@ async def search_code(
         max_nodes=max_nodes,
         max_tokens=max_tokens,
     )
-    trace.append_stage(
-        "retrieval",
-        payload={
-            "strategy": pack.strategy.name,
-            "task_type": pack.task_type,
-            "mode": pack.mode or "",
-            "hit_count": len(hits),
-        },
-    )
+    if trace is not None:
+        trace.append_stage(
+            "retrieval",
+            payload={
+                "strategy": pack.strategy.name,
+                "task_type": pack.task_type,
+                "mode": pack.mode or "",
+                "hit_count": len(hits),
+            },
+        )
     budget = CONTEXT_BUDGETS.get(caller, 4000)
+    trace_id = trace._trace_id if trace is not None else str(uuid.uuid4())
     return _truncate(f"trace_id: {trace_id}\n{response}", budget)
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def get_session_memory(
     project: str,
     caller: str = "claude-code",
@@ -412,6 +417,7 @@ async def get_session_memory(
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def get_dependencies(
     symbol: str,
     caller: str = "claude-code",
@@ -436,6 +442,7 @@ async def get_dependencies(
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def get_adrs(
     project: str,
     ctx: str | None = None,
@@ -467,6 +474,7 @@ async def get_adrs(
 
 
 @mcp.tool()
+@traced_tool(risk="write")
 async def save_adr(
     project: str,
     title: str,
@@ -495,6 +503,7 @@ async def save_adr(
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def ask(
     query: str,
     cwd: str | None = None,
@@ -514,9 +523,9 @@ async def ask(
     detector = ContextDetector(session_store)
     result = detector.detect(query, cwd=cwd)
     effective_ctx = ctx or result.context
-    trace_id = str(uuid.uuid4())
-    trace_store = TraceStore(_RUNTIME)
-    trace = trace_store.recorder(trace_id=trace_id, caller=caller, ctx=effective_ctx)
+    trace = current_trace_recorder()
+    trace_id = trace._trace_id if trace is not None else str(uuid.uuid4())
+    trace_store = _TRACE_STORE
 
     gateway_decision = _POLICY.decide(
         ctx=effective_ctx,
@@ -542,15 +551,16 @@ async def ask(
         max_nodes=25,
         max_tokens=rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS,
     )
-    trace.append_stage(
-        "retrieval",
-        payload={
-            "strategy": pack.strategy.name,
-            "task_type": pack.task_type,
-            "mode": pack.mode or "",
-            "hit_count": len(hits),
-        },
-    )
+    if trace is not None:
+        trace.append_stage(
+            "retrieval",
+            payload={
+                "strategy": pack.strategy.name,
+                "task_type": pack.task_type,
+                "mode": pack.mode or "",
+                "hit_count": len(hits),
+            },
+        )
 
     if pack.strategy.enable_compression:
         max_tokens = rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS
@@ -583,19 +593,20 @@ async def ask(
         after_tokens = before_tokens
         reduction = 0
         reduction_pct = 0.0
-    trace.append_stage(
-        "compression",
-        model=used_engine,
-        payload={
-            "strategy": pack.strategy.name,
-            "before_tokens": before_tokens,
-            "after_tokens": after_tokens,
-            "reduction_pct": round(reduction_pct, 1),
-            "compression_enabled": pack.strategy.enable_compression,
-            "caveman_note": caveman_err or "",
-            "rtk_note": rtk_err or "",
-        },
-    )
+    if trace is not None:
+        trace.append_stage(
+            "compression",
+            model=used_engine,
+            payload={
+                "strategy": pack.strategy.name,
+                "before_tokens": before_tokens,
+                "after_tokens": after_tokens,
+                "reduction_pct": round(reduction_pct, 1),
+                "compression_enabled": pack.strategy.enable_compression,
+                "caveman_note": caveman_err or "",
+                "rtk_note": rtk_err or "",
+            },
+        )
 
     from datetime import UTC, datetime
 
@@ -636,6 +647,7 @@ async def ask(
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def get_graph_neighbors(node: str, depth: int = 1) -> str:
     """Retorna vizinhos de um nó no grafo estrutural de código (SQLite)."""
     store = _get_session_store()
@@ -651,6 +663,7 @@ async def get_graph_neighbors(node: str, depth: int = 1) -> str:
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def get_graph_path(from_node: str, to_node: str) -> str:
     """Retorna o caminho mais curto entre dois nós no grafo de código (SQLite)."""
     store = _get_session_store()
@@ -696,6 +709,7 @@ def _detect_agent(explicit: str | None = None) -> str:
 
 
 @mcp.tool()
+@traced_tool(risk="write")
 async def axon_session_start(agent: str | None = None, repo: str | None = None) -> str:
     """Start an AXON session: recall context for the repo and return it.
 
@@ -714,6 +728,7 @@ async def axon_session_start(agent: str | None = None, repo: str | None = None) 
 
 
 @mcp.tool()
+@traced_tool(risk="write")
 async def axon_session_end(session_id: str, summary: str | None = None) -> str:
     """End an AXON session. An optional summary is saved as a session note."""
     store = _get_session_store()
@@ -730,6 +745,7 @@ async def axon_session_end(session_id: str, summary: str | None = None) -> str:
 
 
 @mcp.tool()
+@traced_tool(risk="write")
 async def axon_capture_event(event_type: str, payload: dict) -> str:
     """Universal event capture (file_edit, plan_end, test_pass, manual_note...).
 
@@ -751,6 +767,7 @@ async def axon_capture_event(event_type: str, payload: dict) -> str:
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def axon_get_context(repo: str | None = None, token_budget: int = 2000) -> str:
     """Recall compact, ranked project context (recent decisions) for a repo."""
     store = _get_session_store()
@@ -760,6 +777,7 @@ async def axon_get_context(repo: str | None = None, token_budget: int = 2000) ->
 
 
 @mcp.tool()
+@traced_tool(risk="write")
 async def axon_capture(
     summary: str,
     repo: str | None = None,
@@ -787,6 +805,7 @@ async def axon_capture(
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def axon_search(query: str, repo: str | None = None) -> str:
     """Search captured decisions by summary text for a repo."""
     store = _get_session_store()
@@ -801,6 +820,7 @@ async def axon_search(query: str, repo: str | None = None) -> str:
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def axon_handoff(to_agent: str, repo: str | None = None) -> str:
     """Produce a handoff brief for another agent: recalled context + pointer."""
     store = _get_session_store()
@@ -827,6 +847,7 @@ async def _export_repo_docs(store: SessionStore, repo: str) -> str:
 
 
 @mcp.tool()
+@traced_tool(risk="destructive")
 async def axon_export_now(repo: str | None = None) -> str:
     """Export architecture + ADR docs for a repo's decisions to the vault."""
     store = _get_session_store()
@@ -835,6 +856,7 @@ async def axon_export_now(repo: str | None = None) -> str:
 
 
 @mcp.tool()
+@traced_tool(risk="destructive")
 async def axon_mark_done(repo: str | None = None) -> str:
     """Mark the current work scope done, then export the repo's docs."""
     store = _get_session_store()
@@ -845,6 +867,7 @@ async def axon_mark_done(repo: str | None = None) -> str:
 
 
 @mcp.tool()
+@traced_tool(risk="read")
 async def axon_health() -> str:
     """Report the health of each AXON subsystem.
 
