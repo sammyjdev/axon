@@ -868,6 +868,39 @@ async def axon_mark_done(repo: str | None = None) -> str:
 
 @mcp.tool()
 @traced_tool(risk="read")
+async def axon_validation_stats(
+    repo: str | None = None, threshold: float = 3.5
+) -> str:
+    """Aggregate verification pass rate over judged Decisions."""
+    import json as _json
+
+    from axon.validation.aggregate import pass_rate
+
+    store = _get_session_store()
+    await store.init()
+    repo = repo or _detect_repo()
+    stats = await pass_rate(store=store, repo=repo, threshold=threshold)
+    if stats is None:
+        return f"no decisions for {repo}."
+
+    trace = current_trace_recorder()
+    if trace is not None:
+        trace.append_stage(
+            "validation_result",
+            payload={
+                "repo": repo,
+                "threshold": threshold,
+                "n_total": stats.n_total,
+                "n_scored": stats.n_scored,
+                "n_passed": stats.n_passed,
+                "pass_rate": round(stats.pass_rate, 4),
+            },
+        )
+    return _json.dumps(stats.model_dump(), sort_keys=True)
+
+
+@mcp.tool()
+@traced_tool(risk="read")
 async def axon_health() -> str:
     """Report the health of each AXON subsystem.
 
