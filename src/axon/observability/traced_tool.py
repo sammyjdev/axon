@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
+import logging
 import time
 import uuid
 from contextvars import ContextVar
@@ -10,6 +11,8 @@ from functools import wraps
 from typing import Any, Awaitable, Callable, Literal
 
 from axon.observability.trace_store import TracePayload, TraceRecorder, TraceStore
+
+logger = logging.getLogger(__name__)
 
 RiskClass = Literal["read", "write", "destructive"]
 
@@ -91,6 +94,19 @@ def _estimate_tokens(result: Any) -> int:
         return 0
 
 
+def _coerce_ctx(value: Any, *, tool_name: str) -> str | None:
+    if value is None or isinstance(value, str):
+        return value
+    coerced = str(value)
+    logger.warning(
+        "non-string ctx %r in %s coerced to %r — pass an explicit string ctx",
+        type(value).__name__,
+        tool_name,
+        coerced,
+    )
+    return coerced
+
+
 def _resolve_store(store: TraceStore | None) -> TraceStore:
     if store is not None:
         return store
@@ -130,8 +146,7 @@ def traced_tool(
                 arg_payload = _summarize_args(bound)
             except TypeError:
                 arg_payload = {}
-            ctx_value = bound.arguments.get("ctx") if "ctx" in bound.arguments else None
-            ctx_str = ctx_value if isinstance(ctx_value, str) else None
+            ctx_str = _coerce_ctx(bound.arguments.get("ctx") if "ctx" in bound.arguments else None, tool_name=tool_name)
 
             recorder = trace_store.recorder(
                 trace_id=trace_id,

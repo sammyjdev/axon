@@ -11,6 +11,16 @@ from axon.observability.compliance import ComplianceEvent, emit_compliance_event
 from axon.observability.trace_store import TracePayload, TraceStore
 
 
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def _env_truthy(name: str) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return False
+    return value.strip().lower() in _TRUTHY
+
+
 class SensitivityLevel(StrEnum):
     PUBLIC = "PUBLIC"
     CONFIDENTIAL = "CONFIDENTIAL"
@@ -33,6 +43,7 @@ class ReasonCode(StrEnum):
     DENY_BREAKER_OPEN = "DENY_BREAKER_OPEN"
     DENY_RATE_LIMIT = "DENY_RATE_LIMIT"
     DENY_DESTRUCTIVE_NO_CONSENT = "DENY_DESTRUCTIVE_NO_CONSENT"
+    DENY_RESTRICTED_TOOL_WRITE = "DENY_RESTRICTED_TOOL_WRITE"
 
 
 class PolicyDenied(Exception):
@@ -206,11 +217,12 @@ class PolicyRegistry:
         ctx: str | None = None,
     ) -> PolicyDecision:
         sensitivity = self._sensitivity_from_ctx(ctx)
-        if risk == "destructive" and os.getenv("AXON_ALLOW_DESTRUCTIVE") != "1":
+
+        def _build(allowed: bool, reason: ReasonCode) -> PolicyDecision:
             return PolicyDecision(
                 decision_id=str(uuid.uuid4()),
-                allowed=False,
-                reason_code=ReasonCode.DENY_DESTRUCTIVE_NO_CONSENT,
+                allowed=allowed,
+                reason_code=reason,
                 policy_version=self.policy_version,
                 route=RouteType.LOCAL,
                 model="",
@@ -218,17 +230,19 @@ class PolicyRegistry:
                 sensitivity=sensitivity,
                 metadata={"risk": risk},
             )
-        return PolicyDecision(
-            decision_id=str(uuid.uuid4()),
-            allowed=True,
-            reason_code=ReasonCode.ALLOW_PUBLIC,
-            policy_version=self.policy_version,
-            route=RouteType.LOCAL,
-            model="",
-            ctx=ctx,
-            sensitivity=sensitivity,
-            metadata={"risk": risk},
-        )
+
+        if (
+            risk in ("write", "destructive")
+            and sensitivity is SensitivityLevel.RESTRICTED
+        ):
+            decision = _build(False, ReasonCode.DENY_RESTRICTED_TOOL_WRITE)
+        elif risk == "destructive" and not _env_truthy("AXON_ALLOW_DESTRUCTIVE"):
+            decision = _build(False, ReasonCode.DENY_DESTRUCTIVE_NO_CONSENT)
+        else:
+            decision = _build(True, ReasonCode.ALLOW_PUBLIC)
+
+        self._emit(decision, caller=None)
+        return decision
 
     def _emit(
         self,
