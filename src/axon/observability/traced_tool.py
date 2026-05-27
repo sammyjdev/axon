@@ -100,6 +100,14 @@ def _resolve_store(store: TraceStore | None) -> TraceStore:
     return _server._TRACE_STORE
 
 
+def _resolve_policy():
+    from axon.policy.core import PolicyRegistry
+
+    # New instance each call to honour any test-level env mutation
+    # (e.g. AXON_ALLOW_DESTRUCTIVE) without state caching.
+    return PolicyRegistry()
+
+
 def traced_tool(
     *,
     risk: RiskClass,
@@ -134,6 +142,29 @@ def traced_tool(
             invoke_payload: TracePayload = {"risk": risk}
             invoke_payload.update(arg_payload)
             recorder.append_stage("invoke", payload=invoke_payload)
+
+            policy_decision = None
+            if risk != "read":
+                policy = _resolve_policy()
+                policy_decision = policy.decide_tool_action(
+                    risk=risk, ctx=ctx_str
+                )
+                recorder.append_policy_decision(policy_decision)
+                if not policy_decision.allowed:
+                    from axon.policy.core import PolicyDenied
+
+                    exc = PolicyDenied(policy_decision)
+                    recorder.append_stage(
+                        "error",
+                        payload={
+                            "ok": False,
+                            "latency_ms": 0,
+                            "error_type": "PolicyDenied",
+                            "error_msg": str(exc)[:200],
+                            "reason_code": policy_decision.reason_code.value,
+                        },
+                    )
+                    raise exc
 
             token = _CURRENT_RECORDER.set(recorder)
             start = time.perf_counter()

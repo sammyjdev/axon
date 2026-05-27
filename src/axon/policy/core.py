@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Literal
 
 from axon.config.runtime import RuntimeConfig, is_corporate_context, load_runtime_config
 from axon.observability.compliance import ComplianceEvent, emit_compliance_event
@@ -30,6 +32,15 @@ class ReasonCode(StrEnum):
     DENY_BUDGET_PRE_SEND = "DENY_BUDGET_PRE_SEND"
     DENY_BREAKER_OPEN = "DENY_BREAKER_OPEN"
     DENY_RATE_LIMIT = "DENY_RATE_LIMIT"
+    DENY_DESTRUCTIVE_NO_CONSENT = "DENY_DESTRUCTIVE_NO_CONSENT"
+
+
+class PolicyDenied(Exception):
+    def __init__(self, decision: "PolicyDecision") -> None:
+        super().__init__(
+            f"policy denied tool action: {decision.reason_code.value}"
+        )
+        self.decision = decision
 
 
 @dataclass(frozen=True)
@@ -187,6 +198,37 @@ class PolicyRegistry:
             trace_payload=trace_payload,
         )
         return decision
+
+    def decide_tool_action(
+        self,
+        *,
+        risk: Literal["read", "write", "destructive"],
+        ctx: str | None = None,
+    ) -> PolicyDecision:
+        sensitivity = self._sensitivity_from_ctx(ctx)
+        if risk == "destructive" and os.getenv("AXON_ALLOW_DESTRUCTIVE") != "1":
+            return PolicyDecision(
+                decision_id=str(uuid.uuid4()),
+                allowed=False,
+                reason_code=ReasonCode.DENY_DESTRUCTIVE_NO_CONSENT,
+                policy_version=self.policy_version,
+                route=RouteType.LOCAL,
+                model="",
+                ctx=ctx,
+                sensitivity=sensitivity,
+                metadata={"risk": risk},
+            )
+        return PolicyDecision(
+            decision_id=str(uuid.uuid4()),
+            allowed=True,
+            reason_code=ReasonCode.ALLOW_PUBLIC,
+            policy_version=self.policy_version,
+            route=RouteType.LOCAL,
+            model="",
+            ctx=ctx,
+            sensitivity=sensitivity,
+            metadata={"risk": risk},
+        )
 
     def _emit(
         self,
