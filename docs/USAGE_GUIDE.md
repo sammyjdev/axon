@@ -191,6 +191,48 @@ Rules worth keeping:
 - Do not mix vault data into the repository itself.
 - Reindex after structural moves if you are not running the watcher.
 
+## Tool risk gating
+
+MCP tools exposed by `axon serve` are classified into three risk classes
+and gated by `PolicyRegistry.decide_tool_action`:
+
+| Risk | Tools | Gate |
+| --- | --- | --- |
+| `read` (11 tools) | `axon_get_context`, `axon_search`, `axon_handoff`, `axon_validation_stats`, `axon_health`, `search_code`, `ask`, … | Always allowed; emits `invoke` + `output` trace stages. |
+| `write` (5 tools) | `axon_capture`, `axon_session_start`, `axon_session_end`, `axon_capture_event`, `save_adr` | Denied with `DENY_RESTRICTED_TOOL_WRITE` when `ctx` is `work`. Otherwise allowed. |
+| `destructive` (2 tools) | `axon_export_now`, `axon_mark_done` | Require `AXON_ALLOW_DESTRUCTIVE` truthy (`1` / `true` / `yes` / `on`, case-insensitive). Denied with `DENY_DESTRUCTIVE_NO_CONSENT` otherwise. RESTRICTED ctx is denied as for writes. |
+
+Every denial emits a `ComplianceEvent` to the canonical audit log
+(`axon.observability.compliance`) and a `policy` trace stage under the
+call's `trace_id`.
+
+```bash
+# enable destructive tools for the current shell
+export AXON_ALLOW_DESTRUCTIVE=1
+```
+
+See [`dec-109`](decisions/dec-109-tool-tracing-and-risk-gating.md) for the
+full design.
+
+## Verification metric
+
+`axon_validation_stats` returns the verification pass rate over judged
+decisions (LLM judge in `_judge_and_export` scores each draft on push).
+The aggregate accepts a `repo` filter (`repo=None` aggregates the whole
+workspace) and a `threshold` (must be `> 0`; the default `3.5` matches
+the judge's 0–5 scale).
+
+```python
+axon_validation_stats(repo="axon", threshold=3.5)
+# → {"n_total": 12, "n_scored": 9, "n_passed": 6, "pass_rate": 0.6667,
+#    "threshold": 3.5}
+```
+
+Internally, `Decision.judged: bool` is the source of truth for
+"already scored"; `validation_score == 0.0` is **no longer** treated as
+the unjudged sentinel, so legitimately-bad decisions are not re-judged
+on every push.
+
 ## Recommended Daily Loop
 
 ```bash

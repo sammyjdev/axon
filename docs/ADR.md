@@ -129,3 +129,25 @@ project.
 - Rationale: AXON only becomes a credible shared tool when another
   developer can install, size, and use it without inheriting the author's
   machine assumptions.
+
+## ADR-013: Tool risk classification, policy gate, and tracing middleware
+
+- Status: accepted via dec-109.
+- Decision: every MCP tool carries a risk class (`read` / `write` /
+  `destructive`) enforced by a single decorator that also emits standard
+  `invoke` / `policy` / `output` / `error` trace stages under a shared
+  `trace_id`.
+- Mechanism:
+  - `@traced_tool(risk=...)` wraps every tool; reads skip the policy gate;
+    writes deny on RESTRICTED ctx; destructive additionally require
+    `AXON_ALLOW_DESTRUCTIVE` truthy.
+  - `PolicyRegistry.decide_tool_action` returns a `PolicyDecision` and
+    emits a `ComplianceEvent` through the same audit channel as cloud
+    routing.
+  - `on_commit` is idempotent by `(repo, git_hash)`; `Decision.judged`
+    distinguishes "unscored" from "judged with score 0.0".
+- Rationale: makes AXON usable as a harness primitive — uniform
+  observability and a single guardrail surface instead of per-tool
+  ad-hoc checks. Extends ADR-006 (restricted-context isolation) to the
+  tool layer.
+- Reference: [`dec-109`](decisions/dec-109-tool-tracing-and-risk-gating.md).
