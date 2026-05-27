@@ -151,3 +151,26 @@ project.
   ad-hoc checks. Extends ADR-006 (restricted-context isolation) to the
   tool layer.
 - Reference: [`dec-109`](decisions/dec-109-tool-tracing-and-risk-gating.md).
+
+## Capture & Memory Robustness (dec-110..114)
+
+Five-round red-team consolidation on context capture, ADR inference, write
+concurrency, and hook integration. Consolidated rationale and absorbed
+attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
+
+- [dec-110](decisions/dec-110-declarative-memory-signal.md): ADR inference
+  only fires when commit contains `arch:`/`decision:` prefix or
+  `ADR-Decision:` trailer. Eliminates ~95% of noise.
+- [dec-111](decisions/dec-111-adr-validation-layers.md): L1-L3 deterministic
+  gates (structural + lexical + polarity) with density check and structural
+  detector; dormant draft pool; L1 in two tiers (light in hook, full in
+  background) with explicit triggers.
+- [dec-112](decisions/dec-112-sqlite-wal-pending-dir.md): SQLite WAL + retry
+  with explicit fallback to `.axon/pending/` (unique paths, atomic rename);
+  drain idempotent with quarantine pattern; no daemon, no IPC.
+- [dec-113](decisions/dec-113-hooks-pre-commit-framework.md): AXON never
+  mutates `core.hooksPath` or `.git/hooks/` by default; integrates as
+  pre-commit framework entry; `pb hooks install` requires `--apply`.
+- [dec-114](decisions/dec-114-doctor-diagnostic-first.md): `pb doctor` has
+  three modes (default read-only, `--apply` opt-in interactive, `--ci` JSON
+  exit-0); validates commit-msg toolchain compatibility for `arch:` signal.
