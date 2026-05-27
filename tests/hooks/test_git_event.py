@@ -134,6 +134,62 @@ async def test_on_commit_is_idempotent_for_same_sha(
     assert len(found) == 1
 
 
+async def test_on_commit_idempotent_skip_regenerates_context_md(
+    store: SessionStore, git_repo: Path
+) -> None:
+    await on_commit(store=store, cwd=git_repo)
+    context_md = git_repo / ".axon" / "context.md"
+    assert context_md.exists()
+    context_md.unlink()  # simulate stale/missing mirror
+
+    await on_commit(store=store, cwd=git_repo)
+
+    assert context_md.exists(), "idempotent skip should regenerate .axon/context.md"
+
+
+async def test_on_commit_idempotent_skip_updates_agent_when_changed(
+    store: SessionStore, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("AXON_AGENT", raising=False)
+    decision_id = await on_commit(store=store, cwd=git_repo)
+    found = (await store.find_decisions_by_repo("myrepo"))[0]
+    assert found.agent == "manual"
+
+    monkeypatch.setenv("AXON_AGENT", "claude-code")
+    second_id = await on_commit(store=store, cwd=git_repo)
+    assert second_id == decision_id
+    found = (await store.find_decisions_by_repo("myrepo"))[0]
+    assert found.agent == "claude-code"
+
+
+async def test_on_commit_idempotent_skip_does_not_duplicate_edges(
+    store: SessionStore, tmp_path: Path
+) -> None:
+    repo = tmp_path / "edgesrepo"
+    repo.mkdir()
+    _git(["init"], repo)
+    _git(["config", "user.email", "test@axon.dev"], repo)
+    _git(["config", "user.name", "AXON Test"], repo)
+    (repo / "mod.py").write_text("def gamma():\n    return 3\n", encoding="utf-8")
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "feat: add gamma"], repo)
+
+    graph = _FakeGraph()
+    decision_id = await on_commit(store=store, cwd=repo, graph_store=graph)
+    assert decision_id is not None
+
+    # second invocation re-runs the linker on the existing decision
+    await on_commit(store=store, cwd=repo, graph_store=graph)
+
+    subgraph = await store.query_subgraph(decision_id, depth=1)
+    touch_edges = [
+        e for e in subgraph["edges"] if e["type"] == "touches" and e["target"] == "gamma"
+    ]
+    assert len(touch_edges) == 1, (
+        f"expected 1 touches edge after retry, got {len(touch_edges)}: {touch_edges}"
+    )
+
+
 async def test_on_commit_relinks_symbols_after_partial_failure(
     store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
