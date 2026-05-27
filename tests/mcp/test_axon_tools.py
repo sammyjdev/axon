@@ -67,6 +67,7 @@ async def test_axon_handoff_includes_context(store: SessionStore) -> None:
 async def test_axon_export_now_writes_docs(
     store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("AXON_ALLOW_DESTRUCTIVE", "1")
     await server.axon_capture(summary="a decision", repo="axon")
     vault = tmp_path / "vault"
     (vault / ".obsidian").mkdir(parents=True)
@@ -81,6 +82,7 @@ async def test_axon_export_now_writes_docs(
 async def test_axon_mark_done_notes_and_exports(
     store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("AXON_ALLOW_DESTRUCTIVE", "1")
     vault = tmp_path / "vault"
     (vault / ".obsidian").mkdir(parents=True)
     monkeypatch.setattr(server, "discover_vault", lambda: vault)
@@ -89,6 +91,22 @@ async def test_axon_mark_done_notes_and_exports(
 
     notes = await store.get_notes("axon")
     assert any("marked done" in n.body for n in notes)
+
+
+async def test_axon_export_now_denied_without_consent_env(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from axon.policy.core import PolicyDenied
+
+    monkeypatch.delenv("AXON_ALLOW_DESTRUCTIVE", raising=False)
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+    monkeypatch.setattr(server, "discover_vault", lambda: vault)
+
+    with pytest.raises(PolicyDenied) as excinfo:
+        await server.axon_export_now(repo="axon")
+
+    assert excinfo.value.decision.reason_code.value == "DENY_DESTRUCTIVE_NO_CONSENT"
 
 
 async def test_axon_health_reports_subsystems(store: SessionStore) -> None:

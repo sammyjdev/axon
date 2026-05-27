@@ -38,14 +38,14 @@ async def test_axon_capture_emits_invoke_and_output_records(
 
     records = trace_store.load_all()
     stages = [r.stage for r in records]
-    assert stages == ["invoke", "output"]
+    assert stages == ["invoke", "policy", "output"]
     assert records[0].caller == "mcp.axon_capture"
     assert records[0].payload["risk"] == "write"
     # summary text must NOT leak — only len/sha8
     assert "summary_len" in records[0].payload
     assert "summary_sha8" in records[0].payload
     assert records[0].payload.get("summary") != "trace me"
-    assert records[1].payload["ok"] is True
+    assert records[-1].payload["ok"] is True
 
 
 @pytest.mark.asyncio
