@@ -18,10 +18,14 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import uuid
+
 from axon.code.diff_symbols import symbols_touched_by_commit
+from axon.config.runtime import load_runtime_config
 from axon.core.decision import Decision
 from axon.core.edge import Edge
 from axon.hooks.file_bridge import update_context_file
+from axon.observability.trace_store import TraceStore
 from axon.obsidian.discovery import discover_vault
 from axon.obsidian.exporter import export_adr, export_architecture_doc
 from axon.store.graph_store import GraphStore
@@ -30,6 +34,8 @@ from axon.triggers.scope_detector import detect_scope_end
 from axon.validation.judge import score_decision
 
 logger = logging.getLogger(__name__)
+
+_TRACE_STORE = TraceStore(load_runtime_config())
 
 _AGENTS = {"claude-code", "codex", "cursor", "manual"}
 
@@ -145,7 +151,10 @@ async def _judge_and_export(
     store: SessionStore, root: Path, decisions: list[Decision]
 ) -> None:
     """Score unjudged draft decisions and export the repo's docs to the vault."""
+    trace_id = uuid.uuid4().hex
+    recorder = _TRACE_STORE.recorder(trace_id=trace_id, caller="capture")
     scored: list[Decision] = []
+    threshold = 3.5
     for decision in decisions:
         if decision.status == "draft" and decision.validation_score == 0.0:
             score = await score_decision(decision)
@@ -154,6 +163,15 @@ async def _judge_and_export(
                     update={"validation_score": score}
                 )
                 await store.save_decision(decision)
+                recorder.append_stage(
+                    "validation_result",
+                    payload={
+                        "decision_id": decision.id,
+                        "score": float(score),
+                        "threshold": threshold,
+                        "passed": score >= threshold,
+                    },
+                )
         scored.append(decision)
 
     vault = discover_vault()

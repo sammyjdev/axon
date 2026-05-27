@@ -213,6 +213,60 @@ async def test_on_push_exports_when_scope_ends(
     assert (vault / "AXON" / "Decisions" / "dec-001.md").exists()
 
 
+async def test_judge_emits_validation_result_trace_per_scored_decision(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from axon.hooks import git_event
+    from axon.observability.trace_store import TraceStore
+
+    repo = tmp_path / "judgerepo"
+    _init_repo(repo)
+    _git(["tag", "v1.0"], repo)
+
+    await store.save_decision(
+        Decision(
+            id="dec-001",
+            timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+            agent="manual",
+            repo="judgerepo",
+            summary="a",
+        )
+    )
+    await store.save_decision(
+        Decision(
+            id="dec-002",
+            timestamp=datetime(2026, 5, 2, tzinfo=UTC),
+            agent="manual",
+            repo="judgerepo",
+            summary="b",
+        )
+    )
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+
+    fixed_scores = {"dec-001": 4.5, "dec-002": 2.0}
+
+    async def fake_judge(decision: Decision, context: str = "") -> float:
+        return fixed_scores[decision.id]
+
+    trace_store = TraceStore(runtime=SimpleNamespace(data_root=tmp_path / "traces"))
+    monkeypatch.setattr(git_event, "_TRACE_STORE", trace_store, raising=False)
+    monkeypatch.setattr("axon.hooks.git_event.discover_vault", lambda: vault)
+    monkeypatch.setattr("axon.hooks.git_event.score_decision", fake_judge)
+
+    await on_push(store=store, cwd=repo)
+
+    records = [r for r in trace_store.load_all() if r.stage == "validation_result"]
+    assert len(records) == 2
+    ids = {r.payload["decision_id"] for r in records}
+    assert ids == {"dec-001", "dec-002"}
+    passed_flags = {r.payload["decision_id"]: r.payload["passed"] for r in records}
+    assert passed_flags["dec-001"] is True
+    assert passed_flags["dec-002"] is False
+
+
 async def test_on_push_skips_export_when_scope_open(
     store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
