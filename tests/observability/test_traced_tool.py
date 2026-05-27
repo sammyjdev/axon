@@ -170,6 +170,49 @@ async def test_decorator_passes_allowlisted_scalars_verbatim(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_decorator_does_not_crash_on_invalid_kwargs(tmp_path) -> None:
+    """Regression: previously UnboundLocalError on `bound` if bind_partial raised."""
+    store = _store(tmp_path)
+
+    @traced_tool(risk="read", name="strict", store=store)
+    async def strict(query: str) -> str:
+        return query
+
+    # extra kwarg should produce the function's TypeError, not an
+    # UnboundLocalError from the decorator's own arg-processing.
+    with pytest.raises(TypeError):
+        await strict(query="x", unknown="y")  # type: ignore[call-arg]
+
+
+@pytest.mark.asyncio
+async def test_decorator_marks_truncated_payload(tmp_path) -> None:
+    """Payload cap should leave a visible marker so consumers know args were dropped."""
+    store = _store(tmp_path)
+
+    # 10 non-allowlisted strings → 20 keys (len + sha8 each); cap=16 → truncated.
+    @traced_tool(risk="read", name="many", store=store)
+    async def many(
+        a: str = "",
+        b: str = "",
+        c: str = "",
+        d: str = "",
+        e: str = "",
+        f: str = "",
+        g: str = "",
+        h: str = "",
+        i: str = "",
+        j: str = "",
+    ) -> str:
+        return "ok"
+
+    await many(
+        a="va", b="vb", c="vc", d="vd", e="ve", f="vf", g="vg", h="vh", i="vi", j="vj"
+    )
+    invoke = store.load_all()[0]
+    assert invoke.payload.get("_truncated") is True
+
+
+@pytest.mark.asyncio
 async def test_decorator_summarizes_list_and_dict_as_len(tmp_path) -> None:
     store = _store(tmp_path)
 
