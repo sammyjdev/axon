@@ -303,8 +303,10 @@ async def test_judge_emits_validation_result_trace_per_scored_decision(
     (vault / ".obsidian").mkdir(parents=True)
 
     fixed_scores = {"dec-001": 4.5, "dec-002": 2.0}
+    judge_calls: list[str] = []
 
     async def fake_judge(decision: Decision, context: str = "") -> float:
+        judge_calls.append(decision.id)
         return fixed_scores[decision.id]
 
     trace_store = TraceStore(runtime=SimpleNamespace(data_root=tmp_path / "traces"))
@@ -321,6 +323,49 @@ async def test_judge_emits_validation_result_trace_per_scored_decision(
     passed_flags = {r.payload["decision_id"]: r.payload["passed"] for r in records}
     assert passed_flags["dec-001"] is True
     assert passed_flags["dec-002"] is False
+
+    # Re-running on_push must NOT re-judge already-judged decisions
+    # (previously gated on validation_score == 0.0, which mis-classified
+    # any legitimate 0.0 score as unjudged).
+    judge_calls.clear()
+    await on_push(store=store, cwd=repo)
+    assert judge_calls == []
+
+
+async def test_judge_does_not_rejudge_when_score_legitimately_zero(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "zerorepo"
+    _init_repo(repo)
+    _git(["tag", "v1.0"], repo)
+
+    await store.save_decision(
+        Decision(
+            id="dec-001",
+            timestamp=datetime(2026, 5, 1, tzinfo=UTC),
+            agent="manual",
+            repo="zerorepo",
+            summary="bad decision",
+        )
+    )
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+
+    call_count = {"n": 0}
+
+    async def judge_zero(decision: Decision, context: str = "") -> float:
+        call_count["n"] += 1
+        return 0.0  # legitimate clamped-to-zero score
+
+    monkeypatch.setattr("axon.hooks.git_event.discover_vault", lambda: vault)
+    monkeypatch.setattr("axon.hooks.git_event.score_decision", judge_zero)
+
+    await on_push(store=store, cwd=repo)
+    assert call_count["n"] == 1
+
+    # second push must not re-judge: judged flag persists
+    await on_push(store=store, cwd=repo)
+    assert call_count["n"] == 1, "0.0 score with judged=True should not re-judge"
 
 
 async def test_on_push_skips_export_when_scope_open(

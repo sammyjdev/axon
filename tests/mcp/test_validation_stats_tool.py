@@ -42,6 +42,7 @@ async def _populate(store: SessionStore, scores: list[float]) -> None:
                 repo="axon",
                 summary=f"sum {i}",
                 validation_score=s,
+                judged=True,
                 status="draft",
             )
         )
@@ -91,3 +92,32 @@ async def test_axon_validation_stats_when_empty_returns_no_decisions(
 ) -> None:
     response = await server.axon_validation_stats(repo="axon")
     assert "no decisions" in response.lower()
+
+
+@pytest.mark.asyncio
+async def test_axon_validation_stats_repo_none_aggregates_workspace(
+    session: SessionStore,
+    trace_store: TraceStore,
+) -> None:
+    for i, (repo, score) in enumerate(
+        [("axon", 5.0), ("other", 4.0), ("axon", 1.0)]
+    ):
+        await session.save_decision(
+            Decision(
+                id=f"dec-{i:03d}",
+                timestamp=datetime.now(UTC),
+                agent="claude-code",
+                repo=repo,
+                summary=f"s{i}",
+                validation_score=score,
+                judged=True,
+                status="draft",
+            )
+        )
+
+    response = await server.axon_validation_stats(repo=None, threshold=3.5)
+    data = json.loads(response)
+    # Aggregates across BOTH repos, not the cwd
+    assert data["n_total"] == 3
+    assert data["n_scored"] == 3
+    assert data["n_passed"] == 2

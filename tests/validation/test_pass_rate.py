@@ -10,7 +10,9 @@ from axon.store.session_store import SessionStore
 from axon.validation.aggregate import pass_rate
 
 
-def _decision(*, id: str, repo: str, score: float) -> Decision:
+def _decision(
+    *, id: str, repo: str, score: float, judged: bool | None = None
+) -> Decision:
     return Decision(
         id=id,
         timestamp=datetime.now(UTC),
@@ -18,6 +20,7 @@ def _decision(*, id: str, repo: str, score: float) -> Decision:
         repo=repo,
         summary=f"sum {id}",
         validation_score=score,
+        judged=judged if judged is not None else (score > 0.0),
         status="draft",
     )
 
@@ -72,6 +75,46 @@ async def test_pass_rate_excludes_unscored_decisions(tmp_path: Path) -> None:
         assert result.n_scored == 1
         assert result.n_passed == 1
         assert result.pass_rate == pytest.approx(1.0)
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
+async def test_pass_rate_rejects_non_positive_threshold(tmp_path: Path) -> None:
+    store = SessionStore(db_path=tmp_path / "axon.db")
+    await store.init()
+    try:
+        with pytest.raises(ValueError):
+            await pass_rate(store=store, threshold=0.0)
+        with pytest.raises(ValueError):
+            await pass_rate(store=store, threshold=-1.0)
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
+async def test_pass_rate_counts_judged_zero_score_as_scored(tmp_path: Path) -> None:
+    store = SessionStore(db_path=tmp_path / "axon.db")
+    await store.init()
+    try:
+        # A judge can legitimately rate a decision 0.0; the new `judged` flag
+        # makes that distinguishable from unscored drafts.
+        await store.save_decision(
+            _decision(id="dec-001", repo="axon", score=0.0, judged=True)
+        )
+        await store.save_decision(
+            _decision(id="dec-002", repo="axon", score=4.0, judged=True)
+        )
+        await store.save_decision(  # unscored draft
+            _decision(id="dec-003", repo="axon", score=0.0, judged=False)
+        )
+
+        result = await pass_rate(store=store, threshold=3.5)
+        assert result is not None
+        assert result.n_total == 3
+        assert result.n_scored == 2  # judged decisions only
+        assert result.n_passed == 1  # only dec-002 passes the threshold
+        assert result.pass_rate == pytest.approx(0.5)
     finally:
         await store.close()
 

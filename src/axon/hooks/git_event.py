@@ -165,11 +165,18 @@ async def _judge_and_export(
     scored: list[Decision] = []
     threshold = 3.5
     for decision in decisions:
-        if decision.status == "draft" and decision.validation_score == 0.0:
+        if decision.status == "draft" and not decision.judged:
             score = await score_decision(decision)
             if score is not None:
-                decision = decision.model_copy(
-                    update={"validation_score": score}
+                # model_validate re-runs Pydantic field validators
+                # (model_copy bypasses them) so an out-of-range score never
+                # poisons the persisted row.
+                decision = Decision.model_validate(
+                    {
+                        **decision.model_dump(mode="python"),
+                        "validation_score": float(score),
+                        "judged": True,
+                    }
                 )
                 await store.save_decision(decision)
                 recorder.append_stage(
