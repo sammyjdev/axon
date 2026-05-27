@@ -16,8 +16,15 @@ from pathlib import Path
 
 from axon.exceptions import GitAnchorError
 
-# git hook filename -> logical event passed to `axon.hooks.git_event`
-HOOKS: dict[str, str] = {"post-commit": "commit", "pre-push": "push"}
+# git hook filename -> logical event passed to `axon.hooks.git_event`.
+# post-merge / post-checkout were added by dec-111 to trigger L1-full
+# revalidation of pending ADR drafts.
+HOOKS: dict[str, str] = {
+    "post-commit": "commit",
+    "pre-push": "push",
+    "post-merge": "post-merge",
+    "post-checkout": "post-checkout",
+}
 
 _BEGIN = "# >>> AXON git hook >>>"
 _END = "# <<< AXON git hook <<<"
