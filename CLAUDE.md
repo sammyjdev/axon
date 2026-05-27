@@ -99,6 +99,22 @@ Default profiles (FREE/PAID) never route to Ollama; enable it explicitly for
 - Use explicit `ctx=work` only when the task really requires it.
 - Do not copy restricted or proprietary material into the repository or public
   documentation.
+- Write/destructive MCP tools called with `ctx=work` are denied with
+  `DENY_RESTRICTED_TOOL_WRITE` (dec-109). Downgrade the ctx explicitly if
+  the action really belongs in a different context — never bypass the
+  gate.
+
+## Tool Risk and Audit
+
+- Every MCP tool carries a risk class (`read` / `write` / `destructive`)
+  enforced by `@traced_tool`. See ADR-013 / dec-109.
+- Destructive tools require `AXON_ALLOW_DESTRUCTIVE` truthy
+  (`1`/`true`/`yes`/`on`). The default is deny — do not paper over the
+  consent gate in tests or scripts.
+- `Decision.judged: bool` is the canonical "scored" flag. Never use
+  `validation_score == 0.0` as a sentinel for unscored decisions — that
+  conflates a legitimate clamped-to-zero score with the default and
+  causes re-judging on every push.
 
 ## Safety Rules
 

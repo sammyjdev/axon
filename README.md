@@ -47,7 +47,17 @@ your project's `.claude/settings.json`:
 
 `axon serve` runs the MCP server over stdio. Once registered, the tools
 `axon_get_context`, `axon_capture`, `axon_handoff`, `axon_search`,
-`axon_export_now`, and `axon_health` are available inside your agent session.
+`axon_export_now`, `axon_validation_stats`, and `axon_health` are available
+inside your agent session.
+
+Every tool is classified by risk (`read` / `write` / `destructive`) and
+emits structured trace records under a shared `trace_id` for tool-latency
+and success-rate dashboards. The two destructive tools — `axon_export_now`
+and `axon_mark_done` — require `AXON_ALLOW_DESTRUCTIVE=1` (or `true` /
+`yes` / `on`) as a consent token. Writes to a RESTRICTED context
+(`ctx=work`) are always denied with `DENY_RESTRICTED_TOOL_WRITE`. See
+[ADR-013](docs/ADR.md#adr-013-tool-risk-classification-policy-gate-and-tracing-middleware)
+and [dec-109](docs/decisions/dec-109-tool-tracing-and-risk-gating.md).
 
 ---
 
@@ -209,8 +219,9 @@ the active work on extending the gate's coverage (T-105).
 | [`docs/ARD.md`](docs/ARD.md) | Architectural requirements |
 | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) | CLI workflows |
 | [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap |
-| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 – dec-106) |
+| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 – dec-109) |
 | [`docs/decisions/dec-106-routing-profiles.md`](docs/decisions/dec-106-routing-profiles.md) | FREE/PAID provider profiles + rate limit gate |
+| [`docs/decisions/dec-109-tool-tracing-and-risk-gating.md`](docs/decisions/dec-109-tool-tracing-and-risk-gating.md) | Tool risk classes, policy gate, tracing middleware |
 | [`benchmarks/README.md`](benchmarks/README.md) | Token savings benchmark |
 
 ---
