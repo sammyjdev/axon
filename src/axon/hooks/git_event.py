@@ -148,6 +148,25 @@ async def on_commit(
             await update_context_file(root, store=store)
         except Exception as exc:  # the .md mirror is a convenience, never fatal
             logger.warning("context.md update skipped: %s", exc)
+
+        # dec-110 / dec-111 / issue #15: also run ADR inference. The
+        # orchestrator short-circuits when the commit has no architectural
+        # signal, so this is cheap for the common case. Failures are
+        # logged but never block git.
+        try:
+            from axon.adr.inference import InferenceStatus, run_for_head_async
+
+            result = await run_for_head_async(project=root.name, repo_root=root)
+            if result.status is InferenceStatus.SAVED_ADR:
+                logger.info("inferred ADR: %s", result.title)
+            elif result.status is InferenceStatus.GATE_FAILED:
+                layer = result.outcome.failed_layer if result.outcome else None
+                logger.info(
+                    "ADR demoted to draft (%s): %s", layer, result.title
+                )
+        except Exception as exc:  # best-effort; never block git
+            logger.warning("ADR inference skipped: %s", exc)
+
         logger.info("captured draft decision %s from commit %s", decision.id, commit_hash[:8])
         return decision.id
     finally:

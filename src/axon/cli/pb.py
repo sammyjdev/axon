@@ -1636,127 +1636,33 @@ def adr_infer_commit(
     ``arch:`` / ``decision:`` (Conventional Commits compatible) or carries
     an ``ADR-Decision:`` trailer. ``--force`` bypasses the gate for manual
     invocations.
+
+    Delegates to :mod:`axon.adr.inference` so the post-commit hook can
+    reuse the same logic (issue #15).
     """
-    import json as json_lib
+    from axon.adr.inference import (
+        InferenceStatus,
+        run_for_head_async,
+    )
 
-    from axon.adr.signal import detect as detect_signal
-    from axon.store.session_store import ADR, SessionStore
-
-    template_path = Path(__file__).parent.parent / "templates" / "adr_classifier.txt"
-    classifier_prompt = template_path.read_text(encoding="utf-8")
-
-    async def _infer() -> None:
-        try:
-            # Full commit message (subject + body) for signal detection
-            commit_msg_full = subprocess.check_output(
-                ["git", "log", "-1", "--pretty=%B"], text=True
-            ).rstrip("\n")
-            commit_msg = subprocess.check_output(
-                ["git", "log", "-1", "--pretty=%s"], text=True
-            ).strip()
-            diff_stat = subprocess.check_output(
-                ["git", "log", "-1", "--stat", "--pretty="], text=True
-            ).strip()
-            diff_full = subprocess.check_output(
-                ["git", "diff", "HEAD~1", "HEAD", "--", ":(exclude)*.lock", ":(exclude)*.json"],
-                text=True,
-            )
-        except subprocess.CalledProcessError:
-            return
-
-        # dec-110 gate: only infer if commit carries an architectural signal
-        if not force:
-            signal = detect_signal(commit_msg_full)
-            if signal is None:
-                return
-
-        diff_summary = (diff_stat + "\n" + diff_full)[:3000]
-
-        prompt_text = classifier_prompt.format(
-            commit_message=commit_msg,
-            diff_summary=diff_summary,
+    async def _run() -> None:
+        result = await run_for_head_async(
+            project=project, force=force, db_path=_get_db_path()
         )
-
-        try:
-            import litellm
-            response = await litellm.acompletion(
-                model="claude-haiku-4-5-20251001",
-                messages=[{"role": "user", "content": prompt_text}],
-                max_tokens=400,
-            )
-            raw = (response.choices[0].message.content or "").strip()
-        except Exception:
-            return
-
-        if not raw or raw.lower().startswith("null"):
-            return
-
-        try:
-            data = json_lib.loads(raw)
-        except json_lib.JSONDecodeError:
-            return
-
-        # dec-111 gate pipeline: structural + L1-light + L2 + L3 + density.
-        # Failure routes the ADR to the draft pool instead of SessionStore.
-        from axon.adr.audit import record_rejection
-        from axon.adr.commit_context import from_head
-        from axon.adr.draft_pool import DraftRecord, write_draft
-        from axon.adr.gates import ADRPayload, GateConfig, evaluate
-
-        payload = ADRPayload(
-            title=data.get("title", commit_msg[:60]),
-            context=data.get("context", ""),
-            decision=data.get("decision", ""),
-            rationale=data.get("rationale", ""),
-        )
-        try:
-            commit_ctx = from_head()
-        except Exception:
-            commit_ctx = None
-
-        outcome = None
-        if commit_ctx is not None and commit_ctx.commit_hash:
-            outcome = evaluate(
-                payload, commit_ctx, GateConfig(repo_root=commit_ctx.repo_root)
-            )
-
-        if outcome is not None and not outcome.passed:
-            draft = DraftRecord(
-                commit_hash=commit_ctx.commit_hash,
-                title=payload.title,
-                context=payload.context,
-                decision=payload.decision,
-                rationale=payload.rationale,
-                failed_layer=str(outcome.failed_layer) if outcome.failed_layer else "",
-                failed_reason=outcome.reason or "",
-                structural_mode=outcome.structural_mode,
-            )
-            write_draft(draft)
-            record_rejection(
-                commit_hash=commit_ctx.commit_hash,
-                title=payload.title,
-                outcome=outcome,
+        if result.status is InferenceStatus.SAVED_ADR:
+            typer.echo(f"[axon] ADR salvo: {result.title}")
+        elif result.status is InferenceStatus.GATE_FAILED:
+            layer = (
+                result.outcome.failed_layer if result.outcome else None
             )
             typer.echo(
-                f"[axon] ADR rebaixado para draft "
-                f"({outcome.failed_layer}): {payload.title}"
+                f"[axon] ADR rebaixado para draft ({layer}): {result.title}"
             )
-            return
+        # NO_SIGNAL / LLM_UNAVAILABLE / LLM_NULL / LLM_PARSE_ERROR
+        # are silent by design — hook-friendly.
 
-        db = _get_db_path()
-        store = SessionStore(db)
-        await store.init()
-        adr = ADR(
-            project=project,
-            title=payload.title,
-            context=payload.context,
-            decision=payload.decision,
-            rationale=payload.rationale,
-        )
-        await store.save_adr(adr)
-        typer.echo(f"[axon] ADR salvo: {adr.title}")
-
-    asyncio.run(_infer())
+    asyncio.run(_run())
+    return
 
 
 @adr_app.command("review")
