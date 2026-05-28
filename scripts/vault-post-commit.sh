@@ -5,8 +5,9 @@
 #   cp scripts/vault-post-commit.sh ~/vault/.git/hooks/post-commit
 #   chmod +x ~/vault/.git/hooks/post-commit
 #
-# Ou via pb:
-#   pb vault install-hooks
+# Este hook é específico do vault (sincronização TIL/HOW-TO) e não
+# substitui `pb hooks install` (dec-113), que cobre hooks do repo de
+# código com captura derivada + inferência de ADR.
 
 set -euo pipefail
 

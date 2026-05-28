@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# AXON ADR inference hook
-# Installed by: pb adr hook install
+# AXON ADR inference hook (legacy template).
+# Installed by: `pb adr hook` (deprecated) or `pb hooks install --apply` (dec-113).
+#
+# Per dec-110, ADR inference only fires when the commit message starts
+# with `arch:` / `decision:` or carries an `ADR-Decision:` trailer.
+# The CLI handles signal detection; this hook just delegates.
 
 PROJECT=$(basename "$(git rev-parse --show-toplevel)")
-COMMIT_MSG=$(git log -1 --pretty=%s)
 
-# Skip low-signal commit types
-case "$COMMIT_MSG" in
-  chore:*|docs:*|style:*|test:*|ci:*|build:*)
-    exit 0
-    ;;
-esac
-
-# Run ADR inference (non-blocking: errors don't fail the commit)
+# Run ADR inference (non-blocking: errors don't fail the commit).
+# The signal gate inside `pb adr infer-commit` short-circuits when the
+# commit lacks an architectural signal.
 pb adr infer-commit --project "$PROJECT" 2>/dev/null || true

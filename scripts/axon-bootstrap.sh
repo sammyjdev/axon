@@ -10,7 +10,7 @@
 #  4. Faz um health-check e imprime os próximos passos.
 #
 # Não toca em `.env.local` do repo alvo — backends ficam configurados
-# globalmente em ~/.zshrc ou no .env.local do Prometheus.
+# globalmente em ~/.zshrc ou no .env.local do engine AXON.
 
 set -euo pipefail
 
