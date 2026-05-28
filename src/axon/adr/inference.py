@@ -184,11 +184,35 @@ def _git(root: Path, *args: str) -> str:
     )
 
 
+def _adr_model() -> str:
+    """Resolve which model to use for ADR classification.
+
+    Precedence:
+      1. ``AXON_ADR_MODEL`` env var (full override; useful for testing
+         a specific provider/model)
+      2. Active provider profile's ``classifier_model`` (dec-106)
+
+    The classifier tier is intentionally lightweight — ADR detection is
+    a classification task, not deep reasoning. Users can override via
+    env to point at a heavier model when running on capable hardware.
+    """
+    import os
+
+    override = os.environ.get("AXON_ADR_MODEL")
+    if override:
+        return override
+    from axon.config.runtime import load_runtime_config
+    from axon.router.profiles import get_profile
+
+    return get_profile(load_runtime_config().provider_profile).classifier_model
+
+
 async def _call_llm(commit_msg: str, diff_summary: str) -> str | None:
     """Call the ADR classifier LLM. Returns ``None`` on any failure.
 
     Failures include missing credentials, network errors, and provider
-    errors. The hook treats this as best-effort.
+    errors. The hook treats this as best-effort. The model is resolved
+    dynamically per call so a profile change takes effect immediately.
     """
     template = _TEMPLATE_PATH.read_text(encoding="utf-8")
     prompt = template.format(
@@ -197,7 +221,7 @@ async def _call_llm(commit_msg: str, diff_summary: str) -> str | None:
     try:
         import litellm
         response = await litellm.acompletion(
-            model="claude-haiku-4-5-20251001",
+            model=_adr_model(),
             messages=[{"role": "user", "content": prompt}],
             max_tokens=400,
         )

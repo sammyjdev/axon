@@ -306,3 +306,34 @@ For most users, the shortest path is:
 5. Add optional profile metadata through `pb profile create` or directly in `axon.toml` when you need a custom setup shape.
 
 For broader environment guidance, see [Support matrix](SUPPORT_MATRIX.md).
+
+## ADR Inference Model (dec-110/111)
+
+`pb adr infer-commit` and the post-commit hook resolve the classifier
+model dynamically:
+
+1. `AXON_ADR_MODEL` env var (explicit override) — highest precedence
+2. Active provider profile's `classifier_model` — Groq by default in
+   both FREE and PAID (classification is cheap)
+
+### Avoiding paid APIs entirely
+
+The default classifier needs `GROQ_API_KEY`. If you prefer NVIDIA NIM
+(also free-tier, slower but capable of heavier reasoning):
+
+```bash
+export NVIDIA_NIM_API_KEY=nvapi-...
+export AXON_ADR_MODEL=nvidia_nim/meta/llama-3.1-70b-instruct
+```
+
+For a local-only path (no cloud at all), enable Ollama (dec-106 opt-in)
+and point the model at a local one:
+
+```bash
+export AXON_PROVIDER_OLLAMA=1
+export AXON_ADR_MODEL=ollama/gemma4:e4b   # or phi3:mini
+```
+
+The dec-110 signal gate still applies — only commits with `arch:` /
+`decision:` / `ADR-Decision:` trigger a model call regardless of which
+backend you choose.
