@@ -156,7 +156,9 @@ async def on_commit(
         try:
             from axon.adr.inference import InferenceStatus, run_for_head_async
 
-            result = await run_for_head_async(project=root.name, repo_root=root)
+            result = await run_for_head_async(
+                project=root.name, repo_root=root, store=store
+            )
             if result.status is InferenceStatus.SAVED_ADR:
                 logger.info("inferred ADR: %s", result.title)
             elif result.status is InferenceStatus.GATE_FAILED:
