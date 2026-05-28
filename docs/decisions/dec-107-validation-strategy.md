@@ -66,10 +66,11 @@ runs subsequentes.
   `policy/core.py`, `circuit_breaker.py`, `expansion/budget.py`,
   `expansion/scoring.py` migrados pra `StrEnum`. Fixtures do chunker
   (ADR-005/D5) excluídas via `per-file-ignores`.
-- **Workflow não pode ser pushado via OAuth sem scope `workflow`.** Este
-  branch versiona o arquivo em `docs/ci-workflow-proposed.yml`. Promoção
-  pra `.github/workflows/ci.yml` precisa de push manual pelo owner do
-  repo (ver Migration abaixo).
+- **Workflow promovido pra `.github/workflows/ci.yml` em 2026-05-27.** O
+  arquivo intermediário `docs/ci-workflow-proposed.yml` foi removido.
+  Lint roda só em `src/axon/router src/axon/resilience tests/router
+  tests/resilience` por agora — escopo amplo tem ~22 findings UP/I001
+  pré-existentes; expansão tracked como TODO no workflow.
 - **Sem secrets em CI por enquanto.** Profile FREE precisa de
   `GROQ_API_KEY` e `NVIDIA_NIM_API_KEY` pra fazer calls reais, mas os
   testes de `test_router` e `test_resilience` mockam essas calls — não
@@ -93,22 +94,5 @@ runs subsequentes.
 
 ## Migration
 
-O arquivo `.github/workflows/ci.yml` precisa ser movido pra a localização
-final manualmente:
-
-```bash
-git checkout claude/routing-strategy-validation-lyQBT
-mkdir -p .github/workflows
-cp docs/ci-workflow-proposed.yml .github/workflows/ci.yml
-git add .github/workflows/ci.yml
-git commit -m "ci: enable workflow from dec-107"
-git push
-```
-
-Pushes futuros do workflow exigem token com scope `workflow` ou push
-direto do owner do repo. Agentes operando via OAuth standard não
-conseguem promover.
-
-Após o primeiro push manual, edições subsequentes do mesmo arquivo já
-funcionam via push normal — o gate é só na criação inicial em alguns
-fluxos de OAuth.
+Concluído em 2026-05-27. Workflow vive em `.github/workflows/ci.yml`.
+Edições subsequentes via push normal.

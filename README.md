@@ -201,12 +201,23 @@ re-supplies the full project context on every turn (87,000 tokens baseline vs.
 [`benchmarks/README.md`](benchmarks/README.md) for the assumptions, caveats,
 and how to run it yourself.
 
-Production telemetry across sessions where the compression pipeline fires
-(inputs above ~180 tokens) reproduces the modelled number: **p50 = 52.6%**,
-**mean = 55%**, **max = 91.6%** (n=7 real sessions). The pipeline is gated by
-`strategy.enable_compression` and skips inputs too small to benefit, so the
-aggregate average across all sessions is lower — see the issue tracker for
-the active work on extending the gate's coverage (T-105).
+Production telemetry across the turns where the compression pipeline actually
+fired (inputs above ~180 tokens, `reduction_pct > 0`) in the committed
+[`data/compression/stats.jsonl`](data/compression/stats.jsonl): **p50 = 57.5%**,
+**mean = 58.2%**, **p95 = 84.7%**, **max = 91.6%** over **n=10 compressed
+turns** out of 295 total telemetry records. The other 285 records are no-op
+entries written by instrumented read-only tools (`get_graph_path`,
+`get_graph_neighbors`, etc.) and by `engine=disabled`/`rtk` paths that
+deliberately skip compression — they are excluded from the percentile bucket.
+Reproduce with:
+
+```bash
+python -m axon.observability.compression_telemetry
+```
+
+The pipeline is gated by `strategy.enable_compression` and skips inputs too
+small to benefit; see the issue tracker for active work on extending the
+gate's coverage (T-105).
 
 ---
 
