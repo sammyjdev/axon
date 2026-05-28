@@ -13,19 +13,18 @@ machine-parseable.
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 from axon.adr.gates import GateOutcome
+from axon.config.data_root import data_root
 
 EventKind = Literal["rejection", "weak_pass"]
 
 
 def _audit_log_path() -> Path:
-    root = Path(os.environ.get("AXON_DATA_ROOT", ".axon"))
-    return root / "adr-rejected.jsonl"
+    return data_root() / "adr-rejected.jsonl"
 
 
 def record_rejection(

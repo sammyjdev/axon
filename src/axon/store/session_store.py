@@ -1,12 +1,12 @@
 import asyncio
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
 from pydantic import BaseModel, Field
 
+from axon.config.data_root import data_root
 from axon.core.decision import Decision
 from axon.core.edge import Edge
 from axon.store.pending import (
@@ -28,12 +28,8 @@ def _is_db_locked(exc: Exception) -> bool:
 
 
 def _pending_paths() -> PendingPaths:
-    """Resolve the pending/quarantine layout under ``AXON_DATA_ROOT``.
-
-    Defaults to ``./.axon`` when the env var is unset. Kept centralised so
-    every fallback writes to the same location regardless of caller.
-    """
-    root = Path(os.environ.get("AXON_DATA_ROOT", ".axon"))
+    """Resolve the pending/quarantine layout under the AXON data root."""
+    root = data_root()
     return PendingPaths(
         pending_dir=root / "pending",
         quarantine_dir=root / "pending-quarantine",
@@ -42,8 +38,7 @@ def _pending_paths() -> PendingPaths:
 
 
 def _warnings_log() -> Path:
-    root = Path(os.environ.get("AXON_DATA_ROOT", ".axon"))
-    return root / "capture-warnings.jsonl"
+    return data_root() / "capture-warnings.jsonl"
 
 
 async def _apply_migrations(db: aiosqlite.Connection) -> None:
