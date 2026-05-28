@@ -125,6 +125,7 @@ def evaluate(
     passed, density_details = passes_density(
         adr.rationale,
         diff=commit.diff,
+        commit_body=commit.body,
         structural_mode=structural,
         overlap_ratio_cap=cfg.overlap_ratio_cap,
         overlap_ratio_cap_structural=cfg.overlap_ratio_cap_structural,

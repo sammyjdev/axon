@@ -10,6 +10,11 @@ Diff summary:
 {diff_summary}
 
 If this contains an architectural decision, respond with ONLY valid JSON (no markdown, no explanation):
-{{"title": "short title (max 60 chars)", "context": "why this decision was needed", "decision": "what was decided", "rationale": "why this option over alternatives"}}
+
+{{"title": "short title (max 60 chars)", "context": "what subsystem this affects — mention at least one concrete file, module, or symbol from the diff", "decision": "what was decided — name the specific construct that changed", "rationale": "why this option over alternatives — anchor with one or two identifiers from the diff, but spend most of the rationale on the trade-off, constraint, or principle that drove the choice (boundaries, coupling, latency, invariants, future cost, etc.)"}}
+
+Balance rule: rationale must mention concrete identifiers AND explain the reasoning. As a guide, roughly half the rationale should be commentary the diff alone cannot reveal — the trade-off considered, the alternative rejected, or the constraint being honored. Pure paraphrase of the diff is unhelpful; pure abstraction without anchors is also unhelpful.
+
+If you cannot identify both a concrete change AND a genuine trade-off, this is NOT an architectural decision — respond with null.
 
 If this does NOT contain an architectural decision, respond with ONLY the word: null
