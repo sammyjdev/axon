@@ -61,8 +61,8 @@ class GateConfig:
 
     l2_min_overlap: int = 3
     l3_polarity_required: bool = True
-    overlap_ratio_cap: float = 0.7
-    overlap_ratio_cap_structural: float = 0.9
+    overlap_ratio_cap: float = 0.85
+    overlap_ratio_cap_structural: float = 0.95
     l2_min_overlap_structural: int = 2
     repo_root: Path = field(default_factory=Path.cwd)
 

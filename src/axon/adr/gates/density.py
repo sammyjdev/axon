@@ -29,8 +29,8 @@ def passes_density(
     diff: str,
     commit_body: str = "",
     structural_mode: bool = False,
-    overlap_ratio_cap: float = 0.7,
-    overlap_ratio_cap_structural: float = 0.9,
+    overlap_ratio_cap: float = 0.85,
+    overlap_ratio_cap_structural: float = 0.95,
     lexicon: frozenset[str] | None = None,
 ) -> tuple[bool, dict[str, object]]:
     """Return ``(passed, details)``.

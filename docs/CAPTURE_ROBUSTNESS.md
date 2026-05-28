@@ -149,6 +149,10 @@ do `pending-quarantine/`, warnings persistentes, compatibilidade
 5. Rotação de `adr-rejected.jsonl`: cap 10MB com rotação por idade.
 6. Lexicon inicial: ~30 termos; revisar após 3 meses de uso real.
 7. SLA do hook 500ms p99: medir em repos grandes.
+8. **Density `overlap_ratio_cap` calibrado de 0.7 → 0.85 (default) e
+   0.9 → 0.95 (structural) em 2026-05-28** após 4 runs NIM 8B contra
+   commits `arch:` reais. Cap antigo lutava contra prompt novo que
+   demanda citação concreta de identificadores do diff.
 
 ## 9. Plano de Incorporação (referência para issues)
 

@@ -86,11 +86,12 @@ class TestDensity:
     def test_structural_mode_relaxes_overlap_cap(self) -> None:
         rationale = "adopt repository pattern layer module"
         diff = "adopt repository pattern layer module"
-        # In structural mode, cap goes from 0.7 to 0.9
+        # In structural mode, cap goes from 0.85 to 0.95
         passed_default, _ = passes_density(rationale, diff=diff)
         passed_struct, _ = passes_density(
             rationale, diff=diff, structural_mode=True
         )
+        # Overlap is 1.0 > both caps, so both reject — structural is
+        # the looser threshold but still rejects pure copy-paste.
         assert passed_default is False
-        # Overlap is 1.0 > 0.9, so still fails — but at higher threshold
         assert passed_struct is False
