@@ -23,9 +23,15 @@ import subprocess
 from pathlib import Path
 
 # Heuristic patterns to extract candidate file paths and identifiers
-# from ADR text.
+# from ADR text. Snake_case requires an underscore to avoid matching
+# plain English words; CamelCase requires at least two capitalised
+# segments. These constraints were tightened after dogfooding showed
+# common verbs like ``risking`` / ``eliminates`` being miscategorised.
 _PATH_RE = re.compile(r"\b[A-Za-z0-9_./-]+\.[A-Za-z0-9]{1,6}\b")
-_IDENT_RE = re.compile(r"\b(?:[A-Z][a-z0-9]+){2,}\b|\b[a-z_][a-z0-9_]{4,}\b")
+_IDENT_RE = re.compile(
+    r"\b(?:[A-Z][a-z0-9]+){2,}\b"            # CamelCase / PascalCase
+    r"|\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b"     # snake_case with at least one _
+)
 
 
 def extract_candidates(adr_text: str) -> tuple[list[str], list[str]]:
