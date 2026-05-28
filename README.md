@@ -180,7 +180,7 @@ any manual ADR writing.
 | **Primary goal** | Agent-agnostic context continuity | Git-native AI pair programmer | AI agent inside VS Code | General-purpose semantic memory |
 | **Context capture** | git events + session hooks | Conversation history | Conversation history | Explicit add/search API |
 | **Works across agents** | Yes (MCP + file fallback) | No (Aider-specific) | No (Cline-specific) | Needs custom integration |
-| **Git hook integration** | First-class (`axon install-hooks`) | First-class (core feature) | No | No |
+| **Git hook integration** | First-class (`pb hooks install`) | First-class (core feature) | No | No |
 | **Self-hosted** | Yes | Yes | Depends on VS Code | Yes (open-source) |
 | **Storage** | SQLite + Redis + Qdrant + mem0 | Flat files + git | Flat files | Qdrant / Postgres |
 

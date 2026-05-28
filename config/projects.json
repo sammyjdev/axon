@@ -1,8 +1,8 @@
 {
   "projects": [
     {
-      "name": "prometheus",
-      "path": "/Users/samdev/dev/Prometheus",
+      "name": "axon",
+      "path": "/Users/samdev/dev/axon",
       "ctx": "personal",
       "enabled": true,
       "languages": ["python", "typescript", "java", "markdown", "text"]

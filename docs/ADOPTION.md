@@ -47,11 +47,22 @@ After the script exits clean, restart your coding agent and make a commit —
 | Agent MCP registration | `.claude/settings.json` in target repo |
 | Vault (optional, for ADR export) | `$AXON_VAULT` (defaults to `~/vault`) |
 
-## Removing AXON from a repo
+## Installing AXON hooks in a repo
 
 ```bash
 cd /path/to/your-repo
-axon install-hooks --remove
+pb hooks install            # dry-run preview (dec-113)
+pb hooks install --apply    # mutate; opt-in, TTY required
+```
+
+## Removing AXON from a repo
+
+Open `.git/hooks/post-commit` (and `pre-push` / `post-merge` /
+`post-checkout` if present) and delete the block between
+`# >>> AXON git hook >>>` and `# <<< AXON git hook <<<`.
+
+```bash
+cd /path/to/your-repo
 rm .claude/settings.json   # only if it only contained AXON
 ```
 
