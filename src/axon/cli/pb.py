@@ -1968,7 +1968,12 @@ def cost_compression() -> None:
     typer.echo(f"Tokens antes      : {s['total_before_tokens']:,}")
     typer.echo(f"Tokens depois     : {s['total_after_tokens']:,}")
     typer.echo(f"Tokens economizados: {s['total_saved_tokens']:,}")
-    typer.echo(f"Redução média     : {s['avg_reduction_pct']}%")
+    avg = s["avg_reduction_pct"]
+    typer.echo(
+        f"Redução média     : {avg}% (n={s['count_compressed']} comprimidos)"
+        if avg is not None
+        else "Redução média     : sem registros comprimidos"
+    )
     typer.echo("Por engine:")
     for engine, count in s["by_engine"].items():
         typer.echo(f"  {engine}: {count}x")

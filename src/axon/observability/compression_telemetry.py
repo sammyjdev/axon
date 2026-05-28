@@ -48,20 +48,68 @@ class CompressionTelemetryStore:
 
     def summary(self) -> dict:
         records = self.load_all()
-        if not records:
-            return {"total_calls": 0}
-        total_before = sum(r.before_tokens for r in records)
-        total_after = sum(r.after_tokens for r in records)
-        total_saved = sum(r.reduction_tokens for r in records)
-        avg_pct = sum(r.reduction_pct for r in records) / len(records)
         by_engine: dict[str, int] = {}
         for r in records:
             by_engine[r.engine] = by_engine.get(r.engine, 0) + 1
+        total_before = sum(r.before_tokens for r in records)
+        total_after = sum(r.after_tokens for r in records)
+        total_saved = sum(r.reduction_tokens for r in records)
+
+        # Compute reduction statistics only over records where compression
+        # actually ran (reduction_pct > 0). No-op records written by tools
+        # like get_graph_path or by disabled engines (reduction_pct == 0)
+        # would otherwise dilute the average to a meaningless number.
+        compressed_pcts = sorted(r.reduction_pct for r in records if r.reduction_pct > 0)
+        count_compressed = len(compressed_pcts)
+
+        if count_compressed == 0:
+            avg_pct: float | None = None
+            p50: float | None = None
+            p95: float | None = None
+            max_pct: float | None = None
+        else:
+            avg_pct = round(sum(compressed_pcts) / count_compressed, 1)
+            p50 = round(_percentile(compressed_pcts, 50), 1)
+            p95 = round(_percentile(compressed_pcts, 95), 1)
+            max_pct = round(compressed_pcts[-1], 1)
+
         return {
             "total_calls": len(records),
+            "count_total": len(records),
+            "count_compressed": count_compressed,
             "total_before_tokens": total_before,
             "total_after_tokens": total_after,
             "total_saved_tokens": total_saved,
-            "avg_reduction_pct": round(avg_pct, 1),
+            "avg_reduction_pct": avg_pct,
+            "p50_reduction_pct": p50,
+            "p95_reduction_pct": p95,
+            "max_reduction_pct": max_pct,
             "by_engine": by_engine,
         }
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    """Linear-interpolated percentile over a pre-sorted list. No numpy."""
+    if not sorted_values:
+        raise ValueError("empty sequence")
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    # Position on [0, n-1]
+    pos = (pct / 100.0) * (len(sorted_values) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(sorted_values) - 1)
+    frac = pos - lo
+    return sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * frac
+
+
+def main() -> None:
+    """Print summary() as JSON for the committed stats.jsonl."""
+    import json as _json
+    import sys
+
+    store = CompressionTelemetryStore()
+    sys.stdout.write(_json.dumps(store.summary(), indent=2, sort_keys=True) + "\n")
+
+
+if __name__ == "__main__":
+    main()
