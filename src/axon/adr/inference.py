@@ -62,12 +62,18 @@ async def run_for_head_async(
     force: bool = False,
     repo_root: Path | None = None,
     db_path: Path | None = None,
+    store: object | None = None,
 ) -> InferenceResult:
     """Run ADR inference against the current ``HEAD`` commit.
 
     The orchestrator is intentionally side-effecting (writes drafts,
     audit entries, or persists ADRs) but returns a structured result so
     callers can log without surfacing exceptions.
+
+    ``store``: optional pre-initialised ``SessionStore``. When provided,
+    the orchestrator reuses it (no second SQLite connection — aligns
+    with dec-112's single-writer-per-process invariant). When omitted,
+    a fresh store is created and closed inside this call.
     """
     root = repo_root or Path.cwd()
 
@@ -156,8 +162,10 @@ async def run_for_head_async(
     # Pipeline passed — persist to SessionStore.
     from axon.store.session_store import ADR, SessionStore
 
-    store = SessionStore(db_path or _default_db_path())
-    await store.init()
+    owns_store = store is None
+    if owns_store:
+        store = SessionStore(db_path or _default_db_path())
+        await store.init()
     try:
         adr = ADR(
             project=project,
@@ -168,7 +176,8 @@ async def run_for_head_async(
         )
         await store.save_adr(adr)
     finally:
-        await store.close()
+        if owns_store:
+            await store.close()
 
     return InferenceResult(
         status=InferenceStatus.SAVED_ADR,
