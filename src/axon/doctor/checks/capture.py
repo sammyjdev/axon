@@ -8,10 +8,10 @@
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from axon.config.data_root import data_root
 from axon.doctor import CheckResult, CheckStatus
 
 _BACKLOG_WARN_COUNT = 50
@@ -22,10 +22,10 @@ _WARNINGS_RECENT_HOURS = 1
 _WARNINGS_WARN_COUNT = 10
 
 
-def _root(data_root: Path | None) -> Path:
-    if data_root is not None:
-        return data_root
-    return Path(os.environ.get("AXON_DATA_ROOT", ".axon"))
+def _root(data_root_override: Path | None) -> Path:
+    if data_root_override is not None:
+        return data_root_override
+    return data_root()
 
 
 def check_pending_backlog(*, data_root: Path | None = None) -> CheckResult:

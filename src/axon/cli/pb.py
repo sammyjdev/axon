@@ -1793,9 +1793,10 @@ def adr_review(
     )
 
     if promote:
+        from axon.config.data_root import data_root
         from axon.store.session_store import ADR, SessionStore
 
-        draft_dir = Path(os.environ.get("AXON_DATA_ROOT", ".axon")) / "adr-draft"
+        draft_dir = data_root() / "adr-draft"
         path = draft_dir / f"{promote}.md"
         if not path.exists():
             typer.echo(f"Draft '{promote}' não encontrado em {draft_dir}/.")
@@ -1955,7 +1956,9 @@ def pending_recover(
     ] = None,
 ) -> None:
     """Re-attempt a quarantined payload (dec-112)."""
-    root = Path(os.environ.get("AXON_DATA_ROOT", ".axon"))
+    from axon.config.data_root import data_root
+
+    root = data_root()
     q_dir = root / "pending-quarantine"
     pending_dir = root / "pending"
     if not q_dir.exists():

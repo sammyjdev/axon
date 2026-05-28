@@ -12,10 +12,11 @@ The pool never expires destructively. Cleanup is opt-in via
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+from axon.config.data_root import data_root
 
 DEFAULT_DORMANCY_DAYS = 30
 STALE_TTL_HOURS = 24
@@ -39,8 +40,7 @@ class DraftRecord:
 
 
 def _draft_dir() -> Path:
-    root = Path(os.environ.get("AXON_DATA_ROOT", ".axon"))
-    return root / "adr-draft"
+    return data_root() / "adr-draft"
 
 
 def write_draft(record: DraftRecord, *, draft_dir: Path | None = None) -> Path:
