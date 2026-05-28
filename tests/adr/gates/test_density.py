@@ -46,6 +46,43 @@ class TestDensity:
         assert passed is True
         assert details["structural_mode"] is True
 
+    def test_rich_commit_body_relaxes_outside_diff_requirement(self) -> None:
+        """When the dev's commit body has lexicon hits, the rationale
+        does not need fresh architectural terms.
+
+        Regression for the dogfood finding where Portuguese commit
+        bodies put 'invariante'/'latência' in the diff token pool,
+        burning those terms for the rationale.
+        """
+        # Rationale's only lexicon hits ('invariant') are also in the diff
+        rationale = "Keeps the invariant alive in the rewritten path"
+        diff = "diff --git x.py\n+# preserve invariant\n+pass"
+        # Commit body has its own lexicon hit ('boundary') outside the diff
+        commit_body = (
+            "Restored the abstraction boundary between modules so the "
+            "single-writer invariant stays sound."
+        )
+        passed, details = passes_density(
+            rationale, diff=diff, commit_body=commit_body
+        )
+        assert passed is True
+        assert details.get("note") == "rich_commit_body_relaxation"
+        assert "boundary" in details["body_lex_hits_outside_diff"]
+
+    def test_rich_commit_body_relaxation_requires_lexicon_in_rationale_too(
+        self,
+    ) -> None:
+        """Relaxation only fires if rationale itself has SOME lexicon
+        hit. Otherwise it could pass with zero architectural content."""
+        rationale = "Just words without any architectural concept here"
+        diff = "diff x.py\n+pass"
+        commit_body = "Introduces a clean boundary"
+        passed, details = passes_density(
+            rationale, diff=diff, commit_body=commit_body
+        )
+        assert passed is False
+        assert details["reason"] == "no_architectural_lexicon_outside_diff"
+
     def test_structural_mode_relaxes_overlap_cap(self) -> None:
         rationale = "adopt repository pattern layer module"
         diff = "adopt repository pattern layer module"

@@ -74,12 +74,26 @@ def l1_light(
     paths, idents = extract_candidates(adr_text)
     run = git_runner or _git
 
+    # Cache the tracked file list once; suffix-match makes L1-light
+    # tolerant to LLMs citing partial paths like ``hooks/git_event.py``
+    # when the actual path is ``src/axon/hooks/git_event.py``. The
+    # citation is genuine — only the depth is wrong.
+    try:
+        tracked = run(repo_root, "ls-files").splitlines()
+    except subprocess.CalledProcessError:
+        tracked = []
+
     missing_paths: list[str] = []
     for path in paths:
         try:
             run(repo_root, "cat-file", "-e", f"HEAD:{path}")
+            continue
         except subprocess.CalledProcessError:
-            missing_paths.append(path)
+            pass
+        # Fallback: suffix-match against tracked files
+        if any(f == path or f.endswith("/" + path) for f in tracked):
+            continue
+        missing_paths.append(path)
 
     missing_idents: list[str] = []
     for ident in idents:

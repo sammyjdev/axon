@@ -27,12 +27,20 @@ def passes_density(
     rationale: str,
     *,
     diff: str,
+    commit_body: str = "",
     structural_mode: bool = False,
     overlap_ratio_cap: float = 0.7,
     overlap_ratio_cap_structural: float = 0.9,
     lexicon: frozenset[str] | None = None,
 ) -> tuple[bool, dict[str, object]]:
     """Return ``(passed, details)``.
+
+    The ``commit_body`` parameter (added after dogfood revealed that rich
+    Portuguese commit bodies "burn" lexicon terms by putting them in the
+    diff token pool) lets the gate honour developer-supplied
+    architectural commentary. When the dev already explained the
+    architecture in the commit body, the rationale does not have to
+    contribute *fresh* lexicon hits — the human already did that work.
 
     ``details`` includes the measured ratio, lexicon hits, and which
     sub-check failed (if any).
@@ -57,15 +65,33 @@ def passes_density(
         rationale_set = set(rationale_tokens)
         lex_hits_in_rationale = rationale_set & lex
         lex_hits_outside_diff = lex_hits_in_rationale - diff_token_set
-        if not lex_hits_outside_diff:
-            return False, {
-                "reason": "no_architectural_lexicon_outside_diff",
-                "lex_hits_in_rationale": sorted(lex_hits_in_rationale),
+
+        if lex_hits_outside_diff:
+            return True, {
+                "ratio": ratio,
+                "lex_hits_outside_diff": sorted(lex_hits_outside_diff),
                 "structural_mode": structural_mode,
             }
-        return True, {
-            "ratio": ratio,
-            "lex_hits_outside_diff": sorted(lex_hits_outside_diff),
+
+        # Rich-commit relaxation: if the dev's commit body already
+        # carries architectural commentary, the rationale need only
+        # mirror it. The architectural reasoning still exists — it
+        # came from the human upstream of the LLM, not from
+        # paraphrase.
+        body_lex_hits = set(tokenize(commit_body)) & lex
+        body_lex_hits_outside_diff = body_lex_hits - diff_token_set
+        if body_lex_hits_outside_diff and lex_hits_in_rationale:
+            return True, {
+                "ratio": ratio,
+                "lex_hits_outside_diff": [],
+                "body_lex_hits_outside_diff": sorted(body_lex_hits_outside_diff),
+                "structural_mode": structural_mode,
+                "note": "rich_commit_body_relaxation",
+            }
+
+        return False, {
+            "reason": "no_architectural_lexicon_outside_diff",
+            "lex_hits_in_rationale": sorted(lex_hits_in_rationale),
             "structural_mode": structural_mode,
         }
 
