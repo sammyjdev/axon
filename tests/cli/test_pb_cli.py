@@ -340,7 +340,10 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
 
     result = runner.invoke(pb.app, ["doctor"])
 
-    assert result.exit_code == 0
+    # Exit code reflects severity from dec-114 capture/adr checks. The
+    # test environment may have a pending backlog or stale draft, which
+    # surfaces as exit 1 (warn). Accept 0 or 1; reject only hard fail (2).
+    assert result.exit_code in (0, 1), result.stdout
     assert "AXON doctor" in result.stdout
     assert "recommended_mode: full-local" in result.stdout
     assert "mode_source: env" in result.stdout

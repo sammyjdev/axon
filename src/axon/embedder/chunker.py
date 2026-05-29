@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import ast
 import re
 from pathlib import Path
 from typing import Literal
 
 import tree_sitter_java as tsjava
+import tree_sitter_python as tspython
+import tree_sitter_typescript as tsts
 from pydantic import BaseModel, Field
 from tree_sitter import Language, Node, Parser
 
@@ -15,6 +16,14 @@ ChunkType = Literal[
 
 _JAVA_LANGUAGE = Language(tsjava.language())
 _PARSER = Parser(_JAVA_LANGUAGE)
+
+_PY_LANGUAGE = Language(tspython.language())
+_PY_PARSER = Parser(_PY_LANGUAGE)
+
+_TS_LANGUAGE = Language(tsts.language_typescript())
+_TS_PARSER = Parser(_TS_LANGUAGE)
+_TSX_LANGUAGE = Language(tsts.language_tsx())
+_TSX_PARSER = Parser(_TSX_LANGUAGE)
 
 # node types que geram chunks
 _METHOD_TYPES = {"method_declaration", "constructor_declaration"}
@@ -261,63 +270,114 @@ def chunk_java_file(path: str | Path) -> list[Chunk]:
 
 
 # ---------------------------------------------------------------------------
-# Python chunker (via ast module)
+# Python chunker (via tree-sitter-python)
 # ---------------------------------------------------------------------------
+#
+# Tree-sitter replaced the stdlib ``ast`` path for two reasons surfaced by
+# dogfood: (1) ``ast.parse`` raises on partial/broken files, collapsing
+# everything to a "1 chunk = file" fallback and losing all symbols for
+# mid-edit captures; (2) ``ast`` is version-locked to the interpreter
+# running AXON, so Python 3.12+ syntax (PEP 695 ``type X = ...`` aliases,
+# generic function parameters) crashed when AXON ran on an older Python.
+# Tree-sitter's grammar covers modern syntax and recovers from errors
+# instead of failing closed.
 
 
 def _chunk_python(source: str, file_path: str) -> list[Chunk]:
+    """Parse Python source with tree-sitter and emit per-symbol chunks.
+
+    Yields chunks for every ``function_definition`` (including async
+    ``async def``) found anywhere in the tree. Functions defined inside
+    a ``class_definition`` are tagged ``method``; the rest are
+    ``function``. Tree-sitter's error recovery means a partially broken
+    file still yields chunks for the surrounding well-formed code.
+
+    Falls back to "1 chunk = file" only if the tree-sitter parse itself
+    raises (defensive — has not been observed in practice).
+    """
     lines = source.splitlines()
     try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return [
-            Chunk(
-                symbol=Path(file_path).stem,
-                chunk_type="class",
-                start_line=1,
-                end_line=len(lines),
-                content=source,
-                file_path=file_path,
-                language="python",
-            )
-        ]
+        tree = _PY_PARSER.parse(source.encode("utf-8"))
+    except Exception:
+        return [_python_fallback_chunk(source, lines, file_path)]
 
     chunks: list[Chunk] = []
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            # Only top-level functions and methods (depth 1 or 2)
-            end_line = node.end_lineno
-            content = "\n".join(lines[node.lineno - 1 : end_line])
-            chunk_type: ChunkType = "method" if _is_method(node, tree) else "method"
-            # Top-level functions get type "function", methods get "method"
-            chunk_type = "function" if _is_top_level(node, tree) else "method"
-            chunks.append(
-                Chunk(
-                    symbol=node.name,
-                    chunk_type=chunk_type,
-                    start_line=node.lineno,
-                    end_line=end_line,
-                    content=content,
-                    file_path=file_path,
-                    language="python",
-                )
-            )
-
+    _walk_python(tree.root_node, source, lines, file_path, in_class=False, chunks=chunks)
+    if not chunks:
+        chunks.append(_python_fallback_chunk(source, lines, file_path))
     return chunks
 
 
-def _is_top_level(func_node: ast.AST, tree: ast.Module) -> bool:
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            for child in ast.walk(node):
-                if child is func_node:
-                    return False
-    return True
+def _walk_python(
+    node: Node,
+    source: str,
+    lines: list[str],
+    file_path: str,
+    *,
+    in_class: bool,
+    chunks: list[Chunk],
+) -> None:
+    """Recurse the tree, emitting a chunk for each function definition.
+
+    ``in_class`` controls whether the next ``function_definition`` is
+    tagged ``method`` (inside a class body) or ``function`` (anywhere
+    else, including nested inner functions).
+    """
+    if node.type in ("function_definition",):
+        symbol = _python_node_identifier(node)
+        chunks.append(
+            Chunk(
+                symbol=symbol or Path(file_path).stem,
+                chunk_type="method" if in_class else "function",
+                start_line=node.start_point[0] + 1,
+                end_line=node.end_point[0] + 1,
+                content="\n".join(lines[node.start_point[0] : node.end_point[0] + 1]),
+                file_path=file_path,
+                language="python",
+            )
+        )
+        # Recurse to catch inner functions (still tagged as functions
+        # unless inside another class).
+        for child in node.children:
+            _walk_python(
+                child, source, lines, file_path,
+                in_class=False, chunks=chunks,
+            )
+        return
+
+    if node.type == "class_definition":
+        for child in node.children:
+            _walk_python(
+                child, source, lines, file_path,
+                in_class=True, chunks=chunks,
+            )
+        return
+
+    for child in node.children:
+        _walk_python(
+            child, source, lines, file_path,
+            in_class=in_class, chunks=chunks,
+        )
 
 
-def _is_method(func_node: ast.AST, tree: ast.Module) -> bool:
-    return not _is_top_level(func_node, tree)
+def _python_node_identifier(node: Node) -> str:
+    """Return the symbol name of a function/class definition node."""
+    for child in node.children:
+        if child.type == "identifier":
+            return child.text.decode("utf-8", errors="replace")
+    return "unknown"
+
+
+def _python_fallback_chunk(source: str, lines: list[str], file_path: str) -> Chunk:
+    return Chunk(
+        symbol=Path(file_path).stem,
+        chunk_type="class",
+        start_line=1,
+        end_line=len(lines) or 1,
+        content=source,
+        file_path=file_path,
+        language="python",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +415,117 @@ _SKIP_TS_NAMES = {
 
 
 def _chunk_typescript(source: str, file_path: str) -> list[Chunk]:
+    """Parse TypeScript / TSX via tree-sitter-typescript.
+
+    Replaces the previous regex-based parser. Tree-sitter recognises:
+    function declarations (including generic signatures), class methods,
+    arrow functions assigned to const/let/property, get/set accessors,
+    decorators, and JSX/TSX. Error recovery yields chunks for
+    well-formed parts of partially broken files.
+    """
+    parser = _TSX_PARSER if file_path.endswith(".tsx") else _TS_PARSER
+    lines = source.splitlines()
+    try:
+        tree = parser.parse(source.encode("utf-8"))
+    except Exception:
+        return [_ts_fallback_chunk(source, lines, file_path)]
+
+    chunks: list[Chunk] = []
+    _walk_ts(tree.root_node, lines, file_path, in_class=False, chunks=chunks)
+    if not chunks:
+        chunks.append(_ts_fallback_chunk(source, lines, file_path))
+    return chunks
+
+
+def _walk_ts(
+    node: Node,
+    lines: list[str],
+    file_path: str,
+    *,
+    in_class: bool,
+    chunks: list[Chunk],
+) -> None:
+    if node.type in ("function_declaration", "method_definition"):
+        name = _ts_identifier(node) or "anonymous"
+        chunks.append(
+            _ts_chunk_from_node(node, lines, file_path, name, in_class)
+        )
+        # Recurse to catch nested functions
+        for child in node.children:
+            _walk_ts(child, lines, file_path, in_class=False, chunks=chunks)
+        return
+
+    if node.type in ("class_declaration", "class_body"):
+        for child in node.children:
+            _walk_ts(child, lines, file_path, in_class=True, chunks=chunks)
+        return
+
+    # Arrow functions / function expressions bound to a name
+    if node.type in (
+        "variable_declarator",
+        "public_field_definition",
+        "property_signature",
+    ):
+        name_node = node.child_by_field_name("name")
+        value_node = node.child_by_field_name("value")
+        if name_node and value_node and value_node.type in (
+            "arrow_function",
+            "function_expression",
+        ):
+            name = name_node.text.decode("utf-8", errors="replace")
+            chunks.append(
+                _ts_chunk_from_node(node, lines, file_path, name, in_class)
+            )
+            return
+
+    for child in node.children:
+        _walk_ts(child, lines, file_path, in_class=in_class, chunks=chunks)
+
+
+def _ts_identifier(node: Node) -> str | None:
+    name = node.child_by_field_name("name")
+    if name is not None:
+        return name.text.decode("utf-8", errors="replace")
+    for child in node.children:
+        if child.type in ("identifier", "property_identifier"):
+            return child.text.decode("utf-8", errors="replace")
+    return None
+
+
+def _ts_chunk_from_node(
+    node: Node,
+    lines: list[str],
+    file_path: str,
+    name: str,
+    in_class: bool,
+) -> Chunk:
+    start = node.start_point[0]
+    end = node.end_point[0]
+    return Chunk(
+        symbol=name,
+        chunk_type="method" if in_class else "function",
+        start_line=start + 1,
+        end_line=end + 1,
+        content="\n".join(lines[start : end + 1]),
+        file_path=file_path,
+        language="typescript",
+    )
+
+
+def _ts_fallback_chunk(source: str, lines: list[str], file_path: str) -> Chunk:
+    return Chunk(
+        symbol=Path(file_path).stem,
+        chunk_type="class",
+        start_line=1,
+        end_line=len(lines) or 1,
+        content=source,
+        file_path=file_path,
+        language="typescript",
+    )
+
+
+def _chunk_typescript_legacy(source: str, file_path: str) -> list[Chunk]:
+    """Original regex-based parser. Retained only for reference; not on the path."""
     lines = source.splitlines()
     chunks: list[Chunk] = []
 
