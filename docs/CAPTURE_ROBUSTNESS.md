@@ -153,6 +153,22 @@ do `pending-quarantine/`, warnings persistentes, compatibilidade
    0.9 → 0.95 (structural) em 2026-05-28** após 4 runs NIM 8B contra
    commits `arch:` reais. Cap antigo lutava contra prompt novo que
    demanda citação concreta de identificadores do diff.
+9. **Hook wiring fechado em 2026-05-28** (issue #15): orquestração
+   extraída para `axon.adr.inference` e wirada em `on_commit`.
+   Pipeline declarativo dispara automaticamente em todo post-commit
+   sinalizado (`arch:`/`decision:`/trailer).
+10. **Provider default movido para profile-aware em 2026-05-28**:
+    classifier resolve via dec-106 (`AXON_PROVIDER_PROFILE`) ou via
+    override `AXON_ADR_MODEL`. Default FREE = NIM 3.3-70B (sem
+    dependência de Anthropic key).
+11. **Chunker estendido para Python e TS/TSX via tree-sitter em
+    2026-05-29** ([[dec-044]]): error recovery + cobertura Python 3.12+
+    + arrow functions + accessors + generics. ADR-005/D5 Java release
+    gate intacto.
+12. **Call graph extractor migrado para tree-sitter em 2026-05-29**
+    ([[dec-045]]): elimina matches falsos em string literals, template
+    literals, comentários linha e Javadoc para Java/TS. Python path
+    mantido em ast stdlib.
 
 ## 9. Plano de Incorporação (referência para issues)
 
