@@ -927,7 +927,7 @@ async def axon_health() -> str:
     try:
         await asyncio.wait_for(_get_session_store().init(), timeout=_PROBE_TIMEOUT)
         lines.append("- sqlite: ok")
-    except asyncio.TimeoutError:
+    except TimeoutError:
         lines.append("- sqlite: down (timeout)")
     except Exception as exc:
         lines.append(f"- sqlite: down ({exc})")
@@ -935,7 +935,7 @@ async def axon_health() -> str:
     try:
         await asyncio.wait_for(_get_graph_store().connect(), timeout=_PROBE_TIMEOUT)
         lines.append("- redis: ok")
-    except asyncio.TimeoutError:
+    except TimeoutError:
         lines.append("- redis: down (timeout)")
     except Exception as exc:
         lines.append(f"- redis: down ({exc})")
@@ -945,7 +945,7 @@ async def axon_health() -> str:
             _get_vector_store().ensure_collections(), timeout=_PROBE_TIMEOUT
         )
         lines.append("- qdrant: ok")
-    except asyncio.TimeoutError:
+    except TimeoutError:
         lines.append("- qdrant: down (timeout)")
     except Exception as exc:
         lines.append(f"- qdrant: down ({exc})")
