@@ -49,6 +49,32 @@ async def test_session_end_unknown_id() -> None:
     assert "not found" in out
 
 
+async def test_get_session_memory_surfaces_captured_decisions(
+    store: SessionStore,
+) -> None:
+    # A decision captured via axon_capture (status="draft") must show up in
+    # get_session_memory even when no compressed session summary or note exists
+    # yet — otherwise captured work is invisible until the PostStop hook runs.
+    from datetime import UTC, datetime
+
+    from axon.core.decision import Decision
+
+    decision = Decision(
+        id=await store.next_decision_id(),
+        timestamp=datetime.now(UTC),
+        agent="manual",
+        repo="axon",
+        summary="captured: hardened the indexer against venv pollution",
+        status="draft",
+    )
+    await store.save_decision(decision)
+
+    out = await server.get_session_memory(project="axon")
+
+    assert "Nenhuma memória" not in out
+    assert "hardened the indexer against venv pollution" in out
+
+
 async def test_capture_event_persists_note(store: SessionStore) -> None:
     out = await server.axon_capture_event(
         "test_pass", {"repo": "axon", "passed": 469}
