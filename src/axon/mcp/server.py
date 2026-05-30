@@ -394,8 +394,9 @@ async def get_session_memory(
     await store.init()
     memories = await store.get_session_memories(project, limit=3)
     notes = await store.get_notes(project, limit=10)
+    decisions = await store.find_decisions_by_repo(project, limit=10)
 
-    if not memories and not notes:
+    if not memories and not notes and not decisions:
         return f"Nenhuma memória de sessão para projeto '{project}'."
 
     lines: list[str] = []
@@ -411,6 +412,11 @@ async def get_session_memory(
         lines.append("## Notas de sessão\n")
         for n in notes:
             lines.append(f"- **{n.created_at.isoformat()}** {n.body}")
+
+    if decisions:
+        lines.append("## Decisões capturadas\n")
+        for d in decisions:
+            lines.append(f"- **{d.id}** ({d.status}) {d.summary}")
 
     budget = CONTEXT_BUDGETS.get(caller, 4000)
     return _truncate("\n".join(lines), budget)
