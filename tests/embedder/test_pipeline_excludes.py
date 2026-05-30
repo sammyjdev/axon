@@ -28,6 +28,26 @@ def test_iter_supported_files_skips_dependency_and_build_directories(tmp_path: P
     assert files == [supported]
 
 
+def test_iter_supported_files_skips_unconventionally_named_virtualenv(tmp_path: Path) -> None:
+    # A virtualenv whose directory is not literally ".venv"/"venv" (e.g. a
+    # renamed ".venv_hidden", or "py311env") must still be excluded. Every
+    # dependency file lives under a "site-packages" segment, so excluding that
+    # segment catches the venv regardless of its top-level directory name.
+    project = tmp_path / "project"
+    src = project / "src"
+    src.mkdir(parents=True)
+    real = src / "service.py"
+    real.write_text("def run():\n    return True\n", encoding="utf-8")
+
+    dep = project / ".venv_hidden" / "lib" / "python3.11" / "site-packages" / "pydantic"
+    dep.mkdir(parents=True)
+    (dep / "main.py").write_text("class BaseModel:\n    pass\n", encoding="utf-8")
+
+    files = list(iter_supported_files(project))
+
+    assert files == [real]
+
+
 def test_iter_supported_files_applies_language_filter_after_excludes(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()

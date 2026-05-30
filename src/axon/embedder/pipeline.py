@@ -40,6 +40,11 @@ EXCLUDED_DIR_NAMES = {
     "build",
     "coverage",
     "dist",
+    # Catch any Python virtualenv regardless of its top-level directory name
+    # (e.g. a renamed ".venv_hidden"): all dependency files live under one of
+    # these segments, so excluding them is name-independent.
+    "dist-packages",
+    "site-packages",
     "node_modules",
     "target",
     "venv",
