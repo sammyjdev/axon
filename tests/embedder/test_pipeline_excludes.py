@@ -48,6 +48,27 @@ def test_iter_supported_files_skips_unconventionally_named_virtualenv(tmp_path: 
     assert files == [real]
 
 
+def test_iter_supported_files_skips_aws_sam_build_artifact(tmp_path: Path) -> None:
+    # `sam build` writes bundled Lambda dependencies under ".aws-sam/". The
+    # build/ segment catches most of it, but cache and dependency layers can
+    # live directly under ".aws-sam/" without a "build" segment, so the
+    # ".aws-sam" directory name itself must be excluded — otherwise hundreds of
+    # vendored dependency files leak into the index.
+    project = tmp_path / "project"
+    src = project / "src"
+    src.mkdir(parents=True)
+    real = src / "handler.py"
+    real.write_text("def lambda_handler(event, context):\n    return event\n", encoding="utf-8")
+
+    dep = project / ".aws-sam" / "deps" / "boto3"
+    dep.mkdir(parents=True)
+    (dep / "client.py").write_text("class Client:\n    pass\n", encoding="utf-8")
+
+    files = list(iter_supported_files(project))
+
+    assert files == [real]
+
+
 def test_iter_supported_files_applies_language_filter_after_excludes(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
