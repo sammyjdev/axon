@@ -28,6 +28,7 @@ _CTX_ROOTS = set(VALID_CONTEXTS)
 _FILE_HASH_CACHE: dict[str, str] = {}
 _BATCH_SIZE = 400
 EXCLUDED_DIR_NAMES = {
+    ".aws-sam",
     ".git",
     ".gradle",
     ".mypy_cache",
