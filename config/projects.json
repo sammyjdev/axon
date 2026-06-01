@@ -13,6 +13,97 @@
       "ctx": "personal",
       "enabled": true,
       "languages": ["python", "markdown", "text"]
+    },
+    {
+      "name": "claude-usage-bar",
+      "path": "/Users/samdev/dev/claude-usage-bar",
+      "ctx": "personal",
+      "enabled": true,
+      "languages": ["markdown", "text"]
+    },
+    {
+      "name": "claude-usage-bar-rs",
+      "path": "/Users/samdev/dev/claude-usage-bar-rs",
+      "ctx": "personal",
+      "enabled": true,
+      "languages": ["markdown", "text"]
+    },
+    {
+      "name": "linkedin_content_manager",
+      "path": "/Users/samdev/dev/linkedin_content_manager",
+      "ctx": "personal",
+      "enabled": true,
+      "languages": ["python", "markdown", "text"]
+    },
+    {
+      "name": "Pharos",
+      "path": "/Users/samdev/dev/Pharos",
+      "ctx": "saas",
+      "enabled": true,
+      "languages": ["markdown", "text"]
+    },
+    {
+      "name": "pharos-backend",
+      "path": "/Users/samdev/dev/Pharos/pharos-backend",
+      "ctx": "saas",
+      "enabled": true,
+      "languages": ["python", "markdown", "text"]
+    },
+    {
+      "name": "pharos-frontend",
+      "path": "/Users/samdev/dev/Pharos/pharos-frontend",
+      "ctx": "saas",
+      "enabled": true,
+      "languages": ["typescript", "markdown", "text"]
+    },
+    {
+      "name": "lume",
+      "path": "/Users/samdev/dev/lume",
+      "ctx": "saas",
+      "enabled": true,
+      "languages": ["typescript", "markdown", "text"]
+    },
+    {
+      "name": "piloto_revvo",
+      "path": "/Users/samdev/dev/piloto_revvo",
+      "ctx": "saas",
+      "enabled": true,
+      "languages": ["typescript", "markdown", "text"]
+    },
+    {
+      "name": "PitStopOS",
+      "path": "/Users/samdev/dev/PitStopOS",
+      "ctx": "saas",
+      "enabled": true,
+      "languages": ["python", "typescript", "markdown", "text"]
+    },
+    {
+      "name": "gnomon-eval",
+      "path": "/Users/samdev/dev/gnomon-eval",
+      "ctx": "knowledge",
+      "enabled": true,
+      "languages": ["python", "markdown", "text"]
+    },
+    {
+      "name": "gnomon-eval-src",
+      "path": "/Users/samdev/dev/gnomon-eval-src",
+      "ctx": "knowledge",
+      "enabled": true,
+      "languages": ["markdown", "text"]
+    },
+    {
+      "name": "rpg-master-ai",
+      "path": "/Users/samdev/dev/rpg-master-ai",
+      "ctx": "knowledge",
+      "enabled": true,
+      "languages": ["java", "markdown", "text"]
+    },
+    {
+      "name": "aerus-game-master-platform",
+      "path": "/Users/samdev/dev/aerus-game-master-platform",
+      "ctx": "knowledge",
+      "enabled": true,
+      "languages": ["python", "typescript", "markdown", "text"]
     }
   ]
 }
