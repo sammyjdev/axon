@@ -227,10 +227,11 @@ gate's coverage (T-105).
 |---|---|
 | [`CLAUDE.md`](CLAUDE.md) | Architecture decisions, code conventions, agent rules |
 | [`docs/ADR.md`](docs/ADR.md) | Active architectural decision records |
+| [`docs/METRICS.md`](docs/METRICS.md) | Recomputed performance metrics manifest (dated) |
 | [`docs/ARD.md`](docs/ARD.md) | Architectural requirements |
 | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) | CLI workflows |
 | [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap |
-| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 – dec-109) |
+| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-115) |
 | [`docs/decisions/dec-106-routing-profiles.md`](docs/decisions/dec-106-routing-profiles.md) | FREE/PAID provider profiles + rate limit gate |
 | [`docs/decisions/dec-109-tool-tracing-and-risk-gating.md`](docs/decisions/dec-109-tool-tracing-and-risk-gating.md) | Tool risk classes, policy gate, tracing middleware |
 | [`benchmarks/README.md`](benchmarks/README.md) | Token savings benchmark |
