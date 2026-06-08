@@ -73,6 +73,20 @@ Default profiles (FREE/PAID) never route to Ollama; enable it explicitly for
 - Structure-aware chunking and fixture coverage must remain intact.
 - Do not weaken chunker tests to make implementation changes pass.
 
+## Recall ranking
+
+`recall_context` supports **opt-in soft supersession** (dec-115, default off): a
+stale decision is demoted (rank × 0.02), never dropped, when a newer decision in
+the same scope revises it. Detection = shared scope **and** a confirmed revision
+— a revision verb in the newer summary (EN/PT) or a near-duplicate
+(cosine ≥ `_NEAR_DUP_THRESHOLD` 0.93). Additive same-area work is intentionally
+*not* superseded (a flat cosine floor produced ~90% false positives on real
+data). Enable via `recall_context(..., enable_supersession=True,
+similarity=make_embedding_similarity(EmbedderEngine()))`; keep it off in
+production until reworded-revision recall is validated. See
+`docs/decisions/dec-115-supersession-ranking-penalty.md` and
+`docs/USAGE_GUIDE.md`.
+
 ## Code Conventions
 
 - Python 3.11+ with type hints

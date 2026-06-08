@@ -254,6 +254,37 @@ AXON also exposes the same knowledge through MCP for agentic tools such
 as Claude Code and Copilot. The local CLI remains the easiest way to validate
 behavior before relying on editor integrations.
 
+## Recall supersession (opt-in)
+
+`recall_context` can demote *superseded* decisions so a stale one never outranks
+the decision that revised it. It is **off by default** — the legacy ranking is
+byte-for-byte unchanged unless you opt in.
+
+Enable it by passing a similarity seam (offline, via the local embedder):
+
+```python
+from axon.recall.strategy import recall_context
+from axon.recall.supersession import make_embedding_similarity
+from axon.embedder.engine import EmbedderEngine
+
+out = await recall_context(
+    repo,
+    store=store,
+    enable_supersession=True,
+    similarity=make_embedding_similarity(EmbedderEngine()),
+)
+```
+
+A stale decision is **demoted, never dropped** (rank × 0.02) — it stays fully
+recallable. Detection requires shared scope (overlapping files/symbols) **and** a
+confirmed revision: a revision verb in the newer summary (EN/PT, e.g.
+`drop`/`replace`/`substitui`) or a near-duplicate (cosine ≥ 0.93). Additive work
+in the same area is deliberately *not* treated as supersession.
+
+Default-off on purpose: real-data validation suppressed false positives but has
+not yet measured recall on reworded revisions. See
+[`docs/decisions/dec-115-supersession-ranking-penalty.md`](decisions/dec-115-supersession-ranking-penalty.md).
+
 ## When Something Looks Wrong
 
 Check these first:
