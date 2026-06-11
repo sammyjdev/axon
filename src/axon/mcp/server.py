@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP
 from axon.config.runtime import load_runtime_config
 from axon.context.compression_quality import compression_quality_note
 from axon.context.contracts import ContextPack, select_default_retrieval_strategy
+from axon.context.graph_source import GlyphEmbedderAdapter, GraphContextSource
 from axon.context.rtk import RTKError, compress_text_with_rtk
 from axon.core.decision import Decision
 from axon.embedder.engine import EmbedderEngine
@@ -63,6 +64,11 @@ def _get_embedder() -> EmbedderEngine:
     if _embedder is None:
         _embedder = EmbedderEngine()
     return _embedder
+
+
+def _get_graph_embedder() -> object:
+    """Embedder for GLYPH graph retrieval: AXON's engine behind the GLYPH port."""
+    return GlyphEmbedderAdapter(_get_embedder())
 
 
 def _get_vector_store() -> VectorStore:
@@ -677,6 +683,24 @@ async def get_graph_path(from_node: str, to_node: str) -> str:
     path = await store.shortest_path(from_node, to_node)
     response = " -> ".join(path) if path else "Nenhum caminho encontrado."
     _record_mcp_tool_call("get_graph_path", f"{from_node}\n{to_node}", response)
+    return response
+
+
+@mcp.tool()
+@traced_tool(risk="read")
+async def get_graph_context(query: str, token_budget: int = 1000) -> str:
+    """Contexto graph-aware do código, servido pela lib GLYPH (ADR-102/103).
+
+    Ancora a query no grafo de código consolidado (SQLite) e expande a
+    vizinhança via GLYPH, retornando segmentos ordenados por relevância.
+    """
+    store = _get_session_store()
+    await store.init()
+    source = GraphContextSource(store, _get_graph_embedder())
+    pack = await source.context(query, token_budget=token_budget)
+    response = pack.text if pack.segments else "Nenhum contexto de grafo encontrado."
+    response = _truncate(response, token_budget)
+    _record_mcp_tool_call("get_graph_context", query, response)
     return response
 
 
