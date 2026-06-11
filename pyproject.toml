@@ -46,7 +46,7 @@ dependencies = [
     # `retrieval` extra pulls numpy (InMemoryVectorIndex); we wrap AXON's own
     # EmbedderEngine, so the heavy `embeddings`/sentence-transformers extra is
     # intentionally omitted.
-    "glyph-kg[retrieval] @ git+https://github.com/sammyjdev/glyph-kg.git@7b14af8d75b908f680f6ee878fe3b4e810a0b712",
+    "glyph-kg[retrieval] @ git+https://github.com/sammyjdev/glyph-kg.git@01c63f06a27ce02dc02d98df35c5aa962500437f",
 ]
 
 [project.urls]
