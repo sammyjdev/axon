@@ -34,9 +34,10 @@ duplicates effort and diverges from the now-canonical GLYPH semantics.
 - Embedder: AXON reuses its existing `EmbedderEngine`, wrapped by
   `GlyphEmbedderAdapter` to satisfy GLYPH's `Embedder` protocol. GLYPH's
   optional `sentence-transformers` extra is intentionally not pulled.
-- Dependency: `glyph-kg[retrieval]` pinned to a validated SHA (upstream `main`
-  had already drifted from its documented entry point), keeping AXON's build
-  reproducible.
+- Dependency: `glyph-kg[retrieval]` pinned to a fixed SHA on GLYPH `main` (the
+  merged completion of GLYPH P3–P6), keeping AXON's build reproducible. AXON
+  delegates through the `GraphRetriever`/`NetworkXStore` constructors rather than
+  the file-based facade, so the seam is stable across the pinned range.
 
 ### Type mapping (AXON → GLYPH)
 
