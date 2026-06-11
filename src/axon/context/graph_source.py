@@ -3,10 +3,11 @@
 GLYPH (``glyph-kg``) is the canonical knowledge-graph retrieval library. AXON no
 longer reimplements graph retrieval: this module reads the consolidated SQLite
 code graph (dec-101), maps AXON's nodes/edges onto GLYPH's :class:`Node` /
-:class:`Edge`, builds an in-memory ``NetworkXStore`` + ``GraphRetriever`` straight
-through the constructors (no temp JSON file), and adapts the GLYPH
-``ContextPack`` back to AXON's own :class:`~axon.context.contracts.ContextPack`
-so the MCP layer's external contract is unchanged.
+:class:`Edge`, builds an in-memory ``NetworkXStore``, and delegates to GLYPH's
+stable boundary ``glyph.integration.GraphContextSource`` (ADR-G6) — no temp JSON
+file, no direct ``GraphRetriever`` wiring — then adapts the GLYPH ``ContextPack``
+back to AXON's own :class:`~axon.context.contracts.ContextPack` so the MCP layer's
+external contract is unchanged.
 
 Type mapping (declared, AXON -> GLYPH)
 --------------------------------------
@@ -27,11 +28,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from glyph.integration import GraphContextSource as GlyphGraphContextSource
 from glyph.model.edge import Edge as GlyphEdge
 from glyph.model.edge import EdgeType as GlyphEdgeType
 from glyph.model.node import Node as GlyphNode
 from glyph.model.node import NodeType as GlyphNodeType
-from glyph.retrieval.graph import GraphRetriever
 from glyph.store.networkx_store import NetworkXStore
 
 from axon.context.contracts import ContextPack, RetrievalStrategy
@@ -175,10 +176,12 @@ class GraphContextSource:
         if not nodes:
             return self._adapt_segments((), token_estimate=0)
 
-        retriever = GraphRetriever(
+        # Delegate to GLYPH's stable product boundary (ADR-G6) rather than wiring
+        # GraphRetriever's internals here; the facade owns hops/anchors/node-listing.
+        glyph_source = GlyphGraphContextSource(
             store, self._embedder, nodes, hops=self._hops, anchors=self._anchors
         )
-        glyph_pack = retriever.retrieve(query, token_budget)
+        glyph_pack = glyph_source.retrieve(query, token_budget)
         return self._adapt_pack(glyph_pack)
 
     def _adapt_pack(self, glyph_pack: object) -> ContextPack:
