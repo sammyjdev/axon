@@ -1,8 +1,8 @@
-"""GLYPH-backed graph-aware context source (ADR-102/103 delegation).
+"""GLYPH-backed graph-aware context source (dec-116 delegation).
 
 GLYPH (``glyph-kg``) is the canonical knowledge-graph retrieval library. AXON no
 longer reimplements graph retrieval: this module reads the consolidated SQLite
-code graph (ADR-103), maps AXON's nodes/edges onto GLYPH's :class:`Node` /
+code graph (dec-101), maps AXON's nodes/edges onto GLYPH's :class:`Node` /
 :class:`Edge`, builds an in-memory ``NetworkXStore`` + ``GraphRetriever`` straight
 through the constructors (no temp JSON file), and adapts the GLYPH
 ``ContextPack`` back to AXON's own :class:`~axon.context.contracts.ContextPack`
@@ -114,7 +114,7 @@ def _ensure_embedder(embedder: object) -> object:
 class GraphContextSource:
     """AXON's graph-aware context source, delegated to the GLYPH library.
 
-    Construct with an open :class:`SessionStore` (the ADR-103 SQLite graph) and
+    Construct with an open :class:`SessionStore` (the dec-101 SQLite graph) and
     an embedder (AXON's :class:`EmbedderEngine`, or any object exposing
     ``embed(texts) -> list[Sequence[float]]``). ``context`` returns an AXON
     :class:`ContextPack`, preserving the contract the MCP layer consumes today.
