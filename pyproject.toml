@@ -39,7 +39,7 @@ dependencies = [
     "pydantic>=2.0",
     "structlog>=24.0",
     "pyyaml>=6.0",
-    # GLYPH is the canonical knowledge-graph retrieval lib (ADR-102/103). Pinned
+    # GLYPH is the canonical knowledge-graph retrieval lib (dec-116). Pinned
     # to a validated SHA: upstream `main` already drifted from its documented
     # entry point, so a moving ref would make AXON's build non-deterministic.
     # `retrieval` extra pulls numpy (InMemoryVectorIndex); we wrap AXON's own
@@ -70,7 +70,7 @@ bench = [
 ]
 
 [tool.hatch.metadata]
-# Required for the glyph-kg git+https direct reference (ADR-102/103 delegation).
+# Required for the glyph-kg git+https direct reference (dec-116 delegation).
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]

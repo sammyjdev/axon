@@ -689,7 +689,7 @@ async def get_graph_path(from_node: str, to_node: str) -> str:
 @mcp.tool()
 @traced_tool(risk="read")
 async def get_graph_context(query: str, token_budget: int = 1000) -> str:
-    """Contexto graph-aware do código, servido pela lib GLYPH (ADR-102/103).
+    """Contexto graph-aware do código, servido pela lib GLYPH (dec-116).
 
     Ancora a query no grafo de código consolidado (SQLite) e expande a
     vizinhança via GLYPH, retornando segmentos ordenados por relevância.
