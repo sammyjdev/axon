@@ -50,7 +50,9 @@ project.
 
 ## ADR-004: Split graph backends by responsibility
 
-- Status: partially revoked by dec-101 (Neo4j dropped; see docs/decisions/).
+- Status: partially revoked by dec-101 (Neo4j dropped; see docs/decisions/);
+  extended by dec-116 (graph-aware context retrieval is now delegated to the
+  GLYPH library `glyph-kg`; AXON no longer reimplements graph retrieval).
 - Decision: use Redis for code dependency relationships and Neo4j only for
   Mem0-style memory relationships.
 - Rationale: the two graph use cases have different query patterns and

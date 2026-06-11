@@ -448,6 +448,47 @@ class SessionStore:
                 frontier = next_frontier
         return None
 
+    async def all_nodes(self) -> list[dict[str, object]]:
+        """Return every persisted node (id/type/label/payload) for graph export.
+
+        Read-only full scan used by the GLYPH bridge, which needs the whole
+        graph at once rather than a seed-anchored subgraph.
+        """
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            rows = await db.execute_fetchall(
+                "SELECT id, type, label, payload FROM nodes ORDER BY id"
+            )
+        return [
+            {
+                "id": r["id"],
+                "type": r["type"],
+                "label": r["label"],
+                "payload": json.loads(r["payload"]) if r["payload"] else {},
+            }
+            for r in rows
+        ]
+
+    async def all_edges(self) -> list[Edge]:
+        """Return every persisted edge as :class:`Edge` for graph export."""
+        async with self._lock:
+            db = await self._connection()
+            db.row_factory = aiosqlite.Row
+            rows = await db.execute_fetchall(
+                "SELECT source_id, target_id, type, payload FROM edges"
+                " ORDER BY source_id, target_id, type"
+            )
+        return [
+            Edge(
+                source_id=r["source_id"],
+                target_id=r["target_id"],
+                type=r["type"],
+                payload=json.loads(r["payload"]) if r["payload"] else None,
+            )
+            for r in rows
+        ]
+
     async def save_decision(self, decision: Decision) -> None:
         async with self._lock:
             db = await self._connection()
