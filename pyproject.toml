@@ -39,6 +39,13 @@ dependencies = [
     "pydantic>=2.0",
     "structlog>=24.0",
     "pyyaml>=6.0",
+    # GLYPH is the canonical knowledge-graph retrieval lib (ADR-102/103). Pinned
+    # to a validated SHA: upstream `main` already drifted from its documented
+    # entry point, so a moving ref would make AXON's build non-deterministic.
+    # `retrieval` extra pulls numpy (InMemoryVectorIndex); we wrap AXON's own
+    # EmbedderEngine, so the heavy `embeddings`/sentence-transformers extra is
+    # intentionally omitted.
+    "glyph-kg[retrieval] @ git+https://github.com/sammyjdev/glyph-kg.git@ceb9eb9e484938a2371a6f7aaf96fd73f8ea3227",
 ]
 
 [project.urls]
@@ -61,6 +68,10 @@ dev = [
 bench = [
     "matplotlib>=3.8",
 ]
+
+[tool.hatch.metadata]
+# Required for the glyph-kg git+https direct reference (ADR-102/103 delegation).
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/axon"]
