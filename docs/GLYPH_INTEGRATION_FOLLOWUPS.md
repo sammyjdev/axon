@@ -116,7 +116,17 @@ isolated) → #3 (cheap hygiene) → #5 (after GLYPH tag) → #4 (own PR, TDD).
   2. In AXON `pyproject.toml`: change the pin `@01c63f06…` → `@v0.1.0` (or
      `glyph-kg[retrieval]==0.1.0` if published).
 
-### #6 — `.gitignore` swallows the architectural lexicon (latent bug)
+### #6 — ✅ `.gitignore` swallows the architectural lexicon (latent bug)
+
+> **Done (branch `chore/glyph-dec116-followups`).** Anchored `.gitignore`
+> `data/` → `/data/` (root docker volume still ignored; `src/axon/data/` freed —
+> verified no other `src/**/data/` was un-ignored) and committed the lexicon at
+> `src/axon/data/architectural_lexicon.txt`. The original file was **never
+> committed and is lost** (only on the M1); the committed list is a
+> **reconstruction** from the gate's tests + intent — flagged in the file header
+> for validation against the M1 original. `tests/adr/gates/test_density.py` now
+> passes from a clean tree (8 passed). Original analysis below.
+
 
 - **Problem:** `src/axon/adr/lexicon.py` loads
   `src/axon/data/architectural_lexicon.txt` (its docstring says this "ships" with

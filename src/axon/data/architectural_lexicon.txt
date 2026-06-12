@@ -1,0 +1,138 @@
+# Architectural lexicon (dec-111 density gate).
+#
+# Curated tokens that signal genuine architectural commentary: verbs of intent,
+# structural nouns, and quality attributes. The density gate (passes_density)
+# requires at least one of these to appear in an ADR rationale *outside* the diff
+# token pool, proving the text is real reasoning and not a paraphrase of the code.
+#
+# Format: one lowercase token per line; `#` comments and blank lines are ignored
+# (see src/axon/adr/lexicon.py). No stemming is applied downstream, so list the
+# inflected forms that actually occur (e.g. both "module" and "modules").
+#
+# RECONSTRUCTION NOTE (2026-06-12): the original curated file was never committed
+# (.gitignore swallowed src/axon/data/ via an unanchored `data/` rule) and lives
+# only on the original M1 machine. This list was reconstructed from the gate's
+# tests and intent; validate/merge against the M1 original when available.
+# Deliberately NOT included — they appear in negative-path gate tests and would
+# break them: architectural, concept, path.
+
+# --- Verbs of intent (architectural moves) ---
+adopt
+abstract
+encapsulate
+decouple
+modularize
+refactor
+restructure
+consolidate
+centralize
+decentralize
+delegate
+isolate
+extract
+compose
+orchestrate
+normalize
+denormalize
+partition
+federate
+deprecate
+supersede
+migrate
+replace
+enforce
+guard
+gate
+validate
+version
+pin
+cache
+batch
+stream
+throttle
+debounce
+retry
+fallback
+degrade
+recover
+backpressure
+
+# --- Structural nouns ---
+boundary
+boundaries
+module
+modules
+layer
+layers
+repository
+repositories
+pattern
+patterns
+interface
+interfaces
+contract
+contracts
+facade
+adapter
+adapters
+gateway
+registry
+pipeline
+pipelines
+component
+components
+service
+services
+dependency
+dependencies
+coupling
+cohesion
+abstraction
+abstractions
+invariant
+invariants
+schema
+namespace
+package
+subsystem
+seam
+port
+ports
+protocol
+middleware
+broker
+queue
+topology
+shard
+replica
+index
+
+# --- Quality attributes (the -ilities) ---
+scalability
+reliability
+availability
+latency
+throughput
+consistency
+durability
+idempotency
+idempotent
+resilience
+resilient
+observability
+maintainability
+modularity
+portability
+testability
+isolation
+concurrency
+atomicity
+performance
+robustness
+correctness
+determinism
+deterministic
+immutability
+immutable
+statelessness
+stateless
