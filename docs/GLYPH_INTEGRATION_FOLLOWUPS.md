@@ -89,7 +89,17 @@ isolated) → #3 (cheap hygiene) → #5 (after GLYPH tag) → #4 (own PR, TDD).
 - **Test:** monkeypatch to simulate `ModuleNotFoundError` → tool degrades, the
   rest of the server still imports.
 
-### #4 — Retire the legacy Redis `traverse` enrichment in the retrieval path
+### #4 — ✅ Retire the legacy Redis `traverse` enrichment in the retrieval path
+
+> **Done (branch `chore/glyph-dec116-followups`, decision: option A).** The
+> "Dependencias relacionadas" block in `_retrieve_context` now reads the SQLite
+> source-of-truth via `SessionStore.query_subgraph(top, depth=max_depth)` instead
+> of `GraphStore.traverse` over Redis. Same shape (2-step structural neighbours,
+> anchor excluded), better correctness (no stale cache), and the Redis dependency
+> is gone from this read (Redis stays as the structural cache elsewhere — D4/
+> dec-101). Regression `test_search_code_enriches_from_sqlite_not_redis` asserts
+> Redis `traverse` is never called. Original analysis below.
+
 
 - **Problem:** the shared helper `_retrieve_context` (`server.py:~325-332`) still
   appends a "## Dependencias relacionadas (2-step)" block via Redis

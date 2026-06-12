@@ -329,12 +329,17 @@ async def _retrieve_context(
     lines: list[str] = list(pack.segments)
     top_symbol = (results[0].get("payload") or {}).get("symbol") if results else None
     if top_symbol:
-        graph = _get_graph_store()
-        await graph.connect()
-        traversal = await graph.traverse(top_symbol, max_depth=max_depth, max_nodes=max_nodes)
-        lines.append("## Dependencias relacionadas (2-step)")
-        lines.append(f"Root: {traversal['root']}")
-        lines.append(f"Nodes: {', '.join(traversal['nodes'][:10])}")
+        # Structural "related deps" enrichment over the SQLite source-of-truth
+        # (dec-101), not the Redis traverse cache (dec-116 #4). Redis stays as the
+        # structural cache for other paths; this read just no longer depends on it.
+        store = _get_session_store()
+        await store.init()
+        subgraph = await store.query_subgraph(top_symbol, depth=max_depth)
+        related = [n for n in subgraph.get("nodes", []) if n != top_symbol]
+        if related:
+            lines.append(f"## Dependencias relacionadas ({max_depth}-step)")
+            lines.append(f"Root: {top_symbol}")
+            lines.append(f"Nodes: {', '.join(related[:10])}")
 
     lines.append(_format_context_pack(pack))
     stale_notes = _staleness_notes(results)
