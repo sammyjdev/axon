@@ -67,7 +67,14 @@ graph tests pass end-to-end against the new SHA. Item #1 is **closed**.
 Three small, independent items + one larger follow-up. Order: #6 (highest value,
 isolated) → #3 (cheap hygiene) → #5 (after GLYPH tag) → #4 (own PR, TDD).
 
-### #3 — Make the GLYPH import lazy (graceful fallback)
+### #3 — ✅ Make the GLYPH import lazy (graceful fallback)
+
+> **Done (branch `chore/glyph-dec116-followups`).** Top-level
+> `from axon.context.graph_source import ...` removed from `server.py`; the import
+> is now lazy inside `_get_graph_embedder` and `get_graph_context` (the latter
+> returns an install hint on `ModuleNotFoundError`). Covered by
+> `tests/mcp/test_graph_context_fallback.py`. Original analysis below.
+
 
 - **Problem:** `graph_source.py` imports `glyph.*` at module top
   (`from glyph.integration import ...`, `glyph.model.*`, `glyph.store.networkx_store`),
