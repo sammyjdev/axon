@@ -6,6 +6,28 @@ cleanups it surfaced. Self-contained so it can be resumed on another machine.
 - **Last updated:** 2026-06-12
 - **Related decision:** `docs/decisions/dec-116-glyph-graph-delegation.md`
 - **GLYPH repo:** `github.com/sammyjdev/glyph-kg` (local: `~/dev/glyph-kg`)
+- **Work branch:** `chore/glyph-dec116-followups` (5 commits ahead of `master`:
+  re-pin #1, lazy import #3, lexicon #6, tag-defer #5, SQLite enrichment #4).
+
+## ⏭️ Resume on the M1 Pro — 2 items left
+
+Everything else (#1, #3, #4, #6 code) is done and committed on the work branch
+above; only these two need the original M1 Pro machine / a GLYPH release action.
+
+1. **#6 — validate the reconstructed architectural lexicon.** The original
+   `src/axon/data/architectural_lexicon.txt` was never committed (the unanchored
+   `.gitignore data/` rule swallowed it) and survives **only on the M1 Pro**. The
+   version now in the repo is a **reconstruction** from the density-gate tests +
+   intent (passes `tests/adr/gates/test_density.py`, but is not guaranteed to be
+   the full original curated set). **On the M1:** diff the repo copy against the
+   real file at `src/axon/data/architectural_lexicon.txt`, merge any genuine
+   tokens that were lost, and re-run `pytest tests/adr/gates/test_density.py -q`.
+   The repo file's header carries the same reminder. Do **not** re-add the tokens
+   `architectural`, `concept`, `path` — they break negative-path gate tests.
+2. **#5 — pin GLYPH by tag (after the GLYPH docs pass).** GLYPH is still
+   `version = 0.0.0` / 0 tags. Once the in-flight docs pass is pushed to GLYPH
+   `main`, tag it and switch AXON off the SHA pin — full steps in the **#5**
+   section below.
 
 ## ✅ Re-pinned and revalidated against finalized GLYPH
 
