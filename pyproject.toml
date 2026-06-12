@@ -40,13 +40,13 @@ dependencies = [
     "structlog>=24.0",
     "pyyaml>=6.0",
     # GLYPH is the canonical knowledge-graph retrieval lib (dec-116). Pinned to
-    # a fixed SHA on `main` (the merged completion of GLYPH P3-P6) so the build
+    # a fixed SHA on `main` (the completed GLYPH P0-P7 state) so the build
     # stays deterministic. AXON wires GraphRetriever/NetworkXStore through their
     # constructors (not the file-based facade), which are stable across this range.
     # `retrieval` extra pulls numpy (InMemoryVectorIndex); we wrap AXON's own
     # EmbedderEngine, so the heavy `embeddings`/sentence-transformers extra is
     # intentionally omitted.
-    "glyph-kg[retrieval] @ git+https://github.com/sammyjdev/glyph-kg.git@01c63f06a27ce02dc02d98df35c5aa962500437f",
+    "glyph-kg[retrieval] @ git+https://github.com/sammyjdev/glyph-kg.git@5366308afea2a0cb0f3a1353e1a78c2c167ea8d9",
 ]
 
 [project.urls]
