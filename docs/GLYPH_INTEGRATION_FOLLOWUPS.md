@@ -108,12 +108,14 @@ isolated) → #3 (cheap hygiene) → #5 (after GLYPH tag) → #4 (own PR, TDD).
 
 ### #5 — Pin GLYPH by tag instead of SHA
 
-- **Blocked on GLYPH:** `version = 0.0.0`, 0 tags. Prerequisite (merge the feature
-  branch to `main`) is **resolved** — `main` is merged + pushed and release-ready.
-- **Steps once GLYPH is finalized:**
+- **Deferred by decision (2026-06-12):** GLYPH still has `version = 0.0.0`, 0 tags.
+  The code is final (P0–P7) but a docs pass is still in flight on GLYPH `main`, so
+  we hold the tag until that lands — the tag should point at the final-docs commit,
+  not mid-update. AXON stays pinned by SHA (`5366308…`) in the meantime.
+- **Steps once the GLYPH docs pass is pushed:**
   1. In `~/dev/glyph-kg`: bump `version` (e.g. `0.1.0`), `git tag v0.1.0`, push tag.
      (Optional: publish to PyPI to drop the `git+https` direct ref entirely.)
-  2. In AXON `pyproject.toml`: change the pin `@01c63f06…` → `@v0.1.0` (or
+  2. In AXON `pyproject.toml`: change the pin `@5366308…` → `@v0.1.0` (or
      `glyph-kg[retrieval]==0.1.0` if published).
 
 ### #6 — ✅ `.gitignore` swallows the architectural lexicon (latent bug)
