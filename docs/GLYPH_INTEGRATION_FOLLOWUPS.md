@@ -7,17 +7,24 @@ cleanups it surfaced. Self-contained so it can be resumed on another machine.
 - **Related decision:** `docs/decisions/dec-116-glyph-graph-delegation.md`
 - **GLYPH repo:** `github.com/sammyjdev/glyph-kg` (local: `~/dev/glyph-kg`)
 
-## ⏸️ Blocked on GLYPH finalization
+## ✅ Re-pinned and revalidated against finalized GLYPH
 
-More changes are in progress on GLYPH. **Do not re-pin or close the items below
-until GLYPH is finalized.** When it is, revalidate the integration first:
+GLYPH `main` reads as a **completed P0–P7** state (see the snapshot below; owner
+confirmed only docs remain in flight). Re-pin done, seam re-validated, and the
+graph tests pass end-to-end against the new SHA. Item #1 is **closed**.
 
-1. Re-pin AXON to the new GLYPH `main` SHA (or a tag — see #5) in `pyproject.toml`.
-2. Re-check the seam API `glyph.integration.GraphContextSource` still matches what
-   `src/axon/context/graph_source.py` calls (today: `__init__(store, embedder,
-   nodes, *, hops, anchors)` + `.retrieve(query, token_budget) -> ContextPack`).
-   Note the method is `.retrieve()`, **not** `.context()`.
-3. Run the AXON graph tests against the finalized GLYPH:
+1. ✅ **Re-pinned** AXON to GLYPH `main`
+   `5366308afea2a0cb0f3a1353e1a78c2c167ea8d9` in `pyproject.toml` (still a SHA —
+   GLYPH has no tags yet, see #5). Verified the SHA is on `origin/main`, fully
+   pushed (0 ahead / 0 behind), so the `git+https` ref resolves — confirmed by a
+   clean `pip install -e ".[dev]"` that built `glyph-kg 0.0.0` from this pin.
+2. ✅ **Seam re-checked** against this SHA (live, post-install):
+   `glyph.integration.GraphContextSource` is still `__init__(store, embedder,
+   nodes, *, hops=2, anchors=3)` + `.retrieve(query, token_budget=1000) ->
+   ContextPack` (method is `.retrieve()`, **not** `.context()`).
+   `src/axon/context/graph_source.py` still matches.
+3. ✅ **AXON graph tests pass** against the finalized GLYPH — **11 passed** (2026-06-12,
+   desktop R7 5800X3D / RTX 4070 Ti):
    ```bash
    PYTHONPATH=src python3 -m pytest tests/context/test_graph_source.py \
      tests/mcp/test_graph_context_tool.py tests/store/test_graph_listing.py -q
@@ -34,15 +41,26 @@ until GLYPH is finalized.** When it is, revalidate the integration first:
   by hand and delegates retrieval to `glyph.integration.GraphContextSource`
   (ADR-G6), instead of wiring `GraphRetriever` directly.
 
-## GLYPH state (snapshot 2026-06-12, pre-finalization)
+## GLYPH state (snapshot 2026-06-12)
 
-- `main` = `01c63f06a27ce02dc02d98df35c5aa962500437f`, pushed; this is AXON's
-  current pin. P3–P6 merged. CI present (`ci.yml`, `benchmark.yml`), suite green
-  (151 passed locally, hermetic markers `live`/`slow` deselected).
-- `version = "0.0.0"`, **0 tags** → AXON can only pin by SHA today (see #5).
+- `main` has advanced to `5366308afea2a0cb0f3a1353e1a78c2c167ea8d9`. AXON's pin
+  (`01c63f06a27ce02dc02d98df35c5aa962500437f`) is now a strict ancestor — a clean
+  fast-forward, no divergence. Newly merged since the pin: **P7** (global
+  community axis + `CommunityRetriever`, ADR-G7) and **P4.4** (code-domain
+  benchmark — *vector beat graph* in the code domain — plus cross-family judge
+  validation). HEAD is "Run the global community-axis benchmark (P7 end-to-end)";
+  `1f111af` reads "docs: finalize README + plan to the completed P0-P7 state" →
+  GLYPH now presents as a **completed P0–P7** state.
+- CI present (`ci.yml`, `benchmark.yml`). Suite count not re-verified at this HEAD
+  (the pre-finalization snapshot reported 151 passed; rerun before re-pinning).
+- `version = "0.0.0"`, **0 tags** → AXON can still only pin by SHA today (see #5).
 - The packaging break (`allow-direct-references` for the `eval`/`gnomon-eval`
   direct ref) is internal to GLYPH and already fixed on `main`; AXON only uses the
   `[retrieval]` extra and is unaffected.
+- **Seam re-validated at this HEAD:** `glyph.integration.GraphContextSource` is
+  still `__init__(store, embedder, nodes, *, hops=2, anchors=3)` +
+  `.retrieve(query, token_budget=1000) -> ContextPack` (and `from_graph_file`).
+  Item #2's check passes — `src/axon/context/graph_source.py` still matches.
 
 ## Remaining work items
 
@@ -57,17 +75,22 @@ isolated) → #3 (cheap hygiene) → #5 (after GLYPH tag) → #4 (own PR, TDD).
   installed, importing `axon.mcp.server` fails and **every MCP tool dies**, not
   just the graph one. GLYPH is a hard dependency, so this is defense-in-depth.
 - **Fix (~20 min, own PR):** move the `graph_source` import into the function
-  bodies (`get_graph_context`, `_get_graph_embedder` in `server.py` ~L67/L691);
+  bodies (`_get_graph_embedder` at `server.py:69`, `get_graph_context` at
+  `server.py:691`);
   wrap with `try/except ModuleNotFoundError` returning a clean message
   ("GLYPH not installed; `pip install glyph-kg[retrieval]`") instead of a stacktrace.
 - **Test:** monkeypatch to simulate `ModuleNotFoundError` → tool degrades, the
   rest of the server still imports.
 
-### #4 — Retire the legacy Redis `traverse` enrichment in `search_code`
+### #4 — Retire the legacy Redis `traverse` enrichment in the retrieval path
 
-- **Problem:** `search_code` (`server.py:323-331`) still appends a
-  "## Dependencias relacionadas (2-step)" block via Redis `GraphStore.traverse`.
-  The merged GLYPH seam is now the canonical replacement.
+- **Problem:** the shared helper `_retrieve_context` (`server.py:~325-332`) still
+  appends a "## Dependencias relacionadas (2-step)" block via Redis
+  `GraphStore.traverse`. The merged GLYPH seam is now the canonical replacement.
+- **Scope caveat (attribution fix):** this block lives in `_retrieve_context`, not
+  in `search_code` directly — and `_retrieve_context` is called by **two** tools
+  (`search_code` at `server.py:367` **and** the caller at `server.py:558`).
+  Retiring it touches **both** call sites, not just `search_code`.
 - **Scope note:** `GraphStore`/Redis is used widely (indexing `upsert_deps`, `pb`
   CLI, git hooks) — this is **not** a Redis removal, only swapping this one
   read-time enrichment block. Redis stays as the structural cache (D4/dec-101).
