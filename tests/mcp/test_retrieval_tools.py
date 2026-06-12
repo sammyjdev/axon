@@ -46,13 +46,8 @@ async def test_search_code_applies_strategy_budget_and_returns_context_pack(monk
     )
     monkeypatch.setattr(
         server,
-        "_get_graph_store",
-        lambda: SimpleNamespace(
-            connect=lambda: _async_none(),
-            traverse=lambda symbol, max_depth, max_nodes: _async_result(
-                {"root": symbol, "nodes": ["VectorStore", "QdrantClient"]}
-            ),
-        ),
+        "_get_session_store",
+        lambda: _FakeSessionStore(nodes=["upsert", "VectorStore", "QdrantClient"]),
     )
 
     response = await server.search_code(
@@ -76,6 +71,11 @@ async def test_ask_surfaces_context_pack_and_skips_compression_for_minimal_strat
     class FakeSessionStore:
         async def init(self) -> None:
             return None
+
+        async def query_subgraph(
+            self, node_id: str, depth: int = 2
+        ) -> dict[str, object]:
+            return {"root": node_id, "nodes": [], "edges": []}
 
     class FakeDetector:
         def __init__(self, *_args, **_kwargs) -> None:
@@ -114,16 +114,6 @@ async def test_ask_surfaces_context_pack_and_skips_compression_for_minimal_strat
         lambda content, ctx=None: (TaskType.TRIVIAL_COMPLETION, "local"),
     )
     monkeypatch.setattr(server, "caveman_compress_guarded", fail_caveman)
-    monkeypatch.setattr(
-        server,
-        "_get_graph_store",
-        lambda: SimpleNamespace(
-            connect=lambda: _async_none(),
-            traverse=lambda symbol, max_depth, max_nodes: _async_result(
-                {"root": symbol, "nodes": []}
-            ),
-        ),
-    )
 
     response = await server.ask(query="upsert?", ctx="knowledge", caller="claude-code")
 
@@ -170,16 +160,7 @@ async def test_search_code_surfaces_staleness_notes(monkeypatch) -> None:
         "axon.router.classifier.classify_task_with_source",
         lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
     )
-    monkeypatch.setattr(
-        server,
-        "_get_graph_store",
-        lambda: SimpleNamespace(
-            connect=lambda: _async_none(),
-            traverse=lambda symbol, max_depth, max_nodes: _async_result(
-                {"root": symbol, "nodes": []}
-            ),
-        ),
-    )
+    monkeypatch.setattr(server, "_get_session_store", lambda: _FakeSessionStore())
 
     response = await server.search_code(
         query="upsert vector", ctx="knowledge", caller="claude-code"
@@ -189,9 +170,72 @@ async def test_search_code_surfaces_staleness_notes(monkeypatch) -> None:
     assert "- upsert stale -> replacement=fresh-hit (newer_record_in_family)" in response
 
 
+class _FakeSessionStore:
+    """SQLite-source-of-truth stand-in exposing the graph reads server uses."""
+
+    def __init__(self, nodes: list[str] | None = None) -> None:
+        self._nodes = nodes or []
+
+    async def init(self) -> None:
+        return None
+
+    async def query_subgraph(self, node_id: str, depth: int = 2) -> dict[str, object]:
+        return {"root": node_id, "nodes": self._nodes, "edges": []}
+
+
+@pytest.mark.asyncio
+async def test_search_code_enriches_from_sqlite_not_redis(monkeypatch) -> None:
+    """dec-116 #4: the 'related deps' enrichment reads the SQLite source-of-truth
+    (query_subgraph), not the Redis traverse cache."""
+    captured: dict[str, object] = {}
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.91,
+                "payload": {
+                    "symbol": "upsert",
+                    "language": "python",
+                    "file_path": "/tmp/vector_store.py",
+                    "content": "async def upsert(self, chunk): ...",
+                },
+            }
+        ],
+        captured,
+    )
+
+    monkeypatch.setattr(server, "_get_vector_store", lambda: store)
+    monkeypatch.setattr(
+        server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
+    )
+    monkeypatch.setattr(
+        "axon.router.classifier.classify_task_with_source",
+        lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
+    )
+    monkeypatch.setattr(
+        server,
+        "_get_session_store",
+        lambda: _FakeSessionStore(nodes=["upsert", "VectorStore", "QdrantClient"]),
+    )
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("Redis traverse must not be called (dec-116 #4)")
+
+    monkeypatch.setattr(
+        server,
+        "_get_graph_store",
+        lambda: SimpleNamespace(connect=lambda: _async_none(), traverse=_boom),
+    )
+
+    response = await server.search_code(
+        query="upsert vector", ctx="knowledge", caller="claude-code"
+    )
+
+    assert "## Dependencias relacionadas" in response
+    assert "Root: upsert" in response
+    # neighbors come from SQLite, with the anchor itself excluded
+    assert "VectorStore" in response
+    assert "QdrantClient" in response
+
+
 async def _async_none():
     return None
-
-
-async def _async_result(value):
-    return value
