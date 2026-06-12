@@ -11,7 +11,6 @@ from mcp.server.fastmcp import FastMCP
 from axon.config.runtime import load_runtime_config
 from axon.context.compression_quality import compression_quality_note
 from axon.context.contracts import ContextPack, select_default_retrieval_strategy
-from axon.context.graph_source import GlyphEmbedderAdapter, GraphContextSource
 from axon.context.rtk import RTKError, compress_text_with_rtk
 from axon.core.decision import Decision
 from axon.embedder.engine import EmbedderEngine
@@ -67,7 +66,13 @@ def _get_embedder() -> EmbedderEngine:
 
 
 def _get_graph_embedder() -> object:
-    """Embedder for GLYPH graph retrieval: AXON's engine behind the GLYPH port."""
+    """Embedder for GLYPH graph retrieval: AXON's engine behind the GLYPH port.
+
+    Imports GLYPH lazily (dec-116 #3) so a missing ``glyph-kg`` install can't
+    break module import for every other MCP tool.
+    """
+    from axon.context.graph_source import GlyphEmbedderAdapter
+
     return GlyphEmbedderAdapter(_get_embedder())
 
 
@@ -694,6 +699,12 @@ async def get_graph_context(query: str, token_budget: int = 1000) -> str:
     Ancora a query no grafo de código consolidado (SQLite) e expande a
     vizinhança via GLYPH, retornando segmentos ordenados por relevância.
     """
+    # Lazy GLYPH import (dec-116 #3): degrade only this tool when glyph-kg is
+    # absent, instead of failing the whole server at module-import time.
+    try:
+        from axon.context.graph_source import GraphContextSource
+    except ModuleNotFoundError:
+        return "GLYPH não instalado; rode `pip install glyph-kg[retrieval]`."
     store = _get_session_store()
     await store.init()
     source = GraphContextSource(store, _get_graph_embedder())
