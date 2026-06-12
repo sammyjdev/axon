@@ -21,8 +21,9 @@ venv/
 # Per-repo agent settings (MCP config is machine-local)
 .claude/
 
-# Data (runtime volumes do docker-compose)
-data/
+# Data (runtime volumes do docker-compose) — anchored to repo root so it does
+# not also swallow packaged data like src/axon/data/ (dec-116 #6).
+/data/
 *.db
 *.sqlite
 *.sqlite3
