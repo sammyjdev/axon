@@ -225,6 +225,7 @@ gate's coverage (T-105).
 
 | Document | Contents |
 |---|---|
+| [`docs/SECOND_BRAIN.md`](docs/SECOND_BRAIN.md) | Run AXON as a low-cost second brain in Claude Code |
 | [`CLAUDE.md`](CLAUDE.md) | Architecture decisions, code conventions, agent rules |
 | [`docs/ADR.md`](docs/ADR.md) | Active architectural decision records |
 | [`docs/METRICS.md`](docs/METRICS.md) | Recomputed performance metrics manifest (dated) |
