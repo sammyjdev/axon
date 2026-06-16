@@ -196,10 +196,16 @@ def _select_retrieval_strategy(query: str, ctx: str | None) -> tuple[object, str
     from axon.router.classifier import TaskType, classify_task_with_source
 
     task_type = TaskType.CODE_ANALYSIS
-    try:
-        task_type, _source = classify_task_with_source(query, ctx=ctx)
-    except Exception:
-        pass
+    # When the completion model is pinned local (AXON_COMPLETION_MODEL), keep the
+    # whole request offline: skip the task classifier, which otherwise routes to a
+    # cloud provider under the FREE profile and would send the query off-box. The
+    # default strategy (CODE_ANALYSIS) is the same one the except-branch falls back
+    # to, so retrieval behaviour is unchanged — only the cloud call is dropped.
+    if not os.environ.get("AXON_COMPLETION_MODEL", "").strip():
+        try:
+            task_type, _source = classify_task_with_source(query, ctx=ctx)
+        except Exception:
+            pass
 
     profile, mode, capabilities = _load_retrieval_profile()
     strategy = select_default_retrieval_strategy(
