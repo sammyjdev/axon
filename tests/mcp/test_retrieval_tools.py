@@ -18,6 +18,50 @@ class _FakeVectorStore:
         return self._results
 
 
+def _stub_strategy_deps(monkeypatch) -> None:
+    """Isolate _select_retrieval_strategy from config/strategy I/O."""
+    monkeypatch.setattr(server, "_load_retrieval_profile", lambda: ("free", "auto", ()))
+    monkeypatch.setattr(
+        server, "select_default_retrieval_strategy", lambda **kw: SimpleNamespace(**kw)
+    )
+
+
+def test_retrieval_strategy_skips_cloud_classifier_when_model_pinned(monkeypatch) -> None:
+    """A pinned local completion model must keep retrieval offline: the cloud
+    classifier is never invoked (it would route to Groq under the FREE profile)."""
+    _stub_strategy_deps(monkeypatch)
+    calls: list[str] = []
+
+    def _spy(content, ctx=None):
+        calls.append(content)
+        return (TaskType.DEEP_REASONING, "cloud")
+
+    monkeypatch.setattr("axon.router.classifier.classify_task_with_source", _spy)
+    monkeypatch.setenv("AXON_COMPLETION_MODEL", "ollama/qwen2.5:7b")
+
+    _strategy, task_type, _profile, _mode = server._select_retrieval_strategy("q", "knowledge")
+
+    assert calls == [], "classifier must not be called when the model is pinned"
+    assert task_type == TaskType.CODE_ANALYSIS.value
+
+
+def test_retrieval_strategy_uses_classifier_when_model_not_pinned(monkeypatch) -> None:
+    _stub_strategy_deps(monkeypatch)
+    calls: list[str] = []
+
+    def _spy(content, ctx=None):
+        calls.append(content)
+        return (TaskType.DEEP_REASONING, "local")
+
+    monkeypatch.setattr("axon.router.classifier.classify_task_with_source", _spy)
+    monkeypatch.delenv("AXON_COMPLETION_MODEL", raising=False)
+
+    _strategy, task_type, _profile, _mode = server._select_retrieval_strategy("q", "knowledge")
+
+    assert calls == ["q"], "classifier should run when no model is pinned"
+    assert task_type == TaskType.DEEP_REASONING.value
+
+
 @pytest.mark.asyncio
 async def test_search_code_applies_strategy_budget_and_returns_context_pack(monkeypatch) -> None:
     captured: dict[str, object] = {}
