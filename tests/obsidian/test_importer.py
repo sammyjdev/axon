@@ -13,8 +13,32 @@ from pathlib import Path
 import pytest
 
 from axon.obsidian import discovery
-from axon.obsidian.importer import ingest_vault
+from axon.obsidian.importer import _note_chunks, ingest_vault
 from axon.store.session_store import SessionStore
+
+
+# ---------------------------------------------------------------------------
+# _note_chunks — heading-aware splitting
+# ---------------------------------------------------------------------------
+
+
+def test_note_chunks_splits_on_atx_headings() -> None:
+    headings = [h for h, _ in _note_chunks("# A\nalpha\n## B\nbeta\n")]
+    assert headings == ["A", "B"]
+
+
+def test_note_chunks_ignores_obsidian_tag_lines() -> None:
+    """A bare ``#tag`` line is not a heading and must not start a new chunk."""
+    chunks = _note_chunks("# Real Heading\nbody text\n#mytag\nmore body\n")
+    assert len(chunks) == 1
+    assert chunks[0][0] == "Real Heading"
+    assert "#mytag" in chunks[0][1]
+
+
+def test_note_chunks_no_heading_is_single_chunk() -> None:
+    chunks = _note_chunks("just some prose\nwith #inline-tag here\n")
+    assert len(chunks) == 1
+    assert chunks[0][0] == ""
 
 
 # ---------------------------------------------------------------------------
