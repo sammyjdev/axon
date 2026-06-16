@@ -99,7 +99,43 @@ def daily_cost() -> float:
 
 
 def route(task: TaskRequest) -> RouteResult:
-    """Classifica a task e retorna o modelo adequado dentro do budget."""
+    """Classifica a task e retorna o modelo adequado dentro do budget.
+
+    Quando AXON_COMPLETION_MODEL está definido, a classificação e o downgrade
+    de budget são ignorados — o operador fixou o modelo explicitamente.
+    """
+    pinned_model = os.environ.get("AXON_COMPLETION_MODEL", "").strip()
+    if pinned_model:
+        decision = _POLICY.decide(
+            ctx=task.ctx,
+            model=pinned_model,
+            caller="router",
+            force_cloud=bool(task.extra.get("force_cloud")),
+        )
+        if not decision.allowed:
+            raise RuntimeError(f"policy blocked request ({decision.reason_code.value})")
+
+        estimated = _COST_PER_1K.get(pinned_model, 0.0) * (len(task.content) / 4000)
+
+        logger.info(
+            "router decision: task_type=%s source=%s model=%s estimated=%.6f ctx=%s",
+            TaskType.UNKNOWN.value,
+            "pinned",
+            pinned_model,
+            estimated,
+            task.ctx or "auto",
+        )
+
+        return RouteResult(
+            model=pinned_model,
+            task_type=TaskType.UNKNOWN,
+            estimated_cost=estimated,
+            classifier_source="pinned",
+            decision_id=decision.decision_id,
+            reason_code=decision.reason_code.value,
+            policy_version=decision.policy_version,
+        )
+
     task_type, source = classify_task_with_source(task.content, ctx=task.ctx)
     cost_today = daily_cost()
 
@@ -236,11 +272,19 @@ async def complete(task: TaskRequest, messages: list[dict]) -> str:
     if not _BREAKER.allow_call(breaker_key):
         raise RuntimeError(ReasonCode.DENY_BREAKER_OPEN.value)
 
-    try:
-        response = await litellm.acompletion(
-            model=result.model,
-            messages=layered_messages,
+    # Para modelos Ollama, litellm precisa do api_base — resolve via env ou
+    # AXON_OLLAMA_LOCAL_HOST. Não afeta provedores cloud.
+    completion_kwargs: dict = {"model": result.model, "messages": layered_messages}
+    if result.model.startswith("ollama/"):
+        ollama_host = (
+            os.environ.get("OLLAMA_BASE_URL")
+            or _RUNTIME.ollama_local_host
+            or "http://localhost:11434"
         )
+        completion_kwargs["api_base"] = ollama_host
+
+    try:
+        response = await litellm.acompletion(**completion_kwargs)
         _BREAKER.record_success(breaker_key)
     except Exception:
         _BREAKER.record_failure(breaker_key)
