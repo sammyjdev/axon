@@ -14,8 +14,11 @@ from qdrant_client.models import (
 
 from axon.context.registry import VALID_CONTEXTS
 from axon.context.staleness import assess_staleness, detect_stale_replacements
+from axon.embedder.engine import default_embedding_dimension
 
-VECTOR_SIZE = int(os.environ.get("AXON_VECTOR_SIZE", "384"))
+# AXON_VECTOR_SIZE overrides the default; the default is derived from the
+# platform-selected embedder model so collections always match embedding output.
+VECTOR_SIZE = int(os.environ.get("AXON_VECTOR_SIZE", default_embedding_dimension()))
 _STALE_RANKING_PENALTY = 0.2
 
 COLLECTIONS = list(VALID_CONTEXTS)
