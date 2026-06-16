@@ -109,6 +109,41 @@ def serve() -> None:
     mcp_main()
 
 
+@app.command("serve-http")
+def serve_http(
+    port: int = typer.Option(8765, "--port", "-p", help="TCP port to listen on."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address."),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev only)."),
+) -> None:
+    """Start the AXON OpenAI-compatible HTTP server.
+
+    Exposes POST /v1/chat/completions so external evaluators (e.g. gnomon-eval)
+    can measure recall quality.  The MCP stdio path is unchanged.
+
+    Requires the 'http' optional extra::
+
+        pip install axon-mcp[http]
+
+    Point gnomon at it with base_url = http://localhost:8765/v1
+    """
+    try:
+        import uvicorn
+    except ModuleNotFoundError:
+        typer.echo(
+            "uvicorn is not installed. Run: pip install axon-mcp[http]",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    typer.echo(f"Starting AXON HTTP server on http://{host}:{port}/v1")
+    uvicorn.run(
+        "axon.http.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 @app.command()
 def health() -> None:
     """Report the health of each AXON subsystem (SQLite, Redis, Qdrant, mem0, vault, git)."""
@@ -328,6 +363,82 @@ def export(
     else:
         typer.echo(f"Unknown doc type: {doc_type} (adr|architecture|summary)", err=True)
         raise typer.Exit(1)
+
+
+@app.command("ingest-vault")
+def ingest_vault_cmd(
+    vault: str | None = typer.Option(
+        None, "--vault", help="Path to the Obsidian vault (overrides AXON_VAULT / auto-discovery)."
+    ),
+    provider: str = typer.Option(
+        "litellm", "--provider", help="LLM provider: 'litellm' or 'anthropic'."
+    ),
+    model: str = typer.Option(
+        "ollama/llama3", "--model", help="Model name passed to the provider."
+    ),
+    base_url: str | None = typer.Option(
+        "http://localhost:11434",
+        "--base-url",
+        help="Base URL for the LLM endpoint (Ollama default).",
+    ),
+    api_key: str | None = typer.Option(
+        None, "--api-key", help="API key for the LLM provider (omit for local Ollama)."
+    ),
+    ctx: str = typer.Option(
+        "personal", "--ctx", help="Context/collection for the note vectors (default: personal)."
+    ),
+    no_vectors: bool = typer.Option(
+        False, "--no-vectors", help="Skip vector indexing; write only the SQLite graph."
+    ),
+) -> None:
+    """Ingest an Obsidian vault into the AXON knowledge graph.
+
+    Walks every ``.md`` file in the vault, extracts entities and relations
+    with GLYPH's notes schema (via the configured LLM), and writes them into
+    BOTH the SQLite graph (entities/relations) AND the Qdrant ``--ctx``
+    collection (note text) so ``ask`` / ``search_code`` / the HTTP endpoint
+    retrieve the notes via the primary vector path.
+
+    Defaults to a local Ollama endpoint — no API key required.
+    """
+    from axon.cli.pb import _get_db_path
+    from axon.obsidian.importer import ingest_vault
+    from axon.store.session_store import SessionStore
+
+    vault_path = Path(vault).expanduser().resolve() if vault else None
+
+    async def _run() -> tuple[Path | None, int, int, int]:
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            n_nodes, n_edges, n_vectors = await ingest_vault(
+                store,
+                vault_path=vault_path,
+                provider=provider,
+                model=model,
+                base_url=base_url or None,
+                api_key=api_key,
+                index_vectors=not no_vectors,
+                ctx=ctx,
+            )
+            # discover_vault may have resolved the path; retrieve it for the summary
+            from axon.obsidian.discovery import discover_vault as _dv
+
+            resolved = vault_path or _dv()
+            return resolved, n_nodes, n_edges, n_vectors
+        finally:
+            await store.close()
+
+    try:
+        resolved_vault, n_nodes, n_edges, n_vectors = asyncio.run(_run())
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"vault:    {resolved_vault}")
+    typer.echo(f"nodes:    {n_nodes}")
+    typer.echo(f"edges:    {n_edges}")
+    typer.echo(f"vectors:  {n_vectors} (ctx={ctx})")
 
 
 # ---------------------------------------------------------------------------
