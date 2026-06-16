@@ -32,6 +32,17 @@ logger = logging.getLogger(__name__)
 _NOTE_NS = uuid.UUID("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
 
 
+def _is_atx_heading(line: str) -> bool:
+    """True only for real ATX markdown headings (``#`` .. ``######`` + space).
+
+    Guards against Obsidian ``#tag`` lines, which start with ``#`` but are not
+    headings and must not split a note into a spurious chunk.
+    """
+    stripped = line.lstrip()
+    level = len(stripped) - len(stripped.lstrip("#"))
+    return 1 <= level <= 6 and stripped[level : level + 1] in ("", " ")
+
+
 def _note_chunks(text: str) -> list[tuple[str, str]]:
     """Split a markdown note into ``(heading, body)`` chunks for vector indexing.
 
@@ -54,7 +65,7 @@ def _note_chunks(text: str) -> list[tuple[str, str]]:
             chunks.append((heading, body))
 
     for line in text.splitlines():
-        if line.lstrip().startswith("#"):
+        if _is_atx_heading(line):
             flush()
             heading = line.lstrip("# ").strip()
             buf = [line]
