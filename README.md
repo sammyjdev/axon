@@ -201,14 +201,14 @@ re-supplies the full project context on every turn (87,000 tokens baseline vs.
 [`benchmarks/README.md`](benchmarks/README.md) for the assumptions, caveats,
 and how to run it yourself.
 
-Production telemetry across the turns where the compression pipeline actually
-fired (inputs above ~180 tokens, `reduction_pct > 0`) in the committed
-[`data/compression/stats.jsonl`](data/compression/stats.jsonl): **p50 = 57.5%**,
-**mean = 58.2%**, **p95 = 84.7%**, **max = 91.6%** over **n=10 compressed
-turns** out of 295 total telemetry records. The other 285 records are no-op
-entries written by instrumented read-only tools (`get_graph_path`,
-`get_graph_neighbors`, etc.) and by `engine=disabled`/`rtk` paths that
-deliberately skip compression — they are excluded from the percentile bucket.
+Measured compression telemetry from running the real pipeline (`phi3:mini`
+via Ollama, caveman + RTK) over 69 representative technical context windows
+(source and docs drawn from this repo), in the committed
+[`data/compression/stats.jsonl`](data/compression/stats.jsonl): **p50 = 85.5%**,
+**mean = 78.8%**, **p95 = 95.5%**, **max = 97.0%** over **n=69 compressed
+windows** (75,258 → 15,778 tokens; 59,480 saved). Engines: 60
+`caveman/phi3+rtk`, 9 `caveman/phi3`. This is a committed local snapshot over
+representative context, not production usage.
 Reproduce with:
 
 ```bash
@@ -232,7 +232,7 @@ gate's coverage (T-105).
 | [`docs/ARD.md`](docs/ARD.md) | Architectural requirements |
 | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) | CLI workflows |
 | [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap |
-| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-115) |
+| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-116) |
 | [`docs/decisions/dec-106-routing-profiles.md`](docs/decisions/dec-106-routing-profiles.md) | FREE/PAID provider profiles + rate limit gate |
 | [`docs/decisions/dec-109-tool-tracing-and-risk-gating.md`](docs/decisions/dec-109-tool-tracing-and-risk-gating.md) | Tool risk classes, policy gate, tracing middleware |
 | [`benchmarks/README.md`](benchmarks/README.md) | Token savings benchmark |
