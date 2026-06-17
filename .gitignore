@@ -23,7 +23,12 @@ venv/
 
 # Data (runtime volumes do docker-compose) — anchored to repo root so it does
 # not also swallow packaged data like src/axon/data/ (dec-116 #6).
-/data/
+/data/*
+# Exception: commit the compression telemetry snapshot so the metrics in
+# docs/METRICS.md are reproducible from a fresh checkout.
+!/data/compression/
+/data/compression/*
+!/data/compression/stats.jsonl
 *.db
 *.sqlite
 *.sqlite3
