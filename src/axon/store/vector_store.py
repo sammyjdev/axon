@@ -40,7 +40,11 @@ class Chunk(BaseModel):
 
 class VectorStore:
     def __init__(self, url: str = "http://localhost:6333") -> None:
-        self._client = AsyncQdrantClient(url=url)
+        # check_compatibility=False: the default True triggers a synchronous
+        # version-check HTTP call on first use that blocks the asyncio event
+        # loop (it never yields), which hangs stdio MCP tool calls such as
+        # axon_health under the FastMCP loop. Skipping it keeps calls async.
+        self._client = AsyncQdrantClient(url=url, check_compatibility=False)
 
     async def ensure_collections(self) -> None:
         existing = {c.name for c in (await self._client.get_collections()).collections}
