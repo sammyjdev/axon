@@ -11,7 +11,12 @@ from mcp.server.fastmcp import FastMCP
 from axon.config.runtime import load_runtime_config
 from axon.context.compression_quality import compression_quality_note
 from axon.context.contracts import ContextPack, select_default_retrieval_strategy
-from axon.context.rtk import RTKError, compress_text_with_rtk
+from axon.context.rtk import (
+    RTKError,
+    compress_text_with_rtk,
+    restore_original_with_rtk,
+    store_original_with_rtk,
+)
 from axon.core.decision import Decision
 from axon.embedder.engine import EmbedderEngine
 from axon.hooks.file_bridge import update_context_file
@@ -141,6 +146,15 @@ def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
         return compress_text_with_rtk(text, max_tokens=max_tokens), None
     except RTKError as exc:
         return text, str(exc)
+
+
+def _reversible_enabled() -> bool:
+    return os.environ.get("AXON_RTK_REVERSIBLE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _build_planner_executor_prompts(
@@ -606,8 +620,15 @@ async def ask(
         if caveman_err is None:
             engines.append("caveman/phi3")
         if rtk_err is None:
-            engines.append("rtk")
+            engines.append("rtkx")
         used_engine = "+".join(engines) if engines else "fallback"
+
+        # Reversible compression (opt-in): stash the original so the agent can
+        # restore it on demand via the `restore_context` tool. Off by default.
+        if _reversible_enabled() and used_engine != "fallback":
+            handle = store_original_with_rtk(pack.text)
+            if handle:
+                compressed_context = f"{compressed_context}\n\n[[ccr:{handle}]]"
 
         after_tokens = _estimate_tokens(compressed_context)
         reduction = max(0, before_tokens - after_tokens)
@@ -724,6 +745,23 @@ async def get_graph_context(query: str, token_budget: int = 1000) -> str:
     response = _truncate(response, token_budget)
     _record_mcp_tool_call("get_graph_context", query, response)
     return response
+
+
+@mcp.tool()
+@traced_tool(risk="read")
+async def restore_context(handle: str) -> str:
+    """Restaura o conteúdo original (pré-compressão) de um handle CCR via rtkx.
+
+    Com a compressão reversível ligada, o contexto comprimido carrega um marcador
+    ``[[ccr:<handle>]]``; passe o ``<handle>`` aqui para recuperar o original
+    completo sob demanda, sem reexecutar a recuperação.
+    """
+    try:
+        original = restore_original_with_rtk(handle)
+    except RTKError as exc:
+        return f"rtkx restore falhou: {exc}"
+    _record_mcp_tool_call("restore_context", handle, original)
+    return original
 
 
 # ---------------------------------------------------------------------------

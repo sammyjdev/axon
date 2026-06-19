@@ -909,14 +909,14 @@ def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> 
     assert "Contexto relevante:" in result.stdout
     assert "Síntese inicial:" in result.stdout
     assert "compression:" in result.stdout
-    assert "engine: caveman/phi3+rtk" in result.stdout
+    assert "engine: caveman/phi3+rtkx" in result.stdout
     assert "Prompt pronto — Claude (Planner):" in result.stdout
     assert "Prompt pronto — Codex (Executor):" in result.stdout
     assert "Prompt pronto — Local (Knowledge Draft):" in result.stdout
 
     stats_file = tmp_path / "data" / "compression" / "stats.jsonl"
     record = json.loads(stats_file.read_text(encoding="utf-8").strip())
-    assert record["engine"] == "caveman/phi3+rtk"
+    assert record["engine"] == "caveman/phi3+rtkx"
     assert record["caller"] == "cli"
     assert record["ctx"] == "knowledge"
 
@@ -1193,7 +1193,7 @@ def test_rtk_proxy_without_binary_exits(monkeypatch) -> None:
     result = runner.invoke(pb.app, ["rtk-proxy", "git status"])
 
     assert result.exit_code == 1
-    assert "RTK não instalado" in result.stdout
+    assert "rtkx não instalado" in result.stdout
 
 
 def test_rtk_init_codex_calls_expected_command(monkeypatch) -> None:

@@ -15,6 +15,26 @@ any agent.
 
 ---
 
+## The stack
+
+AXON is the front of a three-part, self-hosted context stack — install one
+thing, get all three:
+
+| Layer | Role | Project |
+|---|---|---|
+| **AXON** | Cross-agent memory + MCP orchestration (this repo) | `axon` |
+| **GLYPH** | Graph-aware retrieval — decides *what* context to bring | [`glyph-kg`](https://github.com/sammyjdev/glyph-kg), pulled in via pip |
+| **rtkx** | Context compression + reversible store — decides *how compact* | [`rtkx`](https://github.com/sammyjdev/rtkx), installed via `axon rtk-install` |
+
+GLYPH and rtkx are clean, independently-tested dependencies, not a monolith.
+The compressed context stays in the LLM window; the full pre-compression
+original is one `restore_context` MCP call away (opt-in via
+`AXON_RTK_REVERSIBLE`). That reversible-compression edge is what a bundled
+competitor like Headroom gives up by being broad-and-shallow — here each layer
+stays narrow-and-deep and is swappable on its own.
+
+---
+
 ## Quickstart
 
 AXON is not yet on PyPI. Install from source:
@@ -24,6 +44,15 @@ git clone https://github.com/sammyjdev/axon.git
 cd axon
 pip install -e .
 ```
+
+This pulls in GLYPH automatically. Install the **rtkx** compression engine too
+(downloads a prebuilt binary into `~/.axon/bin`, no Rust toolchain needed):
+
+```bash
+axon rtk-install
+```
+
+`axon doctor` then reports the whole stack (axon, rtkx, caveman, GLYPH).
 
 Initialize AXON in a repo (installs git hooks and indexes the code):
 
