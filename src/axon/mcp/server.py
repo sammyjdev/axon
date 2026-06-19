@@ -1044,11 +1044,20 @@ async def axon_health() -> str:
     vault = discover_vault()
     lines.append(f"- vault: {vault}" if vault else "- vault: not found")
 
+    # Run git in a worker thread: a blocking subprocess.check_output on the
+    # asyncio/Proactor event-loop thread can stall for ~30s on Windows (handle
+    # inheritance of the stdio pipes), which hung this whole tool. to_thread
+    # keeps the loop free so the probe timeout is actually honoured.
     try:
-        subprocess.check_output(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            text=True,
-            stderr=subprocess.DEVNULL,
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                subprocess.check_output,
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                text=True,
+                stdin=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ),
+            timeout=_PROBE_TIMEOUT,
         )
         lines.append("- git: ok")
     except Exception:
