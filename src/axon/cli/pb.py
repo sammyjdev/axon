@@ -122,7 +122,7 @@ async def _compress_context_pipeline(
     if caveman_note is None:
         engines.append("caveman/phi3")
     if rtk_note is None:
-        engines.append("rtk")
+        engines.append("rtkx")
     engine_name = "+".join(engines) if engines else "fallback"
 
     after_tokens = _estimate_tokens(compressed_context)

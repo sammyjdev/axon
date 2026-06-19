@@ -54,7 +54,15 @@ def _find_axon_root() -> Path:
 AXON_ROOT = _find_axon_root()
 AXON_DB = AXON_ROOT / "data" / "axon.db"
 STATS_JSONL = AXON_ROOT / "data" / "compression" / "stats.jsonl"
-REAL_ENGINES = {"caveman/phi3+rtk", "caveman/phi3", "rtk", "fallback", "disabled"}
+REAL_ENGINES = {
+    "caveman/phi3+rtkx",
+    "caveman/phi3+rtk",  # historical telemetry (pre-rtkx rebrand)
+    "caveman/phi3",
+    "rtkx",
+    "rtk",  # historical
+    "fallback",
+    "disabled",
+}
 
 # ---------- ANSI ----------
 
