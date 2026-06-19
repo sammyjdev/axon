@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -11,9 +12,41 @@ class RTKError(RuntimeError):
     pass
 
 
+def _bootstrap_binary() -> Path:
+    """Default install location written by `axon rtk-init` (the rtkx bootstrap)."""
+    exe = "rtkx.exe" if os.name == "nt" else "rtkx"
+    return Path.home() / ".axon" / "bin" / exe
+
+
+def _usable(path: Path) -> bool:
+    return path.is_file() and os.access(path, os.X_OK)
+
+
 @lru_cache(maxsize=1)
 def rtk_binary_path() -> str | None:
-    return shutil.which("rtk")
+    """Resolve the rtkx/rtk binary.
+
+    Order: AXON_RTK_BIN -> ~/.axon/bin/rtkx (bootstrap) -> PATH (rtkx, then rtk).
+    Raw path candidates are validated on disk; PATH lookups via ``shutil.which``
+    already guarantee an existing, executable file.
+    """
+    explicit = os.environ.get("AXON_RTK_BIN")
+    if explicit:
+        path = Path(explicit).expanduser()
+        if _usable(path):
+            return str(path)
+
+    boot = _bootstrap_binary()
+    if _usable(boot):
+        return str(boot)
+
+    # Prefer our fork binary (rtkx); fall back to upstream rtk for compatibility.
+    for name in ("rtkx", "rtk"):
+        found = shutil.which(name)
+        if found:
+            return found
+
+    return None
 
 
 def rtk_installed() -> bool:
