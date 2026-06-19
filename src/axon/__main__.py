@@ -159,7 +159,6 @@ def doctor(
     ),
 ) -> None:
     """Validate the AXON + RTK + caveman stack: presence (binaries) and liveness (recent activity)."""
-    import shutil
     import subprocess
     import sys
     from datetime import datetime, timedelta, timezone
@@ -183,8 +182,10 @@ def doctor(
         v = "unknown"
     lines.append(f"- axon: ok ({v})")
 
-    # rtk binary
-    rtk_path = shutil.which("rtk")
+    # rtkx/rtk binary (resolved via AXON_RTK_BIN -> ~/.axon/bin/rtkx -> PATH)
+    from axon.context.rtk import rtk_binary_path
+
+    rtk_path = rtk_binary_path()
     if rtk_path:
         try:
             rtk_v = subprocess.check_output(
@@ -192,9 +193,9 @@ def doctor(
             ).strip()
         except Exception:
             rtk_v = "unknown"
-        lines.append(f"- rtk: ok ({rtk_v})")
+        lines.append(f"- rtkx: ok ({rtk_v}) [{rtk_path}]")
     else:
-        lines.append("- rtk: not installed")
+        lines.append("- rtkx: not installed (run `axon rtk-install`)")
 
     # caveman engine: an internal axon module, not a CLI
     try:
@@ -271,17 +272,23 @@ def doctor(
     except Exception as exc:
         lines.append(f"- compression telemetry: error ({exc})")
 
-    # RTK activity: mtime of history.db
+    # RTK activity: mtime of history.db (rtkx fork dir preferred, then upstream rtk)
     if sys.platform == "darwin":
-        rtk_db = Path.home() / "Library" / "Application Support" / "rtk" / "history.db"
+        share_root = Path.home() / "Library" / "Application Support"
     else:
-        rtk_db = Path.home() / ".local" / "share" / "rtk" / "history.db"
+        share_root = Path.home() / ".local" / "share"
+    rtk_db = share_root / "rtkx" / "history.db"
+    for name in ("rtkx", "rtk"):
+        candidate = share_root / name / "history.db"
+        if candidate.exists():
+            rtk_db = candidate
+            break
     if rtk_db.exists():
         rtk_ts = datetime.fromtimestamp(rtk_db.stat().st_mtime, tz=timezone.utc)
         tag = "stale" if rtk_ts < stale_cutoff else "ok"
-        lines.append(f"- rtk activity: {tag} (history.db touched {fmt_age(rtk_ts)})")
+        lines.append(f"- rtkx activity: {tag} (history.db touched {fmt_age(rtk_ts)})")
     else:
-        lines.append(f"- rtk activity: not found ({rtk_db})")
+        lines.append(f"- rtkx activity: not found ({rtk_db})")
 
     typer.echo("\n".join(lines))
 
@@ -453,6 +460,7 @@ from axon.cli.pb import (  # noqa: E402
     profile_app,
     rtk,
     rtk_init,
+    rtk_install_cmd,
     rtk_proxy,
     rtk_status,
     run_proxy,
@@ -471,6 +479,7 @@ app.command("search")(search)
 app.command("rtk")(rtk)
 app.command("rtk-status")(rtk_status)
 app.command("rtk-init")(rtk_init)
+app.command("rtk-install")(rtk_install_cmd)
 app.command("rtk-proxy")(rtk_proxy)
 app.command("run")(run_proxy)
 app.command("git")(git_proxy)

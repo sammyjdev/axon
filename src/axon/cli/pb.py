@@ -592,7 +592,7 @@ def rtk_status() -> None:
     rtk_path = _rtk_binary_path()
     if not rtk_path:
         typer.echo("RTK: não instalado")
-        typer.echo("Instale com: brew install rtk")
+        typer.echo("Instale com: axon rtk-install (ou brew install rtkx)")
         raise typer.Exit(1)
 
     typer.echo(f"RTK: instalado em {rtk_path}")
@@ -620,7 +620,7 @@ def rtk_init(
     """Inicializa RTK oficial para o agente escolhido."""
     rtk_path = _rtk_binary_path()
     if not rtk_path:
-        typer.echo("RTK não instalado. Rode: brew install rtk")
+        typer.echo("rtkx não instalado. Rode: axon rtk-install")
         raise typer.Exit(1)
 
     agent_name = agent.lower()
@@ -644,6 +644,40 @@ def rtk_init(
     typer.echo("RTK inicializado com sucesso.")
 
 
+@app.command("rtk-install")
+def rtk_install_cmd(
+    version: Annotated[
+        str, typer.Option("--version", help="Release tag a instalar (default: latest)")
+    ] = "latest",
+    pre: Annotated[
+        bool,
+        typer.Option("--pre/--stable", help="Inclui prereleases ao resolver o latest"),
+    ] = False,
+) -> None:
+    """Baixa o binário rtkx para ~/.axon/bin (sem precisar de toolchain Rust)."""
+    from axon.context import rtk_bootstrap as boot
+
+    try:
+        tag = (
+            version
+            if version != "latest"
+            else boot.resolve_latest_tag(include_prerelease=pre)
+        )
+    except boot.BootstrapError as exc:
+        typer.echo(f"rtkx: falha ao resolver release ({exc})")
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"Instalando rtkx {tag} de {boot.RTKX_REPO}...")
+    try:
+        path = boot.bootstrap_rtkx(tag)
+    except boot.BootstrapError as exc:
+        typer.echo(f"rtkx: instalação falhou ({exc})")
+        raise typer.Exit(1) from exc
+
+    rtk_binary_path.cache_clear()
+    typer.echo(f"rtkx instalado em {path}")
+
+
 @app.command("rtk-proxy")
 def rtk_proxy(
     command: Annotated[str, typer.Argument(help="Comando para executar via rtk proxy")],
@@ -651,7 +685,7 @@ def rtk_proxy(
     """Executa um comando via RTK proxy com saída compactada."""
     rtk_path = _rtk_binary_path()
     if not rtk_path:
-        typer.echo("RTK não instalado. Rode: brew install rtk")
+        typer.echo("rtkx não instalado. Rode: axon rtk-install")
         raise typer.Exit(1)
 
     parts = shlex.split(command)

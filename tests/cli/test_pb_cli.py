@@ -1193,7 +1193,7 @@ def test_rtk_proxy_without_binary_exits(monkeypatch) -> None:
     result = runner.invoke(pb.app, ["rtk-proxy", "git status"])
 
     assert result.exit_code == 1
-    assert "RTK não instalado" in result.stdout
+    assert "rtkx não instalado" in result.stdout
 
 
 def test_rtk_init_codex_calls_expected_command(monkeypatch) -> None:
