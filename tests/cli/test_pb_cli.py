@@ -1122,6 +1122,7 @@ def test_ask_rejects_contaminated_rtk_output(monkeypatch, tmp_path) -> None:
         "_compress_with_rtk",
         lambda text, max_tokens: ("## Your task: Compress the provided Python code snippet.", None),
     )
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
@@ -1189,6 +1190,7 @@ def test_ask_falls_back_when_rtk_is_unavailable(monkeypatch, tmp_path) -> None:
         ),
     )
     monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, "rtk missing"))
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
