@@ -505,12 +505,20 @@ class ExpansionService:
         )
 
     async def _reindex_publish_path(self, publish_path: Path, ctx: str) -> None:
+        import asyncio as _asyncio
+        import aiosqlite
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
+        from axon.store.file_cache import SqliteFileCache
         from axon.store.vector_store import VectorStore
 
         engine = EmbedderEngine()
         store = VectorStore(url=self.runtime.qdrant_url)
+        db_path = self.runtime.db_path
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db_conn = await aiosqlite.connect(str(db_path))
+        db_lock = _asyncio.Lock()
+        file_cache = SqliteFileCache(db_conn, db_lock)
         try:
             await store.ensure_collections()
             await index_path(
@@ -518,10 +526,12 @@ class ExpansionService:
                 engine=engine,
                 store=store,
                 vault_root=self.runtime.vault_root,
+                file_cache=file_cache,
                 forced_ctx=ctx,
             )
         finally:
             await store.close()
+            await db_conn.close()
 
     def _resolve_cloud_mode(
         self,

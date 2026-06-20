@@ -71,6 +71,23 @@ def _get_db_path() -> Path:
     return _RUNTIME.db_path
 
 
+async def _open_file_cache() -> tuple[object, object]:
+    """Open a SqliteFileCache backed by the axon DB.
+
+    Creates the parent directory if it does not exist (safe for tests).
+    Returns (SqliteFileCache, aiosqlite.Connection) - caller must close the conn.
+    """
+    import asyncio as _asyncio
+    import aiosqlite
+    from axon.store.file_cache import SqliteFileCache
+
+    db_path = _get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_conn = await aiosqlite.connect(str(db_path))
+    db_lock = _asyncio.Lock()
+    return SqliteFileCache(db_conn, db_lock), db_conn
+
+
 def _resolve_ctx(ctx: str | None, require_work_confirmation: bool = True) -> str | None:
     if ctx == "work" and require_work_confirmation:
         confirmed = typer.confirm("Acesso ao contexto work requer confirmação. Continuar?")
@@ -2123,6 +2140,7 @@ def _reindex_howtos(howto_paths: list[Path]) -> None:
     async def _reindex() -> int:
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
+        file_cache, db_conn = await _open_file_cache()
         try:
             await store.ensure_collections()
             total_chunks = 0
@@ -2133,6 +2151,7 @@ def _reindex_howtos(howto_paths: list[Path]) -> None:
                         engine=engine,
                         store=store,
                         vault_root=_RUNTIME.vault_root,
+                        file_cache=file_cache,
                         languages={"markdown"},
                     )
                     total_chunks += chunks
@@ -2144,6 +2163,7 @@ def _reindex_howtos(howto_paths: list[Path]) -> None:
             return total_chunks
         finally:
             await store.close()
+            await db_conn.close()
 
     try:
         chunks = asyncio.run(_reindex())
@@ -2422,6 +2442,7 @@ def index(
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
+        file_cache, db_conn = await _open_file_cache()
 
         try:
             await store.ensure_collections()
@@ -2432,12 +2453,14 @@ def index(
                 engine=engine,
                 store=store,
                 vault_root=vault_root,
+                file_cache=file_cache,
                 forced_ctx=resolved_ctx,
                 graph_store=graph_store,
             )
         finally:
             await store.close()
             await graph_store.close()
+            await db_conn.close()
 
         typer.echo(f"Indexação concluída: {indexed_files} arquivo(s), {total_chunks} chunk(s)")
         if indexed_files == 0:
@@ -2506,6 +2529,7 @@ def index_dev(
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
+        file_cache, db_conn = await _open_file_cache()
 
         try:
             await store.ensure_collections()
@@ -2518,6 +2542,7 @@ def index_dev(
                     engine=engine,
                     store=store,
                     vault_root=_RUNTIME.vault_root,
+                    file_cache=file_cache,
                     forced_ctx=entry.ctx,
                     graph_store=graph_store,
                     languages=set(entry.languages),
@@ -2530,6 +2555,7 @@ def index_dev(
         finally:
             await store.close()
             await graph_store.close()
+            await db_conn.close()
 
         typer.echo(f"Indexação dev concluída: {total_files} arquivo(s), {total_chunks} chunk(s)")
 
@@ -2565,6 +2591,7 @@ def watch(
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
+        file_cache, db_conn = await _open_file_cache()
 
         async def _on_file(changed_path: Path) -> None:
             indexed_files, total_chunks = await index_path(
@@ -2572,6 +2599,7 @@ def watch(
                 engine=engine,
                 store=store,
                 vault_root=vault_root,
+                file_cache=file_cache,
                 forced_ctx=resolved_ctx,
                 graph_store=graph_store,
             )
@@ -2585,6 +2613,7 @@ def watch(
         finally:
             await store.close()
             await graph_store.close()
+            await db_conn.close()
 
     try:
         asyncio.run(_watch())
@@ -2763,6 +2792,7 @@ def scan(
                 engine = EmbedderEngine()
                 store = VectorStore(url=_RUNTIME.qdrant_url)
                 graph_store = GraphStore(url=_RUNTIME.redis_url)
+                file_cache, db_conn = await _open_file_cache()
                 try:
                     await store.ensure_collections()
                     await graph_store.connect()
@@ -2771,6 +2801,7 @@ def scan(
                         engine=engine,
                         store=store,
                         vault_root=_RUNTIME.vault_root,
+                        file_cache=file_cache,
                         forced_ctx=entry.ctx,
                         graph_store=graph_store,
                     )
@@ -2778,6 +2809,7 @@ def scan(
                 finally:
                     await store.close()
                     await graph_store.close()
+                    await db_conn.close()
 
             asyncio.run(_index_one())
 

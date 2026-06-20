@@ -9,6 +9,22 @@ from axon.embedder.pipeline import index_path
 from axon.store.collections import get_search_collections
 
 
+class _NullCache:
+    """Minimal no-op FileCache for policy tests that do not need caching behaviour."""
+
+    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+        return {}
+
+    async def set_entry(self, fp, ctx, sha1, cc, *, status="done") -> None:
+        pass
+
+    async def delete_entry(self, fp, ctx) -> None:
+        pass
+
+    async def list_entries(self, ctx) -> list:
+        return []
+
+
 class FakeEngine:
     def embed(self, texts: list[str]) -> list[list[float]]:
         return [[float(len(text))] for text in texts]
@@ -20,6 +36,9 @@ class FakeStore:
 
     async def upsert_batch(self, chunks: list[object]) -> None:
         self.batches.append(list(chunks))
+
+    async def delete_by_file(self, ctx: str, file_path: str) -> None:
+        pass
 
 
 def test_search_collections_hide_work_without_explicit_context() -> None:
@@ -63,14 +82,16 @@ async def test_index_path_skips_work_tree_without_explicit_context(
         engine=FakeEngine(),
         store=store,
         vault_root=vault_root,
+        file_cache=_NullCache(),
     )
 
+    # FIX 3: index_path stores fp_posix, so compare with as_posix()
     indexed_paths = {chunk.file_path for batch in store.batches for chunk in batch}
 
     assert indexed_files == 1
     assert total_chunks == 1
-    assert str(knowledge_file) in indexed_paths
-    assert str(work_file) not in indexed_paths
+    assert knowledge_file.as_posix() in indexed_paths
+    assert work_file.as_posix() not in indexed_paths
 
 
 @pytest.mark.asyncio
@@ -102,6 +123,7 @@ async def test_index_path_allows_work_when_context_is_explicit(monkeypatch, tmp_
         store=store,
         vault_root=vault_root,
         forced_ctx="work",
+        file_cache=_NullCache(),
     )
 
     indexed_chunks = [chunk for batch in store.batches for chunk in batch]
@@ -110,4 +132,5 @@ async def test_index_path_allows_work_when_context_is_explicit(monkeypatch, tmp_
     assert total_chunks == 1
     assert len(indexed_chunks) == 1
     assert indexed_chunks[0].ctx == "work"
-    assert indexed_chunks[0].file_path == str(work_file)
+    # FIX 3: index_path stores fp_posix, so compare with as_posix()
+    assert indexed_chunks[0].file_path == work_file.as_posix()

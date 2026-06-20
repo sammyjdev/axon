@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 from collections.abc import Iterable
@@ -10,6 +9,7 @@ from axon.context.registry import VALID_CONTEXTS
 from axon.embedder.chunker import Chunk, chunk_source
 from axon.embedder.engine import EmbedderEngine
 from axon.embedder.graph_extractor import build_dependency_records
+from axon.store.file_cache import FileCache, sha1_of_source
 from axon.store.graph_store import GraphStore
 from axon.store.vector_store import Chunk as VectorChunk
 from axon.store.vector_store import VectorStore
@@ -26,7 +26,6 @@ _LANGUAGE_MAP = {
 
 
 _CTX_ROOTS = set(VALID_CONTEXTS)
-_FILE_HASH_CACHE: dict[str, str] = {}
 _BATCH_SIZE = 400
 _MAX_BATCH_TOKENS: int = int(os.environ.get("AXON_MAX_BATCH_TOKENS", "8192"))
 # 0.35 chars/token is a deliberate OVERESTIMATE for input memory safety.
@@ -189,15 +188,40 @@ async def index_path(
     engine: EmbedderEngine,
     store: VectorStore,
     vault_root: Path,
+    file_cache: FileCache,
     forced_ctx: str | None = None,
     graph_store: GraphStore | None = None,
     languages: set[str] | None = None,
 ) -> tuple[int, int]:
+    """Index all supported files under target.
+
+    file_cache is REQUIRED - no None fallback. Pass a SqliteFileCache for
+    production, or a mock/stub for tests.
+
+    Crash-safety (D2): writes status='pending' before any Qdrant mutation;
+    sets status='done' only after _flush_batch() succeeds. A crash between
+    these two points leaves status='pending', which is treated as a hash miss
+    on the next run (triggering full re-index of that file).
+
+    Per-ctx reconcile (FIX 1+2): pending_file_meta carries (fp_posix, file_ctx,
+    sha1, chunk_count) so that _flush_batch writes done under the SAME ctx used
+    when the pending sentinel was written. sha1_maps is loaded lazily per-ctx,
+    and found_by_ctx tracks which files were seen per-ctx so that D6 orphan
+    cleanup only touches the ctxs actually walked this run.
+    """
     files = list(iter_supported_files(target, languages=languages))
+
     total_chunks = 0
     indexed_files = 0
     pending_batch: list[VectorChunk] = []
+    # FIX 1: 4-tuple (fp_posix, file_ctx, sha1, chunk_count) carries per-file
+    # ctx so that _flush_batch writes done under the SAME ctx used for pending.
+    pending_file_meta: list[tuple[str, str, str, int]] = []
     graph_chunks: list[Chunk] = []
+
+    # FIX 2: lazy per-ctx sha1 maps; found_by_ctx scopes D6 reconcile.
+    sha1_maps: dict[str, dict[str, str]] = {}
+    found_by_ctx: dict[str, set[str]] = {}
 
     async def _flush_batch() -> int:
         if not pending_batch:
@@ -205,6 +229,10 @@ async def index_path(
         batch_size = len(pending_batch)
         await store.upsert_batch(list(pending_batch))
         pending_batch.clear()
+        # FIX 1: write done under each file's OWN ctx, not a single default ctx.
+        for fp, fctx, s1, cc in pending_file_meta:
+            await file_cache.set_entry(fp, fctx, s1, cc, status="done")
+        pending_file_meta.clear()
         return batch_size
 
     for file_path in files:
@@ -216,14 +244,32 @@ async def index_path(
         if language is None:
             continue
 
+        fp_posix = file_path.as_posix()
+
+        # FIX 2: load sha1 map for this ctx lazily (one SELECT per ctx per run).
+        if file_ctx not in sha1_maps:
+            sha1_maps[file_ctx] = await file_cache.get_all_sha1s(file_ctx)
+
+        # FIX 2: track seen files per-ctx for D6 reconcile.
+        found_by_ctx.setdefault(file_ctx, set()).add(fp_posix)
+
         source = file_path.read_text(encoding="utf-8", errors="replace")
-        source_hash = hashlib.sha1(source.encode("utf-8")).hexdigest()
-        cache_key = str(file_path.resolve())
-        if _FILE_HASH_CACHE.get(cache_key) == source_hash:
-            continue
+        current_sha1 = sha1_of_source(source)
+
+        # FIX 2: skip-check uses per-ctx sha1 map.
+        if sha1_maps[file_ctx].get(fp_posix) == current_sha1:
+            continue  # file unchanged - skip
+
+        # D2: write crash sentinel BEFORE any Qdrant mutation.
+        await file_cache.set_entry(fp_posix, file_ctx, current_sha1, 0, status="pending")
+
+        # D4: delete stale points for this file before re-adding.
+        await store.delete_by_file(file_ctx, fp_posix)
 
         chunks: list[Chunk] = chunk_source(source, language, str(file_path))
         if not chunks:
+            # No chunks - mark done immediately (empty file is valid).
+            await file_cache.set_entry(fp_posix, file_ctx, current_sha1, 0, status="done")
             continue
 
         # Embed in token-bounded batches to keep the onnxruntime activation
@@ -236,9 +282,10 @@ async def index_path(
             _occ[c.symbol] = occ + 1
             vector_chunks.append(
                 VectorChunk(
-                    id=_chunk_id(str(file_path), c.symbol, occ),
+                    id=_chunk_id(fp_posix, c.symbol, occ),
                     vector=vec,
-                    file_path=c.file_path,
+                    # FIX 3: store fp_posix so delete_by_file keys match.
+                    file_path=fp_posix,
                     language=c.language,
                     chunk_type=c.chunk_type,
                     symbol=c.symbol,
@@ -250,14 +297,19 @@ async def index_path(
 
         pending_batch.extend(vector_chunks)
         graph_chunks.extend(chunks)
+        # FIX 1: store 4-tuple with per-file ctx.
+        pending_file_meta.append((fp_posix, file_ctx, current_sha1, len(chunks)))
+
         if len(pending_batch) >= _BATCH_SIZE:
-            await _flush_batch()
+            flushed = await _flush_batch()
+            total_chunks += flushed
 
-        _FILE_HASH_CACHE[cache_key] = source_hash
         indexed_files += 1
-        total_chunks += len(vector_chunks)
 
-    await _flush_batch()
+    # Flush any remaining chunks in the last partial batch.
+    flushed = await _flush_batch()
+    total_chunks += flushed
+
     if graph_store is not None and graph_chunks:
         for record in build_dependency_records(graph_chunks):
             await graph_store.upsert_deps(
@@ -269,6 +321,15 @@ async def index_path(
     # NOT thread-safe: must complete before any parallel step accesses graph_chunks.
     for _chunk in graph_chunks:
         _chunk.metadata.pop("_tree", None)
+
+    # D6: detect files removed from repo - scoped to ctxs walked this run only.
+    # FIX 2: iterate only ctxs we actually walked; never touch sibling ctxs.
+    for ctx, found in found_by_ctx.items():
+        for cached_path, _ in await file_cache.list_entries(ctx):
+            if cached_path not in found:
+                await store.delete_by_file(ctx, cached_path)
+                await file_cache.delete_entry(cached_path, ctx)
+
     return indexed_files, total_chunks
 
 
