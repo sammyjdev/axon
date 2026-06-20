@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiosqlite
 from pydantic import BaseModel, Field
@@ -15,6 +16,9 @@ from axon.store.pending import (
     emit_capture_warning,
     write_pending,
 )
+
+if TYPE_CHECKING:
+    from axon.store.file_cache import SqliteFileCache
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -117,6 +121,21 @@ class SessionStore:
         async with self._lock:
             db = await self._connection()
             await _apply_migrations(db)
+
+    def make_file_cache(self) -> "SqliteFileCache":
+        """Return a SqliteFileCache sharing this store's connection and lock.
+
+        Call after init() so the connection exists and the file_index
+        migration has been applied. The cache shares this store's asyncio.Lock
+        so all SQLite writes stay serialized on a single connection.
+        """
+        from axon.store.file_cache import SqliteFileCache
+
+        if self._conn is None:
+            raise RuntimeError(
+                "SessionStore.init() must be called before make_file_cache()"
+            )
+        return SqliteFileCache(self._conn, self._lock)
 
     # ── ADR ──────────────────────────────────────────────────────────────────
 
