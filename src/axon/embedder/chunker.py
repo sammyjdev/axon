@@ -221,8 +221,14 @@ def _split_large_node(
     symbol: str,
     chunk_type: ChunkType,
     file_path: str,
+    language: str = "java",
 ) -> list[Chunk]:
-    """Divide nó que excede _MAX_CHUNK_LINES em sub-chunks de linhas."""
+    """Divide nó que excede _MAX_CHUNK_LINES em sub-chunks de linhas.
+
+    ``language`` defaults to "java" (the original caller) and MUST be passed
+    explicitly for other languages so sub-chunks are not mis-tagged - the
+    Chunk model defaults language to "java".
+    """
     content = source[node.start_byte : node.end_byte].decode(errors="replace")
     lines = content.splitlines()
     start_line = node.start_point[0] + 1
@@ -237,6 +243,7 @@ def _split_large_node(
                 end_line=start_line + i + len(part_lines) - 1,
                 content="\n".join(part_lines),
                 file_path=file_path,
+                language=language,
             )
         )
     return chunks
@@ -436,6 +443,7 @@ def _walk_python(
                     _sym,
                     _chunk_type,
                     file_path,
+                    language="python",
                 )
             )
         else:
