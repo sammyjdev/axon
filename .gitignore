@@ -61,3 +61,7 @@ docker-compose.override.yml
 
 # Subagent-driven-development scratch (briefs, ledger, review packages)
 .superpowers/
+
+# Coverage artifacts
+.coverage
+.coverage.*
