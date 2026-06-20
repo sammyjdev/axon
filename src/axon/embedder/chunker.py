@@ -424,17 +424,32 @@ def _walk_python(
     """
     if node.type in ("function_definition",):
         symbol = _python_node_identifier(node)
-        chunks.append(
-            Chunk(
-                symbol=symbol or Path(file_path).stem,
-                chunk_type="method" if in_class else "function",
-                start_line=node.start_point[0] + 1,
-                end_line=node.end_point[0] + 1,
-                content="\n".join(lines[node.start_point[0] : node.end_point[0] + 1]),
-                file_path=file_path,
-                language="python",
+        _sym = symbol or Path(file_path).stem
+        _chunk_type: ChunkType = "method" if in_class else "function"
+        _start = node.start_point[0] + 1
+        _end = node.end_point[0] + 1
+        if (_end - _start) > _MAX_CHUNK_LINES:
+            chunks.extend(
+                _split_large_node(
+                    node,
+                    source.encode("utf-8") if isinstance(source, str) else source,
+                    _sym,
+                    _chunk_type,
+                    file_path,
+                )
             )
-        )
+        else:
+            chunks.append(
+                Chunk(
+                    symbol=_sym,
+                    chunk_type=_chunk_type,
+                    start_line=_start,
+                    end_line=_end,
+                    content="\n".join(lines[node.start_point[0] : node.end_point[0] + 1]),
+                    file_path=file_path,
+                    language="python",
+                )
+            )
         # Recurse to catch inner functions (still tagged as functions
         # unless inside another class).
         for child in node.children:
@@ -546,7 +561,7 @@ def _walk_ts(
 ) -> None:
     if node.type in ("function_declaration", "method_definition"):
         name = _ts_identifier(node) or "anonymous"
-        chunks.append(
+        chunks.extend(
             _ts_chunk_from_node(node, lines, file_path, name, in_class)
         )
         # Recurse to catch nested functions
@@ -572,7 +587,7 @@ def _walk_ts(
             "function_expression",
         ):
             name = name_node.text.decode("utf-8", errors="replace")
-            chunks.append(
+            chunks.extend(
                 _ts_chunk_from_node(node, lines, file_path, name, in_class)
             )
             return
@@ -597,18 +612,31 @@ def _ts_chunk_from_node(
     file_path: str,
     name: str,
     in_class: bool,
-) -> Chunk:
+) -> list[Chunk]:
+    """Return one or more Chunks for this node, splitting if it exceeds _MAX_CHUNK_LINES."""
     start = node.start_point[0]
     end = node.end_point[0]
-    return Chunk(
-        symbol=name,
-        chunk_type="method" if in_class else "function",
-        start_line=start + 1,
-        end_line=end + 1,
-        content="\n".join(lines[start : end + 1]),
-        file_path=file_path,
-        language="typescript",
-    )
+    _chunk_type: ChunkType = "method" if in_class else "function"
+    if (end - start + 1) > _MAX_CHUNK_LINES:
+        return _split_lines_into_chunks(
+            lines[start : end + 1],
+            start + 1,
+            name,
+            _chunk_type,
+            file_path,
+            "typescript",
+        )
+    return [
+        Chunk(
+            symbol=name,
+            chunk_type=_chunk_type,
+            start_line=start + 1,
+            end_line=end + 1,
+            content="\n".join(lines[start : end + 1]),
+            file_path=file_path,
+            language="typescript",
+        )
+    ]
 
 
 def _ts_fallback_chunk(source: str, lines: list[str], file_path: str) -> Chunk:
