@@ -106,20 +106,24 @@ async def ingest_file(path: Path, engine: EmbedderEngine, store: VectorStore) ->
     texts = [c.content for c in chunks]
     vectors = engine.embed(texts)
 
-    vector_chunks = [
-        VectorChunk(
-            id=_chunk_id(path, c),
-            vector=vec,
-            file_path=c.file_path,
-            language=c.language,
-            chunk_type=c.chunk_type,
-            symbol=c.symbol,
-            project=path.parent.name,
-            ctx="knowledge",
-            content=c.content,
+    _occ_counter: dict[str, int] = {}
+    vector_chunks = []
+    for c, vec in zip(chunks, vectors):
+        occ = _occ_counter.get(c.symbol, 0)
+        _occ_counter[c.symbol] = occ + 1
+        vector_chunks.append(
+            VectorChunk(
+                id=_chunk_id(str(path), c.symbol, occ),
+                vector=vec,
+                file_path=c.file_path,
+                language=c.language,
+                chunk_type=c.chunk_type,
+                symbol=c.symbol,
+                project=path.parent.name,
+                ctx="knowledge",
+                content=c.content,
+            )
         )
-        for c, vec in zip(chunks, vectors)
-    ]
 
     await store.upsert_batch(vector_chunks)
     logger.info("Indexed %d chunks from %s", len(vector_chunks), path)
@@ -170,20 +174,24 @@ async def index_path(
             continue
 
         vectors = engine.embed([c.content for c in chunks])
-        vector_chunks = [
-            VectorChunk(
-                id=_chunk_id(file_path, c),
-                vector=vec,
-                file_path=c.file_path,
-                language=c.language,
-                chunk_type=c.chunk_type,
-                symbol=c.symbol,
-                project=file_path.parent.name,
-                ctx=file_ctx,
-                content=c.content,
+        _occ: dict[str, int] = {}
+        vector_chunks = []
+        for c, vec in zip(chunks, vectors):
+            occ = _occ.get(c.symbol, 0)
+            _occ[c.symbol] = occ + 1
+            vector_chunks.append(
+                VectorChunk(
+                    id=_chunk_id(str(file_path), c.symbol, occ),
+                    vector=vec,
+                    file_path=c.file_path,
+                    language=c.language,
+                    chunk_type=c.chunk_type,
+                    symbol=c.symbol,
+                    project=file_path.parent.name,
+                    ctx=file_ctx,
+                    content=c.content,
+                )
             )
-            for c, vec in zip(chunks, vectors)
-        ]
 
         pending_batch.extend(vector_chunks)
         graph_chunks.extend(chunks)
@@ -205,9 +213,13 @@ async def index_path(
     return indexed_files, total_chunks
 
 
-def _chunk_id(path: Path, chunk: Chunk) -> str:
-    """Stable ID for a chunk: hash of file path + symbol + start_line."""
+def _chunk_id(file_path: str, symbol: str, occurrence_index: int) -> str:
+    """Stable chunk ID: does not change when lines above the symbol are edited (D1).
+
+    occurrence_index: 0-based count of times this symbol name has appeared
+    within the file, to distinguish overloads and sub-chunks (foo[0], foo[1]).
+    """
     import uuid
 
-    key = f"{path}::{chunk.symbol}::{chunk.start_line}"
+    key = f"{file_path}::{symbol}::{occurrence_index}"
     return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
