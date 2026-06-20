@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 from tree_sitter import Language, Node, Parser
 
 ChunkType = Literal[
-    "method", "constructor", "function", "class", "interface", "enum", "annotation", "record"
+    "method", "constructor", "function", "class", "interface",
+    "enum", "annotation", "record", "section"
 ]
 
 _JAVA_LANGUAGE = Language(tsjava.language())
@@ -238,6 +239,104 @@ def _split_large_node(
                 file_path=file_path,
             )
         )
+    return chunks
+
+
+def _split_lines_into_chunks(
+    lines: list[str],
+    start_line_1based: int,
+    symbol: str,
+    chunk_type: ChunkType,
+    file_path: str,
+    language: str,
+) -> list[Chunk]:
+    """Divide a list of text lines into sub-chunks of _MAX_CHUNK_LINES each.
+
+    Used for Markdown sections and plain-text files that have no tree-sitter
+    parse tree. Distinct from _split_large_node, which operates on tree-sitter
+    Node byte ranges. All sub-chunks (including index 0) are named symbol[idx].
+    """
+    result: list[Chunk] = []
+    for i in range(0, max(len(lines), 1), _MAX_CHUNK_LINES):
+        part = lines[i : i + _MAX_CHUNK_LINES]
+        idx = i // _MAX_CHUNK_LINES
+        result.append(
+            Chunk(
+                symbol=f"{symbol}[{idx}]",
+                chunk_type=chunk_type,
+                start_line=start_line_1based + i,
+                end_line=start_line_1based + i + len(part) - 1,
+                content="\n".join(part),
+                file_path=file_path,
+                language=language,
+            )
+        )
+    return result
+
+
+def _chunk_markdown(source: str, file_path: str) -> list[Chunk]:
+    """Chunk a Markdown file by heading boundaries.
+
+    Each heading (# through ######) starts a new section. Content before the
+    first heading becomes a chunk with symbol = Path(file_path).stem.
+    Sections exceeding _MAX_CHUNK_LINES are split via _split_lines_into_chunks.
+    A file with no headings is treated as a single section and split on line cap.
+    """
+    lines = source.splitlines()
+    _HEADING_RE = re.compile(r"^#{1,6}\s+(.+)")
+
+    sections: list[tuple[str, int, list[str]]] = []  # (symbol, start_1based, lines)
+    current_symbol = Path(file_path).stem
+    current_start = 1
+    current_lines: list[str] = []
+
+    for lineno, line in enumerate(lines, start=1):
+        m = _HEADING_RE.match(line)
+        if m:
+            if current_lines:
+                sections.append((current_symbol, current_start, current_lines))
+            current_symbol = re.sub(r"[^a-zA-Z0-9_]", "_", m.group(1).strip())[:64]
+            current_start = lineno
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+
+    if current_lines:
+        sections.append((current_symbol, current_start, current_lines))
+
+    if not sections:
+        return [
+            Chunk(
+                symbol=Path(file_path).stem,
+                chunk_type="section",
+                start_line=1,
+                end_line=1,
+                content="",
+                file_path=file_path,
+                language="markdown",
+            )
+        ]
+
+    chunks: list[Chunk] = []
+    for symbol, start_1based, sec_lines in sections:
+        if len(sec_lines) > _MAX_CHUNK_LINES:
+            chunks.extend(
+                _split_lines_into_chunks(
+                    sec_lines, start_1based, symbol, "section", file_path, "markdown"
+                )
+            )
+        else:
+            chunks.append(
+                Chunk(
+                    symbol=symbol,
+                    chunk_type="section",
+                    start_line=start_1based,
+                    end_line=start_1based + len(sec_lines) - 1,
+                    content="\n".join(sec_lines),
+                    file_path=file_path,
+                    language="markdown",
+                )
+            )
     return chunks
 
 
@@ -636,14 +735,19 @@ def chunk_source(source: str, language: str, file_path: str) -> list[Chunk]:
         return _chunk_python(source, file_path)
     elif language in ("typescript", "ts"):
         return _chunk_typescript(source, file_path)
+    elif language == "markdown":
+        return _chunk_markdown(source, file_path)
     else:
         lines = source.splitlines()
+        stem = Path(file_path).stem
+        if len(lines) > _MAX_CHUNK_LINES:
+            return _split_lines_into_chunks(lines, 1, stem, "section", file_path, language)
         return [
             Chunk(
-                symbol=Path(file_path).stem,
-                chunk_type="class",
+                symbol=stem,
+                chunk_type="section",
                 start_line=1,
-                end_line=len(lines),
+                end_line=len(lines) or 1,
                 content=source,
                 file_path=file_path,
                 language=language,
