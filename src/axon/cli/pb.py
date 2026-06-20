@@ -108,11 +108,17 @@ async def _index_lock_guard(*, fatal: bool, label: str = "index"):
     """
     from axon.store.index_lock import IndexLockError, acquire_index_lock
 
+    acquired = False
     try:
         async with acquire_index_lock(_RUNTIME.data_root):
+            acquired = True
             yield True
             return
     except IndexLockError as exc:
+        if acquired:
+            # The guarded body raised IndexLockError, not the acquisition -
+            # re-raise instead of miscatching it as lock contention.
+            raise
         if fatal:
             typer.echo(f"Outro indexador ja esta em execucao: {exc}")
             raise typer.Exit(1) from exc
