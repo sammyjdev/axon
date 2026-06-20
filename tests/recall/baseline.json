@@ -1,0 +1,6 @@
+{
+  "_note": "Populated by first run of test_recall_guard_populate_baseline. Do not edit manually.",
+  "recall_top1": null,
+  "recall_top3": null,
+  "results_by_query": {}
+}
