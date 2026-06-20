@@ -27,6 +27,8 @@ _LANGUAGE_MAP = {
 _CTX_ROOTS = set(VALID_CONTEXTS)
 _FILE_HASH_CACHE: dict[str, str] = {}
 _BATCH_SIZE = 400
+# SYNC NOTE: this set must be kept in sync with _EXCLUDED_DIR_NAMES in
+# axon/repo/file_walk.py. If you add a directory to one, add it to both.
 EXCLUDED_DIR_NAMES = {
     ".aws-sam",
     ".git",
@@ -67,12 +69,12 @@ def iter_supported_files(
             yield target
         return
 
-    for path in target.rglob("*"):
-        if any(part in EXCLUDED_DIR_NAMES for part in path.parts):
-            continue
-        language = _language_for_suffix(path.suffix)
-        if path.is_file() and language and (languages is None or language in languages):
-            yield path
+    from axon.repo.file_walk import iter_git_files
+    suffixes = {
+        s for s, lang in _LANGUAGE_MAP.items()
+        if languages is None or lang in languages
+    }
+    yield from iter_git_files(target, suffixes=suffixes)
 
 
 def infer_ctx_from_path(path: Path, vault_root: Path) -> str:
