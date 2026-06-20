@@ -88,14 +88,29 @@ happening now", compression telemetry answers "how much was saved".
 - The familiar remains a delight layer: opt-in, read-only, never required for
   capture or recall to function.
 
+## Implementation status
+
+All four steps are implemented on the working branch:
+
+1. ✅ `observability/gain.py` (`COMPRESSION_ENGINES`, `is_compression_record`,
+   `GainSummary`, `compute_gain`, `load_gain`) + `axon gain` CLI. T-104 fixed via
+   the `kind` field; the shared predicate is the single pollution filter.
+2. ✅ `pet/familiar.py` rebased off TTY/hard-coded paths onto
+   `load_runtime_config()`, `load_gain()`, and an `ActivityPoller` that tails
+   `TraceStore` `records.jsonl` by byte offset (seeds to EOF at startup). Wired as
+   `axon familiar [--frames N]`.
+3. ✅ Indexing emits `stage="index"` activity at the command boundary (`pb index`,
+   `axon init`) — additive, kept out of the perf-overhaul hot path.
+4. ✅ Read-only dashboard routes on the existing FastAPI app (`/dashboard`,
+   `/api/gain`, `/api/activity`), served by `axon serve-http`.
+
 ## Open follow-ups
 
-- Emit indexing/watch progress stages into `TraceStore` (test-first).
-- Confirm `TraceRecord` exposes the token/risk fields the renderers need; if a
-  record field is missing for the glow semantics, add it at the
-  `@traced_tool` emission point rather than re-deriving downstream.
-- Decide the familiar's transport for "live": tail `records.jsonl` by byte
-  offset vs. a lightweight watcher; either way it only reads.
-- Sequencing (separate change sets, each test-first): (1) `observability/gain.py`
-  + `axon gain`; (2) familiar rebased onto the stores; (3) indexing activity
-  emission; (4) dashboard.
+- Centralise so `pet/familiar.py` and `axon gain` share one savings reader (done
+  via `gain.py`); fold the dashboard's activity slice through the same seam if it
+  drifts.
+- Confirm `TraceRecord` exposes the token/risk fields the renderers need for glow
+  semantics; if missing, add at the `@traced_tool` emission point rather than
+  re-deriving downstream.
+- After the `feat/perf-overhaul` merge, consider finer-grained per-file/batch
+  index activity emission inside the (then-stable) indexing internals.
