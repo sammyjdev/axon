@@ -2415,14 +2415,31 @@ def index(
         raise typer.Exit(1)
 
     async def _index() -> None:
+        import uuid
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
         from axon.store.vector_store import VectorStore
+        from axon.observability.trace_store import TraceStore
 
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
+
+        # Emit index-start activity into TraceStore (best-effort; never breaks indexing)
+        _recorder = None
+        try:
+            _trace_store = TraceStore(_RUNTIME)
+            _recorder = _trace_store.recorder(
+                trace_id=uuid.uuid4().hex,
+                caller="cli",
+            )
+            _recorder.append_stage(
+                "index",
+                payload={"phase": "start", "target": str(target)},
+            )
+        except Exception:
+            pass
 
         try:
             await store.ensure_collections()
@@ -2439,6 +2456,16 @@ def index(
         finally:
             await store.close()
             await graph_store.close()
+
+        # Emit index-done stage (best-effort)
+        try:
+            if _recorder is not None:
+                _recorder.append_stage(
+                    "index",
+                    payload={"phase": "done", "symbols": total_chunks},
+                )
+        except Exception:
+            pass
 
         typer.echo(f"Indexação concluída: {indexed_files} arquivo(s), {total_chunks} chunk(s)")
         if indexed_files == 0:

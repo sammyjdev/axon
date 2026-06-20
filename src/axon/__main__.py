@@ -91,16 +91,63 @@ def init(
     typer.echo(f"hooks installed: {', '.join(installed) or 'none'}")
 
     async def _index() -> int:
+        import uuid
+
+        from axon.observability.trace_store import TraceStore
+
         store = SessionStore(_get_db_path())
         await store.init()
+
+        # Emit index-start activity (best-effort; never breaks indexing)
+        _recorder = None
+        try:
+            _trace_store = TraceStore()
+            _recorder = _trace_store.recorder(
+                trace_id=uuid.uuid4().hex,
+                caller="cli",
+            )
+            _recorder.append_stage(
+                "index",
+                payload={"phase": "start", "target": str(repo_path)},
+            )
+        except Exception:
+            pass
+
         try:
             symbols = await index_repo(repo_path, store=store)
-            return len(symbols)
+            count_sym = len(symbols)
         finally:
             await store.close()
 
+        # Emit index-done stage (best-effort)
+        try:
+            if _recorder is not None:
+                _recorder.append_stage(
+                    "index",
+                    payload={"phase": "done", "symbols": count_sym},
+                )
+        except Exception:
+            pass
+
+        return count_sym
+
     count = asyncio.run(_index())
     typer.echo(f"indexed {count} symbols from {repo_path}")
+
+
+@app.command()
+def familiar(
+    frames: int = typer.Option(
+        0,
+        "--frames",
+        help="Exit after N render ticks (0 = run live until Ctrl+C). Useful for CI.",
+    ),
+) -> None:
+    """Launch the AXON familiar — a live terminal companion driven by TraceStore activity."""
+    from axon.pet.familiar import main as _familiar_main
+
+    _frames: int | None = frames if frames > 0 else None
+    asyncio.run(_familiar_main(frames=_frames))
 
 
 @app.command()
