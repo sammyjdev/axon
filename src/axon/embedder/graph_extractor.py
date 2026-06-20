@@ -87,6 +87,7 @@ def extract_calls(chunk: Chunk) -> list[str]:
         if cached_tree is not None:
             _java_calls: set[str] = set()
             _walk_calls(cached_tree.root_node, _java_calls)
+            _add_import_symbols(chunk.content, _java_calls)
             raw_calls = sorted(c for c in _java_calls if c and c not in _SKIP_CALLS)
         else:
             raw_calls = _extract_ts_or_java_calls(chunk.content, _JAVA_CALL_PARSER)
@@ -94,6 +95,7 @@ def extract_calls(chunk: Chunk) -> list[str]:
         if cached_tree is not None:
             _ts_calls: set[str] = set()
             _walk_calls(cached_tree.root_node, _ts_calls)
+            _add_import_symbols(chunk.content, _ts_calls)
             raw_calls = sorted(c for c in _ts_calls if c and c not in _SKIP_CALLS)
         else:
             parser = _TSX_PARSER if chunk.file_path.endswith(".tsx") else _TS_PARSER
@@ -164,6 +166,19 @@ def _python_call_name(node: ast.AST) -> str | None:
     return None
 
 
+def _add_import_symbols(source: str, calls: set[str]) -> None:
+    """Add imported symbol names (Java/TS) as dependency edges.
+
+    Shared by the cached-tree path and the fresh-parse fallback so the two
+    stay equivalent - tree-sitter does not surface import statements as call
+    nodes, so they must be scanned from the source text in BOTH paths.
+    """
+    for match in _IMPORT_RE.finditer(source):
+        imported = match.group(1) or match.group(2) or ""
+        for part in imported.replace(",", " ").split():
+            calls.add(part.rsplit(".", 1)[-1].strip())
+
+
 def _extract_ts_or_java_calls(source: str, parser: Parser) -> list[str]:
     """Extract callee names via tree-sitter, ignoring strings and comments.
 
@@ -185,10 +200,7 @@ def _extract_ts_or_java_calls(source: str, parser: Parser) -> list[str]:
 
     # Imports still come from a simple regex — they are line-oriented
     # and not represented uniformly across Java/TS grammars.
-    for match in _IMPORT_RE.finditer(source):
-        imported = match.group(1) or match.group(2) or ""
-        for part in imported.replace(",", " ").split():
-            calls.add(part.rsplit(".", 1)[-1].strip())
+    _add_import_symbols(source, calls)
 
     return sorted(call for call in calls if call and call not in _SKIP_CALLS)
 
