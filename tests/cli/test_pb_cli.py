@@ -16,6 +16,25 @@ from axon.router.classifier import TaskType
 runner = CliRunner()
 
 
+def _force_default_compression_strategy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the ask retrieval strategy to a compression-enabled default.
+
+    Without this, the ask tests depend on ambient profile/mode/classifier state
+    that earlier tests can leave in a no-compression configuration, which skips
+    the compression branch and makes these tests order-dependent.
+    """
+    from axon.context.contracts import select_default_retrieval_strategy
+
+    strategy = select_default_retrieval_strategy(
+        task_type=TaskType.CODE_ANALYSIS, profile=None, mode="hybrid-local", capabilities=()
+    )
+    monkeypatch.setattr(
+        pb,
+        "_select_retrieval_strategy",
+        lambda _q, _c: (strategy, "CODE_ANALYSIS", None, "hybrid-local"),
+    )
+
+
 def test_git_command_proxies_to_rtk(monkeypatch) -> None:
     captured: list[str] = []
 
@@ -892,6 +911,7 @@ def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> 
         "_compress_with_rtk",
         lambda text, max_tokens: ("rtk::get_search_collections compressed", None),
     )
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
@@ -1003,6 +1023,7 @@ def test_ask_sends_chunk_content_within_limit_to_compressor(monkeypatch, tmp_pat
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr("axon.router.compressor.caveman_compress_guarded", fake_caveman)
     monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, None))
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
@@ -1050,6 +1071,7 @@ def test_ask_truncates_oversized_chunk_content_before_compression(monkeypatch, t
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr("axon.router.compressor.caveman_compress_guarded", fake_caveman)
     monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, None))
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
