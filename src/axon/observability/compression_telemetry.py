@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -19,6 +20,10 @@ class CompressionRecord(BaseModel):
     after_tokens: int
     reduction_tokens: int
     reduction_pct: float
+    # "compression" = a real compression pipeline record;
+    # "tool_io" = instrumented MCP graph/tool I/O (T-104 pollution).
+    # Default keeps legacy JSON lines (which lack the field) parsing fine.
+    kind: Literal["compression", "tool_io"] = "compression"
 
 
 class CompressionTelemetryStore:
@@ -47,7 +52,13 @@ class CompressionTelemetryStore:
         return records
 
     def summary(self) -> dict:
-        records = self.load_all()
+        from axon.observability.gain import is_compression_record
+
+        all_records = self.load_all()
+        # Filter to compression-only records using the canonical predicate
+        # (T-104): excludes tool_io records AND legacy pollution (engine is
+        # a tool name not in the COMPRESSION_ENGINES allowlist).
+        records = [r for r in all_records if is_compression_record(r)]
         by_engine: dict[str, int] = {}
         for r in records:
             by_engine[r.engine] = by_engine.get(r.engine, 0) + 1

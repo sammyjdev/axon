@@ -139,6 +139,7 @@ async def _compress_context_pipeline(
             after_tokens=after_tokens,
             reduction_tokens=reduction,
             reduction_pct=round(reduction_pct, 1),
+            kind="compression",
         )
     )
 
