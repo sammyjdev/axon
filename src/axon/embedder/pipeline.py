@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -27,6 +28,41 @@ _LANGUAGE_MAP = {
 _CTX_ROOTS = set(VALID_CONTEXTS)
 _FILE_HASH_CACHE: dict[str, str] = {}
 _BATCH_SIZE = 400
+_MAX_BATCH_TOKENS: int = int(os.environ.get("AXON_MAX_BATCH_TOKENS", "8192"))
+# 0.35 chars/token is a deliberate OVERESTIMATE for input memory safety.
+# vector_store.py:153 uses len//4 (=0.25) for output budget where underestimate
+# is safe. Here we are bounding onnxruntime INPUT batches to avoid the CPU
+# activation arena blowup (Phase 0: batch 64 -> 4.1 GB RSS on CPU).
+_TOKENS_PER_CHAR: float = 0.35
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count as 0.35 * len(text). Returns at least 1."""
+    return max(1, int(len(text) * _TOKENS_PER_CHAR))
+
+
+def _make_token_bounded_batches(
+    chunks: list[Chunk],
+) -> list[list[Chunk]]:
+    """Group chunks into batches that do not exceed _MAX_BATCH_TOKENS.
+
+    A chunk that on its own exceeds the budget is placed in its own batch
+    (never dropped). Preserves chunk order.
+    """
+    batches: list[list[Chunk]] = []
+    current: list[Chunk] = []
+    current_tokens = 0
+    for chunk in chunks:
+        tokens = _estimate_tokens(chunk.content)
+        if current and current_tokens + tokens > _MAX_BATCH_TOKENS:
+            batches.append(current)
+            current = []
+            current_tokens = 0
+        current.append(chunk)
+        current_tokens += tokens
+    if current:
+        batches.append(current)
+    return batches
 # SYNC NOTE: this set must be kept in sync with _EXCLUDED_DIR_NAMES in
 # axon/repo/file_walk.py. If you add a directory to one, add it to both.
 EXCLUDED_DIR_NAMES = {
