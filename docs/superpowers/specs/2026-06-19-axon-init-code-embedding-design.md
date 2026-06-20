@@ -119,3 +119,35 @@ search_code <q>  ─ embed(q) → Qdrant(knowledge,...) → enrich via SQLite su
 - Auto-refresh do índice por git hook no commit (re-index incremental automático).
 - Remover ou renomear `pb index`/`index-dev`.
 - Mudar o conjunto de linguagens suportadas pelo embedder.
+
+## Validação de performance (PENDENTE — passe dedicado)
+
+Medição preliminar (1 amostra, máquina sob carga; tratar como ordem de grandeza,
+não número final):
+
+| Cenário | Throughput |
+|---|---|
+| Load do modelo fastembed (1x/processo) | ~0.6s |
+| Chunks curtos (funções pequenas) | ~240 chunks/s |
+| Chunks longos (~300 tokens) | ~3 chunks/s |
+
+Throughput é dominado pelo tamanho do chunk. O onboarding real dos 9 repos (~4555
+chunks) levou poucos minutos por ser uma mistura. **A medição precisa ser refeita
+num passe de perf dedicado, com a máquina ociosa**, antes de fechar o escopo abaixo.
+
+Riscos/achados que essa validação levantou e que o spec ainda precisa endereçar:
+
+1. **Memória.** O caminho de chunk longo estourou ~14 GB num processo de benchmark.
+   `axon init` não pode poder derrubar a máquina → provável necessidade de teto de
+   memória / cap no tamanho do chunk / batch menor. **A confirmar no passe de perf.**
+2. **Sem incrementalidade entre execuções.** O `_FILE_HASH_CACHE` é em memória, por
+   processo. Logo, hoje **todo `axon init` re-embeda tudo** (custo = minutos em repo
+   grande). Refresh barato exigiria estado persistente (hashes em SQLite). Decidir se
+   entra no escopo.
+3. **Threading.** 16 cores, `OMP_NUM_THREADS` unset; o ~3/s em texto longo sugere
+   possível subutilização de cores. Checar config do onnxruntime/fastembed (sem
+   benchmark pesado) — pode mudar o cálculo de custo.
+
+**Decisão de escopo em aberto** (depende do passe de perf): mínimo (só wire) ×
+médio (wire + memória-safety + progress) × completo (+ incremental persistente).
+Não prosseguir para o plano de implementação até essa validação fechar o escopo.
