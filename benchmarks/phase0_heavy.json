@@ -1,0 +1,22 @@
+{
+  "rss_start_mb": 18,
+  "n_chunks": 2581,
+  "rss_after_chunk_list_mb": 135,
+  "model_load_sec": 0.42,
+  "rss_after_model_load_mb": 526,
+  "n_small": 2466,
+  "n_big": 115,
+  "small_result": {
+    "n": 800,
+    "sec": 197.4,
+    "chunks_per_sec": 4
+  },
+  "rss_after_small_mb": 4149,
+  "big_result": {
+    "n": 115,
+    "sec": 28.7,
+    "chunks_per_sec": 4
+  },
+  "rss_after_big_mb": 4152,
+  "peak_rss_mb": 4152
+}
