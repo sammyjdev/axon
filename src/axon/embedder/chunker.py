@@ -512,20 +512,20 @@ def _python_fallback_chunk(source: str, lines: list[str], file_path: str) -> Chu
 # TypeScript chunker (regex-based)
 # ---------------------------------------------------------------------------
 
-_TS_METHOD_RE = re.compile(
+_TS_METHOD_RE = re.compile(  # pragma: no cover
     r"^[ \t]*(?:(?:public|private|protected|static|async|override|abstract)\s+)*"
     r"([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[<(]",
     re.MULTILINE,
 )
-_TS_FUNCTION_RE = re.compile(
+_TS_FUNCTION_RE = re.compile(  # pragma: no cover
     r"^(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[<(]",
     re.MULTILINE,
 )
-_TS_CLASS_RE = re.compile(
+_TS_CLASS_RE = re.compile(  # pragma: no cover
     r"^(?:export\s+)?(?:abstract\s+)?class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)",
     re.MULTILINE,
 )
-_SKIP_TS_NAMES = {
+_SKIP_TS_NAMES = {  # pragma: no cover
     "constructor",
     "if",
     "for",
@@ -675,7 +675,7 @@ def _ts_fallback_chunk(source: str, lines: list[str], file_path: str) -> Chunk:
     )
 
 
-def _chunk_typescript_legacy(source: str, file_path: str) -> list[Chunk]:
+def _chunk_typescript_legacy(source: str, file_path: str) -> list[Chunk]:  # pragma: no cover
     """Original regex-based parser. Retained only for reference; not on the path."""
     lines = source.splitlines()
     chunks: list[Chunk] = []
@@ -744,7 +744,7 @@ def _chunk_typescript_legacy(source: str, file_path: str) -> list[Chunk]:
     return chunks
 
 
-def _find_block_end(lines: list[str], start_idx: int) -> int:
+def _find_block_end(lines: list[str], start_idx: int) -> int:  # pragma: no cover
     """Find closing brace for a block starting at start_idx (0-based)."""
     depth = 0
     for i in range(start_idx, len(lines)):
