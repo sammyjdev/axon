@@ -78,12 +78,19 @@ async def _open_file_cache() -> tuple[object, object]:
     Returns (SqliteFileCache, aiosqlite.Connection) - caller must close the conn.
     """
     import asyncio as _asyncio
+
     import aiosqlite
+
     from axon.store.file_cache import SqliteFileCache
+    from axon.store.session_store import _apply_migrations
 
     db_path = _get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db_conn = await aiosqlite.connect(str(db_path))
+    # Ensure the file_index table (003 migration) exists before the cache
+    # issues SELECT/INSERT against it - otherwise a fresh install crashes
+    # with "no such table: file_index". _apply_migrations is idempotent.
+    await _apply_migrations(db_conn)
     db_lock = _asyncio.Lock()
     return SqliteFileCache(db_conn, db_lock), db_conn
 
