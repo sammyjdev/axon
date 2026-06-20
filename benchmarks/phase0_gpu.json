@@ -1,0 +1,16 @@
+{
+  "preload_dlls": "ok",
+  "providers_available": [
+    "TensorrtExecutionProvider",
+    "CUDAExecutionProvider",
+    "CPUExecutionProvider"
+  ],
+  "n_chunks": 2583,
+  "model_providers": [
+    "CUDAExecutionProvider",
+    "CPUExecutionProvider"
+  ],
+  "gpu_n": 2583,
+  "gpu_sec": 4.77,
+  "gpu_chunks_per_sec": 541
+}
