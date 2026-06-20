@@ -57,7 +57,14 @@ class TestMarkdownChunker:
         md = "# Intro\nsome text\n## Usage\ncommand\n### Details\nmore\n"
         chunks = chunk_source(md, "markdown", "README.md")
         section_chunks = [c for c in chunks if c.chunk_type == "section"]
-        assert len(section_chunks) >= 3
+        assert len(section_chunks) == 3
+        # heading boundaries: each section starts at its heading line and the
+        # heading line belongs to its own section.
+        assert [(c.symbol, c.start_line, c.end_line) for c in section_chunks] == [
+            ("Intro", 1, 2),
+            ("Usage", 3, 4),
+            ("Details", 5, 6),
+        ]
 
     def test_section_chunk_type(self) -> None:
         md = "# Title\ncontent here\n"
@@ -78,11 +85,20 @@ class TestMarkdownChunker:
         assert len(chunks) == 7  # ceil(500/80) = 7 (6x80 + 1x20)
         for c in chunks:
             assert c.end_line - c.start_line + 1 <= _MAX_CHUNK_LINES
+        # exact boundaries: contiguous 1-based ranges, all sub-chunks named plain[idx]
+        assert chunks[0].symbol == "plain[0]"
+        assert chunks[0].start_line == 1
+        assert chunks[6].symbol == "plain[6]"
+        assert chunks[6].end_line == 500
 
     def test_pre_header_content_is_chunked(self) -> None:
         md = "preamble text\n# Section\ncontent\n"
         chunks = chunk_source(md, "markdown", "doc.md")
-        assert any(c.start_line == 1 for c in chunks)
+        assert len(chunks) == 2
+        # preamble is its own one-line chunk; the section starts at the heading.
+        assert chunks[0].start_line == 1 and chunks[0].end_line == 1
+        assert chunks[1].symbol == "Section"
+        assert chunks[1].start_line == 2
 
 
 class TestTextCatchall:
