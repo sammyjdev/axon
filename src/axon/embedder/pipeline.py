@@ -63,6 +63,24 @@ def _make_token_bounded_batches(
     if current:
         batches.append(current)
     return batches
+
+
+def _embed_in_token_batches(
+    engine: EmbedderEngine,
+    chunks: list[Chunk],
+) -> list[list[float]]:
+    """Embed chunks in token-bounded batches to keep the onnxruntime activation
+    arena within safe bounds on CPU fallback.
+
+    Order is preserved and every chunk appears in exactly one batch, so the
+    returned vectors stay aligned 1:1 with the input chunks list.
+    """
+    vectors: list[list[float]] = []
+    for batch in _make_token_bounded_batches(chunks):
+        vectors.extend(engine.embed([c.content for c in batch]))
+    return vectors
+
+
 # SYNC NOTE: this set must be kept in sync with _EXCLUDED_DIR_NAMES in
 # axon/repo/file_walk.py. If you add a directory to one, add it to both.
 EXCLUDED_DIR_NAMES = {
@@ -139,8 +157,7 @@ async def ingest_file(path: Path, engine: EmbedderEngine, store: VectorStore) ->
     if not chunks:
         return 0
 
-    texts = [c.content for c in chunks]
-    vectors = engine.embed(texts)
+    vectors = _embed_in_token_batches(engine, chunks)
 
     _occ_counter: dict[str, int] = {}
     vector_chunks = []
@@ -209,7 +226,9 @@ async def index_path(
         if not chunks:
             continue
 
-        vectors = engine.embed([c.content for c in chunks])
+        # Embed in token-bounded batches to keep the onnxruntime activation
+        # arena within safe bounds on CPU fallback (Phase 0: batch 64 -> 4.1 GB RSS).
+        vectors = _embed_in_token_batches(engine, chunks)
         _occ: dict[str, int] = {}
         vector_chunks = []
         for c, vec in zip(chunks, vectors):
