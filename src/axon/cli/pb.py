@@ -2444,26 +2444,33 @@ def index(
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
+        from axon.store.index_lock import IndexLockError, acquire_index_lock
         from axon.store.vector_store import VectorStore
 
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
         file_cache, db_conn = await _open_file_cache()
+        lock_root = target if target.is_dir() else target.parent
 
         try:
             await store.ensure_collections()
             await graph_store.connect()
             vault_root = _RUNTIME.vault_root
-            indexed_files, total_chunks = await index_path(
-                target,
-                engine=engine,
-                store=store,
-                vault_root=vault_root,
-                file_cache=file_cache,
-                forced_ctx=resolved_ctx,
-                graph_store=graph_store,
-            )
+            try:
+                async with acquire_index_lock(lock_root):
+                    indexed_files, total_chunks = await index_path(
+                        target,
+                        engine=engine,
+                        store=store,
+                        vault_root=vault_root,
+                        file_cache=file_cache,
+                        forced_ctx=resolved_ctx,
+                        graph_store=graph_store,
+                    )
+            except IndexLockError as exc:
+                typer.echo(f"Outro indexador ja esta em execucao: {exc}")
+                raise typer.Exit(1) from exc
         finally:
             await store.close()
             await graph_store.close()
