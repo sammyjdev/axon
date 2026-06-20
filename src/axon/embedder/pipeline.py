@@ -210,6 +210,10 @@ async def index_path(
                 calls=record.calls,
                 called_by=record.called_by,
             )
+    # Clean up non-serializable tree-sitter trees before any parallel phase (Spec C handoff).
+    # NOT thread-safe: must complete before any parallel step accesses graph_chunks.
+    for _chunk in graph_chunks:
+        _chunk.metadata.pop("_tree", None)
     return indexed_files, total_chunks
 
 

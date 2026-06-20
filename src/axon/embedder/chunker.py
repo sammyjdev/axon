@@ -408,9 +408,11 @@ def _chunk_python(source: str, file_path: str) -> list[Chunk]:
         return [_python_fallback_chunk(source, lines, file_path)]
 
     chunks: list[Chunk] = []
-    _walk_python(tree.root_node, source, lines, file_path, in_class=False, chunks=chunks)
+    _walk_python(tree.root_node, source, lines, file_path, in_class=False, chunks=chunks, tree=tree)
     if not chunks:
-        chunks.append(_python_fallback_chunk(source, lines, file_path))
+        fb = _python_fallback_chunk(source, lines, file_path)
+        fb.metadata["_tree"] = tree
+        chunks.append(fb)
     return chunks
 
 
@@ -422,6 +424,7 @@ def _walk_python(
     *,
     in_class: bool,
     chunks: list[Chunk],
+    tree: object | None = None,
 ) -> None:
     """Recurse the tree, emitting a chunk for each function definition.
 
@@ -436,16 +439,18 @@ def _walk_python(
         _start = node.start_point[0] + 1
         _end = node.end_point[0] + 1
         if (_end - _start) > _MAX_CHUNK_LINES:
-            chunks.extend(
-                _split_large_node(
-                    node,
-                    source.encode("utf-8") if isinstance(source, str) else source,
-                    _sym,
-                    _chunk_type,
-                    file_path,
-                    language="python",
-                )
+            sub_chunks = _split_large_node(
+                node,
+                source.encode("utf-8") if isinstance(source, str) else source,
+                _sym,
+                _chunk_type,
+                file_path,
+                language="python",
             )
+            if tree is not None:
+                for sc in sub_chunks:
+                    sc.metadata["_tree"] = tree
+            chunks.extend(sub_chunks)
         else:
             chunks.append(
                 Chunk(
@@ -456,6 +461,7 @@ def _walk_python(
                     content="\n".join(lines[node.start_point[0] : node.end_point[0] + 1]),
                     file_path=file_path,
                     language="python",
+                    metadata={"_tree": tree} if tree is not None else {},
                 )
             )
         # Recurse to catch inner functions (still tagged as functions
@@ -463,7 +469,7 @@ def _walk_python(
         for child in node.children:
             _walk_python(
                 child, source, lines, file_path,
-                in_class=False, chunks=chunks,
+                in_class=False, chunks=chunks, tree=tree,
             )
         return
 
@@ -471,14 +477,14 @@ def _walk_python(
         for child in node.children:
             _walk_python(
                 child, source, lines, file_path,
-                in_class=True, chunks=chunks,
+                in_class=True, chunks=chunks, tree=tree,
             )
         return
 
     for child in node.children:
         _walk_python(
             child, source, lines, file_path,
-            in_class=in_class, chunks=chunks,
+            in_class=in_class, chunks=chunks, tree=tree,
         )
 
 
@@ -553,9 +559,11 @@ def _chunk_typescript(source: str, file_path: str) -> list[Chunk]:
         return [_ts_fallback_chunk(source, lines, file_path)]
 
     chunks: list[Chunk] = []
-    _walk_ts(tree.root_node, lines, file_path, in_class=False, chunks=chunks)
+    _walk_ts(tree.root_node, lines, file_path, in_class=False, chunks=chunks, tree=tree)
     if not chunks:
-        chunks.append(_ts_fallback_chunk(source, lines, file_path))
+        fb = _ts_fallback_chunk(source, lines, file_path)
+        fb.metadata["_tree"] = tree
+        chunks.append(fb)
     return chunks
 
 
@@ -566,20 +574,21 @@ def _walk_ts(
     *,
     in_class: bool,
     chunks: list[Chunk],
+    tree: object | None = None,
 ) -> None:
     if node.type in ("function_declaration", "method_definition"):
         name = _ts_identifier(node) or "anonymous"
         chunks.extend(
-            _ts_chunk_from_node(node, lines, file_path, name, in_class)
+            _ts_chunk_from_node(node, lines, file_path, name, in_class, tree=tree)
         )
         # Recurse to catch nested functions
         for child in node.children:
-            _walk_ts(child, lines, file_path, in_class=False, chunks=chunks)
+            _walk_ts(child, lines, file_path, in_class=False, chunks=chunks, tree=tree)
         return
 
     if node.type in ("class_declaration", "class_body"):
         for child in node.children:
-            _walk_ts(child, lines, file_path, in_class=True, chunks=chunks)
+            _walk_ts(child, lines, file_path, in_class=True, chunks=chunks, tree=tree)
         return
 
     # Arrow functions / function expressions bound to a name
@@ -596,12 +605,12 @@ def _walk_ts(
         ):
             name = name_node.text.decode("utf-8", errors="replace")
             chunks.extend(
-                _ts_chunk_from_node(node, lines, file_path, name, in_class)
+                _ts_chunk_from_node(node, lines, file_path, name, in_class, tree=tree)
             )
             return
 
     for child in node.children:
-        _walk_ts(child, lines, file_path, in_class=in_class, chunks=chunks)
+        _walk_ts(child, lines, file_path, in_class=in_class, chunks=chunks, tree=tree)
 
 
 def _ts_identifier(node: Node) -> str | None:
@@ -620,13 +629,15 @@ def _ts_chunk_from_node(
     file_path: str,
     name: str,
     in_class: bool,
+    *,
+    tree: object | None = None,
 ) -> list[Chunk]:
     """Return one or more Chunks for this node, splitting if it exceeds _MAX_CHUNK_LINES."""
     start = node.start_point[0]
     end = node.end_point[0]
     _chunk_type: ChunkType = "method" if in_class else "function"
     if (end - start + 1) > _MAX_CHUNK_LINES:
-        return _split_lines_into_chunks(
+        sub_chunks = _split_lines_into_chunks(
             lines[start : end + 1],
             start + 1,
             name,
@@ -634,6 +645,10 @@ def _ts_chunk_from_node(
             file_path,
             "typescript",
         )
+        if tree is not None:
+            for sc in sub_chunks:
+                sc.metadata["_tree"] = tree
+        return sub_chunks
     return [
         Chunk(
             symbol=name,
@@ -643,6 +658,7 @@ def _ts_chunk_from_node(
             content="\n".join(lines[start : end + 1]),
             file_path=file_path,
             language="typescript",
+            metadata={"_tree": tree} if tree is not None else {},
         )
     ]
 
@@ -766,6 +782,8 @@ def chunk_source(source: str, language: str, file_path: str) -> list[Chunk]:
                     file_path=file_path,
                 )
             )
+        for _c in chunks:
+            _c.metadata["_tree"] = tree
         return chunks
     elif language == "python":
         return _chunk_python(source, file_path)
