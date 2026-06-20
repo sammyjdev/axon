@@ -90,6 +90,24 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 pythonpath = ["."]
+# ---------------------------------------------------------------------------
+# Per-module coverage gate (Plan A touched modules). Run with:
+#
+#   pytest <test-files> \
+#     --cov=axon.embedder.chunker \
+#     --cov=axon.embedder.graph_extractor \
+#     --cov=axon.repo.file_walk \
+#     --cov=axon.embedder.pipeline \
+#     --cov-report=term-missing
+#
+# Target threshold: >= 80% for each module EXCEPT axon.embedder.pipeline.
+#
+# axon.embedder.pipeline is intentionally below 80% at the unit level:
+#   index_path / ingest_file / _flush are runtime integration paths that
+#   require a live embedder + Qdrant. These paths are wired and
+#   integration-tested in Plan C. Do NOT add --cov-fail-under globally;
+#   that would fail the suite on pipeline.py prematurely.
+# ---------------------------------------------------------------------------
 
 [tool.ruff]
 target-version = "py312"
