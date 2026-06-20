@@ -74,6 +74,13 @@ async def test_index_repo_respects_gitignore(
         "def ignored():\n    return 1\n", encoding="utf-8"
     )
     (tmp_path / ".gitignore").write_text("ignored.py\n", encoding="utf-8")
+    # Stage files so git ls-files --cached can see them (iter_git_files uses
+    # --cached/tracked-only; untracked files are never returned).
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "kept.py", ".gitignore"],
+        check=True,
+        capture_output=True,
+    )
 
     symbols = await index_repo(tmp_path, store=store)
 
