@@ -5,6 +5,8 @@ from collections import deque
 import redis.asyncio as aioredis
 from redis.exceptions import RedisError
 
+from axon.embedder.graph_extractor import DependencyRecord
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,6 +46,28 @@ class GraphStore:
                 "called_by": json.dumps(called_by),
             },
         )
+
+    async def upsert_deps_batch(
+        self,
+        records: list[DependencyRecord],
+    ) -> None:
+        """Write N dep:symbol hashes in a single Redis pipeline.
+
+        transaction=False avoids MULTI/EXEC overhead; partial failures are
+        corrected on the next index run (file re-indexed by hash miss).
+        """
+        if not records:
+            return
+        async with self._redis.pipeline(transaction=False) as pipe:
+            for record in records:
+                pipe.hset(
+                    f"dep:{record.symbol}",
+                    mapping={
+                        "calls": json.dumps(record.calls),
+                        "called_by": json.dumps(record.called_by),
+                    },
+                )
+            await pipe.execute()
 
     async def get_calls(self, symbol: str) -> list[str]:
         raw = await self._redis.hget(f"dep:{symbol}", "calls")
