@@ -6,6 +6,7 @@ import shlex
 import shutil
 import subprocess
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -93,6 +94,30 @@ async def _open_file_cache() -> tuple[object, object]:
     await _apply_migrations(db_conn)
     db_lock = _asyncio.Lock()
     return SqliteFileCache(db_conn, db_lock), db_conn
+
+
+@asynccontextmanager
+async def _index_lock_guard(*, fatal: bool, label: str = "index"):
+    """Hold the machine-wide index lock (on the data_root) for an index op.
+
+    Every index entry point (index / index-dev / watch / scan / howto reindex /
+    expansion publish) shares this one lock root so they mutually exclude on the
+    same machine. Yields True when the lock was acquired; on contention it
+    either exits the CLI cleanly (fatal=True) or yields False so a watcher/loop
+    can skip without crashing (fatal=False).
+    """
+    from axon.store.index_lock import IndexLockError, acquire_index_lock
+
+    try:
+        async with acquire_index_lock(_RUNTIME.data_root):
+            yield True
+            return
+    except IndexLockError as exc:
+        if fatal:
+            typer.echo(f"Outro indexador ja esta em execucao: {exc}")
+            raise typer.Exit(1) from exc
+        typer.echo(f"[{label}] index lock ocupado por outro processo - pulando")
+    yield False
 
 
 def _resolve_ctx(ctx: str | None, require_work_confirmation: bool = True) -> str | None:
@@ -2153,15 +2178,17 @@ def _reindex_howtos(howto_paths: list[Path]) -> None:
             total_chunks = 0
             for howto in howto_paths:
                 try:
-                    _, chunks = await index_path(
-                        howto,
-                        engine=engine,
-                        store=store,
-                        vault_root=_RUNTIME.vault_root,
-                        file_cache=file_cache,
-                        languages={"markdown"},
-                    )
-                    total_chunks += chunks
+                    async with _index_lock_guard(fatal=False, label="howto") as acquired:
+                        if acquired:
+                            _, chunks = await index_path(
+                                howto,
+                                engine=engine,
+                                store=store,
+                                vault_root=_RUNTIME.vault_root,
+                                file_cache=file_cache,
+                                languages={"markdown"},
+                            )
+                            total_chunks += chunks
                 except Exception as exc:
                     typer.echo(
                         f"[promote] reindex falhou para {howto.name}: {exc}",
@@ -2444,33 +2471,27 @@ def index(
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
-        from axon.store.index_lock import IndexLockError, acquire_index_lock
         from axon.store.vector_store import VectorStore
 
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
         file_cache, db_conn = await _open_file_cache()
-        lock_root = target if target.is_dir() else target.parent
 
         try:
             await store.ensure_collections()
             await graph_store.connect()
             vault_root = _RUNTIME.vault_root
-            try:
-                async with acquire_index_lock(lock_root):
-                    indexed_files, total_chunks = await index_path(
-                        target,
-                        engine=engine,
-                        store=store,
-                        vault_root=vault_root,
-                        file_cache=file_cache,
-                        forced_ctx=resolved_ctx,
-                        graph_store=graph_store,
-                    )
-            except IndexLockError as exc:
-                typer.echo(f"Outro indexador ja esta em execucao: {exc}")
-                raise typer.Exit(1) from exc
+            async with _index_lock_guard(fatal=True):
+                indexed_files, total_chunks = await index_path(
+                    target,
+                    engine=engine,
+                    store=store,
+                    vault_root=vault_root,
+                    file_cache=file_cache,
+                    forced_ctx=resolved_ctx,
+                    graph_store=graph_store,
+                )
         finally:
             await store.close()
             await graph_store.close()
@@ -2551,16 +2572,17 @@ def index_dev(
             total_files = 0
             total_chunks = 0
             for entry in selected:
-                indexed_files, chunks = await index_path(
-                    entry.path,
-                    engine=engine,
-                    store=store,
-                    vault_root=_RUNTIME.vault_root,
-                    file_cache=file_cache,
-                    forced_ctx=entry.ctx,
-                    graph_store=graph_store,
-                    languages=set(entry.languages),
-                )
+                async with _index_lock_guard(fatal=True):
+                    indexed_files, chunks = await index_path(
+                        entry.path,
+                        engine=engine,
+                        store=store,
+                        vault_root=_RUNTIME.vault_root,
+                        file_cache=file_cache,
+                        forced_ctx=entry.ctx,
+                        graph_store=graph_store,
+                        languages=set(entry.languages),
+                    )
                 total_files += indexed_files
                 total_chunks += chunks
                 typer.echo(
@@ -2608,17 +2630,22 @@ def watch(
         file_cache, db_conn = await _open_file_cache()
 
         async def _on_file(changed_path: Path) -> None:
-            indexed_files, total_chunks = await index_path(
-                changed_path,
-                engine=engine,
-                store=store,
-                vault_root=vault_root,
-                file_cache=file_cache,
-                forced_ctx=resolved_ctx,
-                graph_store=graph_store,
-            )
-            if indexed_files > 0:
-                typer.echo(f"[watch] Reindexado: {changed_path} ({total_chunks} chunk(s))")
+            # Non-fatal: if a manual `pb index` holds the lock, skip this change
+            # rather than crash the watcher; the next event re-indexes it.
+            async with _index_lock_guard(fatal=False, label="watch") as acquired:
+                if not acquired:
+                    return
+                indexed_files, total_chunks = await index_path(
+                    changed_path,
+                    engine=engine,
+                    store=store,
+                    vault_root=vault_root,
+                    file_cache=file_cache,
+                    forced_ctx=resolved_ctx,
+                    graph_store=graph_store,
+                )
+                if indexed_files > 0:
+                    typer.echo(f"[watch] Reindexado: {changed_path} ({total_chunks} chunk(s))")
 
         try:
             await store.ensure_collections()
@@ -2810,16 +2837,17 @@ def scan(
                 try:
                     await store.ensure_collections()
                     await graph_store.connect()
-                    indexed, chunks = await index_path(
-                        entry.path,
-                        engine=engine,
-                        store=store,
-                        vault_root=_RUNTIME.vault_root,
-                        file_cache=file_cache,
-                        forced_ctx=entry.ctx,
-                        graph_store=graph_store,
-                    )
-                    typer.echo(f"  {entry.name}: {indexed} arquivo(s), {chunks} chunk(s)")
+                    async with _index_lock_guard(fatal=True):
+                        indexed, chunks = await index_path(
+                            entry.path,
+                            engine=engine,
+                            store=store,
+                            vault_root=_RUNTIME.vault_root,
+                            file_cache=file_cache,
+                            forced_ctx=entry.ctx,
+                            graph_store=graph_store,
+                        )
+                        typer.echo(f"  {entry.name}: {indexed} arquivo(s), {chunks} chunk(s)")
                 finally:
                     await store.close()
                     await graph_store.close()
