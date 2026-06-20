@@ -438,7 +438,9 @@ def _walk_python(
         _chunk_type: ChunkType = "method" if in_class else "function"
         _start = node.start_point[0] + 1
         _end = node.end_point[0] + 1
-        if (_end - _start) > _MAX_CHUNK_LINES:
+        # +1: physical line count (inclusive). Strict cap consistent with the
+        # Java/TS branches - no resulting chunk exceeds _MAX_CHUNK_LINES lines.
+        if (_end - _start + 1) > _MAX_CHUNK_LINES:
             sub_chunks = _split_large_node(
                 node,
                 source.encode("utf-8") if isinstance(source, str) else source,

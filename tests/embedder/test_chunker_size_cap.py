@@ -16,10 +16,24 @@ def _make_ts_function(name: str, n_lines: int) -> str:
 
 class TestPythonCap:
     def test_function_exactly_at_cap_is_single_chunk(self) -> None:
-        src = _make_python_function("exact", _MAX_CHUNK_LINES)
+        # _make_python_function(n) yields n+1 physical lines; n=cap-1 -> exactly
+        # _MAX_CHUNK_LINES physical lines, the strict boundary that stays single.
+        src = _make_python_function("exact", _MAX_CHUNK_LINES - 1)
         chunks = chunk_source(src, "python", "f.py")
         fn_chunks = [c for c in chunks if c.symbol.startswith("exact")]
         assert len(fn_chunks) == 1
+        c = fn_chunks[0]
+        assert c.end_line - c.start_line + 1 == _MAX_CHUNK_LINES, "single chunk must be exactly at cap"
+
+    def test_function_one_over_cap_splits(self) -> None:
+        # n=cap -> cap+1 physical lines -> must split under the strict cap
+        # (regression: the Python branch used to allow an 81-line single chunk).
+        src = _make_python_function("oneover", _MAX_CHUNK_LINES)
+        chunks = chunk_source(src, "python", "f.py")
+        fn = [c for c in chunks if c.symbol.startswith("oneover")]
+        assert len(fn) > 1
+        for c in fn:
+            assert c.end_line - c.start_line + 1 <= _MAX_CHUNK_LINES
 
     def test_function_below_cap_is_single_chunk(self) -> None:
         src = _make_python_function("small", 10)
