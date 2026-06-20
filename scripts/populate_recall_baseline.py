@@ -92,12 +92,11 @@ def main() -> None:
         }
         BASELINE_PATH.write_text(json.dumps(baseline, indent=2), encoding="utf-8")
         print(f"\nBaseline written to {BASELINE_PATH}")
-
-        if recall_top1 < 0.90:
-            print(
-                f"\nWARNING: recall_top1={recall_top1:.3f} is below the 0.90 gate. "
-                "Review misses above before relying on this baseline."
-            )
+        print(
+            "\nThis baseline is the REGRESSION reference. The gate "
+            "(test_recall_guard_no_regression) checks that no query regresses in "
+            "rank and Top-3 does not drop - there is no absolute Top-1 threshold."
+        )
 
     finally:
         try:
