@@ -528,14 +528,22 @@ class ExpansionService:
         file_cache = SqliteFileCache(db_conn, db_lock)
         try:
             await store.ensure_collections()
-            await index_path(
-                publish_path,
-                engine=engine,
-                store=store,
-                vault_root=self.runtime.vault_root,
-                file_cache=file_cache,
-                forced_ctx=ctx,
-            )
+            from axon.store.index_lock import IndexLockError, acquire_index_lock
+
+            try:
+                async with acquire_index_lock(self.runtime.data_root):
+                    await index_path(
+                        publish_path,
+                        engine=engine,
+                        store=store,
+                        vault_root=self.runtime.vault_root,
+                        file_cache=file_cache,
+                        forced_ctx=ctx,
+                    )
+            except IndexLockError:
+                # Another indexer holds the lock; the published file is picked
+                # up on the next index pass. Do not fail the publish.
+                pass
         finally:
             await store.close()
             await db_conn.close()
