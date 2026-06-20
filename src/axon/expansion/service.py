@@ -506,7 +506,9 @@ class ExpansionService:
 
     async def _reindex_publish_path(self, publish_path: Path, ctx: str) -> None:
         import asyncio as _asyncio
+
         import aiosqlite
+
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.file_cache import SqliteFileCache
@@ -517,6 +519,11 @@ class ExpansionService:
         db_path = self.runtime.db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         db_conn = await aiosqlite.connect(str(db_path))
+        # Apply migrations so the file_index table exists (003) before the
+        # cache queries it - idempotent on an already-migrated DB.
+        from axon.store.session_store import _apply_migrations
+
+        await _apply_migrations(db_conn)
         db_lock = _asyncio.Lock()
         file_cache = SqliteFileCache(db_conn, db_lock)
         try:
