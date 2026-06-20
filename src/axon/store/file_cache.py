@@ -11,7 +11,7 @@ Windows backslash paths and posix slash paths produce identical lookup keys.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -85,7 +85,7 @@ class SqliteFileCache:
         status: str = "done",
     ) -> None:
         fp = Path(file_path).as_posix()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         async with self._lock:
             await self._conn.execute(
                 """
