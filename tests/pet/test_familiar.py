@@ -9,9 +9,9 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from datetime import UTC, datetime
 
 import pytest
 
@@ -20,12 +20,12 @@ from axon.observability.trace_store import TraceRecord, TraceStore
 from axon.pet.familiar import (
     ActivityPoller,
     Dendrite,
-    State,
     fetch_adr_data,
     fetch_compression_data,
+)
+from axon.pet.familiar import (
     main as familiar_main,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,7 +83,11 @@ class TestFetchCompressionData:
         rt = _make_runtime(tmp_path)
         store = CompressionTelemetryStore(rt)  # type: ignore[arg-type]
         # Polluter
-        store.append(_make_compression_record(engine="get_graph_path", kind="tool_io", reduction_tokens=9999))
+        store.append(
+            _make_compression_record(
+                engine="get_graph_path", kind="tool_io", reduction_tokens=9999
+            )
+        )
         # Real record
         store.append(_make_compression_record(engine="rtkx", reduction_tokens=100))
 
@@ -94,7 +98,11 @@ class TestFetchCompressionData:
         rt = _make_runtime(tmp_path)
         store = CompressionTelemetryStore(rt)  # type: ignore[arg-type]
         # Legacy pollution: kind="compression" but engine is a tool name
-        store.append(_make_compression_record(engine="get_graph_neighbors", kind="compression", reduction_tokens=5000))
+        store.append(
+            _make_compression_record(
+                engine="get_graph_neighbors", kind="compression", reduction_tokens=5000
+            )
+        )
         store.append(_make_compression_record(engine="fallback", reduction_tokens=50))
 
         tokens, _moments = fetch_compression_data(rt)  # type: ignore[arg-type]

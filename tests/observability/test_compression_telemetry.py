@@ -17,8 +17,6 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from axon.observability import compression_telemetry as ct
 from axon.observability.compression_telemetry import (
     CompressionRecord,
