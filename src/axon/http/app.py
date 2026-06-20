@@ -48,7 +48,7 @@ from typing import Any
 
 try:
     from fastapi import FastAPI, HTTPException
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse
     from pydantic import BaseModel
 except ModuleNotFoundError as _exc:  # pragma: no cover
     raise ModuleNotFoundError(
@@ -166,3 +166,56 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
 async def health() -> JSONResponse:
     """Liveness probe — returns ``{"status": "ok"}``."""
     return JSONResponse(content={"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Dashboard — read-only observability routes (dec-119)
+# ---------------------------------------------------------------------------
+
+_ACTIVITY_DEFAULT_LIMIT = 50
+_ACTIVITY_MAX_LIMIT = 500
+
+
+@app.get("/api/gain")
+async def api_gain() -> JSONResponse:
+    """Return aggregated compression-gain statistics from the canonical store.
+
+    Delegates entirely to ``load_gain()`` (observability/gain.py) which applies
+    the T-104 pollution filter before aggregating.  An empty or missing store
+    returns all-zero / null-percentile summary — never an error.
+    """
+    from axon.observability.gain import load_gain  # noqa: PLC0415
+
+    summary = load_gain()
+    return JSONResponse(content=summary.model_dump())
+
+
+@app.get("/api/activity")
+async def api_activity(limit: int = _ACTIVITY_DEFAULT_LIMIT) -> JSONResponse:
+    """Return the most-recent trace records from the canonical TraceStore.
+
+    Query params
+    ------------
+    limit : int
+        Maximum number of records to return (default 50, capped at 500).
+        Records are ordered most-recent-first.  An empty store returns ``[]``.
+    """
+    from axon.observability.trace_store import TraceStore  # noqa: PLC0415
+
+    cap = min(max(1, limit), _ACTIVITY_MAX_LIMIT)
+    all_records = TraceStore().load_all()
+    # Most-recent-first: take the tail of the append-only list then reverse.
+    recent = list(reversed(all_records[-cap:])) if all_records else []
+    return JSONResponse(content=[r.model_dump() for r in recent])
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard() -> HTMLResponse:
+    """Self-contained read-only web dashboard (dec-119 step 4).
+
+    Renders a minimal HTML page that polls ``/api/gain`` and ``/api/activity``
+    every 3 seconds via vanilla JS (no external CDN).
+    """
+    from axon.http.dashboard import DASHBOARD_HTML  # noqa: PLC0415
+
+    return HTMLResponse(content=DASHBOARD_HTML)
