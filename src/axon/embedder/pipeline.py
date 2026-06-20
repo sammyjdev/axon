@@ -322,11 +322,22 @@ async def index_path(
     for _chunk in graph_chunks:
         _chunk.metadata.pop("_tree", None)
 
-    # D6: detect files removed from repo - scoped to ctxs walked this run only.
+    # D6: detect files removed from the indexed scope.
     # FIX 2: iterate only ctxs we actually walked; never touch sibling ctxs.
+    # FIX (whole-branch review C1): a cached entry is only an orphan if it lives
+    # INSIDE the walked target subtree. index_path is also invoked on a single
+    # file (watch, per-howto, expansion publish); without this scope check, a
+    # single-file index would delete every sibling in the ctx (data loss), since
+    # found_by_ctx then holds only that one file. Errs toward not deleting.
+    target_posix = Path(target).as_posix()
+    target_prefix = target_posix.rstrip("/") + "/"
+
+    def _in_walked_scope(path: str) -> bool:
+        return path == target_posix or path.startswith(target_prefix)
+
     for ctx, found in found_by_ctx.items():
         for cached_path, _ in await file_cache.list_entries(ctx):
-            if cached_path not in found:
+            if cached_path not in found and _in_walked_scope(cached_path):
                 await store.delete_by_file(ctx, cached_path)
                 await file_cache.delete_entry(cached_path, ctx)
 
