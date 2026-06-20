@@ -47,6 +47,7 @@ async def test_schema_version_records_each_migration(tmp_path: Path) -> None:
         "000_baseline",
         "001_axon_graph",
         "002_unique_edges",
+        "003_file_index",
     ]
 
 
@@ -58,4 +59,42 @@ async def test_init_is_idempotent(tmp_path: Path) -> None:
     await store.close()
 
     versions = await _applied_versions(db_path)
-    assert len(versions) == len(set(versions)) == 3
+    assert len(versions) == len(set(versions)) == 4
+
+
+async def test_003_file_index_table_exists(tmp_path: Path) -> None:
+    db_path = tmp_path / "axon.db"
+    store = SessionStore(db_path=db_path)
+    await store.init()
+    await store.close()
+
+    tables = await _table_names(db_path)
+    assert "file_index" in tables
+
+
+async def test_003_schema_version_includes_file_index(tmp_path: Path) -> None:
+    db_path = tmp_path / "axon.db"
+    store = SessionStore(db_path=db_path)
+    await store.init()
+    await store.close()
+
+    versions = await _applied_versions(db_path)
+    assert "003_file_index" in versions
+    assert sorted(versions) == [
+        "000_baseline",
+        "001_axon_graph",
+        "002_unique_edges",
+        "003_file_index",
+    ]
+
+
+async def test_003_file_index_columns(tmp_path: Path) -> None:
+    db_path = tmp_path / "axon.db"
+    store = SessionStore(db_path=db_path)
+    await store.init()
+    await store.close()
+
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute("PRAGMA table_info(file_index)")
+        cols = {row[1] for row in await cur.fetchall()}
+    assert {"file_path", "ctx", "sha1", "status", "chunk_count", "indexed_at"} <= cols
