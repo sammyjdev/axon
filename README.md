@@ -271,7 +271,7 @@ gate's coverage (T-105).
 | [`docs/ARD.md`](docs/ARD.md) | Architectural requirements |
 | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) | CLI workflows |
 | [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap |
-| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-118) |
+| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-119) |
 | [`docs/decisions/dec-106-routing-profiles.md`](docs/decisions/dec-106-routing-profiles.md) | FREE/PAID provider profiles + rate limit gate |
 | [`docs/decisions/dec-109-tool-tracing-and-risk-gating.md`](docs/decisions/dec-109-tool-tracing-and-risk-gating.md) | Tool risk classes, policy gate, tracing middleware |
 | [`benchmarks/README.md`](benchmarks/README.md) | Token savings benchmark |
