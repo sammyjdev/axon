@@ -67,7 +67,8 @@ def test_make_token_bounded_batches_preserves_all_chunks() -> None:
 
     flattened = [c for batch in batches for c in batch]
     assert len(flattened) == len(chunks), f"Expected {len(chunks)} chunks, got {len(flattened)}"
-    assert set(c.symbol for c in flattened) == set(c.symbol for c in chunks)
+    # order preserved, not just membership
+    assert [c.symbol for c in flattened] == [c.symbol for c in chunks]
 
 
 def test_make_token_bounded_batches_giant_chunk_own_batch() -> None:
@@ -87,6 +88,24 @@ def test_make_token_bounded_batches_giant_chunk_own_batch() -> None:
     assert len(giant_batches[0]) == 1, "Giant chunk must be in its own batch"
 
 
+def test_make_token_bounded_batches_giant_in_middle() -> None:
+    """A giant chunk sandwiched between normal chunks: nothing dropped, order
+    preserved, giant alone in its own batch (the midstream flush path)."""
+    from axon.embedder.pipeline import _MAX_BATCH_TOKENS, _make_token_bounded_batches
+
+    chars_needed = int(_MAX_BATCH_TOKENS / 0.35) + 100
+    n1 = _make_chunk("short a", "n1")
+    giant = _make_chunk("x " * (chars_needed // 2), "giant")
+    n2 = _make_chunk("short b", "n2")
+
+    batches = _make_token_bounded_batches([n1, giant, n2])
+    flat = [c for b in batches for c in b]
+    # no drop + order preserved across the midstream giant
+    assert [c.symbol for c in flat] == ["n1", "giant", "n2"]
+    giant_batch = next(b for b in batches if any(c.symbol == "giant" for c in b))
+    assert len(giant_batch) == 1, "midstream giant must be alone in its batch"
+
+
 def test_make_token_bounded_batches_empty_input() -> None:
     from axon.embedder.pipeline import _make_token_bounded_batches
 
@@ -95,12 +114,17 @@ def test_make_token_bounded_batches_empty_input() -> None:
 
 def test_max_batch_tokens_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """AXON_MAX_BATCH_TOKENS env var must override the default."""
-    monkeypatch.setenv("AXON_MAX_BATCH_TOKENS", "1024")
-    # Reload module to pick up new env var
     import importlib
 
     import axon.embedder.pipeline as pipeline_mod
-    importlib.reload(pipeline_mod)
-    assert pipeline_mod._MAX_BATCH_TOKENS == 1024
-    # Restore
-    importlib.reload(pipeline_mod)
+
+    monkeypatch.setenv("AXON_MAX_BATCH_TOKENS", "1024")
+    try:
+        importlib.reload(pipeline_mod)
+        assert pipeline_mod._MAX_BATCH_TOKENS == 1024
+    finally:
+        # delenv BEFORE the restore reload, otherwise the module reloads with
+        # the override still set and leaks 1024 into every later test.
+        monkeypatch.delenv("AXON_MAX_BATCH_TOKENS", raising=False)
+        importlib.reload(pipeline_mod)
+    assert pipeline_mod._MAX_BATCH_TOKENS == 8192
