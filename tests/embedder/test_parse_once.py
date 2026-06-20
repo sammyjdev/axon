@@ -123,3 +123,42 @@ class TestChunkerTreeInMetadata:
             content="def fn(): pass",
         )
         assert not hasattr(vc, "metadata")
+
+
+class TestCachedTreeEquivalence:
+    """The cached-tree path must produce the SAME calls as the fresh-parse
+    fallback, including import-derived edges (regression: the cached Java/TS
+    path dropped the import scan that the fallback performs)."""
+
+    def test_java_cached_matches_fallback_including_imports(self) -> None:
+        from axon.embedder.chunker import _PARSER
+
+        source = "import com.foo.Bar;\nclass C {\n  void go() { helper(); }\n}\n"
+        tree = _PARSER.parse(source.encode("utf-8"))
+        with_tree = Chunk(
+            symbol="C", chunk_type="class", start_line=1, end_line=4,
+            content=source, file_path="C.java", language="java",
+            metadata={"_tree": tree},
+        )
+        without_tree = with_tree.model_copy(update={"metadata": {}})
+
+        cached = extract_calls(with_tree)
+        fresh = extract_calls(without_tree)
+        assert cached == fresh
+        assert "Bar" in cached, "import-derived edge must survive the cached path"
+        assert "helper" in cached
+
+    def test_ts_cached_matches_fallback_including_imports(self) -> None:
+        from axon.embedder.chunker import _TS_PARSER
+
+        source = "import { Bar } from './bar';\nfunction go() { helper(); }\n"
+        tree = _TS_PARSER.parse(source.encode("utf-8"))
+        with_tree = Chunk(
+            symbol="go", chunk_type="function", start_line=1, end_line=2,
+            content=source, file_path="m.ts", language="typescript",
+            metadata={"_tree": tree},
+        )
+        without_tree = with_tree.model_copy(update={"metadata": {}})
+
+        assert extract_calls(with_tree) == extract_calls(without_tree)
+        assert "Bar" in extract_calls(with_tree)
