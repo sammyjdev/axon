@@ -1504,17 +1504,17 @@ def adr_hook_install(
         str | None, typer.Option("--path", help="Path do repositório git (default: cwd)")
     ] = None,
 ) -> None:
-    """[deprecated] Use ``pb hooks install --apply`` (dec-113)."""
+    """[deprecated] Use ``axon hooks install --apply`` (dec-113)."""
     import warnings
 
     warnings.warn(
-        "`pb adr hook` is deprecated. Use `pb hooks install --apply`. "
+        "`axon adr hook` is deprecated. Use `axon hooks install --apply`. "
         "See dec-113 for the new diagnostic-first flow.",
         DeprecationWarning,
         stacklevel=2,
     )
     typer.echo(
-        "[axon] `pb adr hook` is deprecated — use `pb hooks install --apply`."
+        "[axon] `axon adr hook` is deprecated — use `axon hooks install --apply`."
     )
     # Backwards-compatible behaviour: keep installing the old single hook
     # so existing users don't break mid-upgrade.
