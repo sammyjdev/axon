@@ -53,6 +53,15 @@ class TestPythonCap:
         fn = [c for c in chunks if c.symbol.startswith("over")]
         assert len(fn) > 1
 
+    def test_split_python_subchunks_tagged_python(self) -> None:
+        """Split Python functions must keep language="python" (regression:
+        _split_large_node defaulted Chunk.language to "java")."""
+        src = _make_python_function("polyglot", 400)
+        chunks = chunk_source(src, "python", "f.py")
+        split = [c for c in chunks if c.symbol.startswith("polyglot")]
+        assert len(split) > 1
+        assert all(c.language == "python" for c in split), [c.language for c in split]
+
 
 class TestTypeScriptCap:
     def test_ts_function_above_cap_splits(self) -> None:
