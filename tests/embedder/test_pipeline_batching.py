@@ -8,6 +8,22 @@ import pytest
 from axon.embedder.chunker import Chunk
 
 
+class _NullCache:
+    """Minimal no-op FileCache for tests that do not need caching behaviour."""
+
+    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+        return {}
+
+    async def set_entry(self, fp, ctx, sha1, cc, *, status="done") -> None:
+        pass
+
+    async def delete_entry(self, fp, ctx) -> None:
+        pass
+
+    async def list_entries(self, ctx) -> list:
+        return []
+
+
 def _make_chunk(content: str, symbol: str = "f", file_path: str = "test.py") -> Chunk:
     return Chunk(
         symbol=symbol,
@@ -38,6 +54,7 @@ async def test_index_path_uses_bounded_batching() -> None:
 
     mock_store = MagicMock()
     mock_store.upsert_batch = AsyncMock()
+    mock_store.delete_by_file = AsyncMock()
 
     with (
         patch.object(pipeline_mod, "iter_supported_files", return_value=[Path("test.py")]),
@@ -54,6 +71,7 @@ async def test_index_path_uses_bounded_batching() -> None:
             engine=mock_engine,
             store=mock_store,
             vault_root=Path("vault"),
+            file_cache=_NullCache(),
         )
 
     assert spy_batches.called, "_make_token_bounded_batches must be called inside index_path"
@@ -76,6 +94,7 @@ async def test_index_path_embeds_all_chunks_across_batches() -> None:
 
     mock_store = MagicMock()
     mock_store.upsert_batch = AsyncMock()
+    mock_store.delete_by_file = AsyncMock()
 
     with (
         patch.object(pipeline_mod, "iter_supported_files", return_value=[Path("test.py")]),
@@ -87,6 +106,7 @@ async def test_index_path_embeds_all_chunks_across_batches() -> None:
             engine=mock_engine,
             store=mock_store,
             vault_root=Path("vault"),
+            file_cache=_NullCache(),
         )
 
     assert total_chunks == 3, f"Expected 3 total chunks, got {total_chunks}"
@@ -115,6 +135,7 @@ async def test_index_path_embed_called_multiple_times_when_batched() -> None:
 
     mock_store = MagicMock()
     mock_store.upsert_batch = AsyncMock()
+    mock_store.delete_by_file = AsyncMock()
 
     original_max = pipeline_mod._MAX_BATCH_TOKENS
     pipeline_mod._MAX_BATCH_TOKENS = 200
@@ -129,6 +150,7 @@ async def test_index_path_embed_called_multiple_times_when_batched() -> None:
                 engine=mock_engine,
                 store=mock_store,
                 vault_root=Path("vault"),
+                file_cache=_NullCache(),
             )
     finally:
         pipeline_mod._MAX_BATCH_TOKENS = original_max
