@@ -20,6 +20,20 @@ TEMP_COLLECTION = "_recall_guard_tmp"
 _BATCH_SIZE = 64
 
 
+def _make_store(dsn: str | None = None):
+    """Return a vector store instance for the recall harness.
+
+    If dsn is provided, return a PgVectorStore (for test-only smoke paths).
+    Otherwise return a QdrantClient using the default URL (preserves existing
+    production behavior unchanged).
+    """
+    if dsn is not None:
+        from axon.store.pg_vector_store import PgVectorStore
+
+        return PgVectorStore(dsn)
+    return QdrantClient()
+
+
 def index_corpus(
     client: QdrantClient,
     engine: EmbedderEngine,
@@ -182,3 +196,58 @@ def run_recall_guard(
         "results_by_query": results_by_query,
     }
     return summary, metrics
+
+
+async def index_corpus_pg_smoke(dsn: str) -> str:
+    """Test-only smoke helper: upsert a 'near' and a 'far' chunk via PgVectorStore,
+    run a search, and return the id of the top result.
+
+    No EmbedderEngine or GPU is required - vectors are hand-crafted so the
+    result is deterministic. The 'near' chunk has a vector that is identical to
+    the query (cosine similarity 1.0); the 'far' chunk is orthogonal (similarity 0.0).
+    """
+    from axon.store.pg_vector_store import PgVectorStore
+    from axon.store.vector_store import VECTOR_SIZE, Chunk
+
+    store = PgVectorStore(dsn=dsn)
+    try:
+        await store.ensure_collections()
+
+        # Build hand-crafted chunks - no GPU needed
+        near_vector = [1.0] + [0.0] * (VECTOR_SIZE - 1)
+        far_vector = [0.0, 1.0] + [0.0] * (VECTOR_SIZE - 2)
+
+        near_chunk = Chunk(
+            id="near",
+            vector=near_vector,
+            file_path="smoke/near.py",
+            language="python",
+            chunk_type="function",
+            symbol="near_fn",
+            project="smoke",
+            ctx="knowledge",
+            content="def near_fn(): pass",
+        )
+        far_chunk = Chunk(
+            id="far",
+            vector=far_vector,
+            file_path="smoke/far.py",
+            language="python",
+            chunk_type="function",
+            symbol="far_fn",
+            project="smoke",
+            ctx="knowledge",
+            content="def far_fn(): pass",
+        )
+
+        await store.upsert_batch([near_chunk, far_chunk])
+
+        # Query with the same vector as "near" - it must rank first
+        hits = await store.search(
+            query_vector=near_vector,
+            collections=["knowledge"],
+            top_k=5,
+        )
+        return hits[0]["id"] if hits else ""
+    finally:
+        await store.close()
