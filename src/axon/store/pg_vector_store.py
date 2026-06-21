@@ -62,6 +62,36 @@ class PgVectorStore:
                 "CREATE INDEX IF NOT EXISTS idx_embeddings_ctx_file ON embeddings (ctx, file_path)"
             )
 
+    async def upsert(self, chunk) -> None:  # chunk: Chunk
+        await self.upsert_batch([chunk])
+
+    async def upsert_batch(self, chunks) -> None:  # chunks: list[Chunk]
+        if not chunks:
+            return
+        pool = await self._ensure_pool()
+        rows = [
+            (
+                c.id, c.vector, c.ctx, c.file_path, c.language, c.chunk_type,
+                c.symbol, c.project, c.content, c.git_commit, c.modified_at,
+            )
+            for c in chunks
+        ]
+        async with pool.acquire() as con, con.transaction():
+            await con.executemany(
+                """
+                INSERT INTO embeddings
+                    (id, vector, ctx, file_path, language, chunk_type, symbol,
+                     project, content, git_commit, modified_at)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                ON CONFLICT (id) DO UPDATE SET
+                    vector=EXCLUDED.vector, ctx=EXCLUDED.ctx, file_path=EXCLUDED.file_path,
+                    language=EXCLUDED.language, chunk_type=EXCLUDED.chunk_type,
+                    symbol=EXCLUDED.symbol, project=EXCLUDED.project, content=EXCLUDED.content,
+                    git_commit=EXCLUDED.git_commit, modified_at=EXCLUDED.modified_at
+                """,
+                rows,
+            )
+
     async def close(self) -> None:
         if self._pool is not None:
             await self._pool.close()
