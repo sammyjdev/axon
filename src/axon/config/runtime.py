@@ -99,6 +99,7 @@ class RuntimeConfig:
     expansion: ExpansionConfig
     active_profile: str | None = None
     vector_backend: str = "qdrant"
+    fileindex_backend: str = "sqlite"
 
     @property
     def data_root(self) -> Path:
@@ -130,6 +131,23 @@ def _env_bool(name: str, default: bool) -> bool:
 
 _VALID_VECTOR_BACKENDS = ("qdrant", "pgvector")
 
+_VALID_FILEINDEX_BACKENDS = ("sqlite", "postgres")
+
+
+def _resolve_fileindex_backend(overrides: dict) -> str:
+    """Select the file_index backend: AXON_FILEINDEX_BACKEND env > axon.toml > default."""
+    raw = (
+        os.environ.get("AXON_FILEINDEX_BACKEND")
+        or overrides.get("fileindex_backend")
+        or "sqlite"
+    )
+    backend = raw.strip().lower()
+    if backend not in _VALID_FILEINDEX_BACKENDS:
+        raise ValueError(
+            f"Invalid fileindex_backend {backend!r}; expected one of {list(_VALID_FILEINDEX_BACKENDS)}"
+        )
+    return backend
+
 
 def _resolve_vector_backend(overrides: dict) -> str:
     """Select the vector backend: AXON_VECTOR_BACKEND env > axon.toml > default."""
@@ -154,7 +172,7 @@ def _load_toml_runtime_overrides() -> dict[str, str]:
     return {
         key: str(value)
         for key, value in runtime.items()
-        if key in {"mode", "engine_root", "vault_root", "active_profile", "vector_backend"}
+        if key in {"mode", "engine_root", "vault_root", "active_profile", "vector_backend", "fileindex_backend"}
     }
 
 
@@ -641,6 +659,7 @@ def load_runtime_config() -> RuntimeConfig:
         openrouter_compliance_required=_env_bool("AXON_OPENROUTER_COMPLIANCE", False),
         expansion=_load_expansion_config(engine_root),
         vector_backend=_resolve_vector_backend(overrides),
+        fileindex_backend=_resolve_fileindex_backend(overrides),
     )
 
 
