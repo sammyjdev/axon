@@ -32,7 +32,9 @@ class PgVectorStore:
                 await bootstrap.execute("CREATE EXTENSION IF NOT EXISTS vector")
             finally:
                 await bootstrap.close()
-            self._pool = await asyncpg.create_pool(self._dsn, init=_init_conn, min_size=1, max_size=5)
+            self._pool = await asyncpg.create_pool(
+                self._dsn, init=_init_conn, min_size=1, max_size=5
+            )
         return self._pool
 
     async def ensure_collections(self) -> None:
@@ -148,7 +150,9 @@ class PgVectorStore:
     async def delete_by_file(self, ctx: str, file_path: str) -> None:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            await con.execute("DELETE FROM embeddings WHERE ctx=$1 AND file_path=$2", ctx, file_path)
+            await con.execute(
+                "DELETE FROM embeddings WHERE ctx=$1 AND file_path=$2", ctx, file_path
+            )
 
     async def close(self) -> None:
         if self._pool is not None:
