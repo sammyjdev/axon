@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 import asyncpg
 from pgvector.asyncpg import register_vector
 
 from axon.store.vector_store import VECTOR_SIZE, _rank_and_limit
+
+_TABLE_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
 async def _init_conn(conn: asyncpg.Connection) -> None:
@@ -15,11 +18,18 @@ async def _init_conn(conn: asyncpg.Connection) -> None:
 class PgVectorStore:
     """pgvector-backed implementation of the VectorStore surface (dec-121 step 1).
 
-    One `embeddings` table; `ctx` is a filter column (not per-ctx tables).
+    One table (default ``embeddings``); ``ctx`` is a filter column (not per-ctx tables).
+    The table name is parameterised so the recall harness can target an isolated
+    ``recall_embeddings`` table without touching production data.
     """
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, table: str = "embeddings") -> None:
+        if not _TABLE_RE.fullmatch(table):
+            raise ValueError(
+                f"invalid table name {table!r}: must match ^[a-z_][a-z0-9_]*$"
+            )
         self._dsn = dsn
+        self._table = table
         self._pool: asyncpg.Pool | None = None
 
     async def _ensure_pool(self) -> asyncpg.Pool:
@@ -39,11 +49,12 @@ class PgVectorStore:
 
     async def ensure_collections(self) -> None:
         pool = await self._ensure_pool()
+        t = self._table
         async with pool.acquire() as con:
             await con.execute("CREATE EXTENSION IF NOT EXISTS vector")
             await con.execute(
                 f"""
-                CREATE TABLE IF NOT EXISTS embeddings (
+                CREATE TABLE IF NOT EXISTS {t} (
                     id          text PRIMARY KEY,
                     vector      vector({VECTOR_SIZE}) NOT NULL,
                     ctx         text NOT NULL,
@@ -59,11 +70,11 @@ class PgVectorStore:
                 """
             )
             await con.execute(
-                "CREATE INDEX IF NOT EXISTS idx_embeddings_hnsw "
-                "ON embeddings USING hnsw (vector vector_cosine_ops)"
+                f"CREATE INDEX IF NOT EXISTS idx_{t}_hnsw "
+                f"ON {t} USING hnsw (vector vector_cosine_ops)"
             )
             await con.execute(
-                "CREATE INDEX IF NOT EXISTS idx_embeddings_ctx_file ON embeddings (ctx, file_path)"
+                f"CREATE INDEX IF NOT EXISTS idx_{t}_ctx_file ON {t} (ctx, file_path)"
             )
 
     async def upsert(self, chunk) -> None:  # chunk: Chunk
@@ -80,10 +91,11 @@ class PgVectorStore:
             )
             for c in chunks
         ]
+        t = self._table
         async with pool.acquire() as con, con.transaction():
             await con.executemany(
-                """
-                INSERT INTO embeddings
+                f"""
+                INSERT INTO {t}
                     (id, vector, ctx, file_path, language, chunk_type, symbol,
                      project, content, git_commit, modified_at)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
@@ -121,7 +133,7 @@ class PgVectorStore:
         sql = f"""
             SELECT id, file_path, language, chunk_type, symbol, project, content,
                    git_commit, modified_at, 1 - (vector <=> $1) AS score
-            FROM embeddings
+            FROM {self._table}
             WHERE {where}
             ORDER BY vector <=> $1
             LIMIT {int(top_k)}
@@ -151,7 +163,7 @@ class PgVectorStore:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             await con.execute(
-                "DELETE FROM embeddings WHERE ctx=$1 AND file_path=$2", ctx, file_path
+                f"DELETE FROM {self._table} WHERE ctx=$1 AND file_path=$2", ctx, file_path
             )
 
     async def close(self) -> None:
