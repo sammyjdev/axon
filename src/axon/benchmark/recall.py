@@ -20,6 +20,7 @@ from axon.embedder.chunker import chunk_source
 from axon.embedder.engine import EmbedderEngine
 
 TEMP_COLLECTION = "_recall_guard_tmp"
+RECALL_TABLE = "recall_embeddings"
 
 _BATCH_SIZE = 64
 
@@ -256,9 +257,9 @@ async def index_corpus_pg(
 
     await store.ensure_collections()
 
-    # Truncate for a fresh index run
+    # Truncate for a fresh index run (use store._table so we never touch production data)
     async with store._pool.acquire() as con:
-        await con.execute("TRUNCATE embeddings")
+        await con.execute(f"TRUNCATE {store._table}")
 
     total_upserted = 0
     point_id = 0
@@ -362,7 +363,7 @@ async def index_corpus_pg_smoke(dsn: str) -> str:
     from axon.store.pg_vector_store import PgVectorStore
     from axon.store.vector_store import VECTOR_SIZE, Chunk
 
-    store = PgVectorStore(dsn=dsn)
+    store = PgVectorStore(dsn=dsn, table=RECALL_TABLE)
     try:
         await store.ensure_collections()
 

@@ -146,11 +146,15 @@ def test_recall_guard_no_regression() -> None:
     backend = os.environ.get("AXON_VECTOR_BACKEND", "qdrant").strip().lower()
 
     if backend == "pgvector":
-        from axon.benchmark.recall import index_corpus_pg, run_recall_guard_pg
-        from axon.store.vector_store_factory import make_vector_store
+        import os
+
+        from axon.benchmark.recall import RECALL_TABLE, index_corpus_pg, run_recall_guard_pg
+        from axon.store.pg_vector_store import PgVectorStore
+
+        pg_url = os.environ["AXON_PG_URL"]
 
         async def _run_pg():
-            store = make_vector_store()
+            store = PgVectorStore(dsn=pg_url, table=RECALL_TABLE)
             try:
                 await index_corpus_pg(store, engine, src_root=src_root, repo_root=repo_root)
                 return await run_recall_guard_pg(golden_set, engine, store)

@@ -76,6 +76,66 @@ async def test_search_round_trip_and_ctx_filter(pg_dsn) -> None:
         await store.close()
 
 
+def test_invalid_table_name_raises() -> None:
+    """PgVectorStore rejects invalid table names before making any connection."""
+    from axon.store.pg_vector_store import PgVectorStore
+
+    with pytest.raises(ValueError, match="invalid table name"):
+        PgVectorStore(dsn="postgresql://x", table="bad-name; DROP")
+
+
+async def test_table_isolation(pg_dsn) -> None:
+    """Two stores on the same DSN with different table names must not share rows."""
+    from axon.store.pg_vector_store import PgVectorStore
+    from axon.store.vector_store import VECTOR_SIZE, Chunk
+
+    store_a = PgVectorStore(dsn=pg_dsn, table="embeddings")
+    store_b = PgVectorStore(dsn=pg_dsn, table="recall_embeddings")
+    try:
+        await store_a.ensure_collections()
+        await store_b.ensure_collections()
+
+        # Truncate both tables so this test is self-contained
+        async with store_a._pool.acquire() as con:
+            await con.execute("TRUNCATE embeddings")
+        async with store_b._pool.acquire() as con:
+            await con.execute("TRUNCATE recall_embeddings")
+
+        chunk = Chunk(
+            id="iso-1",
+            vector=[1.0] + [0.0] * (VECTOR_SIZE - 1),
+            file_path="iso.py",
+            language="python",
+            chunk_type="function",
+            symbol="iso_fn",
+            project="iso",
+            ctx="knowledge",
+            content="def iso_fn(): pass",
+        )
+        await store_a.upsert_batch([chunk])
+
+        # The chunk must NOT be visible via store_b's search
+        hits = await store_b.search(
+            query_vector=[1.0] + [0.0] * (VECTOR_SIZE - 1),
+            collections=["knowledge"],
+            top_k=5,
+        )
+        ids = [h["id"] for h in hits]
+        assert "iso-1" not in ids, "chunk from embeddings table leaked into recall_embeddings"
+
+        # And must be visible via store_a
+        hits_a = await store_a.search(
+            query_vector=[1.0] + [0.0] * (VECTOR_SIZE - 1),
+            collections=["knowledge"],
+            top_k=5,
+        )
+        ids_a = [h["id"] for h in hits_a]
+        assert "iso-1" in ids_a, "chunk not found in the table it was upserted into"
+    finally:
+        await store_a.close()
+        await store_b.close()
+
+
 async def test_delete_by_file_removes_only_that_file(pg_dsn) -> None:
     from axon.store.pg_vector_store import PgVectorStore
     store = PgVectorStore(dsn=pg_dsn)
