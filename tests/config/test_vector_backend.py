@@ -3,11 +3,11 @@ from __future__ import annotations
 import pytest
 
 
-def test_vector_backend_defaults_to_qdrant(monkeypatch) -> None:
+def test_vector_backend_defaults_to_pgvector(monkeypatch) -> None:
     monkeypatch.delenv("AXON_VECTOR_BACKEND", raising=False)
     from axon.config.runtime import load_runtime_config
 
-    assert load_runtime_config().vector_backend == "qdrant"
+    assert load_runtime_config().vector_backend == "pgvector"
 
 
 def test_vector_backend_env_overrides(monkeypatch) -> None:
