@@ -146,12 +146,10 @@ def test_recall_guard_no_regression() -> None:
     backend = os.environ.get("AXON_VECTOR_BACKEND", "qdrant").strip().lower()
 
     if backend == "pgvector":
-        import os
-
         from axon.benchmark.recall import RECALL_TABLE, index_corpus_pg, run_recall_guard_pg
         from axon.store.pg_vector_store import PgVectorStore
 
-        pg_url = os.environ["AXON_PG_URL"]
+        pg_url = os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5433/axon")
 
         async def _run_pg():
             store = PgVectorStore(dsn=pg_url, table=RECALL_TABLE)
