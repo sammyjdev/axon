@@ -84,35 +84,65 @@ docker compose up -d axon-postgres
 
 Wait for the service to be healthy before proceeding.
 
-### 2. Re-index each ctx into pgvector
+### 2. Re-index each ctx into pgvector (FULL re-index)
 
-Run the indexer against each context with the pgvector backend selected:
+Re-index every ctx that actually holds vector data. Check which ones do first
+(empty ctxs need nothing):
 
 ```bash
-AXON_VECTOR_BACKEND=pgvector axon index <vault> --ctx personal
-AXON_VECTOR_BACKEND=pgvector axon index <vault> --ctx work
+for c in knowledge personal career saas; do
+  echo -n "$c: "; curl -s "http://localhost:6333/collections/$c" \
+    | .venv/Scripts/python.exe -c "import sys,json;print(json.load(sys.stdin)['result']['points_count'])"
+done
 ```
 
-Repeat for every ctx you maintain. Qdrant data is untouched.
+Do NOT blindly index restricted contexts (e.g. `work`); only migrate a
+restricted ctx if it has data and you explicitly intend to.
+
+CRITICAL - the indexer is INCREMENTAL. A plain `pb index` compares each file
+against the SQLite file_cache (sha1) and SKIPS unchanged files, so pointing it
+at a fresh pgvector backend writes NOTHING (the cache still says "done" from the
+Qdrant era). Force a FULL re-index with a throwaway file_cache by pointing
+`AXON_ENGINE` at a temp dir (this never touches your real `axon.db`):
+
+```bash
+TMP=$(mktemp -d); mkdir -p "$TMP/data"
+AXON_ENGINE="$TMP" AXON_VAULT="<your-vault>" \
+AXON_VECTOR_BACKEND=pgvector AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
+PYTHONPATH=src .venv/Scripts/python.exe -m axon.cli.pb index --ctx knowledge
+rm -rf "$TMP"
+```
+
+(The top-level `axon index` command was removed; use `pb index`. After the
+flip, normal `pb index` runs against your real cache and stays consistent:
+unchanged files are already in pgvector, changed files re-embed into it.)
 
 ### 3. Parity check (counts only - no model load)
 
 ```bash
-python scripts/verify_migration.py --parity
+.venv/Scripts/python.exe scripts/verify_migration.py --parity
 ```
 
-The script prints per-ctx Qdrant vs pgvector counts and exits 0 on PASS or 1
-on FAIL. All ctxs must show `OK` before proceeding.
+The script prints per-ctx Qdrant vs pgvector counts. NOTE: exact count parity
+assumes BOTH backends indexed the same current vault. If your Qdrant index is
+older (a chunker change or vault edits since it was built), the counts will
+differ even though pgvector is correct - this is Qdrant staleness, not a
+pgvector defect. The authoritative quality gate is the recall gate (step 4); if
+you want exact count parity, re-index Qdrant fresh first.
 
-### 4. Recall gate
+### 4. Recall gate (the authoritative gate)
 
 ```bash
-AXON_VECTOR_BACKEND=pgvector AXON_RUN_RECALL=1 \
+AXON_VECTOR_BACKEND=pgvector AXON_RUN_RECALL=1 AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
   .venv/Scripts/python.exe -m pytest tests/recall/test_recall_guard.py::test_recall_guard_no_regression -q
 ```
 
-The recall guard must pass (Top-1 >= 0.60, Top-3 >= 0.90) before flipping the
-default.
+The gate is REGRESSION-based, not an absolute threshold: it requires no
+per-query rank regression and no Top-3 drop vs the committed
+`tests/recall/baseline.json` (currently Top-1 ~0.55, Top-3 ~0.90). The pgvector
+recall path runs against an ISOLATED `recall_embeddings` table (not the
+production `embeddings` table), so running this gate after the flip never
+touches or wipes your real vault vectors.
 
 ### 5. Flip the backend in axon.toml
 
