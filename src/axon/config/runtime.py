@@ -80,6 +80,7 @@ class RuntimeConfig:
     engine_root: Path
     vault_root: Path
     db_path: Path
+    pg_url: str
     qdrant_url: str
     redis_url: str
     rtk_max_tokens: int
@@ -604,6 +605,7 @@ def load_runtime_config() -> RuntimeConfig:
         engine_root=engine_root,
         vault_root=vault_root,
         db_path=engine_root / "data" / "axon.db",
+        pg_url=os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5433/axon"),
         qdrant_url=os.environ.get("QDRANT_URL", "http://localhost:6333"),
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379"),
         rtk_max_tokens=int(os.environ.get("AXON_RTK_MAX_TOKENS", "450")),
