@@ -436,9 +436,9 @@ async def _semantic_search_hits(
     top_k: int = 5,
 ) -> list[dict]:
     from axon.embedder.engine import EmbedderEngine
-    from axon.store.vector_store import VectorStore
+    from axon.store.vector_store_factory import make_vector_store
 
-    store = VectorStore(url=_RUNTIME.qdrant_url)
+    store = make_vector_store(_RUNTIME)
     engine = EmbedderEngine()
     try:
         query_vector = engine.embed_one(query)
@@ -2171,14 +2171,14 @@ def _reindex_howtos(howto_paths: list[Path]) -> None:
     try:
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
-        from axon.store.vector_store import VectorStore
+        from axon.store.vector_store_factory import make_vector_store
     except ImportError as exc:
         typer.echo(f"[promote] reindex pulado: {exc}")
         return
 
     async def _reindex() -> int:
         engine = EmbedderEngine()
-        store = VectorStore(url=_RUNTIME.qdrant_url)
+        store = make_vector_store(_RUNTIME)
         file_cache, db_conn = await _open_file_cache()
         try:
             await store.ensure_collections()
@@ -2479,11 +2479,11 @@ def index(
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
-        from axon.store.vector_store import VectorStore
+        from axon.store.vector_store_factory import make_vector_store
         from axon.observability.trace_store import TraceStore
 
         engine = EmbedderEngine()
-        store = VectorStore(url=_RUNTIME.qdrant_url)
+        store = make_vector_store(_RUNTIME)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
         file_cache, db_conn = await _open_file_cache()
 
@@ -2593,10 +2593,10 @@ def index_dev(
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
-        from axon.store.vector_store import VectorStore
+        from axon.store.vector_store_factory import make_vector_store
 
         engine = EmbedderEngine()
-        store = VectorStore(url=_RUNTIME.qdrant_url)
+        store = make_vector_store(_RUNTIME)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
         file_cache, db_conn = await _open_file_cache()
 
@@ -2655,11 +2655,11 @@ def watch(
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
-        from axon.store.vector_store import VectorStore
+        from axon.store.vector_store_factory import make_vector_store
         from axon.watcher.main import run_watcher
 
         engine = EmbedderEngine()
-        store = VectorStore(url=_RUNTIME.qdrant_url)
+        store = make_vector_store(_RUNTIME)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
         file_cache, db_conn = await _open_file_cache()
 
@@ -2862,10 +2862,10 @@ def scan(
                 from axon.embedder.engine import EmbedderEngine
                 from axon.embedder.pipeline import index_path
                 from axon.store.graph_store import GraphStore
-                from axon.store.vector_store import VectorStore
+                from axon.store.vector_store_factory import make_vector_store
 
                 engine = EmbedderEngine()
-                store = VectorStore(url=_RUNTIME.qdrant_url)
+                store = make_vector_store(_RUNTIME)
                 graph_store = GraphStore(url=_RUNTIME.redis_url)
                 file_cache, db_conn = await _open_file_cache()
                 try:

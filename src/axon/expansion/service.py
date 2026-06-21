@@ -512,10 +512,10 @@ class ExpansionService:
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.file_cache import SqliteFileCache
-        from axon.store.vector_store import VectorStore
+        from axon.store.vector_store_factory import make_vector_store
 
         engine = EmbedderEngine()
-        store = VectorStore(url=self.runtime.qdrant_url)
+        store = make_vector_store(self.runtime)
         db_path = self.runtime.db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         db_conn = await aiosqlite.connect(str(db_path))

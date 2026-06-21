@@ -254,10 +254,9 @@ async def ingest_vault(
         owns_store = vector_store is None
         try:
             if vector_store is None:
-                from axon.config.runtime import load_runtime_config
-                from axon.store.vector_store import VectorStore
+                from axon.store.vector_store_factory import make_vector_store
 
-                vector_store = VectorStore(url=load_runtime_config().qdrant_url)
+                vector_store = make_vector_store()
             vectors_total = await _index_note_vectors(
                 md_files,
                 vault_name=vault_path.name,
