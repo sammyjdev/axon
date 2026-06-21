@@ -145,6 +145,11 @@ class PgVectorStore:
             now=datetime.now(UTC),
         )
 
+    async def delete_by_file(self, ctx: str, file_path: str) -> None:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            await con.execute("DELETE FROM embeddings WHERE ctx=$1 AND file_path=$2", ctx, file_path)
+
     async def close(self) -> None:
         if self._pool is not None:
             await self._pool.close()

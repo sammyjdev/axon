@@ -74,3 +74,24 @@ async def test_search_round_trip_and_ctx_filter(pg_dsn) -> None:
         assert "modified_at" in hits[0]["payload"]
     finally:
         await store.close()
+
+
+async def test_delete_by_file_removes_only_that_file(pg_dsn) -> None:
+    from axon.store.pg_vector_store import PgVectorStore
+    store = PgVectorStore(dsn=pg_dsn)
+    try:
+        await store.ensure_collections()
+        # clear any rows left by earlier tests so this test is self-contained
+        async with store._pool.acquire() as con:
+            await con.execute("TRUNCATE embeddings")
+        await store.upsert_batch([
+            _chunk("a1", ctx="knowledge", file_path="a.py"),
+            _chunk("a2", ctx="knowledge", file_path="a.py"),
+            _chunk("b1", ctx="knowledge", file_path="b.py"),
+        ])
+        await store.delete_by_file("knowledge", "a.py")
+        async with store._pool.acquire() as con:
+            remaining = await con.fetch("SELECT id FROM embeddings ORDER BY id")
+        assert [r["id"] for r in remaining] == ["b1"]
+    finally:
+        await store.close()
