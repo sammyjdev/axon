@@ -59,3 +59,104 @@ for rollback.
 If recall regresses or reads break after the swap: delete the `personal` alias,
 restore the old collection from the snapshot, and re-point reads at it. The
 `<ctx>_new` collection can be dropped and the migration retried.
+
+---
+
+# pgvector Cutover Runbook
+
+This section covers switching the active vector backend from Qdrant to pgvector,
+verifying parity, and rolling back if needed.
+
+## Prerequisites
+
+- Docker Compose with `axon-postgres` service defined (see `docker-compose.yml`).
+- `AXON_PG_URL` env var pointing at the Postgres instance (default:
+  `postgresql://axon:axon@localhost:5432/axon`).
+- The vault is already indexed in Qdrant (existing data intact).
+
+## Cutover Sequence
+
+### 1. Start the Postgres backend
+
+```bash
+docker compose up -d axon-postgres
+```
+
+Wait for the service to be healthy before proceeding.
+
+### 2. Re-index each ctx into pgvector
+
+Run the indexer against each context with the pgvector backend selected:
+
+```bash
+AXON_VECTOR_BACKEND=pgvector axon index <vault> --ctx personal
+AXON_VECTOR_BACKEND=pgvector axon index <vault> --ctx work
+```
+
+Repeat for every ctx you maintain. Qdrant data is untouched.
+
+### 3. Parity check (counts only - no model load)
+
+```bash
+python scripts/verify_migration.py --parity
+```
+
+The script prints per-ctx Qdrant vs pgvector counts and exits 0 on PASS or 1
+on FAIL. All ctxs must show `OK` before proceeding.
+
+### 4. Recall gate
+
+```bash
+AXON_VECTOR_BACKEND=pgvector AXON_RUN_RECALL=1 \
+  .venv/Scripts/python.exe -m pytest tests/recall/test_recall_guard.py::test_recall_guard_no_regression -q
+```
+
+The recall guard must pass (Top-1 >= 0.60, Top-3 >= 0.90) before flipping the
+default.
+
+### 5. Flip the backend in axon.toml
+
+Edit `axon.toml` (create it at `$AXON_ENGINE/axon.toml` if absent):
+
+```toml
+[runtime]
+vector_backend = "pgvector"
+```
+
+### 6. Confirm doctor output
+
+```bash
+axon pb doctor
+```
+
+The output must contain:
+
+```
+vector_backend: pgvector
+```
+
+## Rollback
+
+Revert `axon.toml` to restore Qdrant:
+
+```toml
+[runtime]
+vector_backend = "qdrant"
+```
+
+Or override with the env var for a single command:
+
+```bash
+AXON_VECTOR_BACKEND=qdrant axon pb doctor
+```
+
+Qdrant data is intact throughout - no data is deleted by the cutover process.
+Qdrant is retired only in the dec-121 step 5 cleanup (separate task, out of
+scope here).
+
+## Notes
+
+- Plain hyphens only in all config values and paths - never em or en dashes.
+- The `--parity` flag performs counts-only comparison; no model is loaded.
+- A FAIL from parity means the pgvector index is incomplete - re-run indexing
+  for the affected ctx before retrying.
