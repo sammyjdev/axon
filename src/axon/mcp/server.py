@@ -34,7 +34,7 @@ from axon.router.compressor import caveman_compress_guarded
 from axon.store.collections import get_search_collections
 from axon.store.graph_store import GraphStore
 from axon.store.session_store import ADR, SessionNote, SessionStore
-from axon.store.vector_store import VectorStore
+from axon.store.vector_store_factory import make_vector_store
 
 # ---------------------------------------------------------------------------
 # Configuração
@@ -57,7 +57,7 @@ _TRACE_STORE = TraceStore(_RUNTIME)
 mcp = FastMCP("axon-context-engine")
 
 # Stores são inicializados lazy no primeiro uso
-_vector_store: VectorStore | None = None
+_vector_store: object | None = None
 _graph_store: GraphStore | None = None
 _session_store: SessionStore | None = None
 _embedder: EmbedderEngine | None = None
@@ -81,10 +81,10 @@ def _get_graph_embedder() -> object:
     return GlyphEmbedderAdapter(_get_embedder())
 
 
-def _get_vector_store() -> VectorStore:
+def _get_vector_store():
     global _vector_store
     if _vector_store is None:
-        _vector_store = VectorStore(url=_QDRANT_URL)
+        _vector_store = make_vector_store(_RUNTIME)
     return _vector_store
 
 
