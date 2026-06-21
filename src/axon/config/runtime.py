@@ -98,6 +98,7 @@ class RuntimeConfig:
     openrouter_compliance_required: bool
     expansion: ExpansionConfig
     active_profile: str | None = None
+    vector_backend: str = "qdrant"
 
     @property
     def data_root(self) -> Path:
@@ -127,6 +128,20 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+_VALID_VECTOR_BACKENDS = ("qdrant", "pgvector")
+
+
+def _resolve_vector_backend(overrides: dict) -> str:
+    """Select the vector backend: AXON_VECTOR_BACKEND env > axon.toml > default."""
+    raw = os.environ.get("AXON_VECTOR_BACKEND") or overrides.get("vector_backend") or "qdrant"
+    backend = raw.strip().lower()
+    if backend not in _VALID_VECTOR_BACKENDS:
+        raise ValueError(
+            f"Invalid vector_backend {backend!r}; expected one of {list(_VALID_VECTOR_BACKENDS)}"
+        )
+    return backend
+
+
 def _load_toml_runtime_overrides() -> dict[str, str]:
     config_path = get_axon_config_path()
     if not config_path.exists():
@@ -139,7 +154,7 @@ def _load_toml_runtime_overrides() -> dict[str, str]:
     return {
         key: str(value)
         for key, value in runtime.items()
-        if key in {"mode", "engine_root", "vault_root", "active_profile"}
+        if key in {"mode", "engine_root", "vault_root", "active_profile", "vector_backend"}
     }
 
 
@@ -625,6 +640,7 @@ def load_runtime_config() -> RuntimeConfig:
         provider_profile=_resolve_provider_profile(),
         openrouter_compliance_required=_env_bool("AXON_OPENROUTER_COMPLIANCE", False),
         expansion=_load_expansion_config(engine_root),
+        vector_backend=_resolve_vector_backend(overrides),
     )
 
 
