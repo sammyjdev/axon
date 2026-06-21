@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
@@ -1333,7 +1333,12 @@ def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
         assert target.exists()
         return 2, 7
 
+    fake_store_instance = FakeStore(url="fake://")
     monkeypatch.setattr("axon.store.vector_store.VectorStore", FakeStore)
+    monkeypatch.setattr(
+        "axon.store.vector_store_factory.make_vector_store",
+        lambda *a, **k: fake_store_instance,
+    )
     monkeypatch.setattr("axon.store.graph_store.GraphStore", FakeGraphStore)
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", FakeEngine)
     monkeypatch.setattr("axon.embedder.pipeline.index_path", fake_index_path)
@@ -1386,6 +1391,10 @@ def test_watch_reindexes_changed_files(monkeypatch, tmp_path) -> None:
     watch_target.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr("axon.store.vector_store.VectorStore", FakeStore)
+    monkeypatch.setattr(
+        "axon.store.vector_store_factory.make_vector_store",
+        lambda *a, **k: FakeStore(url="fake://"),
+    )
     monkeypatch.setattr("axon.store.graph_store.GraphStore", FakeGraphStore)
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", FakeEngine)
     monkeypatch.setattr("axon.embedder.pipeline.index_path", fake_index_path)
