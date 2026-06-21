@@ -781,7 +781,10 @@ git commit -m "feat(recall): pgvector path in the recall harness (backend switch
 
 - [ ] **Step 1: Bring up Postgres**
 
-Run: `docker compose up -d postgres` and confirm it is healthy (`docker compose ps`).
+Run: `docker compose up -d axon-postgres` and confirm it is healthy
+(`docker compose ps`). NOTE: the service is `axon-postgres` (the pgvector
+service added in Task 1), NOT the `postgres` service (which is langfuse's
+backend on a different port).
 
 - [ ] **Step 2: Index the vault into pgvector**
 
