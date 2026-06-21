@@ -6,7 +6,7 @@ repository. `AGENTS.md` points to this file.
 ## Project Overview
 
 AXON is a self-hosted context engine for local knowledge retrieval,
-context compression, and agent-facing workflows through a CLI (`pb`) and MCP.
+context compression, and agent-facing workflows through a CLI (`axon`) and MCP.
 
 The repository contains the engine and runtime code. User knowledge lives in an
 external Markdown vault, typically configured through:

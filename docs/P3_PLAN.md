@@ -113,7 +113,7 @@ Current implementation status:
 ## Guardrails
 
 - keep AXON engine-first
-- do not re-center docs around Odisseu or Claude
+- do not re-center docs around a specific consumer or Claude
 - keep manifests declarative
 - avoid hidden magic in pack loading or registry discovery
 - require tests for every new contract and file format

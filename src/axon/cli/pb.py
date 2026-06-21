@@ -194,6 +194,7 @@ async def _compress_context_pipeline(
             after_tokens=after_tokens,
             reduction_tokens=reduction,
             reduction_pct=round(reduction_pct, 1),
+            kind="compression",
         )
     )
 
@@ -1559,17 +1560,17 @@ def adr_hook_install(
         str | None, typer.Option("--path", help="Path do repositório git (default: cwd)")
     ] = None,
 ) -> None:
-    """[deprecated] Use ``pb hooks install --apply`` (dec-113)."""
+    """[deprecated] Use ``axon hooks install --apply`` (dec-113)."""
     import warnings
 
     warnings.warn(
-        "`pb adr hook` is deprecated. Use `pb hooks install --apply`. "
+        "`axon adr hook` is deprecated. Use `axon hooks install --apply`. "
         "See dec-113 for the new diagnostic-first flow.",
         DeprecationWarning,
         stacklevel=2,
     )
     typer.echo(
-        "[axon] `pb adr hook` is deprecated — use `pb hooks install --apply`."
+        "[axon] `axon adr hook` is deprecated — use `axon hooks install --apply`."
     )
     # Backwards-compatible behaviour: keep installing the old single hook
     # so existing users don't break mid-upgrade.
@@ -2474,15 +2475,32 @@ def index(
         raise typer.Exit(1)
 
     async def _index() -> None:
+        import uuid
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
         from axon.store.vector_store import VectorStore
+        from axon.observability.trace_store import TraceStore
 
         engine = EmbedderEngine()
         store = VectorStore(url=_RUNTIME.qdrant_url)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
         file_cache, db_conn = await _open_file_cache()
+
+        # Emit index-start activity into TraceStore (best-effort; never breaks indexing)
+        _recorder = None
+        try:
+            _trace_store = TraceStore(_RUNTIME)
+            _recorder = _trace_store.recorder(
+                trace_id=uuid.uuid4().hex,
+                caller="cli",
+            )
+            _recorder.append_stage(
+                "index",
+                payload={"phase": "start", "target": str(target)},
+            )
+        except Exception:
+            pass
 
         try:
             await store.ensure_collections()
@@ -2502,6 +2520,16 @@ def index(
             await store.close()
             await graph_store.close()
             await db_conn.close()
+
+        # Emit index-done stage (best-effort)
+        try:
+            if _recorder is not None:
+                _recorder.append_stage(
+                    "index",
+                    payload={"phase": "done", "symbols": total_chunks},
+                )
+        except Exception:
+            pass
 
         typer.echo(f"Indexação concluída: {indexed_files} arquivo(s), {total_chunks} chunk(s)")
         if indexed_files == 0:

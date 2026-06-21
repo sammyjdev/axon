@@ -137,6 +137,7 @@ def _record_mcp_tool_call(
             after_tokens=after_tokens,
             reduction_tokens=reduction,
             reduction_pct=round(reduction_pct, 1),
+            kind="tool_io",
         )
     )
 
@@ -669,6 +670,7 @@ async def ask(
             after_tokens=after_tokens,
             reduction_tokens=reduction,
             reduction_pct=round(reduction_pct, 1),
+            kind="compression",
         )
     )
 
