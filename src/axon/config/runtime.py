@@ -133,7 +133,7 @@ _VALID_VECTOR_BACKENDS = ("qdrant", "pgvector")
 
 def _resolve_vector_backend(overrides: dict) -> str:
     """Select the vector backend: AXON_VECTOR_BACKEND env > axon.toml > default."""
-    raw = os.environ.get("AXON_VECTOR_BACKEND") or overrides.get("vector_backend") or "qdrant"
+    raw = os.environ.get("AXON_VECTOR_BACKEND") or overrides.get("vector_backend") or "pgvector"
     backend = raw.strip().lower()
     if backend not in _VALID_VECTOR_BACKENDS:
         raise ValueError(
