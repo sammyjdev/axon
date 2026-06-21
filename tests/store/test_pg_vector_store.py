@@ -49,3 +49,28 @@ async def test_upsert_batch_inserts_and_is_idempotent(pg_dsn) -> None:
         assert count == 2
     finally:
         await store.close()
+
+
+async def test_search_round_trip_and_ctx_filter(pg_dsn) -> None:
+    from axon.store.pg_vector_store import PgVectorStore
+    from axon.store.vector_store import VECTOR_SIZE
+    store = PgVectorStore(dsn=pg_dsn)
+    try:
+        await store.ensure_collections()
+        # a "target" vector that is closest to the query
+        target = _chunk("k-target", ctx="knowledge", file_path="t.py")
+        target.vector = [1.0] + [0.0] * (VECTOR_SIZE - 1)
+        other = _chunk("k-other", ctx="knowledge", file_path="o.py")
+        other.vector = [0.0, 1.0] + [0.0] * (VECTOR_SIZE - 2)
+        work = _chunk("w-secret", ctx="work", file_path="s.py")
+        work.vector = [1.0] + [0.0] * (VECTOR_SIZE - 1)
+        await store.upsert_batch([target, other, work])
+
+        q = [1.0] + [0.0] * (VECTOR_SIZE - 1)
+        hits = await store.search(q, collections=["knowledge"], top_k=5)
+        ids = [h["id"] for h in hits]
+        assert ids[0] == "k-target"          # closest first
+        assert "w-secret" not in ids         # ctx filter: work never leaks into knowledge
+        assert "modified_at" in hits[0]["payload"]
+    finally:
+        await store.close()
