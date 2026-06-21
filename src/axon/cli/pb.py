@@ -849,6 +849,7 @@ def doctor(
     typer.echo(f"platform: {report.platform}")
     typer.echo(f"configured_mode: {report.configured_mode or runtime.mode}")
     typer.echo(f"recommended_mode: {report.recommended_mode}")
+    typer.echo(f"vector_backend: {runtime.vector_backend}")
     if report.active_profile:
         typer.echo(f"active_profile: {report.active_profile}")
     if report.profile_mode:

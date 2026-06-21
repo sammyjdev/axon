@@ -372,6 +372,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
     assert "GPU-capable local stack available." in result.stdout
     assert "capabilities:" in result.stdout
     assert "enabled: rtk" in result.stdout
+    assert "vector_backend:" in result.stdout
 
 
 def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> None:
