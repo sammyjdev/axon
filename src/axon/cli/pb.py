@@ -73,11 +73,17 @@ def _get_db_path() -> Path:
 
 
 async def _open_file_cache() -> tuple[object, object]:
-    """Open a SqliteFileCache backed by the axon DB.
+    """Open a FileCache backed by the configured backend (sqlite or postgres).
 
-    Creates the parent directory if it does not exist (safe for tests).
-    Returns (SqliteFileCache, aiosqlite.Connection) - caller must close the conn.
+    Returns (FileCache, close-handle) - caller must await handle.close().
     """
+    if _RUNTIME.fileindex_backend == "postgres":
+        from axon.store.pg_file_cache import PostgresFileCache
+
+        cache = PostgresFileCache(dsn=_RUNTIME.pg_url)
+        await cache.ensure_schema()
+        return cache, cache  # cache.close() closes the pool
+
     import asyncio as _asyncio
 
     import aiosqlite
