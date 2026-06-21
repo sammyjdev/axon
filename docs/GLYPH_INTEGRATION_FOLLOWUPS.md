@@ -9,10 +9,11 @@ cleanups it surfaced. Self-contained so it can be resumed on another machine.
 - **Work branch:** `chore/glyph-dec116-followups` (5 commits ahead of `master`:
   re-pin #1, lazy import #3, lexicon #6, tag-defer #5, SQLite enrichment #4).
 
-## ⏭️ Resume on the M1 Pro — 2 items left
+## ⏭️ Resume on the M1 Pro — 1 item left
 
-Everything else (#1, #3, #4, #6 code) is done and committed on the work branch
-above; only these two need the original M1 Pro machine / a GLYPH release action.
+Everything else (#1, #3, #4, #5, #6 code) is done and committed — including #5
+(GLYPH is now tagged `v0.1.0` and AXON pins `@v0.1.0` in `pyproject.toml`). Only
+the item below still needs the original M1 Pro machine.
 
 1. **#6 — validate the reconstructed architectural lexicon.** The original
    `src/axon/data/architectural_lexicon.txt` was never committed (the unanchored
@@ -24,10 +25,9 @@ above; only these two need the original M1 Pro machine / a GLYPH release action.
    tokens that were lost, and re-run `pytest tests/adr/gates/test_density.py -q`.
    The repo file's header carries the same reminder. Do **not** re-add the tokens
    `architectural`, `concept`, `path` — they break negative-path gate tests.
-2. **#5 — pin GLYPH by tag (after the GLYPH docs pass).** GLYPH is still
-   `version = 0.0.0` / 0 tags. Once the in-flight docs pass is pushed to GLYPH
-   `main`, tag it and switch AXON off the SHA pin — full steps in the **#5**
-   section below.
+   (#5 — pin GLYPH by tag — is now **✅ done**: GLYPH was tagged `v0.1.0` and
+   AXON pins `@v0.1.0`, off the SHA pin. See the **#5** section below, retained
+   for history.)
 
 ## ✅ Re-pinned and revalidated against finalized GLYPH
 
@@ -140,10 +140,9 @@ isolated) → #3 (cheap hygiene) → #5 (after GLYPH tag) → #4 (own PR, TDD).
 
 ### #5 — Pin GLYPH by tag instead of SHA
 
-- **Deferred by decision (2026-06-12):** GLYPH still has `version = 0.0.0`, 0 tags.
-  The code is final (P0–P7) but a docs pass is still in flight on GLYPH `main`, so
-  we hold the tag until that lands — the tag should point at the final-docs commit,
-  not mid-update. AXON stays pinned by SHA (`5366308…`) in the meantime.
+- **✅ Done (2026-06-20):** GLYPH was tagged `v0.1.0` and AXON now pins
+  `@v0.1.0` in `pyproject.toml`, off the SHA pin. The steps below are retained
+  for history.
 - **Steps once the GLYPH docs pass is pushed:**
   1. In `~/dev/glyph-kg`: bump `version` (e.g. `0.1.0`), `git tag v0.1.0`, push tag.
      (Optional: publish to PyPI to drop the `git+https` direct ref entirely.)

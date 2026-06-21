@@ -491,24 +491,18 @@ Cada task segue este schema:
 
 - phase: 7
 - agent: claude-code
-- status: open
-- branch: fix/compression-telemetry-pollution
+- status: done
+- branch: claude/axon-state-review-ff4led
 - notes:
-  `src/axon/mcp/server.py:99-122` reuses `CompressionRecord` to log I/O from
-  `get_graph_path` and `get_graph_neighbors`. These are not compression events.
-
-  **Impact**: `data/compression/stats.jsonl` mixes two populations. Aggregation
-  without engine filtering produces misleading averages (2% vs. 55% real). Of
-  197 records in production, 119 are graph-tool I/O, not compression.
-
-  **Fix options**:
-  - Separate stream: `data/observability/tool_io.jsonl` with its own schema.
-  - Or add `kind: "compression" | "tool_io"` field to `CompressionRecord`
-    and filter on read.
-
-  **Workaround until fixed**: aggregators must filter
-  `engine IN ("caveman/phi3+rtk", "caveman/phi3", "rtk", "fallback", "disabled")`
-  before computing any statistic.
+  Fixed via the `kind`-field option. `CompressionRecord` gained
+  `kind: Literal["compression", "tool_io"] = "compression"`. The 4 polluting
+  `_record_mcp_tool_call` sites (`get_graph_neighbors`, `get_graph_path`,
+  `get_graph_context`, `restore_context`) now write `kind="tool_io"`. A
+  centralized predicate `is_compression_record` (in `observability/gain.py`)
+  gates on `kind == "compression" AND engine in COMPRESSION_ENGINES` —
+  defence-in-depth that also excludes legacy JSONL whose engine is a tool name.
+  `CompressionTelemetryStore.summary()` and the new `axon gain` command both
+  filter through it. See dec-119.
 
 ## T-105: [PERF] Caveman compression dominates pb ask latency with 100% reject rate
 

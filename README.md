@@ -29,9 +29,11 @@ thing, get all three:
 GLYPH and rtkx are clean, independently-tested dependencies, not a monolith.
 The compressed context stays in the LLM window; the full pre-compression
 original is one `restore_context` MCP call away (opt-in via
-`AXON_RTK_REVERSIBLE`). That reversible-compression edge is what a bundled
-competitor like Headroom gives up by being broad-and-shallow — here each layer
-stays narrow-and-deep and is swappable on its own.
+`AXON_RTK_REVERSIBLE`). Bundled compression layers like Headroom cover adjacent
+ground — including reversible retrieval (its CCR cache) — but as one broad
+engine. AXON instead keeps each tier narrow-and-deep and independently
+swappable, so the graph (GLYPH) and compression (rtkx) layers can evolve, be
+benchmarked, or be replaced on their own without touching the rest of the stack.
 
 ---
 
@@ -204,20 +206,28 @@ any manual ADR writing.
 
 ## How AXON compares
 
-| | AXON | Aider | Cline | mem0 (standalone) |
-|---|---|---|---|---|
-| **Primary goal** | Agent-agnostic context continuity | Git-native AI pair programmer | AI agent inside VS Code | General-purpose semantic memory |
-| **Context capture** | git events + session hooks | Conversation history | Conversation history | Explicit add/search API |
-| **Works across agents** | Yes (MCP + file fallback) | No (Aider-specific) | No (Cline-specific) | Needs custom integration |
-| **Git hook integration** | First-class (`pb hooks install`) | First-class (core feature) | No | No |
-| **Self-hosted** | Yes | Yes | Depends on VS Code | Yes (open-source) |
-| **Storage** | SQLite + Redis + Qdrant + mem0 | Flat files + git | Flat files | Qdrant / Postgres |
+The closest tools are other cross-agent memory/compression layers, not the
+editing agents (Aider, Cline) whose histories are built-in and single-agent:
 
-AXON's distinctive angle is agent-agnostic context continuity — it is not a
-replacement for Aider's editing workflow or Cline's VS Code integration. If you
-only use one agent and one machine, those tools' built-in histories may be
-sufficient. AXON adds value when you switch agents, hand off between
-collaborators, or need decisions to survive across long project timelines.
+| | AXON | claude-mem | Headroom | Supermemory |
+|---|---|---|---|---|
+| **Primary goal** | Decision capture + cross-agent continuity | Auto-capture of all session activity | Token compression layer | Hosted cross-agent memory API |
+| **What it captures** | Decisions at crystallisation points (git / session) | Every tool use, continuously | Whatever passes through (compresses it) | Facts / observations via API |
+| **Reversible compression** | Yes (`restore_context`, rtkx) | No | Yes (CCR cache) | No |
+| **Decision / ADR inference** | Yes (LLM judge → Obsidian) | No | No (failure-driven `learn`) | No |
+| **Governance** | Per-tool risk class + restricted ctx (ADR-013) | `<private>` tags | A/B holdouts / measured savings | Access controls |
+| **Works across agents** | Yes (MCP + file fallback) | Yes (MCP) | Yes (wrap / proxy) | Yes (plugins) |
+| **Self-hosted** | Yes | Yes | Yes | Hosted-first |
+
+The crowded part of this space is **raw recall** — tools like
+[agentmemory](https://github.com/rohitg00/agentmemory) and Hindsight publish
+strong LongMemEval scores and optimise for that directly. AXON does not compete
+on that axis. Its defensible niche is the intersection none of the above
+combine: capturing *decisions* (not every keystroke) at git and session
+boundaries, inferring ADRs from them, keeping compression reversible, and gating
+every MCP tool by risk class with a full audit trail. If you want the best raw
+recall benchmark, those tools win; if you want decisions and architecture to
+survive across agents and months, auditably, that is AXON.
 
 ---
 
@@ -261,7 +271,7 @@ gate's coverage (T-105).
 | [`docs/ARD.md`](docs/ARD.md) | Architectural requirements |
 | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) | CLI workflows |
 | [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap |
-| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-116) |
+| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-120) |
 | [`docs/decisions/dec-106-routing-profiles.md`](docs/decisions/dec-106-routing-profiles.md) | FREE/PAID provider profiles + rate limit gate |
 | [`docs/decisions/dec-109-tool-tracing-and-risk-gating.md`](docs/decisions/dec-109-tool-tracing-and-risk-gating.md) | Tool risk classes, policy gate, tracing middleware |
 | [`benchmarks/README.md`](benchmarks/README.md) | Token savings benchmark |
