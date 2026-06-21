@@ -116,23 +116,24 @@ def test_recall_guard_harness_infrastructure() -> None:
 
 @pytest.mark.skipif(
     os.environ.get("AXON_RUN_RECALL") != "1",
-    reason="set AXON_RUN_RECALL=1 to run the GPU+Qdrant recall gate",
+    reason="set AXON_RUN_RECALL=1 to run the GPU+vector-store recall gate",
 )
 def test_recall_guard_no_regression() -> None:
-    """Real GPU+Qdrant gate: REGRESSION-based.
+    """Real GPU gate: REGRESSION-based.
 
     The golden set is uncalibrated; the committed baseline (measured Top-1 ~0.60,
     Top-3 ~0.90) is the reference. A change passes iff it does NOT make search
     worse: no aggregate Top-3 drop and no per-query rank regression vs baseline.
     The absolute 0.90 target from the draft plan was an unvalidated guess and is
     intentionally NOT enforced here (see ledger / decision).
+
+    Dispatches to the Qdrant or pgvector backend based on AXON_VECTOR_BACKEND
+    (default: qdrant).
     """
+    import asyncio
     import json
     from pathlib import Path
 
-    from qdrant_client import QdrantClient
-
-    from axon.benchmark.recall import TEMP_COLLECTION, index_corpus, run_recall_guard
     from axon.embedder.engine import EmbedderEngine
 
     repo_root = Path(__file__).resolve().parent.parent.parent
@@ -141,16 +142,36 @@ def test_recall_guard_no_regression() -> None:
     baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
 
     engine = EmbedderEngine()
-    client = QdrantClient(url="http://localhost:6333")
 
-    try:
-        index_corpus(client, engine, src_root=src_root, repo_root=repo_root)
-        _summary, metrics = run_recall_guard(golden_set, engine, client)
-    finally:
+    backend = os.environ.get("AXON_VECTOR_BACKEND", "qdrant").strip().lower()
+
+    if backend == "pgvector":
+        from axon.benchmark.recall import index_corpus_pg, run_recall_guard_pg
+        from axon.store.vector_store_factory import make_vector_store
+
+        async def _run_pg():
+            store = make_vector_store()
+            try:
+                await index_corpus_pg(store, engine, src_root=src_root, repo_root=repo_root)
+                return await run_recall_guard_pg(golden_set, engine, store)
+            finally:
+                await store.close()
+
+        _summary, metrics = asyncio.run(_run_pg())
+    else:
+        from qdrant_client import QdrantClient
+
+        from axon.benchmark.recall import TEMP_COLLECTION, index_corpus, run_recall_guard
+
+        client = QdrantClient(url="http://localhost:6333")
         try:
-            client.delete_collection(collection_name=TEMP_COLLECTION)
-        except Exception:  # noqa: BLE001
-            pass
+            index_corpus(client, engine, src_root=src_root, repo_root=repo_root)
+            _summary, metrics = run_recall_guard(golden_set, engine, client)
+        finally:
+            try:
+                client.delete_collection(collection_name=TEMP_COLLECTION)
+            except Exception:  # noqa: BLE001
+                pass
 
     # No aggregate Top-3 regression vs the measured baseline.
     recall_top3 = metrics["recall_top3"]
