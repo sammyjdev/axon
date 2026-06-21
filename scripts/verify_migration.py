@@ -28,7 +28,7 @@ from pathlib import Path
 from qdrant_client import QdrantClient
 
 QDRANT_URL = "http://localhost:6333"
-PG_DSN = os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5432/axon")
+PG_DSN = os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5433/axon")
 
 
 # ---------------------------------------------------------------------------
