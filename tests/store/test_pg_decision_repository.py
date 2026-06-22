@@ -80,3 +80,23 @@ async def test_adr_insert_returns_id_and_get(pg_dsn) -> None:
         assert len(got) == 1 and got[0].title == "t"
     finally:
         await repo.close()
+
+
+async def test_adr_save_inner_is_idempotent(pg_dsn) -> None:
+    """Re-inserting the same ADR (same project/title/created_at) must NOT duplicate rows."""
+    from axon.store.pg_decision_repository import PostgresDecisionRepository
+
+    repo = PostgresDecisionRepository(dsn=pg_dsn)
+    try:
+        await repo.ensure_schema()
+        async with (await repo._ensure_pool()).acquire() as con:
+            await con.execute("TRUNCATE adr")
+        adr = ADR(project="proj", title="dup-title", context="c", decision="d",
+                  rationale="r", created_at=datetime(2026, 6, 1, tzinfo=UTC))
+        id1 = await repo.save_adr_inner(adr)
+        id2 = await repo.save_adr_inner(adr)  # identical natural key - must not insert again
+        assert id1 == id2, "re-insert must return the same id, not a new row"
+        rows = await repo.get_adrs("proj", limit=100)
+        assert len(rows) == 1, f"expected 1 ADR row, got {len(rows)}"
+    finally:
+        await repo.close()
