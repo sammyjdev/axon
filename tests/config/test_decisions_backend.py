@@ -3,11 +3,11 @@ from __future__ import annotations
 import pytest
 
 
-def test_decisions_backend_defaults_to_sqlite(monkeypatch) -> None:
+def test_decisions_backend_defaults_to_postgres(monkeypatch) -> None:
     monkeypatch.delenv("AXON_DECISIONS_BACKEND", raising=False)
     from axon.config.runtime import load_runtime_config
 
-    assert load_runtime_config().decisions_backend == "sqlite"
+    assert load_runtime_config().decisions_backend == "postgres"
 
 
 def test_decisions_backend_env_overrides(monkeypatch) -> None:

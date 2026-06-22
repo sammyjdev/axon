@@ -270,3 +270,42 @@ The copy is one-way and non-destructive, so the SQLite graph is intact.
 Only the graph moves this wave; decisions and session continuity stay on SQLite
 until their waves. SessionStore keeps a single aiosqlite connection for those
 while the graph methods delegate to the Postgres repository.
+
+# decisions/ADRs Cutover Runbook (dec-121 step 3, wave 3)
+
+The decision knowledge base (`decisions` + `adr` tables) is selected by
+`AXON_DECISIONS_BACKEND` env > `axon.toml [runtime] decisions_backend` > default.
+As of this wave the default is `postgres`. `SessionStore` delegates its
+decision/ADR methods to the configured `DecisionRepository`. On Postgres the
+`decisions.frontmatter` is JSONB (GIN-indexed) and the find_* queries use native
+operators; `judged`/`validation_score` live inside that JSON and round-trip as
+real values (no separate column, no `validation_score == 0.0` sentinel).
+
+## Cutover sequence
+
+```bash
+docker compose up -d axon-postgres
+# Copy decisions + ADRs SQLite -> Postgres (idempotent):
+PYTHONPATH=src AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
+  .venv/Scripts/python.exe scripts/migrate_decisions.py
+# Count parity:
+docker compose exec -T axon-postgres psql -U axon -d axon -tAc \
+  "SELECT (SELECT count(*) FROM decisions), (SELECT count(*) FROM adr);"
+# Parity: find_decisions_by_repo / find_decision_by_git_hash return the same
+# decisions under AXON_DECISIONS_BACKEND=postgres, and a judged=True decision
+# keeps its judged value.
+```
+
+Then set `decisions_backend = "postgres"` in `axon.toml` (already the default).
+
+## Rollback
+
+Set `decisions_backend = "sqlite"` (or `AXON_DECISIONS_BACKEND=sqlite`). The copy
+is one-way and non-destructive, so the SQLite decisions/adr tables are intact.
+
+## Note on ADR idempotency
+
+The Postgres ADR insert dedups on the exact (project, title, created_at) natural
+key (so a copy re-run does not duplicate), whereas SQLite always inserts a new
+row. Because `created_at` carries microsecond precision, distinct ADRs never
+collide in normal use; the dedup only affects exact re-inserts (the migration).
