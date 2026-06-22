@@ -140,6 +140,7 @@ class SqliteGraphRepository:
                         visited.add(row["target_id"])
                         next_frontier.add(row["target_id"])
                 frontier = next_frontier
+        edges.sort(key=lambda e: (e["source"], e["target"], e["type"]))
         return {"root": node_id, "nodes": sorted(visited), "edges": edges}
 
     async def shortest_path(
