@@ -104,6 +104,7 @@ class SessionStore:
         self._conn: aiosqlite.Connection | None = None
         self._lock = asyncio.Lock()
         self._graph_repo = None
+        self._decision_repo = None
 
     async def _connection(self) -> aiosqlite.Connection:
         if self._conn is None:
@@ -141,22 +142,7 @@ class SessionStore:
     # ── ADR ──────────────────────────────────────────────────────────────────
 
     async def _save_adr_inner(self, adr: ADR) -> int:
-        async with self._lock:
-            db = await self._connection()
-            cursor = await db.execute(
-                "INSERT INTO adr (project, title, context, decision, rationale, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    adr.project,
-                    adr.title,
-                    adr.context,
-                    adr.decision,
-                    adr.rationale,
-                    adr.created_at.isoformat(),
-                ),
-            )
-            await db.commit()
-            return cursor.lastrowid  # type: ignore[return-value]
+        return await (await self._decisions()).save_adr_inner(adr)
 
     async def save_adr(self, adr: ADR) -> int:
         try:
@@ -188,25 +174,8 @@ class SessionStore:
             return 0
 
     async def get_adrs(self, project: str, limit: int = 10) -> list[ADR]:
-        async with self._lock:
-            db = await self._connection()
-            db.row_factory = aiosqlite.Row
-            rows = await db.execute_fetchall(
-                "SELECT * FROM adr WHERE project = ? ORDER BY created_at DESC LIMIT ?",
-                (project, limit),
-            )
-        return [
-            ADR(
-                id=r["id"],
-                project=r["project"],
-                title=r["title"],
-                context=r["context"],
-                decision=r["decision"],
-                rationale=r["rationale"],
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        repo = await self._decisions()
+        return await repo.get_adrs(project, limit)
 
     # ── Session Memory ────────────────────────────────────────────────────────
 
@@ -352,6 +321,13 @@ class SessionStore:
                 self._graph_repo = SqliteGraphRepository(self)
         return self._graph_repo
 
+    async def _decisions(self):
+        if self._decision_repo is None:
+            from axon.store.decision_repository import SqliteDecisionRepository
+
+            self._decision_repo = SqliteDecisionRepository(self)
+        return self._decision_repo
+
     async def add_node(
         self,
         node_id: str,
@@ -402,67 +378,22 @@ class SessionStore:
         return await repo.all_edges()
 
     async def save_decision(self, decision: Decision) -> None:
-        async with self._lock:
-            db = await self._connection()
-            await db.execute(
-                "INSERT OR REPLACE INTO decisions"
-                " (id, frontmatter, body, vault_path, created_at)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (
-                    decision.id,
-                    json.dumps(decision.model_dump(mode="json")),
-                    decision.summary,
-                    None,
-                    decision.timestamp.isoformat(),
-                ),
-            )
-            await db.commit()
+        repo = await self._decisions()
+        return await repo.save_decision(decision)
 
     async def find_decisions_by_symbol(self, symbol_id: str) -> list[Decision]:
-        async with self._lock:
-            db = await self._connection()
-            db.row_factory = aiosqlite.Row
-            rows = await db.execute_fetchall(
-                "SELECT frontmatter FROM decisions"
-                " WHERE EXISTS ("
-                "   SELECT 1 FROM json_each(decisions.frontmatter, '$.symbols')"
-                "   WHERE value = ?)"
-                " ORDER BY created_at DESC",
-                (symbol_id,),
-            )
-        return [Decision(**json.loads(row["frontmatter"])) for row in rows]
+        repo = await self._decisions()
+        return await repo.find_decisions_by_symbol(symbol_id)
 
     async def find_decision_by_git_hash(
         self, git_hash: str, *, repo: str | None = None
     ) -> Decision | None:
-        async with self._lock:
-            db = await self._connection()
-            db.row_factory = aiosqlite.Row
-            where = "WHERE json_extract(frontmatter, '$.git_hash') = ?"
-            params: list[object] = [git_hash]
-            if repo is not None:
-                where += " AND json_extract(frontmatter, '$.repo') = ?"
-                params.append(repo)
-            rows = await db.execute_fetchall(
-                f"SELECT frontmatter FROM decisions {where}"
-                " ORDER BY created_at DESC LIMIT 1",
-                tuple(params),
-            )
-        if not rows:
-            return None
-        return Decision(**json.loads(rows[0]["frontmatter"]))
+        decision_repo = await self._decisions()
+        return await decision_repo.find_decision_by_git_hash(git_hash, repo=repo)
 
     async def find_decisions_by_repo(self, repo: str, limit: int = 20) -> list[Decision]:
-        async with self._lock:
-            db = await self._connection()
-            db.row_factory = aiosqlite.Row
-            rows = await db.execute_fetchall(
-                "SELECT frontmatter FROM decisions"
-                " WHERE json_extract(frontmatter, '$.repo') = ?"
-                " ORDER BY created_at DESC LIMIT ?",
-                (repo, limit),
-            )
-        return [Decision(**json.loads(row["frontmatter"])) for row in rows]
+        decision_repo = await self._decisions()
+        return await decision_repo.find_decisions_by_repo(repo, limit)
 
     async def save_session(
         self, session_id: str, agent: str, repo: str, *, context_payload: str = ""
@@ -502,16 +433,14 @@ class SessionStore:
 
     async def next_decision_id(self) -> str:
         """Return the next sequential decision id (dec-NNN, zero-padded)."""
-        async with self._lock:
-            db = await self._connection()
-            cursor = await db.execute("SELECT COUNT(*) FROM decisions")
-            row = await cursor.fetchone()
-        count = row[0] if row else 0
-        return f"dec-{count + 1:03d}"
+        repo = await self._decisions()
+        return await repo.next_decision_id()
 
     async def close(self) -> None:
         if self._graph_repo is not None and hasattr(self._graph_repo, "close"):
             await self._graph_repo.close()
+        if self._decision_repo is not None and hasattr(self._decision_repo, "close"):
+            await self._decision_repo.close()
         async with self._lock:
             if self._conn is not None:
                 await self._conn.close()
@@ -541,7 +470,7 @@ class SessionStore:
                     )
                 )
             elif kind == "adr":
-                await self._save_adr_inner(
+                await (await self._decisions()).save_adr_inner(
                     ADR(
                         project=payload["project"],
                         title=payload["title"],
