@@ -16,6 +16,25 @@ from axon.router.classifier import TaskType
 runner = CliRunner()
 
 
+def _force_default_compression_strategy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the ask retrieval strategy to a compression-enabled default.
+
+    Without this, the ask tests depend on ambient profile/mode/classifier state
+    that earlier tests can leave in a no-compression configuration, which skips
+    the compression branch and makes these tests order-dependent.
+    """
+    from axon.context.contracts import select_default_retrieval_strategy
+
+    strategy = select_default_retrieval_strategy(
+        task_type=TaskType.CODE_ANALYSIS, profile=None, mode="hybrid-local", capabilities=()
+    )
+    monkeypatch.setattr(
+        pb,
+        "_select_retrieval_strategy",
+        lambda _q, _c: (strategy, "CODE_ANALYSIS", None, "hybrid-local"),
+    )
+
+
 def test_git_command_proxies_to_rtk(monkeypatch) -> None:
     captured: list[str] = []
 
@@ -254,6 +273,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
         engine_root=tmp_path / "engine",
         vault_root=tmp_path / "vault",
         db_path=tmp_path / "engine" / "data" / "axon.db",
+        pg_url="postgresql://axon:axon@localhost:5433/axon",
         qdrant_url="http://localhost:6333",
         redis_url="redis://localhost:6379",
         rtk_max_tokens=450,
@@ -352,6 +372,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
     assert "GPU-capable local stack available." in result.stdout
     assert "capabilities:" in result.stdout
     assert "enabled: rtk" in result.stdout
+    assert "vector_backend: qdrant" in result.stdout
 
 
 def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> None:
@@ -400,8 +421,8 @@ def test_init_writes_env_local_with_mode_and_paths(monkeypatch, tmp_path) -> Non
     assert "AXON_PLATFORM=mac" in payload
     assert '[runtime]' in config_payload
     assert 'mode = "hybrid-local"' in config_payload
-    assert f'engine_root = "{engine_root}"' in config_payload
-    assert f'vault_root = "{vault_root}"' in config_payload
+    assert f'engine_root = "{engine_root.as_posix()}"' in config_payload
+    assert f'vault_root = "{vault_root.as_posix()}"' in config_payload
 
 
 def test_init_refuses_to_overwrite_env_local_without_force(monkeypatch, tmp_path) -> None:
@@ -451,8 +472,8 @@ def test_profile_list_shows_profiles_and_active_marker(monkeypatch, tmp_path) ->
                 "[runtime]",
                 'mode = "hybrid-local"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{tmp_path / "engine"}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path / "engine").as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
                 "[profiles.solo-dev]",
                 'description = "Single developer default"',
@@ -484,8 +505,8 @@ def test_profile_use_updates_config_file(monkeypatch, tmp_path) -> None:
                 "[runtime]",
                 'mode = "hybrid-local"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{tmp_path / "engine"}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path / "engine").as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
                 "[profiles.solo-dev]",
                 'description = "Single developer default"',
@@ -518,8 +539,8 @@ def test_profile_show_displays_active_profile(monkeypatch, tmp_path) -> None:
                 "[runtime]",
                 'mode = "hybrid-local"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{tmp_path / "engine"}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path / "engine").as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
                 "[profiles.solo-dev]",
                 'description = "Single developer default"',
@@ -549,8 +570,8 @@ def test_configure_applies_recommended_profile(monkeypatch, tmp_path) -> None:
                 "[runtime]",
                 'mode = "hybrid-local"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{tmp_path}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path).as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
                 "[profiles.solo-dev]",
                 'description = "Single developer default"',
@@ -599,8 +620,8 @@ def test_configure_works_with_minimal_runtime_only_config(monkeypatch, tmp_path)
                 "[runtime]",
                 'mode = "hybrid-local"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{tmp_path}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path).as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
             ]
         ),
@@ -638,8 +659,8 @@ def test_configure_interactive_applies_recommended_profile(monkeypatch, tmp_path
                 "[runtime]",
                 'mode = "hybrid-local"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{tmp_path}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path).as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
                 "[profiles.solo-dev]",
                 'description = "Single developer default"',
@@ -682,8 +703,8 @@ def test_configure_accepts_preferred_mode_override(monkeypatch, tmp_path) -> Non
                 "[runtime]",
                 'mode = "hybrid-local"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{tmp_path}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path).as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
                 "[profiles.solo-dev]",
                 'description = "Single developer default"',
@@ -733,8 +754,8 @@ def test_configure_rejects_invalid_restricted_remote_combination(monkeypatch, tm
             "[runtime]",
             'mode = "hybrid-local"',
             'active_profile = "solo-dev"',
-            f'engine_root = "{tmp_path}"',
-            f'vault_root = "{tmp_path / "vault"}"',
+            f'engine_root = "{(tmp_path).as_posix()}"',
+            f'vault_root = "{(tmp_path / "vault").as_posix()}"',
             "",
             "[profiles.solo-dev]",
             'description = "Single developer default"',
@@ -769,7 +790,8 @@ def test_configure_rejects_invalid_restricted_remote_combination(monkeypatch, tm
     )
 
     assert result.exit_code == 2
-    assert "privacy=restricted is incompatible with infra=remote" in result.stdout
+    # typer.BadParameter writes to stderr; click >=8.2 no longer mixes it into stdout.
+    assert "privacy=restricted is incompatible with infra=remote" in result.stderr
     assert config_path.read_text(encoding="utf-8") == original_payload
 
 
@@ -781,8 +803,8 @@ def test_profile_create_appends_new_profile(monkeypatch, tmp_path) -> None:
                 "[runtime]",
                 'mode = "hybrid-local"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{tmp_path}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path).as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
                 "[profiles.solo-dev]",
                 'description = "Single developer default"',
@@ -833,8 +855,8 @@ def test_profile_export_prints_toml_snippet(monkeypatch, tmp_path) -> None:
                 "[runtime]",
                 'mode = "hybrid-local"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{tmp_path}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path).as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
                 "[profiles.team-dev]",
                 'description = "Shared team setup"',
@@ -891,6 +913,7 @@ def test_ask_uses_detected_context_and_builds_summary(monkeypatch, tmp_path) -> 
         "_compress_with_rtk",
         lambda text, max_tokens: ("rtk::get_search_collections compressed", None),
     )
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
@@ -1002,6 +1025,7 @@ def test_ask_sends_chunk_content_within_limit_to_compressor(monkeypatch, tmp_pat
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr("axon.router.compressor.caveman_compress_guarded", fake_caveman)
     monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, None))
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
@@ -1049,6 +1073,7 @@ def test_ask_truncates_oversized_chunk_content_before_compression(monkeypatch, t
     monkeypatch.setattr(pb, "_semantic_search_hits", fake_hits)
     monkeypatch.setattr("axon.router.compressor.caveman_compress_guarded", fake_caveman)
     monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, None))
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
@@ -1099,6 +1124,7 @@ def test_ask_rejects_contaminated_rtk_output(monkeypatch, tmp_path) -> None:
         "_compress_with_rtk",
         lambda text, max_tokens: ("## Your task: Compress the provided Python code snippet.", None),
     )
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
@@ -1166,6 +1192,7 @@ def test_ask_falls_back_when_rtk_is_unavailable(monkeypatch, tmp_path) -> None:
         ),
     )
     monkeypatch.setattr(pb, "_compress_with_rtk", lambda text, max_tokens: (text, "rtk missing"))
+    _force_default_compression_strategy(monkeypatch)
 
     result = runner.invoke(
         pb.app,
@@ -1306,7 +1333,12 @@ def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
         assert target.exists()
         return 2, 7
 
+    fake_store_instance = FakeStore(url="fake://")
     monkeypatch.setattr("axon.store.vector_store.VectorStore", FakeStore)
+    monkeypatch.setattr(
+        "axon.store.vector_store_factory.make_vector_store",
+        lambda *a, **k: fake_store_instance,
+    )
     monkeypatch.setattr("axon.store.graph_store.GraphStore", FakeGraphStore)
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", FakeEngine)
     monkeypatch.setattr("axon.embedder.pipeline.index_path", fake_index_path)
@@ -1359,6 +1391,10 @@ def test_watch_reindexes_changed_files(monkeypatch, tmp_path) -> None:
     watch_target.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr("axon.store.vector_store.VectorStore", FakeStore)
+    monkeypatch.setattr(
+        "axon.store.vector_store_factory.make_vector_store",
+        lambda *a, **k: FakeStore(url="fake://"),
+    )
     monkeypatch.setattr("axon.store.graph_store.GraphStore", FakeGraphStore)
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", FakeEngine)
     monkeypatch.setattr("axon.embedder.pipeline.index_path", fake_index_path)

@@ -40,7 +40,11 @@ class Chunk(BaseModel):
 
 class VectorStore:
     def __init__(self, url: str = "http://localhost:6333") -> None:
-        self._client = AsyncQdrantClient(url=url)
+        # check_compatibility=False: the default True triggers a synchronous
+        # version-check HTTP call on first use that blocks the asyncio event
+        # loop (it never yields), which hangs stdio MCP tool calls such as
+        # axon_health under the FastMCP loop. Skipping it keeps calls async.
+        self._client = AsyncQdrantClient(url=url, check_compatibility=False)
 
     async def ensure_collections(self) -> None:
         existing = {c.name for c in (await self._client.get_collections()).collections}
@@ -140,21 +144,9 @@ class VectorStore:
             for hit in response.points:
                 results.append({"score": hit.score, "payload": hit.payload, "id": hit.id})
 
-        results = _apply_staleness_ranking(results, now=_utcnow())
-        limited: list[dict] = []
-        token_budget = max_tokens
-        for item in results:
-            payload = item.get("payload") or {}
-            content = str(payload.get("content", ""))
-            estimated = max(1, len(content) // 4)
-            if len(limited) >= max_nodes:
-                break
-            if token_budget - estimated < 0:
-                break
-            token_budget -= estimated
-            limited.append(item)
-
-        return limited[:top_k]
+        return _rank_and_limit(
+            results, top_k=top_k, max_nodes=max_nodes, max_tokens=max_tokens, now=_utcnow()
+        )
 
     async def delete_by_file(self, ctx: str, file_path: str) -> None:
         await self._client.delete(
@@ -166,6 +158,32 @@ class VectorStore:
 
     async def close(self) -> None:
         await self._client.close()
+
+
+def _rank_and_limit(
+    results: list[dict],
+    *,
+    top_k: int,
+    max_nodes: int,
+    max_tokens: int,
+    now: datetime,
+) -> list[dict]:
+    """Staleness-rank then apply the max_nodes / token-budget cap. Shared by the
+    Qdrant and pgvector backends so they rank identically."""
+    ranked = _apply_staleness_ranking(results, now=now)
+    limited: list[dict] = []
+    token_budget = max_tokens
+    for item in ranked:
+        payload = item.get("payload") or {}
+        content = str(payload.get("content", ""))
+        estimated = max(1, len(content) // 4)
+        if len(limited) >= max_nodes:
+            break
+        if token_budget - estimated < 0:
+            break
+        token_budget -= estimated
+        limited.append(item)
+    return limited[:top_k]
 
 
 def _apply_staleness_ranking(results: list[dict], *, now: datetime) -> list[dict]:

@@ -311,6 +311,7 @@ def _runtime(
         engine_root=engine_root,
         vault_root=vault_root,
         db_path=engine_root / "data" / "axon.db",
+        pg_url="postgresql://axon:axon@localhost:5433/axon",
         qdrant_url="http://localhost:6333",
         redis_url="redis://localhost:6379",
         rtk_max_tokens=450,

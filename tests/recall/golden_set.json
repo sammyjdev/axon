@@ -1,0 +1,22 @@
+[
+  {"id": "q01", "query": "chunk python source tree-sitter walk function definition", "expected_file": "src/axon/embedder/chunker.py", "expected_symbol": "_walk_python", "min_score": 0.70},
+  {"id": "q02", "query": "split large node into sub-chunks stride lines", "expected_file": "src/axon/embedder/chunker.py", "expected_symbol": "_split_large_node", "min_score": 0.70},
+  {"id": "q03", "query": "embed texts vectors EmbedderEngine", "expected_file": "src/axon/embedder/pipeline.py", "expected_symbol": "ingest_file", "min_score": 0.70},
+  {"id": "q04", "query": "upsert batch vector chunks qdrant", "expected_file": "src/axon/store/vector_store.py", "expected_symbol": "upsert_batch", "min_score": 0.70},
+  {"id": "q05", "query": "delete file points from collection", "expected_file": "src/axon/store/vector_store.py", "expected_symbol": "delete_by_file", "min_score": 0.70},
+  {"id": "q06", "query": "extract python calls ast walk call nodes", "expected_file": "src/axon/embedder/graph_extractor.py", "expected_symbol": "_extract_python_calls", "min_score": 0.70},
+  {"id": "q07", "query": "build dependency records calls called_by symbols", "expected_file": "src/axon/embedder/graph_extractor.py", "expected_symbol": "build_dependency_records", "min_score": 0.70},
+  {"id": "q08", "query": "chunk typescript tsx tree-sitter walk function declaration", "expected_file": "src/axon/embedder/chunker.py", "expected_symbol": "_walk_ts", "min_score": 0.70},
+  {"id": "q09", "query": "chunk id stable uuid hash file path symbol", "expected_file": "src/axon/embedder/pipeline.py", "expected_symbol": "_chunk_id", "min_score": 0.70},
+  {"id": "q10", "query": "iter supported files rglob language filter", "expected_file": "src/axon/embedder/pipeline.py", "expected_symbol": "iter_supported_files", "min_score": 0.70},
+  {"id": "q11", "query": "walk ts callee name member expression identifier", "expected_file": "src/axon/embedder/graph_extractor.py", "expected_symbol": "_ts_callee_name", "min_score": 0.70},
+  {"id": "q12", "query": "python fallback chunk single file parse error", "expected_file": "src/axon/embedder/chunker.py", "expected_symbol": "_python_fallback_chunk", "min_score": 0.70},
+  {"id": "q13", "query": "vector store search cosine qdrant query points", "expected_file": "src/axon/store/vector_store.py", "expected_symbol": "search", "min_score": 0.70},
+  {"id": "q14", "query": "extract calls chunk language java typescript python", "expected_file": "src/axon/embedder/graph_extractor.py", "expected_symbol": "extract_calls", "min_score": 0.70},
+  {"id": "q15", "query": "index path hash cache file chunks embed", "expected_file": "src/axon/embedder/pipeline.py", "expected_symbol": "index_path", "min_score": 0.70},
+  {"id": "q16", "query": "chunk source dispatcher java python typescript language", "expected_file": "src/axon/embedder/chunker.py", "expected_symbol": "chunk_source", "min_score": 0.70},
+  {"id": "q17", "query": "ts chunk from node start end line content", "expected_file": "src/axon/embedder/chunker.py", "expected_symbol": "_ts_chunk_from_node", "min_score": 0.70},
+  {"id": "q18", "query": "infer context from path vault root personal knowledge", "expected_file": "src/axon/embedder/pipeline.py", "expected_symbol": "infer_ctx_from_path", "min_score": 0.70},
+  {"id": "q19", "query": "walk calls tree-sitter node method invocation java", "expected_file": "src/axon/embedder/graph_extractor.py", "expected_symbol": "_walk_calls", "min_score": 0.70},
+  {"id": "q20", "query": "chunk java file tree-sitter extract methods constructors", "expected_file": "src/axon/embedder/chunker.py", "expected_symbol": "chunk_java_file", "min_score": 0.70}
+]

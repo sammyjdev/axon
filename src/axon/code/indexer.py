@@ -11,12 +11,10 @@ edges line up. Cross-file resolution is best-effort by design.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from axon.core.symbol import Language, Symbol, SymbolType
 from axon.embedder.chunker import ChunkType, chunk_source
-from axon.embedder.pipeline import iter_supported_files
 from axon.store.session_store import SessionStore
 
 _INDEXED_LANGUAGES: dict[str, Language] = {".py": "python", ".java": "java"}
@@ -69,24 +67,9 @@ async def index_file(path: Path | str, *, store: SessionStore) -> list[Symbol]:
 
 
 def _iter_repo_files(root: Path) -> list[Path]:
-    """List indexable files under ``root``, respecting ``.gitignore``.
-
-    Uses ``git ls-files`` (tracked + untracked, ignored excluded) when ``root``
-    is a git repo; falls back to a plain walk otherwise.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "--cached", "--others",
-             "--exclude-standard"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return list(iter_supported_files(root, languages={"python", "java"}))
-
-    files = [root / line for line in result.stdout.splitlines() if line]
-    return [f for f in files if f.suffix in _INDEXED_LANGUAGES and f.is_file()]
+    """List indexable files under root, respecting .gitignore via iter_git_files (D3)."""
+    from axon.repo.file_walk import iter_git_files
+    return iter_git_files(root, suffixes=set(_INDEXED_LANGUAGES.keys()))
 
 
 async def index_repo(repo_path: Path | str, *, store: SessionStore) -> list[Symbol]:

@@ -29,6 +29,16 @@ def _isolate_axon_engine(
     engine_dir = tmp_path_factory.mktemp("axon_engine")
     monkeypatch.setenv("AXON_ENGINE", str(engine_dir))
 
+    # Pin the per-concern storage backends to sqlite for tests by default. After
+    # the dec-121 step-3 cutover the production defaults are postgres, but tests
+    # use isolated per-test SQLite stores (the postgres repositories are covered
+    # separately via testcontainers). Tests that specifically exercise postgres
+    # selection set or delenv these explicitly and override this default.
+    monkeypatch.setenv("AXON_GRAPH_BACKEND", "sqlite")
+    monkeypatch.setenv("AXON_DECISIONS_BACKEND", "sqlite")
+    monkeypatch.setenv("AXON_FILEINDEX_BACKEND", "sqlite")
+    monkeypatch.setenv("AXON_SESSIONS_BACKEND", "sqlite")
+
     # Best-effort redirect of the two module-level TraceStore singletons.
     # Import lazily so this conftest doesn't force a load when a test only
     # needs unrelated subsystems.

@@ -4,16 +4,16 @@ Status: active execution plan
 
 This roadmap turns the current product direction into concrete tasks. The near
 term goal is simple: make AXON usable by other developers on different
-machines without assuming Odisseu, Claude, or the author's hardware.
+machines without assuming a specific agent, Claude, or the author's hardware.
 
-Current execution state as of 2026-05-11:
+Current execution state as of 2026-06-20:
 
 - P0 is complete at the documentation and shipped-surface level.
 - P1 is complete at the initial guided-customization level.
 - P2 is complete at the initial robustness level.
 - P3 implementation is complete at the foundation level.
 - The profile manifest exists in the runtime schema.
-- `pb configure` works both as a deterministic flag-driven recommender and as a
+- `axon configure` works both as a deterministic flag-driven recommender and as a
   concise interactive questionnaire when core inputs are omitted.
 - A subsystem-level capability selector now exists for recommendation and
   inspection, though it is still advisory rather than a hard feature-toggle
@@ -22,12 +22,16 @@ Current execution state as of 2026-05-11:
   flows.
 - Tracing, staleness-aware ranking, and outcome/failure persistence are wired
   into initial production paths.
+- Graph-aware context retrieval is delegated to GLYPH (the project formerly
+  scoped as Odisseu), consumed as a dependency via dec-116.
 
 ## Product Direction
 
 - AXON: self-hosted context, memory, retrieval, and governance engine.
-- Odisseu: advanced autonomous consumer, not the center of the engine.
-- Integration between them: explicit adapter boundary, not product identity.
+- GLYPH: graph-aware retrieval layer (the project formerly scoped as Odisseu),
+  consumed through a clean dependency boundary (dec-116), not a separate product.
+- AXON stays agent-agnostic: usable by any agent (Claude Code, Codex, Cursor),
+  coupled to none.
 
 ## Operating Modes
 
@@ -163,5 +167,5 @@ Remaining refinement beyond P3:
 
 - making AXON itself the deep-agent runtime
 - coupling core workflows to Claude-specific hooks
-- requiring Odisseu for setup, planning, or retrieval
+- requiring any specific external agent for setup, planning, or retrieval
 - shipping every advanced subsystem to every user by default

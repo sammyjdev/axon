@@ -8,7 +8,9 @@ surfaced here.
 from __future__ import annotations
 
 import asyncio
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from datetime import UTC
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 import typer
@@ -89,16 +91,63 @@ def init(
     typer.echo(f"hooks installed: {', '.join(installed) or 'none'}")
 
     async def _index() -> int:
+        import uuid
+
+        from axon.observability.trace_store import TraceStore
+
         store = SessionStore(_get_db_path())
         await store.init()
+
+        # Emit index-start activity (best-effort; never breaks indexing)
+        _recorder = None
+        try:
+            _trace_store = TraceStore()
+            _recorder = _trace_store.recorder(
+                trace_id=uuid.uuid4().hex,
+                caller="cli",
+            )
+            _recorder.append_stage(
+                "index",
+                payload={"phase": "start", "target": str(repo_path)},
+            )
+        except Exception:
+            pass
+
         try:
             symbols = await index_repo(repo_path, store=store)
-            return len(symbols)
+            count_sym = len(symbols)
         finally:
             await store.close()
 
+        # Emit index-done stage (best-effort)
+        try:
+            if _recorder is not None:
+                _recorder.append_stage(
+                    "index",
+                    payload={"phase": "done", "symbols": count_sym},
+                )
+        except Exception:
+            pass
+
+        return count_sym
+
     count = asyncio.run(_index())
     typer.echo(f"indexed {count} symbols from {repo_path}")
+
+
+@app.command()
+def familiar(
+    frames: int = typer.Option(
+        0,
+        "--frames",
+        help="Exit after N render ticks (0 = run live until Ctrl+C). Useful for CI.",
+    ),
+) -> None:
+    """Launch the AXON familiar — a live terminal companion driven by TraceStore activity."""
+    from axon.pet.familiar import main as _familiar_main
+
+    _frames: int | None = frames if frames > 0 else None
+    asyncio.run(_familiar_main(frames=_frames))
 
 
 @app.command()
@@ -153,6 +202,77 @@ def health() -> None:
 
 
 @app.command()
+def gain(
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit raw GainSummary as JSON."
+    ),
+) -> None:
+    """Show compression-gain statistics: windows, saved tokens, and daily trend."""
+    from axon.observability.gain import load_gain
+
+    summary = load_gain()
+
+    if summary.windows == 0:
+        typer.echo("No compression telemetry yet. Run some compressions first.")
+        return
+
+    if json_out:
+        typer.echo(summary.model_dump_json(indent=2))
+        return
+
+    # Build human-readable output
+    lines: list[str] = [
+        "AXON — context savings",
+        f"  windows     {summary.windows:,}        ({summary.compressed} compressed)",
+        (
+            f"  saved       {summary.saved_tokens:,} tokens   "
+            f"({summary.before_tokens:,} -> {summary.after_tokens:,})"
+        ),
+    ]
+
+    # Ratio line: handle None percentiles
+    if summary.p50_pct is None:
+        ratio_line = "  ratio       n/a"
+    else:
+        ratio_parts = [f"p50 {summary.p50_pct}%"]
+        if summary.mean_pct is not None:
+            ratio_parts.append(f"mean {summary.mean_pct}%")
+        if summary.p95_pct is not None:
+            ratio_parts.append(f"p95 {summary.p95_pct}%")
+        if summary.max_pct is not None:
+            ratio_parts.append(f"max {summary.max_pct}%")
+        ratio_str = " ".join(ratio_parts) if ratio_parts else "n/a"
+        ratio_line = f"  ratio       {ratio_str}"
+    lines.append(ratio_line)
+
+    # Engines line
+    engine_parts = []
+    for engine, count in sorted(summary.by_engine.items()):
+        engine_parts.append(f"{engine} {count}")
+    lines.append(f"  engines     {', '.join(engine_parts)}")
+
+    # Sparkline from daily_saved
+    if summary.daily_saved:
+        values = [v for _, v in summary.daily_saved]
+        min_val = min(values)
+        max_val = max(values)
+        block_chars = "▁▂▃▄▅▆▇█"
+
+        if min_val == max_val:
+            # All values are the same
+            sparkline = "".join([block_chars[-1]] * len(values))
+        else:
+            # Normalize to [0, 7] range for 8 block chars (indices 0-7)
+            sparkline = "".join(
+                block_chars[int((v - min_val) * 7 / (max_val - min_val))]
+                for v in values
+            )
+        lines.append(f"  {sparkline}")
+
+    typer.echo("\n".join(lines))
+
+
+@app.command()
 def doctor(
     stale_days: int = typer.Option(
         7, "--stale-days", help="Threshold (days) after which an activity is reported as stale."
@@ -161,9 +281,9 @@ def doctor(
     """Validate the AXON + RTK + caveman stack: presence (binaries) and liveness (recent activity)."""
     import subprocess
     import sys
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stale_cutoff = now - timedelta(days=stale_days)
 
     def fmt_age(ts: datetime) -> str:
@@ -235,7 +355,7 @@ def doctor(
             lines.append("- axon captures: none yet (commit something in an axon-init'd repo)")
         else:
             if latest_dec_ts.tzinfo is None:
-                latest_dec_ts = latest_dec_ts.replace(tzinfo=timezone.utc)
+                latest_dec_ts = latest_dec_ts.replace(tzinfo=UTC)
             tag = "stale" if latest_dec_ts < stale_cutoff else "ok"
             lines.append(f"- axon captures: {tag} (last {fmt_age(latest_dec_ts)})")
     except Exception as exc:
@@ -253,7 +373,7 @@ def doctor(
             latest = records[-1]
             latest_ts = datetime.fromisoformat(latest.ts)
             if latest_ts.tzinfo is None:
-                latest_ts = latest_ts.replace(tzinfo=timezone.utc)
+                latest_ts = latest_ts.replace(tzinfo=UTC)
             tag = "stale" if latest_ts < stale_cutoff else "ok"
             lines.append(
                 f"- compression telemetry: {tag} ({len(records)} records, last {fmt_age(latest_ts)})"
@@ -284,7 +404,7 @@ def doctor(
             rtk_db = candidate
             break
     if rtk_db.exists():
-        rtk_ts = datetime.fromtimestamp(rtk_db.stat().st_mtime, tz=timezone.utc)
+        rtk_ts = datetime.fromtimestamp(rtk_db.stat().st_mtime, tz=UTC)
         tag = "stale" if rtk_ts < stale_cutoff else "ok"
         lines.append(f"- rtkx activity: {tag} (history.db touched {fmt_age(rtk_ts)})")
     else:

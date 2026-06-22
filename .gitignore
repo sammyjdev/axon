@@ -55,3 +55,13 @@ benchmarks/results/*.png
 
 # Build artifacts
 dist/
+
+# Machine-specific docker override (redirects qdrant/redis volumes to D:)
+docker-compose.override.yml
+
+# Subagent-driven-development scratch (briefs, ledger, review packages)
+.superpowers/
+
+# Coverage artifacts
+.coverage
+.coverage.*

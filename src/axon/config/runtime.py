@@ -80,6 +80,7 @@ class RuntimeConfig:
     engine_root: Path
     vault_root: Path
     db_path: Path
+    pg_url: str
     qdrant_url: str
     redis_url: str
     rtk_max_tokens: int
@@ -97,6 +98,11 @@ class RuntimeConfig:
     openrouter_compliance_required: bool
     expansion: ExpansionConfig
     active_profile: str | None = None
+    vector_backend: str = "qdrant"
+    fileindex_backend: str = "sqlite"
+    graph_backend: str = "sqlite"
+    decisions_backend: str = "sqlite"
+    sessions_backend: str = "sqlite"
 
     @property
     def data_root(self) -> Path:
@@ -126,6 +132,61 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+_VALID_VECTOR_BACKENDS = ("qdrant", "pgvector")
+
+
+def _resolve_concern_backend(concern: str, overrides: dict) -> str:
+    """Select a relational backend for ``concern``.
+
+    Precedence: ``AXON_<CONCERN>_BACKEND`` env > ``AXON_DB_BACKEND`` env (master
+    switch) > per-concern toml > ``db_backend`` toml > default ``postgres``.
+    """
+    raw = (
+        os.environ.get(f"AXON_{concern.upper()}_BACKEND")
+        or os.environ.get("AXON_DB_BACKEND")
+        or overrides.get(f"{concern}_backend")
+        or overrides.get("db_backend")
+        or "postgres"
+    )
+    backend = raw.strip().lower()
+    if backend not in ("sqlite", "postgres"):
+        raise ValueError(
+            f"Invalid {concern}_backend {backend!r}; expected one of ['sqlite', 'postgres']"
+        )
+    return backend
+
+
+def _resolve_fileindex_backend(overrides: dict) -> str:
+    """Select the file_index backend: AXON_FILEINDEX_BACKEND env > axon.toml > default."""
+    return _resolve_concern_backend("fileindex", overrides)
+
+
+def _resolve_graph_backend(overrides: dict) -> str:
+    """Select the graph backend: AXON_GRAPH_BACKEND env > axon.toml > default."""
+    return _resolve_concern_backend("graph", overrides)
+
+
+def _resolve_decisions_backend(overrides: dict) -> str:
+    """Select the decisions backend: AXON_DECISIONS_BACKEND env > axon.toml > default."""
+    return _resolve_concern_backend("decisions", overrides)
+
+
+def _resolve_sessions_backend(overrides: dict) -> str:
+    """Select the sessions backend: AXON_SESSIONS_BACKEND env > axon.toml > default."""
+    return _resolve_concern_backend("sessions", overrides)
+
+
+def _resolve_vector_backend(overrides: dict) -> str:
+    """Select the vector backend: AXON_VECTOR_BACKEND env > axon.toml > default."""
+    raw = os.environ.get("AXON_VECTOR_BACKEND") or overrides.get("vector_backend") or "pgvector"
+    backend = raw.strip().lower()
+    if backend not in _VALID_VECTOR_BACKENDS:
+        raise ValueError(
+            f"Invalid vector_backend {backend!r}; expected one of {list(_VALID_VECTOR_BACKENDS)}"
+        )
+    return backend
+
+
 def _load_toml_runtime_overrides() -> dict[str, str]:
     config_path = get_axon_config_path()
     if not config_path.exists():
@@ -135,11 +196,12 @@ def _load_toml_runtime_overrides() -> dict[str, str]:
     runtime = payload.get("runtime")
     if not isinstance(runtime, dict):
         return {}
-    return {
-        key: str(value)
-        for key, value in runtime.items()
-        if key in {"mode", "engine_root", "vault_root", "active_profile"}
+    allowed = {
+        "mode", "engine_root", "vault_root", "active_profile", "vector_backend",
+        "fileindex_backend", "graph_backend", "decisions_backend", "sessions_backend",
+        "db_backend",
     }
+    return {key: str(value) for key, value in runtime.items() if key in allowed}
 
 
 def get_runtime_sources() -> dict[str, str]:
@@ -604,6 +666,7 @@ def load_runtime_config() -> RuntimeConfig:
         engine_root=engine_root,
         vault_root=vault_root,
         db_path=engine_root / "data" / "axon.db",
+        pg_url=os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5433/axon"),
         qdrant_url=os.environ.get("QDRANT_URL", "http://localhost:6333"),
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379"),
         rtk_max_tokens=int(os.environ.get("AXON_RTK_MAX_TOKENS", "450")),
@@ -623,6 +686,11 @@ def load_runtime_config() -> RuntimeConfig:
         provider_profile=_resolve_provider_profile(),
         openrouter_compliance_required=_env_bool("AXON_OPENROUTER_COMPLIANCE", False),
         expansion=_load_expansion_config(engine_root),
+        vector_backend=_resolve_vector_backend(overrides),
+        fileindex_backend=_resolve_fileindex_backend(overrides),
+        graph_backend=_resolve_graph_backend(overrides),
+        decisions_backend=_resolve_decisions_backend(overrides),
+        sessions_backend=_resolve_sessions_backend(overrides),
     )
 
 

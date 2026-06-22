@@ -1,0 +1,16 @@
+{
+  "bge_variants": [
+    "BAAI/bge-base-en",
+    "BAAI/bge-base-en-v1.5",
+    "BAAI/bge-small-en",
+    "BAAI/bge-small-en-v1.5"
+  ],
+  "default_explicit_cuda": {
+    "providers": [
+      "CPUExecutionProvider"
+    ],
+    "n": 512,
+    "sec": 3.4,
+    "chunks_per_sec": 151
+  }
+}

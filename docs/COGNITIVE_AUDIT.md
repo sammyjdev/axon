@@ -97,7 +97,7 @@ Legenda: **SIM** = existe em código / **PARCIAL** = implementação incompleta 
 | Recupera workflows similares? | **NÃO** | Semantic search poderia, mas sem schema de planos para buscar. |
 | Representação explícita de goals/subgoals? | **NÃO** | `pb plan` tem stages, sem persistência de goal state. |
 | Dependency-aware planning support? | **NÃO** | Ausente. |
-| Identifica tasks de alto risco? | **NÃO** | Apenas no spec do Odisseu, não no AXON. |
+| Identifica tasks de alto risco? | **NÃO** | Apenas no spec legado do Odisseu (projeto que virou GLYPH), não no AXON. |
 | Architecture-aware planning? | **PARCIAL** | ADRs ajudam. Sem enforcement automático de constraints arquiteturais. |
 | Detecta scope explosion? | **NÃO** | Ausente. |
 | Heurísticas de simplificação? | **PARCIAL** | Regra comportamental no CLAUDE.md. Não estrutural. |
@@ -239,7 +239,7 @@ Ordenados por impacto no caminho para deep agent:
 |---|---|---|---|
 | P0 | Failure memory persistente | `store/failure_store.py` | baixo |
 | P0 | Failure classification (hallucination/retrieval/execution) | `observability/` | médio |
-| P1 | Checkpointing de goal/task state | `store/agent_store.py` (Odisseu) | médio |
+| P1 | Checkpointing de goal/task state | `store/agent_store.py` (legado Odisseu) | médio |
 | P1 | Tracing retrieval→prompt→output com correlation ID | `observability/tracer.py` | médio |
 | P1 | Compression confidence score | `context/compression_quality.py` | baixo |
 | P2 | Memory decay / TTL por recência | `store/vector_store.py` | médio |

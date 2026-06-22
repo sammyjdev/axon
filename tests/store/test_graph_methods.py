@@ -15,7 +15,14 @@ from axon.store.session_store import SessionStore
 
 
 @pytest.fixture
-async def store(tmp_path: Path) -> AsyncGenerator[SessionStore, None]:
+async def store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> AsyncGenerator[SessionStore, None]:
+    # Isolated per-test SQLite store; pin both backends so these graph AND
+    # decision tests do not route to the shared postgres after the wave-2/3
+    # cutover flips.
+    monkeypatch.setenv("AXON_GRAPH_BACKEND", "sqlite")
+    monkeypatch.setenv("AXON_DECISIONS_BACKEND", "sqlite")
     s = SessionStore(db_path=tmp_path / "axon.db")
     await s.init()
     yield s
