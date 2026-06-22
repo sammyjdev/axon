@@ -175,7 +175,7 @@ def _resolve_decisions_backend(overrides: dict) -> str:
     raw = (
         os.environ.get("AXON_DECISIONS_BACKEND")
         or overrides.get("decisions_backend")
-        or "sqlite"
+        or "postgres"
     )
     backend = raw.strip().lower()
     if backend not in _VALID_DECISIONS_BACKENDS:

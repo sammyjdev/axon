@@ -234,7 +234,11 @@ class TestGraphStore:
 
 
 @pytest.fixture
-async def session_store(tmp_path) -> AsyncGenerator[SessionStore, None]:
+async def session_store(tmp_path, monkeypatch) -> AsyncGenerator[SessionStore, None]:
+    # Isolated per-test SQLite store; pin graph + decisions backends so these
+    # tests do not route to the shared postgres after the wave-2/3 cutover flips.
+    monkeypatch.setenv("AXON_GRAPH_BACKEND", "sqlite")
+    monkeypatch.setenv("AXON_DECISIONS_BACKEND", "sqlite")
     store = SessionStore(db_path=tmp_path / "test.db")
     await store.init()
     yield store
