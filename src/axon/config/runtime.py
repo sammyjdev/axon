@@ -139,7 +139,7 @@ def _resolve_fileindex_backend(overrides: dict) -> str:
     raw = (
         os.environ.get("AXON_FILEINDEX_BACKEND")
         or overrides.get("fileindex_backend")
-        or "sqlite"
+        or "postgres"
     )
     backend = raw.strip().lower()
     if backend not in _VALID_FILEINDEX_BACKENDS:

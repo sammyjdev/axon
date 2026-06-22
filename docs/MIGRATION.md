@@ -190,3 +190,44 @@ scope here).
 - The `--parity` flag performs counts-only comparison; no model is loaded.
 - A FAIL from parity means the pgvector index is incomplete - re-run indexing
   for the affected ctx before retrying.
+
+# file_index Cutover Runbook (dec-121 step 3, wave 1)
+
+The `file_index` (the incremental indexing cache) is selected by
+`AXON_FILEINDEX_BACKEND` env > `axon.toml [runtime] fileindex_backend` >
+default. As of this wave the default is `postgres`.
+
+## Why no data copy
+
+`file_index` is a CACHE (file -> sha1 -> done/pending), not a source of truth.
+Switching backends leaves an empty Postgres table that the NEXT index rebuilds -
+a one-time full re-index, the same incremental-cache behavior as the vector
+cutover. There is nothing to migrate.
+
+## Cutover sequence
+
+```bash
+docker compose up -d axon-postgres
+# Full index (Postgres file_index starts empty -> every file is processed once):
+AXON_FILEINDEX_BACKEND=postgres AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
+  PYTHONPATH=src .venv/Scripts/python.exe -m axon.cli.pb index --ctx knowledge
+# Verify populated:
+docker compose exec -T axon-postgres psql -U axon -d axon -tAc "SELECT count(*) FROM file_index;"
+# Second run MUST dedup (0 files, 0 chunks processed):
+AXON_FILEINDEX_BACKEND=postgres AXON_PG_URL="..." PYTHONPATH=src \
+  .venv/Scripts/python.exe -m axon.cli.pb index --ctx knowledge
+```
+
+Then set `fileindex_backend = "postgres"` in `axon.toml` (already the default).
+
+## Rollback
+
+Set `fileindex_backend = "sqlite"` (or `AXON_FILEINDEX_BACKEND=sqlite` for one
+command). The SQLite `file_index` is untouched by the Postgres path; the next
+sqlite index reconciles it against the repo. No data is lost.
+
+## Mixed backend is expected during step 3
+
+Only `file_index` moves this wave; the graph, decisions, and sessions stay on
+SQLite until their waves. This is safe because `_open_file_cache` owns a
+dedicated connection separate from the graph/decisions `SessionStore`.

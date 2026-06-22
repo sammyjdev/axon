@@ -4,6 +4,7 @@ query with 'OperationalError: no such table: file_index'."""
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,11 @@ async def test_open_file_cache_creates_file_index_table(
 
     db = tmp_path / "fresh.db"
     monkeypatch.setattr(pb, "_get_db_path", lambda: db)
+    # This regression is specific to the SQLite 003 migration path; pin the
+    # backend so it does not pick up the postgres default after the cutover flip.
+    monkeypatch.setattr(
+        pb, "_RUNTIME", dataclasses.replace(pb._RUNTIME, fileindex_backend="sqlite")
+    )
 
     cache, conn = await pb._open_file_cache()
     try:
