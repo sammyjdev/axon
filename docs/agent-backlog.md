@@ -255,3 +255,43 @@ shared column-list + helper module and per-method canonical-SQL docstrings.
 
 **Test plan.** `mypy` clean on the three files; a structural test that both impls
 are `isinstance(..., SessionRepository)` and round-trip each model identically.
+
+---
+
+## MS-9 - Clear pre-existing test debt + widen the CI / loop gate
+
+- Priority: P2 | Size: L | Status: ready | Depends-on: none | Finding: infra (loop gate)
+
+**Problem.** The full `pytest -q` is RED on master, but CI never caught it:
+`.github/workflows/ci.yml` only runs `pytest tests/router tests/resilience` (the
+`ruff` job is likewise scoped to router+resilience, with a TODO noting ~22
+pre-existing lint findings). The loop gate is therefore scoped to a green subset
+(`router + resilience + store + scripts`). The debt:
+- `tests/config/*`: assert outdated defaults - e.g.
+  `test_runtime_defaults_to_full_local_mode` expects `full-local` but the code
+  defaults to `hybrid-local` (solo-dev profile); also runtime_toml / profiles /
+  setup_script / configure.
+- `tests/benchmark/*`: counts depend on the active provider profile.
+- `tests/doctor` + `tests/hooks`: TTY + Windows exec-bit fragility (4 already
+  fixed on `chore/axon-loop-onboarding`; verify none remain).
+- ~22 ruff findings (I001/E501/F401) outside router+resilience (scripts/,
+  src/axon/store, tests/store).
+
+**Decision required (record per test).** For each failing test, decide whether
+the TEST is outdated or the CODE drifted - do NOT blindly skip. Headline call:
+is the default runtime mode meant to be `full-local` or `hybrid-local`? Fix the
+wrong side.
+
+**Acceptance criteria.**
+- [ ] `pytest -q` green on a clean checkout (each failure fixed with the
+      test/code mismatch resolved, or a recorded justified `skipif`).
+- [ ] `ruff check .` green (clear the ~22 findings).
+- [ ] `ci.yml` widened to run the broader suite + `ruff check .` (or a documented
+      green superset) so the debt cannot silently regrow.
+- [ ] The loop `gate_cmd` in `.claude/loop.yaml` widened to match the new CI gate.
+
+**Files.** `tests/config/*`, `tests/benchmark/*`, `src/axon/config/runtime.py`
+(if the default is the wrong side), `.github/workflows/ci.yml`,
+`.claude/loop.yaml`, the ~8 lint-debt files.
+
+**Test plan.** `pytest -q` green; `ruff check .` green; CI runs both on PR.
