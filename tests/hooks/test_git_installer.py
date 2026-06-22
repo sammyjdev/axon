@@ -30,7 +30,10 @@ def test_install_creates_executable_hooks(repo: Path) -> None:
         target = repo / ".git" / "hooks" / hook_name
         assert target.exists()
         assert f"git_event {event}" in target.read_text()
-        assert os.stat(target).st_mode & stat.S_IEXEC
+        # Windows has no POSIX executable bit; git runs the hook via the shell
+        # regardless, so only assert the bit where it is meaningful.
+        if os.name != "nt":
+            assert os.stat(target).st_mode & stat.S_IEXEC
 
 
 def test_install_is_idempotent(repo: Path) -> None:
