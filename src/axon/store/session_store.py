@@ -323,9 +323,18 @@ class SessionStore:
 
     async def _decisions(self):
         if self._decision_repo is None:
-            from axon.store.decision_repository import SqliteDecisionRepository
+            from axon.config.runtime import load_runtime_config
 
-            self._decision_repo = SqliteDecisionRepository(self)
+            rt = load_runtime_config()
+            if rt.decisions_backend == "postgres":
+                from axon.store.pg_decision_repository import PostgresDecisionRepository
+
+                self._decision_repo = PostgresDecisionRepository(rt.pg_url)
+                await self._decision_repo.ensure_schema()
+            else:
+                from axon.store.decision_repository import SqliteDecisionRepository
+
+                self._decision_repo = SqliteDecisionRepository(self)
         return self._decision_repo
 
     async def add_node(
