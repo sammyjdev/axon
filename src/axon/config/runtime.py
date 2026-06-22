@@ -101,6 +101,7 @@ class RuntimeConfig:
     vector_backend: str = "qdrant"
     fileindex_backend: str = "sqlite"
     graph_backend: str = "sqlite"
+    decisions_backend: str = "sqlite"
 
     @property
     def data_root(self) -> Path:
@@ -136,6 +137,8 @@ _VALID_FILEINDEX_BACKENDS = ("sqlite", "postgres")
 
 _VALID_GRAPH_BACKENDS = ("sqlite", "postgres")
 
+_VALID_DECISIONS_BACKENDS = ("sqlite", "postgres")
+
 
 def _resolve_fileindex_backend(overrides: dict) -> str:
     """Select the file_index backend: AXON_FILEINDEX_BACKEND env > axon.toml > default."""
@@ -167,6 +170,21 @@ def _resolve_graph_backend(overrides: dict) -> str:
     return backend
 
 
+def _resolve_decisions_backend(overrides: dict) -> str:
+    """Select the decisions backend: AXON_DECISIONS_BACKEND env > axon.toml > default."""
+    raw = (
+        os.environ.get("AXON_DECISIONS_BACKEND")
+        or overrides.get("decisions_backend")
+        or "sqlite"
+    )
+    backend = raw.strip().lower()
+    if backend not in _VALID_DECISIONS_BACKENDS:
+        raise ValueError(
+            f"Invalid decisions_backend {backend!r}; expected one of {list(_VALID_DECISIONS_BACKENDS)}"
+        )
+    return backend
+
+
 def _resolve_vector_backend(overrides: dict) -> str:
     """Select the vector backend: AXON_VECTOR_BACKEND env > axon.toml > default."""
     raw = os.environ.get("AXON_VECTOR_BACKEND") or overrides.get("vector_backend") or "pgvector"
@@ -190,7 +208,7 @@ def _load_toml_runtime_overrides() -> dict[str, str]:
     return {
         key: str(value)
         for key, value in runtime.items()
-        if key in {"mode", "engine_root", "vault_root", "active_profile", "vector_backend", "fileindex_backend", "graph_backend"}
+        if key in {"mode", "engine_root", "vault_root", "active_profile", "vector_backend", "fileindex_backend", "graph_backend", "decisions_backend"}
     }
 
 
@@ -679,6 +697,7 @@ def load_runtime_config() -> RuntimeConfig:
         vector_backend=_resolve_vector_backend(overrides),
         fileindex_backend=_resolve_fileindex_backend(overrides),
         graph_backend=_resolve_graph_backend(overrides),
+        decisions_backend=_resolve_decisions_backend(overrides),
     )
 
 
