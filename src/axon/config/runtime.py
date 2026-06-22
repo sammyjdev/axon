@@ -134,73 +134,46 @@ def _env_bool(name: str, default: bool) -> bool:
 
 _VALID_VECTOR_BACKENDS = ("qdrant", "pgvector")
 
-_VALID_FILEINDEX_BACKENDS = ("sqlite", "postgres")
 
-_VALID_GRAPH_BACKENDS = ("sqlite", "postgres")
+def _resolve_concern_backend(concern: str, overrides: dict) -> str:
+    """Select a relational backend for ``concern``.
 
-_VALID_DECISIONS_BACKENDS = ("sqlite", "postgres")
-
-_VALID_SESSIONS_BACKENDS = ("sqlite", "postgres")
+    Precedence: ``AXON_<CONCERN>_BACKEND`` env > ``AXON_DB_BACKEND`` env (master
+    switch) > per-concern toml > ``db_backend`` toml > default ``postgres``.
+    """
+    raw = (
+        os.environ.get(f"AXON_{concern.upper()}_BACKEND")
+        or os.environ.get("AXON_DB_BACKEND")
+        or overrides.get(f"{concern}_backend")
+        or overrides.get("db_backend")
+        or "postgres"
+    )
+    backend = raw.strip().lower()
+    if backend not in ("sqlite", "postgres"):
+        raise ValueError(
+            f"Invalid {concern}_backend {backend!r}; expected one of ['sqlite', 'postgres']"
+        )
+    return backend
 
 
 def _resolve_fileindex_backend(overrides: dict) -> str:
     """Select the file_index backend: AXON_FILEINDEX_BACKEND env > axon.toml > default."""
-    raw = (
-        os.environ.get("AXON_FILEINDEX_BACKEND")
-        or overrides.get("fileindex_backend")
-        or "postgres"
-    )
-    backend = raw.strip().lower()
-    if backend not in _VALID_FILEINDEX_BACKENDS:
-        raise ValueError(
-            f"Invalid fileindex_backend {backend!r}; expected one of {list(_VALID_FILEINDEX_BACKENDS)}"
-        )
-    return backend
+    return _resolve_concern_backend("fileindex", overrides)
 
 
 def _resolve_graph_backend(overrides: dict) -> str:
     """Select the graph backend: AXON_GRAPH_BACKEND env > axon.toml > default."""
-    raw = (
-        os.environ.get("AXON_GRAPH_BACKEND")
-        or overrides.get("graph_backend")
-        or "postgres"
-    )
-    backend = raw.strip().lower()
-    if backend not in _VALID_GRAPH_BACKENDS:
-        raise ValueError(
-            f"Invalid graph_backend {backend!r}; expected one of {list(_VALID_GRAPH_BACKENDS)}"
-        )
-    return backend
+    return _resolve_concern_backend("graph", overrides)
 
 
 def _resolve_decisions_backend(overrides: dict) -> str:
     """Select the decisions backend: AXON_DECISIONS_BACKEND env > axon.toml > default."""
-    raw = (
-        os.environ.get("AXON_DECISIONS_BACKEND")
-        or overrides.get("decisions_backend")
-        or "postgres"
-    )
-    backend = raw.strip().lower()
-    if backend not in _VALID_DECISIONS_BACKENDS:
-        raise ValueError(
-            f"Invalid decisions_backend {backend!r}; expected one of {list(_VALID_DECISIONS_BACKENDS)}"
-        )
-    return backend
+    return _resolve_concern_backend("decisions", overrides)
 
 
 def _resolve_sessions_backend(overrides: dict) -> str:
     """Select the sessions backend: AXON_SESSIONS_BACKEND env > axon.toml > default."""
-    raw = (
-        os.environ.get("AXON_SESSIONS_BACKEND")
-        or overrides.get("sessions_backend")
-        or "postgres"
-    )
-    backend = raw.strip().lower()
-    if backend not in _VALID_SESSIONS_BACKENDS:
-        raise ValueError(
-            f"Invalid sessions_backend {backend!r}; expected one of {list(_VALID_SESSIONS_BACKENDS)}"
-        )
-    return backend
+    return _resolve_concern_backend("sessions", overrides)
 
 
 def _resolve_vector_backend(overrides: dict) -> str:
@@ -223,11 +196,12 @@ def _load_toml_runtime_overrides() -> dict[str, str]:
     runtime = payload.get("runtime")
     if not isinstance(runtime, dict):
         return {}
-    return {
-        key: str(value)
-        for key, value in runtime.items()
-        if key in {"mode", "engine_root", "vault_root", "active_profile", "vector_backend", "fileindex_backend", "graph_backend", "decisions_backend", "sessions_backend"}
+    allowed = {
+        "mode", "engine_root", "vault_root", "active_profile", "vector_backend",
+        "fileindex_backend", "graph_backend", "decisions_backend", "sessions_backend",
+        "db_backend",
     }
+    return {key: str(value) for key, value in runtime.items() if key in allowed}
 
 
 def get_runtime_sources() -> dict[str, str]:
