@@ -309,3 +309,53 @@ The Postgres ADR insert dedups on the exact (project, title, created_at) natural
 key (so a copy re-run does not duplicate), whereas SQLite always inserts a new
 row. Because `created_at` carries microsecond precision, distinct ADRs never
 collide in normal use; the dedup only affects exact re-inserts (the migration).
+
+# session continuity Cutover Runbook (dec-121 step 3, wave 4)
+
+Session continuity (`session_memory` + `session_note` + `code_change` +
+`sessions` tables) is selected by `AXON_SESSIONS_BACKEND` env >
+`axon.toml [runtime] sessions_backend` > default. As of this wave the default is
+`postgres`. `SessionStore` delegates its 9 session methods to the configured
+`SessionRepository` (`SqliteSessionRepository` / `PostgresSessionRepository`).
+On Postgres the rows use plain columns; memory/note inserts return the new id
+via `RETURNING id`, `code_change` upserts on (commit_hash, file_path), and
+`sessions` upserts on id. The SQLite-only db-locked pending fallback in
+`save_code_change` has no Postgres equivalent (Postgres has no single-writer
+lock), so the Postgres `save_code_change` == `save_code_change_inner`.
+
+## Cutover sequence
+
+```bash
+docker compose up -d axon-postgres
+# Copy memories/notes/code_changes/sessions SQLite -> Postgres (idempotent):
+AXON_ENGINE="D:\axon" AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
+  PYTHONPATH=src .venv/Scripts/python.exe scripts/migrate_sessions.py
+# Count parity (order: session_note, sessions, code_change, session_memory):
+docker compose exec -T axon-postgres psql -U axon -d axon -tAc \
+  "SELECT (SELECT count(*) FROM session_note),(SELECT count(*) FROM sessions),(SELECT count(*) FROM code_change),(SELECT count(*) FROM session_memory);"
+# Parity: get_recent_changes / get_session_memories return the same rows under
+# AXON_SESSIONS_BACKEND=postgres.
+```
+
+Then set `sessions_backend = "postgres"` in `axon.toml` (already the default).
+
+## Rollback
+
+Set `sessions_backend = "sqlite"` (or `AXON_SESSIONS_BACKEND=sqlite` for one
+command). The copy is one-way and non-destructive, so the SQLite session tables
+are intact.
+
+## Note on session payload re-wrap
+
+`save_session` re-wraps `context_payload` as `{"recall": ...}`, so the copy
+re-saves sessions with an empty advisory payload rather than the verbatim
+original JSON. Session ids and lifecycle (agent/repo/ended_at) are preserved;
+the payload is advisory and the live `sessions` data is tiny, so this is
+acceptable. If exact payload fidelity is ever required, add a `save_session_raw`
+that writes the row verbatim.
+
+## This closes dec-121 step 3
+
+All four per-concern backends (file_index, graph, decisions, sessions) now
+default to `postgres`. The `AXON_DB_BACKEND` master switch (Task 7) lets a single
+env var flip all four at once, with per-concern flags still taking precedence.
