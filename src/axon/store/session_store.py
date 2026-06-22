@@ -105,6 +105,7 @@ class SessionStore:
         self._lock = asyncio.Lock()
         self._graph_repo = None
         self._decision_repo = None
+        self._session_repo = None
 
     async def _connection(self) -> aiosqlite.Connection:
         if self._conn is None:
@@ -180,83 +181,28 @@ class SessionStore:
     # ── Session Memory ────────────────────────────────────────────────────────
 
     async def save_session_memory(self, mem: SessionMemory) -> int:
-        async with self._lock:
-            db = await self._connection()
-            cursor = await db.execute(
-                "INSERT INTO session_memory (project, summary, raw_turns, created_at)"
-                " VALUES (?, ?, ?, ?)",
-                (mem.project, mem.summary, mem.raw_turns, mem.created_at.isoformat()),
-            )
-            await db.commit()
-            return cursor.lastrowid  # type: ignore[return-value]
+        repo = await self._sessions()
+        return await repo.save_session_memory(mem)
 
     async def get_session_memories(self, project: str, limit: int = 3) -> list[SessionMemory]:
-        async with self._lock:
-            db = await self._connection()
-            db.row_factory = aiosqlite.Row
-            rows = await db.execute_fetchall(
-                "SELECT * FROM session_memory WHERE project = ? ORDER BY created_at DESC LIMIT ?",
-                (project, limit),
-            )
-        return [
-            SessionMemory(
-                id=r["id"],
-                project=r["project"],
-                summary=r["summary"],
-                raw_turns=r["raw_turns"],
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        repo = await self._sessions()
+        return await repo.get_session_memories(project, limit)
 
     # ── Session Note ──────────────────────────────────────────────────────────
 
     async def save_note(self, note: SessionNote) -> int:
-        async with self._lock:
-            db = await self._connection()
-            cursor = await db.execute(
-                "INSERT INTO session_note (project, body, created_at) VALUES (?, ?, ?)",
-                (note.project, note.body, note.created_at.isoformat()),
-            )
-            await db.commit()
-            return cursor.lastrowid  # type: ignore[return-value]
+        repo = await self._sessions()
+        return await repo.save_note(note)
 
     async def get_notes(self, project: str, limit: int = 10) -> list[SessionNote]:
-        async with self._lock:
-            db = await self._connection()
-            db.row_factory = aiosqlite.Row
-            rows = await db.execute_fetchall(
-                "SELECT * FROM session_note WHERE project = ? ORDER BY created_at DESC LIMIT ?",
-                (project, limit),
-            )
-        return [
-            SessionNote(
-                id=r["id"],
-                project=r["project"],
-                body=r["body"],
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        repo = await self._sessions()
+        return await repo.get_notes(project, limit)
 
     # ── Code Change ───────────────────────────────────────────────────────────
 
     async def _save_code_change_inner(self, change: CodeChange) -> None:
-        async with self._lock:
-            db = await self._connection()
-            await db.execute(
-                "INSERT OR REPLACE INTO code_change"
-                " (commit_hash, file_path, diff_summary, why, changed_at)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (
-                    change.commit_hash,
-                    change.file_path,
-                    change.diff_summary,
-                    change.why,
-                    change.changed_at.isoformat(),
-                ),
-            )
-            await db.commit()
+        """Thin delegator kept for monkeypatch-based tests."""
+        return await (await self._sessions()).save_code_change_inner(change)
 
     async def save_code_change(self, change: CodeChange) -> None:
         try:
@@ -285,23 +231,8 @@ class SessionStore:
             )
 
     async def get_recent_changes(self, file_path: str, limit: int = 5) -> list[CodeChange]:
-        async with self._lock:
-            db = await self._connection()
-            db.row_factory = aiosqlite.Row
-            rows = await db.execute_fetchall(
-                "SELECT * FROM code_change WHERE file_path = ? ORDER BY changed_at DESC LIMIT ?",
-                (file_path, limit),
-            )
-        return [
-            CodeChange(
-                commit_hash=r["commit_hash"],
-                file_path=r["file_path"],
-                diff_summary=r["diff_summary"],
-                why=r["why"],
-                changed_at=datetime.fromisoformat(r["changed_at"]),
-            )
-            for r in rows
-        ]
+        repo = await self._sessions()
+        return await repo.get_recent_changes(file_path, limit)
 
     # ── Graph / Decisions ─────────────────────────────────────────────────────
 
@@ -336,6 +267,13 @@ class SessionStore:
 
                 self._decision_repo = SqliteDecisionRepository(self)
         return self._decision_repo
+
+    async def _sessions(self):
+        if self._session_repo is None:
+            from axon.store.session_repository import SqliteSessionRepository
+
+            self._session_repo = SqliteSessionRepository(self)
+        return self._session_repo
 
     async def add_node(
         self,
@@ -407,38 +345,13 @@ class SessionStore:
     async def save_session(
         self, session_id: str, agent: str, repo: str, *, context_payload: str = ""
     ) -> None:
-        async with self._lock:
-            db = await self._connection()
-            await db.execute(
-                "INSERT OR REPLACE INTO sessions"
-                " (id, agent, repo, started_at, ended_at, context_payload)"
-                " VALUES (?, ?, ?, ?, NULL, ?)",
-                (
-                    session_id,
-                    agent,
-                    repo,
-                    datetime.now(UTC).isoformat(),
-                    json.dumps({"recall": context_payload}),
-                ),
-            )
-            await db.commit()
+        sess = await self._sessions()
+        return await sess.save_session(session_id, agent, repo, context_payload=context_payload)
 
     async def end_session(self, session_id: str) -> str | None:
         """Mark a session ended; return its repo, or None if the id is unknown."""
-        async with self._lock:
-            db = await self._connection()
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT repo FROM sessions WHERE id = ?", (session_id,)
-            )
-            row = await cursor.fetchone()
-            if row is not None:
-                await db.execute(
-                    "UPDATE sessions SET ended_at = ? WHERE id = ?",
-                    (datetime.now(UTC).isoformat(), session_id),
-                )
-                await db.commit()
-        return row["repo"] if row is not None else None
+        sess = await self._sessions()
+        return await sess.end_session(session_id)
 
     async def next_decision_id(self) -> str:
         """Return the next sequential decision id (dec-NNN, zero-padded)."""
@@ -450,6 +363,8 @@ class SessionStore:
             await self._graph_repo.close()
         if self._decision_repo is not None and hasattr(self._decision_repo, "close"):
             await self._decision_repo.close()
+        if self._session_repo is not None and hasattr(self._session_repo, "close"):
+            await self._session_repo.close()
         async with self._lock:
             if self._conn is not None:
                 await self._conn.close()
@@ -469,7 +384,7 @@ class SessionStore:
         async def sink(payload: dict) -> None:
             kind = payload.get("kind")
             if kind == "code_change":
-                await self._save_code_change_inner(
+                await (await self._sessions()).save_code_change_inner(
                     CodeChange(
                         commit_hash=payload["commit_hash"],
                         file_path=payload["file_path"],
