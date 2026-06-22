@@ -67,12 +67,16 @@ class TestCIMode:
 
 class TestApplyMode:
     def test_apply_without_tty_refuses(self, _isolate: Path) -> None:
-        result = runner.invoke(app, ["doctor", "--apply"])
+        # Force no-TTY deterministically (running from a real terminal would
+        # otherwise leave os.isatty(0) True and the refusal path unexercised).
+        with patch("os.isatty", return_value=False):
+            result = runner.invoke(app, ["doctor", "--apply"])
         assert result.exit_code == 1
-        assert "TTY" in result.output
+        assert "TTY" in result.stderr
 
     def test_apply_and_ci_mutually_exclusive(self, _isolate: Path) -> None:
         with patch("os.isatty", return_value=True):
             result = runner.invoke(app, ["doctor", "--apply", "--ci"])
         assert result.exit_code == 2
-        assert "mutuamente exclusivos" in result.stdout or "mutually" in result.stdout
+        # Error goes to stderr (Click >= 8.2 no longer mixes streams).
+        assert "mutuamente exclusivos" in result.stderr or "mutually" in result.stderr

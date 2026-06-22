@@ -1,0 +1,39 @@
+# Onboards axon to the global agentic loop (~/.claude/commands/agent-*.md +
+# ~/.claude/harness-tiers/). See docs/superpowers/specs/*loop-multi-repo-config*.
+
+# wiring
+repo_slug: sammyjdev/axon
+default_branch: master            # axon uses master, not main
+# Gate mirrors what CI actually enforces (router + resilience) and extends pytest
+# to the working area for the current backlog (store + scripts). It does NOT run
+# the full suite: tests/config, tests/doctor, tests/hooks, tests/benchmark carry
+# pre-existing failures that CI never gated (ci.yml only runs router+resilience).
+# See the "test-debt + expand CI" backlog item before widening this.
+gate_cmd: "ruff check src/axon/router src/axon/resilience tests/router tests/resilience && pytest tests/router tests/resilience tests/store tests/scripts -q"
+setup_cmd: "pip install -e \".[dev]\""   # same as CI (ci.yml); shared venv already provisioned
+labels:
+  ready: agent:ready
+  blocked: agent:blocked
+
+# posture (axon is an internal context engine, not a customer-facing product)
+posture: internal
+risk_areas:
+  - restricted-context   # ctx=work; DENY_RESTRICTED_TOOL_WRITE (dec-109) - never bypass
+  - destructive-tools    # AXON_ALLOW_DESTRUCTIVE gate; default deny
+  - secrets              # .env / API keys - never commit
+  - chunker              # Java chunker is a release gate (D5) - do not weaken its tests
+  - migration            # relational backend cutover (dec-121); SQLite rollback must survive
+quality_rubric:
+  testability: true
+  scalability: true
+  progression: true
+
+# Notes for the loop operator (axon-specific):
+# - Worktrees are SAFE here: the root conftest.py inserts the worktree-relative
+#   src (no editable install), so per-worktree tests validate that worktree's code.
+# - pytest can HANG ON EXIT (unclosed asyncpg pool past the printed summary);
+#   wrap gate runs in a timeout and read the printed "N passed/failed".
+# - The full `pytest -q` is RED on master from pre-existing test debt (config mode
+#   default, benchmark, doctor/hooks TTY+Windows) - that is NOT a regression and
+#   NOT an env leak; it is simply outside the CI gate. Do not treat it as a base
+#   failure; widen the gate only after the test-debt backlog item lands.
