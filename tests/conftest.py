@@ -37,6 +37,7 @@ def _isolate_axon_engine(
     monkeypatch.setenv("AXON_GRAPH_BACKEND", "sqlite")
     monkeypatch.setenv("AXON_DECISIONS_BACKEND", "sqlite")
     monkeypatch.setenv("AXON_FILEINDEX_BACKEND", "sqlite")
+    monkeypatch.setenv("AXON_SESSIONS_BACKEND", "sqlite")
 
     # Best-effort redirect of the two module-level TraceStore singletons.
     # Import lazily so this conftest doesn't force a load when a test only
