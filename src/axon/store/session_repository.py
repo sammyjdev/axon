@@ -40,8 +40,6 @@ def _pending_paths():
 
 
 def _warnings_log():
-    from pathlib import Path
-
     from axon.config.data_root import data_root
 
     return data_root() / "capture-warnings.jsonl"
