@@ -338,9 +338,18 @@ class SessionStore:
 
     async def _graph(self):
         if self._graph_repo is None:
-            from axon.store.graph_repository import SqliteGraphRepository
+            from axon.config.runtime import load_runtime_config
 
-            self._graph_repo = SqliteGraphRepository(self)
+            rt = load_runtime_config()
+            if rt.graph_backend == "postgres":
+                from axon.store.pg_graph_repository import PostgresGraphRepository
+
+                self._graph_repo = PostgresGraphRepository(rt.pg_url)
+                await self._graph_repo.ensure_schema()
+            else:
+                from axon.store.graph_repository import SqliteGraphRepository
+
+                self._graph_repo = SqliteGraphRepository(self)
         return self._graph_repo
 
     async def add_node(
@@ -501,6 +510,8 @@ class SessionStore:
         return f"dec-{count + 1:03d}"
 
     async def close(self) -> None:
+        if self._graph_repo is not None and hasattr(self._graph_repo, "close"):
+            await self._graph_repo.close()
         async with self._lock:
             if self._conn is not None:
                 await self._conn.close()
