@@ -193,7 +193,7 @@ def _resolve_sessions_backend(overrides: dict) -> str:
     raw = (
         os.environ.get("AXON_SESSIONS_BACKEND")
         or overrides.get("sessions_backend")
-        or "sqlite"
+        or "postgres"
     )
     backend = raw.strip().lower()
     if backend not in _VALID_SESSIONS_BACKENDS:
