@@ -117,12 +117,17 @@ class PostgresGraphRepository:
                 next_frontier: set[str] = set()
                 for row in rows:
                     edges.append(
-                        {"source": row["source_id"], "target": row["target_id"], "type": row["type"]}
+                        {
+                            "source": row["source_id"],
+                            "target": row["target_id"],
+                            "type": row["type"],
+                        }
                     )
                     if row["target_id"] not in visited:
                         visited.add(row["target_id"])
                         next_frontier.add(row["target_id"])
                 frontier = next_frontier
+        edges.sort(key=lambda e: (e["source"], e["target"], e["type"]))
         return {"root": node_id, "nodes": sorted(visited), "edges": edges}
 
     async def shortest_path(self, from_node, to_node, max_depth: int = 10):
@@ -159,7 +164,9 @@ class PostgresGraphRepository:
     async def all_nodes(self) -> list[dict[str, object]]:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            rows = await con.fetch("SELECT id, type, label, payload FROM nodes ORDER BY id")
+            rows = await con.fetch(
+                'SELECT id, type, label, payload FROM nodes ORDER BY id COLLATE "C"'
+            )
         return [
             {"id": r["id"], "type": r["type"], "label": r["label"],
              "payload": json.loads(r["payload"]) if r["payload"] else {}}
@@ -171,7 +178,7 @@ class PostgresGraphRepository:
         async with pool.acquire() as con:
             rows = await con.fetch(
                 "SELECT source_id, target_id, type, payload FROM edges"
-                " ORDER BY source_id, target_id, type"
+                ' ORDER BY source_id COLLATE "C", target_id COLLATE "C", type COLLATE "C"'
             )
         return [
             Edge(source_id=r["source_id"], target_id=r["target_id"], type=r["type"],
