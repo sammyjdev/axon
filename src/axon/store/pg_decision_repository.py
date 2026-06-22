@@ -64,6 +64,10 @@ class PostgresDecisionRepository:
                 )
                 """
             )
+            await con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_adr_project_title_created"
+                " ON adr (project, title, created_at)"
+            )
 
     async def save_decision(self, decision: Decision) -> None:
         pool = await self._ensure_pool()
@@ -133,12 +137,21 @@ class PostgresDecisionRepository:
     async def save_adr_inner(self, adr: ADR) -> int:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            return await con.fetchval(
+            new_id = await con.fetchval(
                 "INSERT INTO adr (project, title, context, decision, rationale, created_at)"
-                " VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+                " VALUES ($1, $2, $3, $4, $5, $6)"
+                " ON CONFLICT (project, title, created_at) DO NOTHING"
+                " RETURNING id",
                 adr.project, adr.title, adr.context, adr.decision, adr.rationale,
                 adr.created_at.isoformat(),
             )
+            if new_id is None:
+                # Row already existed - fetch its id.
+                new_id = await con.fetchval(
+                    "SELECT id FROM adr WHERE project=$1 AND title=$2 AND created_at=$3",
+                    adr.project, adr.title, adr.created_at.isoformat(),
+                )
+            return new_id
 
     async def save_adr(self, adr: ADR) -> int:
         # No SQLite-lock fallback on Postgres - a direct insert.
