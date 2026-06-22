@@ -6,6 +6,7 @@ import shlex
 import shutil
 import subprocess
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -69,6 +70,66 @@ _CONFIGURE_MEMORY_OPTIONS = ("light", "full")
 
 def _get_db_path() -> Path:
     return _RUNTIME.db_path
+
+
+async def _open_file_cache() -> tuple[object, object]:
+    """Open a FileCache backed by the configured backend (sqlite or postgres).
+
+    Returns (FileCache, close-handle) - caller must await handle.close().
+    """
+    if _RUNTIME.fileindex_backend == "postgres":
+        from axon.store.pg_file_cache import PostgresFileCache
+
+        cache = PostgresFileCache(dsn=_RUNTIME.pg_url)
+        await cache.ensure_schema()
+        return cache, cache  # cache.close() closes the pool
+
+    import asyncio as _asyncio
+
+    import aiosqlite
+
+    from axon.store.file_cache import SqliteFileCache
+    from axon.store.session_store import _apply_migrations
+
+    db_path = _get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_conn = await aiosqlite.connect(str(db_path))
+    # Ensure the file_index table (003 migration) exists before the cache
+    # issues SELECT/INSERT against it - otherwise a fresh install crashes
+    # with "no such table: file_index". _apply_migrations is idempotent.
+    await _apply_migrations(db_conn)
+    db_lock = _asyncio.Lock()
+    return SqliteFileCache(db_conn, db_lock), db_conn
+
+
+@asynccontextmanager
+async def _index_lock_guard(*, fatal: bool, label: str = "index"):
+    """Hold the machine-wide index lock (on the data_root) for an index op.
+
+    Every index entry point (index / index-dev / watch / scan / howto reindex /
+    expansion publish) shares this one lock root so they mutually exclude on the
+    same machine. Yields True when the lock was acquired; on contention it
+    either exits the CLI cleanly (fatal=True) or yields False so a watcher/loop
+    can skip without crashing (fatal=False).
+    """
+    from axon.store.index_lock import IndexLockError, acquire_index_lock
+
+    acquired = False
+    try:
+        async with acquire_index_lock(_RUNTIME.data_root):
+            acquired = True
+            yield True
+            return
+    except IndexLockError as exc:
+        if acquired:
+            # The guarded body raised IndexLockError, not the acquisition -
+            # re-raise instead of miscatching it as lock contention.
+            raise
+        if fatal:
+            typer.echo(f"Outro indexador ja esta em execucao: {exc}")
+            raise typer.Exit(1) from exc
+        typer.echo(f"[{label}] index lock ocupado por outro processo - pulando")
+    yield False
 
 
 def _resolve_ctx(ctx: str | None, require_work_confirmation: bool = True) -> str | None:
@@ -139,6 +200,7 @@ async def _compress_context_pipeline(
             after_tokens=after_tokens,
             reduction_tokens=reduction,
             reduction_pct=round(reduction_pct, 1),
+            kind="compression",
         )
     )
 
@@ -380,9 +442,9 @@ async def _semantic_search_hits(
     top_k: int = 5,
 ) -> list[dict]:
     from axon.embedder.engine import EmbedderEngine
-    from axon.store.vector_store import VectorStore
+    from axon.store.vector_store_factory import make_vector_store
 
-    store = VectorStore(url=_RUNTIME.qdrant_url)
+    store = make_vector_store(_RUNTIME)
     engine = EmbedderEngine()
     try:
         query_vector = engine.embed_one(query)
@@ -793,6 +855,7 @@ def doctor(
     typer.echo(f"platform: {report.platform}")
     typer.echo(f"configured_mode: {report.configured_mode or runtime.mode}")
     typer.echo(f"recommended_mode: {report.recommended_mode}")
+    typer.echo(f"vector_backend: {runtime.vector_backend}")
     if report.active_profile:
         typer.echo(f"active_profile: {report.active_profile}")
     if report.profile_mode:
@@ -878,8 +941,8 @@ def init(
                 "[runtime]",
                 f'mode = "{normalized_mode}"',
                 'active_profile = "solo-dev"',
-                f'engine_root = "{engine_root}"',
-                f'vault_root = "{vault_root}"',
+                f'engine_root = "{engine_root.as_posix()}"',
+                f'vault_root = "{vault_root.as_posix()}"',
                 "",
                 "[profiles.solo-dev]",
                 'description = "Single developer default"',
@@ -1504,17 +1567,17 @@ def adr_hook_install(
         str | None, typer.Option("--path", help="Path do repositório git (default: cwd)")
     ] = None,
 ) -> None:
-    """[deprecated] Use ``pb hooks install --apply`` (dec-113)."""
+    """[deprecated] Use ``axon hooks install --apply`` (dec-113)."""
     import warnings
 
     warnings.warn(
-        "`pb adr hook` is deprecated. Use `pb hooks install --apply`. "
+        "`axon adr hook` is deprecated. Use `axon hooks install --apply`. "
         "See dec-113 for the new diagnostic-first flow.",
         DeprecationWarning,
         stacklevel=2,
     )
     typer.echo(
-        "[axon] `pb adr hook` is deprecated — use `pb hooks install --apply`."
+        "[axon] `axon adr hook` is deprecated — use `axon hooks install --apply`."
     )
     # Backwards-compatible behaviour: keep installing the old single hook
     # so existing users don't break mid-upgrade.
@@ -2115,27 +2178,31 @@ def _reindex_howtos(howto_paths: list[Path]) -> None:
     try:
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
-        from axon.store.vector_store import VectorStore
+        from axon.store.vector_store_factory import make_vector_store
     except ImportError as exc:
         typer.echo(f"[promote] reindex pulado: {exc}")
         return
 
     async def _reindex() -> int:
         engine = EmbedderEngine()
-        store = VectorStore(url=_RUNTIME.qdrant_url)
+        store = make_vector_store(_RUNTIME)
+        file_cache, db_conn = await _open_file_cache()
         try:
             await store.ensure_collections()
             total_chunks = 0
             for howto in howto_paths:
                 try:
-                    _, chunks = await index_path(
-                        howto,
-                        engine=engine,
-                        store=store,
-                        vault_root=_RUNTIME.vault_root,
-                        languages={"markdown"},
-                    )
-                    total_chunks += chunks
+                    async with _index_lock_guard(fatal=False, label="howto") as acquired:
+                        if acquired:
+                            _, chunks = await index_path(
+                                howto,
+                                engine=engine,
+                                store=store,
+                                vault_root=_RUNTIME.vault_root,
+                                file_cache=file_cache,
+                                languages={"markdown"},
+                            )
+                            total_chunks += chunks
                 except Exception as exc:
                     typer.echo(
                         f"[promote] reindex falhou para {howto.name}: {exc}",
@@ -2144,6 +2211,7 @@ def _reindex_howtos(howto_paths: list[Path]) -> None:
             return total_chunks
         finally:
             await store.close()
+            await db_conn.close()
 
     try:
         chunks = asyncio.run(_reindex())
@@ -2414,30 +2482,61 @@ def index(
         raise typer.Exit(1)
 
     async def _index() -> None:
+        import uuid
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
-        from axon.store.vector_store import VectorStore
+        from axon.store.vector_store_factory import make_vector_store
+        from axon.observability.trace_store import TraceStore
 
         engine = EmbedderEngine()
-        store = VectorStore(url=_RUNTIME.qdrant_url)
+        store = make_vector_store(_RUNTIME)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
+        file_cache, db_conn = await _open_file_cache()
+
+        # Emit index-start activity into TraceStore (best-effort; never breaks indexing)
+        _recorder = None
+        try:
+            _trace_store = TraceStore(_RUNTIME)
+            _recorder = _trace_store.recorder(
+                trace_id=uuid.uuid4().hex,
+                caller="cli",
+            )
+            _recorder.append_stage(
+                "index",
+                payload={"phase": "start", "target": str(target)},
+            )
+        except Exception:
+            pass
 
         try:
             await store.ensure_collections()
             await graph_store.connect()
             vault_root = _RUNTIME.vault_root
-            indexed_files, total_chunks = await index_path(
-                target,
-                engine=engine,
-                store=store,
-                vault_root=vault_root,
-                forced_ctx=resolved_ctx,
-                graph_store=graph_store,
-            )
+            async with _index_lock_guard(fatal=True):
+                indexed_files, total_chunks = await index_path(
+                    target,
+                    engine=engine,
+                    store=store,
+                    vault_root=vault_root,
+                    file_cache=file_cache,
+                    forced_ctx=resolved_ctx,
+                    graph_store=graph_store,
+                )
         finally:
             await store.close()
             await graph_store.close()
+            await db_conn.close()
+
+        # Emit index-done stage (best-effort)
+        try:
+            if _recorder is not None:
+                _recorder.append_stage(
+                    "index",
+                    payload={"phase": "done", "symbols": total_chunks},
+                )
+        except Exception:
+            pass
 
         typer.echo(f"Indexação concluída: {indexed_files} arquivo(s), {total_chunks} chunk(s)")
         if indexed_files == 0:
@@ -2501,11 +2600,12 @@ def index_dev(
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
-        from axon.store.vector_store import VectorStore
+        from axon.store.vector_store_factory import make_vector_store
 
         engine = EmbedderEngine()
-        store = VectorStore(url=_RUNTIME.qdrant_url)
+        store = make_vector_store(_RUNTIME)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
+        file_cache, db_conn = await _open_file_cache()
 
         try:
             await store.ensure_collections()
@@ -2513,15 +2613,17 @@ def index_dev(
             total_files = 0
             total_chunks = 0
             for entry in selected:
-                indexed_files, chunks = await index_path(
-                    entry.path,
-                    engine=engine,
-                    store=store,
-                    vault_root=_RUNTIME.vault_root,
-                    forced_ctx=entry.ctx,
-                    graph_store=graph_store,
-                    languages=set(entry.languages),
-                )
+                async with _index_lock_guard(fatal=True):
+                    indexed_files, chunks = await index_path(
+                        entry.path,
+                        engine=engine,
+                        store=store,
+                        vault_root=_RUNTIME.vault_root,
+                        file_cache=file_cache,
+                        forced_ctx=entry.ctx,
+                        graph_store=graph_store,
+                        languages=set(entry.languages),
+                    )
                 total_files += indexed_files
                 total_chunks += chunks
                 typer.echo(
@@ -2530,6 +2632,7 @@ def index_dev(
         finally:
             await store.close()
             await graph_store.close()
+            await db_conn.close()
 
         typer.echo(f"Indexação dev concluída: {total_files} arquivo(s), {total_chunks} chunk(s)")
 
@@ -2559,24 +2662,31 @@ def watch(
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.graph_store import GraphStore
-        from axon.store.vector_store import VectorStore
+        from axon.store.vector_store_factory import make_vector_store
         from axon.watcher.main import run_watcher
 
         engine = EmbedderEngine()
-        store = VectorStore(url=_RUNTIME.qdrant_url)
+        store = make_vector_store(_RUNTIME)
         graph_store = GraphStore(url=_RUNTIME.redis_url)
+        file_cache, db_conn = await _open_file_cache()
 
         async def _on_file(changed_path: Path) -> None:
-            indexed_files, total_chunks = await index_path(
-                changed_path,
-                engine=engine,
-                store=store,
-                vault_root=vault_root,
-                forced_ctx=resolved_ctx,
-                graph_store=graph_store,
-            )
-            if indexed_files > 0:
-                typer.echo(f"[watch] Reindexado: {changed_path} ({total_chunks} chunk(s))")
+            # Non-fatal: if a manual `pb index` holds the lock, skip this change
+            # rather than crash the watcher; the next event re-indexes it.
+            async with _index_lock_guard(fatal=False, label="watch") as acquired:
+                if not acquired:
+                    return
+                indexed_files, total_chunks = await index_path(
+                    changed_path,
+                    engine=engine,
+                    store=store,
+                    vault_root=vault_root,
+                    file_cache=file_cache,
+                    forced_ctx=resolved_ctx,
+                    graph_store=graph_store,
+                )
+                if indexed_files > 0:
+                    typer.echo(f"[watch] Reindexado: {changed_path} ({total_chunks} chunk(s))")
 
         try:
             await store.ensure_collections()
@@ -2585,6 +2695,7 @@ def watch(
         finally:
             await store.close()
             await graph_store.close()
+            await db_conn.close()
 
     try:
         asyncio.run(_watch())
@@ -2758,26 +2869,30 @@ def scan(
                 from axon.embedder.engine import EmbedderEngine
                 from axon.embedder.pipeline import index_path
                 from axon.store.graph_store import GraphStore
-                from axon.store.vector_store import VectorStore
+                from axon.store.vector_store_factory import make_vector_store
 
                 engine = EmbedderEngine()
-                store = VectorStore(url=_RUNTIME.qdrant_url)
+                store = make_vector_store(_RUNTIME)
                 graph_store = GraphStore(url=_RUNTIME.redis_url)
+                file_cache, db_conn = await _open_file_cache()
                 try:
                     await store.ensure_collections()
                     await graph_store.connect()
-                    indexed, chunks = await index_path(
-                        entry.path,
-                        engine=engine,
-                        store=store,
-                        vault_root=_RUNTIME.vault_root,
-                        forced_ctx=entry.ctx,
-                        graph_store=graph_store,
-                    )
-                    typer.echo(f"  {entry.name}: {indexed} arquivo(s), {chunks} chunk(s)")
+                    async with _index_lock_guard(fatal=True):
+                        indexed, chunks = await index_path(
+                            entry.path,
+                            engine=engine,
+                            store=store,
+                            vault_root=_RUNTIME.vault_root,
+                            file_cache=file_cache,
+                            forced_ctx=entry.ctx,
+                            graph_store=graph_store,
+                        )
+                        typer.echo(f"  {entry.name}: {indexed} arquivo(s), {chunks} chunk(s)")
                 finally:
                     await store.close()
                     await graph_store.close()
+                    await db_conn.close()
 
             asyncio.run(_index_one())
 

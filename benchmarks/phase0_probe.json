@@ -1,0 +1,42 @@
+{
+  "ort_providers": [
+    "AzureExecutionProvider",
+    "CPUExecutionProvider"
+  ],
+  "ort_device": "CPU",
+  "ort_default_intra_threads": 0,
+  "ort_default_inter_threads": 0,
+  "fastembed_version": "0.8.0",
+  "fastembed_init_params": [
+    "self",
+    "model_name",
+    "cache_dir",
+    "threads",
+    "providers",
+    "cuda",
+    "device_ids",
+    "lazy_load",
+    "kwargs"
+  ],
+  "fastembed_has_providers_kwarg": true,
+  "rglob_total_entries": 30129,
+  "rglob_wall_sec": 0.342,
+  "gitlsfiles_count": 467,
+  "gitlsfiles_wall_sec": 0.019,
+  "chunk_total": 2579,
+  "chunk_big_gt2000chars": 115,
+  "chunk_big_pct": 4.5,
+  "chunk_p50_chars": 296,
+  "chunk_p90_chars": 1148,
+  "chunk_p99_chars": 6095,
+  "chunk_max_chars": 52681,
+  "chunkid_collisions": 0,
+  "chunkid_collision_samples": [],
+  "qdrant_points": {
+    "knowledge": 0,
+    "work": 0,
+    "career": 0,
+    "personal": 4555,
+    "saas": 0
+  }
+}

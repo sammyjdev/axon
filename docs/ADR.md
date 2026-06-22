@@ -105,15 +105,20 @@ project.
 - Rationale: token savings are only useful when retrieval fidelity survives the
   compression pipeline.
 
-## ADR-011: AXON stays agent-agnostic; Odisseu is an optional consumer
+## ADR-011: AXON stays agent-agnostic
 
+- Status: the agent-agnostic positioning stands. The original "Odisseu is an
+  optional external consumer" framing is **superseded by dec-116**: the Odisseu
+  project became GLYPH, now an integrated graph-retrieval dependency, not an
+  optional external consumer.
 - Decision: position AXON as a self-hosted context, memory, and
   governance engine for AI systems rather than as a deep agent runtime.
 - Shape:
   - AXON exposes CLI, MCP, and future API/profile surfaces;
-  - Odisseu may consume AXON, but AXON must remain useful without
-    Odisseu;
-  - Odisseu must remain free to support non-AXON backends.
+  - AXON stays usable by any agent (Claude Code, Codex, Cursor) and is not
+    coupled to a single consumer;
+  - GLYPH is consumed through a clean, independently-tested dependency boundary
+    (dec-116), kept swappable.
 - Rationale: deep-agent-first positioning would narrow adoption, overfit the
   engine to one consumer, and reduce AXON's value as shared
   infrastructure for other developers and teams.

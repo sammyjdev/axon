@@ -3,6 +3,12 @@
 The summary must reflect compression-only statistics (records where
 reduction_pct > 0), not no-op records from instrumented tools that
 write zero-reduction entries.
+
+T-104: summary() now pre-filters via is_compression_record() so that:
+  (a) records with kind="tool_io" are excluded
+  (b) legacy records without a kind field but with a non-compression engine
+      (e.g. engine="get_graph_path") are excluded by the engine allowlist
+  (c) legitimate records with kind="compression" and a real engine are counted
 """
 
 from __future__ import annotations
@@ -10,8 +16,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-
-import pytest
 
 from axon.observability import compression_telemetry as ct
 from axon.observability.compression_telemetry import (
@@ -30,6 +34,7 @@ def _record(
     before: int = 1000,
     after: int | None = None,
     engine: str = "caveman/phi3+rtk",
+    kind: str = "compression",
 ) -> CompressionRecord:
     after = after if after is not None else int(before * (1 - pct / 100))
     return CompressionRecord(
@@ -41,6 +46,7 @@ def _record(
         after_tokens=after,
         reduction_tokens=before - after,
         reduction_pct=pct,
+        kind=kind,  # type: ignore[arg-type]
     )
 
 
@@ -56,31 +62,76 @@ def test_empty_file_returns_zeros(tmp_path: Path) -> None:
     assert s["by_engine"] == {}
 
 
-def test_only_zero_reduction_records(tmp_path: Path) -> None:
+def test_only_tool_io_records_excluded(tmp_path: Path) -> None:
+    """(a) tool_io records are fully excluded from summary — count_total == 0."""
     store = _make_store(tmp_path)
     for _ in range(5):
-        store.append(_record(0.0, before=100, after=100, engine="get_graph_path"))
+        store.append(_record(0.0, before=100, after=100, engine="get_graph_path", kind="tool_io"))
     s = store.summary()
-    assert s["count_total"] == 5
+    assert s["count_total"] == 0
     assert s["count_compressed"] == 0
     assert s["avg_reduction_pct"] is None
-    assert s["p50_reduction_pct"] is None
-    assert s["max_reduction_pct"] is None
-    assert s["by_engine"] == {"get_graph_path": 5}
+    assert s["by_engine"] == {}
+
+
+def test_legacy_non_compression_engine_excluded(tmp_path: Path) -> None:
+    """(b) Legacy records without kind but with a tool-name engine are excluded.
+
+    We simulate legacy JSONL by writing a record with kind="compression" but
+    engine set to a tool name (not in COMPRESSION_ENGINES).  The engine-name
+    gate independently blocks these regardless of kind.
+    """
+    store = _make_store(tmp_path)
+    # Write raw JSONL without the kind field — simulates a record from before T-104
+    record_dict = {
+        "ts": "2026-04-01T00:00:00+00:00",
+        "engine": "get_graph_path",  # tool name, not in COMPRESSION_ENGINES
+        "caller": "mcp",
+        "ctx": None,
+        "before_tokens": 500,
+        "after_tokens": 500,
+        "reduction_tokens": 0,
+        "reduction_pct": 0.0,
+        # no "kind" key — legacy
+    }
+    store.stats_file.parent.mkdir(parents=True, exist_ok=True)
+    with store.stats_file.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record_dict, sort_keys=True) + "\n")
+
+    s = store.summary()
+    assert s["count_total"] == 0
+    assert s["by_engine"] == {}
+
+
+def test_legitimate_records_counted(tmp_path: Path) -> None:
+    """(c) Legitimate compression records with real engines are included."""
+    store = _make_store(tmp_path)
+    store.append(_record(55.0, engine="caveman/phi3+rtkx", kind="compression"))
+    store.append(_record(30.0, engine="rtkx", kind="compression"))
+    # Add a tool_io polluter — should not appear
+    store.append(_record(0.0, engine="get_graph_neighbors", kind="tool_io"))
+
+    s = store.summary()
+    assert s["count_total"] == 2
+    assert s["count_compressed"] == 2
+    assert "caveman/phi3+rtkx" in s["by_engine"]
+    assert "rtkx" in s["by_engine"]
+    assert "get_graph_neighbors" not in s["by_engine"]
 
 
 def test_mixed_records_compute_compressed_only(tmp_path: Path) -> None:
     store = _make_store(tmp_path)
-    # 3 no-ops + 5 real compression events
+    # 3 tool_io polluters (formerly written by _record_mcp_tool_call)
     for _ in range(3):
-        store.append(_record(0.0, before=50, after=50, engine="get_graph_path"))
+        store.append(_record(0.0, before=50, after=50, engine="get_graph_path", kind="tool_io"))
     # Compressed values, deliberately out of order:
     pcts = [91.6, 52.6, 30.0, 70.0, 55.0]
     for p in pcts:
         store.append(_record(p))
 
     s = store.summary()
-    assert s["count_total"] == 8
+    # Only the 5 real compression records survive the filter
+    assert s["count_total"] == 5
     assert s["count_compressed"] == 5
 
     # Hand-computed against sorted [30.0, 52.6, 55.0, 70.0, 91.6]
@@ -92,7 +143,7 @@ def test_mixed_records_compute_compressed_only(tmp_path: Path) -> None:
     assert s["p50_reduction_pct"] == 55.0
     assert s["p95_reduction_pct"] == 87.3
     assert s["max_reduction_pct"] == 91.6
-    assert s["by_engine"]["get_graph_path"] == 3
+    assert "get_graph_path" not in s["by_engine"]
     assert s["by_engine"]["caveman/phi3+rtk"] == 5
 
 

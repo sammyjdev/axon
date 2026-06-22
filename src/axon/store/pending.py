@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -60,7 +61,12 @@ async def write_pending(
     paths.pending_dir.mkdir(parents=True, exist_ok=True)
     ts_ns = time.time_ns()
     safe_hash = commit_hash or "nohash"
-    final = paths.pending_dir / f"{safe_hash}-{ts_ns}.json"
+    # uuid suffix guarantees a unique path even when two writes land in the same
+    # clock tick (time_ns() is coarse on Windows) or come from concurrent hook
+    # processes - otherwise the second os.replace would silently overwrite the
+    # first pending payload (data loss). Drain orders by st_mtime_ns, not name,
+    # so the extra suffix does not affect replay order.
+    final = paths.pending_dir / f"{safe_hash}-{ts_ns}-{uuid.uuid4().hex[:8]}.json"
     tmp = final.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, final)

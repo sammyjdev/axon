@@ -505,23 +505,48 @@ class ExpansionService:
         )
 
     async def _reindex_publish_path(self, publish_path: Path, ctx: str) -> None:
+        import asyncio as _asyncio
+
+        import aiosqlite
+
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
-        from axon.store.vector_store import VectorStore
+        from axon.store.file_cache import SqliteFileCache
+        from axon.store.vector_store_factory import make_vector_store
 
         engine = EmbedderEngine()
-        store = VectorStore(url=self.runtime.qdrant_url)
+        store = make_vector_store(self.runtime)
+        db_path = self.runtime.db_path
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db_conn = await aiosqlite.connect(str(db_path))
+        # Apply migrations so the file_index table exists (003) before the
+        # cache queries it - idempotent on an already-migrated DB.
+        from axon.store.session_store import _apply_migrations
+
+        await _apply_migrations(db_conn)
+        db_lock = _asyncio.Lock()
+        file_cache = SqliteFileCache(db_conn, db_lock)
         try:
             await store.ensure_collections()
-            await index_path(
-                publish_path,
-                engine=engine,
-                store=store,
-                vault_root=self.runtime.vault_root,
-                forced_ctx=ctx,
-            )
+            from axon.store.index_lock import IndexLockError, acquire_index_lock
+
+            try:
+                async with acquire_index_lock(self.runtime.data_root):
+                    await index_path(
+                        publish_path,
+                        engine=engine,
+                        store=store,
+                        vault_root=self.runtime.vault_root,
+                        file_cache=file_cache,
+                        forced_ctx=ctx,
+                    )
+            except IndexLockError:
+                # Another indexer holds the lock; the published file is picked
+                # up on the next index pass. Do not fail the publish.
+                pass
         finally:
             await store.close()
+            await db_conn.close()
 
     def _resolve_cloud_mode(
         self,

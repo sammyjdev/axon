@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 from tree_sitter import Language, Node, Parser
 
 ChunkType = Literal[
-    "method", "constructor", "function", "class", "interface", "enum", "annotation", "record"
+    "method", "constructor", "function", "class", "interface",
+    "enum", "annotation", "record", "section"
 ]
 
 _JAVA_LANGUAGE = Language(tsjava.language())
@@ -220,8 +221,14 @@ def _split_large_node(
     symbol: str,
     chunk_type: ChunkType,
     file_path: str,
+    language: str = "java",
 ) -> list[Chunk]:
-    """Divide nó que excede _MAX_CHUNK_LINES em sub-chunks de linhas."""
+    """Divide nó que excede _MAX_CHUNK_LINES em sub-chunks de linhas.
+
+    ``language`` defaults to "java" (the original caller) and MUST be passed
+    explicitly for other languages so sub-chunks are not mis-tagged - the
+    Chunk model defaults language to "java".
+    """
     content = source[node.start_byte : node.end_byte].decode(errors="replace")
     lines = content.splitlines()
     start_line = node.start_point[0] + 1
@@ -236,8 +243,107 @@ def _split_large_node(
                 end_line=start_line + i + len(part_lines) - 1,
                 content="\n".join(part_lines),
                 file_path=file_path,
+                language=language,
             )
         )
+    return chunks
+
+
+def _split_lines_into_chunks(
+    lines: list[str],
+    start_line_1based: int,
+    symbol: str,
+    chunk_type: ChunkType,
+    file_path: str,
+    language: str,
+) -> list[Chunk]:
+    """Divide a list of text lines into sub-chunks of _MAX_CHUNK_LINES each.
+
+    Used for Markdown sections and plain-text files that have no tree-sitter
+    parse tree. Distinct from _split_large_node, which operates on tree-sitter
+    Node byte ranges. All sub-chunks (including index 0) are named symbol[idx].
+    """
+    result: list[Chunk] = []
+    for i in range(0, max(len(lines), 1), _MAX_CHUNK_LINES):
+        part = lines[i : i + _MAX_CHUNK_LINES]
+        idx = i // _MAX_CHUNK_LINES
+        result.append(
+            Chunk(
+                symbol=f"{symbol}[{idx}]",
+                chunk_type=chunk_type,
+                start_line=start_line_1based + i,
+                end_line=start_line_1based + i + len(part) - 1,
+                content="\n".join(part),
+                file_path=file_path,
+                language=language,
+            )
+        )
+    return result
+
+
+def _chunk_markdown(source: str, file_path: str) -> list[Chunk]:
+    """Chunk a Markdown file by heading boundaries.
+
+    Each heading (# through ######) starts a new section. Content before the
+    first heading becomes a chunk with symbol = Path(file_path).stem.
+    Sections exceeding _MAX_CHUNK_LINES are split via _split_lines_into_chunks.
+    A file with no headings is treated as a single section and split on line cap.
+    """
+    lines = source.splitlines()
+    _HEADING_RE = re.compile(r"^#{1,6}\s+(.+)")
+
+    sections: list[tuple[str, int, list[str]]] = []  # (symbol, start_1based, lines)
+    current_symbol = Path(file_path).stem
+    current_start = 1
+    current_lines: list[str] = []
+
+    for lineno, line in enumerate(lines, start=1):
+        m = _HEADING_RE.match(line)
+        if m:
+            if current_lines:
+                sections.append((current_symbol, current_start, current_lines))
+            current_symbol = re.sub(r"[^a-zA-Z0-9_]", "_", m.group(1).strip())[:64]
+            current_start = lineno
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+
+    if current_lines:
+        sections.append((current_symbol, current_start, current_lines))
+
+    if not sections:
+        return [
+            Chunk(
+                symbol=Path(file_path).stem,
+                chunk_type="section",
+                start_line=1,
+                end_line=1,
+                content="",
+                file_path=file_path,
+                language="markdown",
+            )
+        ]
+
+    chunks: list[Chunk] = []
+    for symbol, start_1based, sec_lines in sections:
+        if len(sec_lines) > _MAX_CHUNK_LINES:
+            chunks.extend(
+                _split_lines_into_chunks(
+                    sec_lines, start_1based, symbol, "section", file_path, "markdown"
+                )
+            )
+        else:
+            chunks.append(
+                Chunk(
+                    symbol=symbol,
+                    chunk_type="section",
+                    start_line=start_1based,
+                    end_line=start_1based + len(sec_lines) - 1,
+                    content="\n".join(sec_lines),
+                    file_path=file_path,
+                    language="markdown",
+                )
+            )
     return chunks
 
 
@@ -302,9 +408,11 @@ def _chunk_python(source: str, file_path: str) -> list[Chunk]:
         return [_python_fallback_chunk(source, lines, file_path)]
 
     chunks: list[Chunk] = []
-    _walk_python(tree.root_node, source, lines, file_path, in_class=False, chunks=chunks)
+    _walk_python(tree.root_node, source, lines, file_path, in_class=False, chunks=chunks, tree=tree)
     if not chunks:
-        chunks.append(_python_fallback_chunk(source, lines, file_path))
+        fb = _python_fallback_chunk(source, lines, file_path)
+        fb.metadata["_tree"] = tree
+        chunks.append(fb)
     return chunks
 
 
@@ -316,6 +424,7 @@ def _walk_python(
     *,
     in_class: bool,
     chunks: list[Chunk],
+    tree: object | None = None,
 ) -> None:
     """Recurse the tree, emitting a chunk for each function definition.
 
@@ -325,23 +434,44 @@ def _walk_python(
     """
     if node.type in ("function_definition",):
         symbol = _python_node_identifier(node)
-        chunks.append(
-            Chunk(
-                symbol=symbol or Path(file_path).stem,
-                chunk_type="method" if in_class else "function",
-                start_line=node.start_point[0] + 1,
-                end_line=node.end_point[0] + 1,
-                content="\n".join(lines[node.start_point[0] : node.end_point[0] + 1]),
-                file_path=file_path,
+        _sym = symbol or Path(file_path).stem
+        _chunk_type: ChunkType = "method" if in_class else "function"
+        _start = node.start_point[0] + 1
+        _end = node.end_point[0] + 1
+        # +1: physical line count (inclusive). Strict cap consistent with the
+        # Java/TS branches - no resulting chunk exceeds _MAX_CHUNK_LINES lines.
+        if (_end - _start + 1) > _MAX_CHUNK_LINES:
+            sub_chunks = _split_large_node(
+                node,
+                source.encode("utf-8") if isinstance(source, str) else source,
+                _sym,
+                _chunk_type,
+                file_path,
                 language="python",
             )
-        )
+            if tree is not None:
+                for sc in sub_chunks:
+                    sc.metadata["_tree"] = tree
+            chunks.extend(sub_chunks)
+        else:
+            chunks.append(
+                Chunk(
+                    symbol=_sym,
+                    chunk_type=_chunk_type,
+                    start_line=_start,
+                    end_line=_end,
+                    content="\n".join(lines[node.start_point[0] : node.end_point[0] + 1]),
+                    file_path=file_path,
+                    language="python",
+                    metadata={"_tree": tree} if tree is not None else {},
+                )
+            )
         # Recurse to catch inner functions (still tagged as functions
         # unless inside another class).
         for child in node.children:
             _walk_python(
                 child, source, lines, file_path,
-                in_class=False, chunks=chunks,
+                in_class=False, chunks=chunks, tree=tree,
             )
         return
 
@@ -349,14 +479,14 @@ def _walk_python(
         for child in node.children:
             _walk_python(
                 child, source, lines, file_path,
-                in_class=True, chunks=chunks,
+                in_class=True, chunks=chunks, tree=tree,
             )
         return
 
     for child in node.children:
         _walk_python(
             child, source, lines, file_path,
-            in_class=in_class, chunks=chunks,
+            in_class=in_class, chunks=chunks, tree=tree,
         )
 
 
@@ -384,20 +514,20 @@ def _python_fallback_chunk(source: str, lines: list[str], file_path: str) -> Chu
 # TypeScript chunker (regex-based)
 # ---------------------------------------------------------------------------
 
-_TS_METHOD_RE = re.compile(
+_TS_METHOD_RE = re.compile(  # pragma: no cover
     r"^[ \t]*(?:(?:public|private|protected|static|async|override|abstract)\s+)*"
     r"([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[<(]",
     re.MULTILINE,
 )
-_TS_FUNCTION_RE = re.compile(
+_TS_FUNCTION_RE = re.compile(  # pragma: no cover
     r"^(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[<(]",
     re.MULTILINE,
 )
-_TS_CLASS_RE = re.compile(
+_TS_CLASS_RE = re.compile(  # pragma: no cover
     r"^(?:export\s+)?(?:abstract\s+)?class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)",
     re.MULTILINE,
 )
-_SKIP_TS_NAMES = {
+_SKIP_TS_NAMES = {  # pragma: no cover
     "constructor",
     "if",
     "for",
@@ -431,9 +561,11 @@ def _chunk_typescript(source: str, file_path: str) -> list[Chunk]:
         return [_ts_fallback_chunk(source, lines, file_path)]
 
     chunks: list[Chunk] = []
-    _walk_ts(tree.root_node, lines, file_path, in_class=False, chunks=chunks)
+    _walk_ts(tree.root_node, lines, file_path, in_class=False, chunks=chunks, tree=tree)
     if not chunks:
-        chunks.append(_ts_fallback_chunk(source, lines, file_path))
+        fb = _ts_fallback_chunk(source, lines, file_path)
+        fb.metadata["_tree"] = tree
+        chunks.append(fb)
     return chunks
 
 
@@ -444,20 +576,21 @@ def _walk_ts(
     *,
     in_class: bool,
     chunks: list[Chunk],
+    tree: object | None = None,
 ) -> None:
     if node.type in ("function_declaration", "method_definition"):
         name = _ts_identifier(node) or "anonymous"
-        chunks.append(
-            _ts_chunk_from_node(node, lines, file_path, name, in_class)
+        chunks.extend(
+            _ts_chunk_from_node(node, lines, file_path, name, in_class, tree=tree)
         )
         # Recurse to catch nested functions
         for child in node.children:
-            _walk_ts(child, lines, file_path, in_class=False, chunks=chunks)
+            _walk_ts(child, lines, file_path, in_class=False, chunks=chunks, tree=tree)
         return
 
     if node.type in ("class_declaration", "class_body"):
         for child in node.children:
-            _walk_ts(child, lines, file_path, in_class=True, chunks=chunks)
+            _walk_ts(child, lines, file_path, in_class=True, chunks=chunks, tree=tree)
         return
 
     # Arrow functions / function expressions bound to a name
@@ -473,13 +606,13 @@ def _walk_ts(
             "function_expression",
         ):
             name = name_node.text.decode("utf-8", errors="replace")
-            chunks.append(
-                _ts_chunk_from_node(node, lines, file_path, name, in_class)
+            chunks.extend(
+                _ts_chunk_from_node(node, lines, file_path, name, in_class, tree=tree)
             )
             return
 
     for child in node.children:
-        _walk_ts(child, lines, file_path, in_class=in_class, chunks=chunks)
+        _walk_ts(child, lines, file_path, in_class=in_class, chunks=chunks, tree=tree)
 
 
 def _ts_identifier(node: Node) -> str | None:
@@ -498,18 +631,38 @@ def _ts_chunk_from_node(
     file_path: str,
     name: str,
     in_class: bool,
-) -> Chunk:
+    *,
+    tree: object | None = None,
+) -> list[Chunk]:
+    """Return one or more Chunks for this node, splitting if it exceeds _MAX_CHUNK_LINES."""
     start = node.start_point[0]
     end = node.end_point[0]
-    return Chunk(
-        symbol=name,
-        chunk_type="method" if in_class else "function",
-        start_line=start + 1,
-        end_line=end + 1,
-        content="\n".join(lines[start : end + 1]),
-        file_path=file_path,
-        language="typescript",
-    )
+    _chunk_type: ChunkType = "method" if in_class else "function"
+    if (end - start + 1) > _MAX_CHUNK_LINES:
+        sub_chunks = _split_lines_into_chunks(
+            lines[start : end + 1],
+            start + 1,
+            name,
+            _chunk_type,
+            file_path,
+            "typescript",
+        )
+        if tree is not None:
+            for sc in sub_chunks:
+                sc.metadata["_tree"] = tree
+        return sub_chunks
+    return [
+        Chunk(
+            symbol=name,
+            chunk_type=_chunk_type,
+            start_line=start + 1,
+            end_line=end + 1,
+            content="\n".join(lines[start : end + 1]),
+            file_path=file_path,
+            language="typescript",
+            metadata={"_tree": tree} if tree is not None else {},
+        )
+    ]
 
 
 def _ts_fallback_chunk(source: str, lines: list[str], file_path: str) -> Chunk:
@@ -524,7 +677,7 @@ def _ts_fallback_chunk(source: str, lines: list[str], file_path: str) -> Chunk:
     )
 
 
-def _chunk_typescript_legacy(source: str, file_path: str) -> list[Chunk]:
+def _chunk_typescript_legacy(source: str, file_path: str) -> list[Chunk]:  # pragma: no cover
     """Original regex-based parser. Retained only for reference; not on the path."""
     lines = source.splitlines()
     chunks: list[Chunk] = []
@@ -593,7 +746,7 @@ def _chunk_typescript_legacy(source: str, file_path: str) -> list[Chunk]:
     return chunks
 
 
-def _find_block_end(lines: list[str], start_idx: int) -> int:
+def _find_block_end(lines: list[str], start_idx: int) -> int:  # pragma: no cover
     """Find closing brace for a block starting at start_idx (0-based)."""
     depth = 0
     for i in range(start_idx, len(lines)):
@@ -631,19 +784,26 @@ def chunk_source(source: str, language: str, file_path: str) -> list[Chunk]:
                     file_path=file_path,
                 )
             )
+        for _c in chunks:
+            _c.metadata["_tree"] = tree
         return chunks
     elif language == "python":
         return _chunk_python(source, file_path)
     elif language in ("typescript", "ts"):
         return _chunk_typescript(source, file_path)
+    elif language == "markdown":
+        return _chunk_markdown(source, file_path)
     else:
         lines = source.splitlines()
+        stem = Path(file_path).stem
+        if len(lines) > _MAX_CHUNK_LINES:
+            return _split_lines_into_chunks(lines, 1, stem, "section", file_path, language)
         return [
             Chunk(
-                symbol=Path(file_path).stem,
-                chunk_type="class",
+                symbol=stem,
+                chunk_type="section",
                 start_line=1,
-                end_line=len(lines),
+                end_line=len(lines) or 1,
                 content=source,
                 file_path=file_path,
                 language=language,

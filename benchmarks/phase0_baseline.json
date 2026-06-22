@@ -1,0 +1,77 @@
+{
+  "_note": "Phase 0 measurement gate for the indexing perf overhaul (specs A/B/C). Captured on an idle machine. Recall baseline still pending (needs the 20-query golden set = first implementation task).",
+  "machine": "R7 5800X3D (8c/16t, 96MB L3) + RTX 4070 Ti 12GB, Windows 11",
+
+  "gpu": {
+    "present": true,
+    "model": "NVIDIA GeForce RTX 4070 Ti 12GB (driver 596.36)",
+    "onnxruntime_default_was_cpu_only": true,
+    "enablement_recipe": "pip install onnxruntime-gpu==1.26.0 + nvidia-cudnn-cu12 + nvidia-cublas-cu12 + nvidia-cuda-runtime-cu12 (+cufft,curand,nvrtc); then ort.preload_dlls(); then TextEmbedding(providers=['CUDAExecutionProvider','CPUExecutionProvider']) or fastembed cuda=True AFTER preload_dlls",
+    "gotcha": "cuda=True and explicit CUDA providers BOTH silently fall back to CPU until (a) the nvidia CUDA/cuDNN pip packages are installed AND (b) ort.preload_dlls() is called. Always verify model.model.model.get_providers() to detect silent CPU fallback.",
+    "verified_session_providers": ["CUDAExecutionProvider", "CPUExecutionProvider"]
+  },
+
+  "throughput_chunks_per_sec": {
+    "cpu_real_corpus_mixed": 4,
+    "cpu_short_strings_batch128": 151,
+    "gpu_real_corpus_batch128": 541,
+    "gpu_vs_cpu_speedup": "~135x on the real corpus"
+  },
+
+  "full_index_estimate": {
+    "axon_repo_cpu_sec": 645,
+    "axon_repo_gpu_sec": 4.77,
+    "all9_repos_cpu_sec_est": 1140,
+    "all9_repos_gpu_sec_est": 9
+  },
+
+  "rss_14gb_root_cause": {
+    "confirmed": "onnxruntime CPU activation arena grows with batch_size x sequence_length and is not released (batch 64 -> 4.1GB; the real _BATCH_SIZE=400 -> ~14GB)",
+    "debunked_hypothesis": "graph_chunks: list[Chunk] accumulation is only 135MB - NOT the cause",
+    "model_load_mb": 526,
+    "chunk_list_mb": 135,
+    "peak_rss_cpu_batch64_mb": 4152,
+    "implication": "On GPU the arena lives in VRAM (12GB), so host RSS stays low; the chunk-size cap + token-budget batching remain valuable for CPU-fallback memory safety and recall quality, not as the primary perf lever"
+  },
+
+  "threads": {
+    "ort_default_intra_op_num_threads": 0,
+    "meaning": "0 = auto = all physical cores; explicit thread-tuning is likely YAGNI"
+  },
+
+  "file_walk": {
+    "rglob_total_entries": 30129,
+    "rglob_wall_sec": 0.342,
+    "gitlsfiles_tracked_count": 467,
+    "gitlsfiles_wall_sec": 0.019,
+    "conclusion": "rglob is NOT a perf bottleneck (<0.4s); switching to git ls-files is a SECURITY fix (exclude gitignored), not a performance one"
+  },
+
+  "chunks_axon": {
+    "total": 2583,
+    "big_gt2000chars_pct": 4.5,
+    "p50_chars": 296,
+    "p90_chars": 1148,
+    "p99_chars": 6095,
+    "max_chars": 52681,
+    "chunkid_collisions_today": 0,
+    "conclusion": "giant-chunk tail is real (max 52KB); chunk-size cap justified for VRAM/CPU memory + recall bounding; 0 chunk-id collisions so the D1 stable-id migration is safe"
+  },
+
+  "qdrant_points": { "personal": 4555, "knowledge": 0, "work": 0, "career": 0, "saas": 0,
+    "conclusion": "all current data sits in 'personal' (old uncapped chunking); 'knowledge' (the new target ctx) is empty -> clean purge+reindex migration" },
+
+  "priority_reordering": [
+    "GPU embedding (Spec B) is the dominant lever - PROVEN 541/s, exceeds the >=300/s target, and removes the host-RSS problem. Smallest effort, biggest win.",
+    "Chunk-size cap + token-budget batching (Spec A) drop from #1 perf lever to memory-safety + CPU-fallback + recall-quality bounding.",
+    "Incremental cache (Spec C) remains the refresh-cost lever (full GPU reindex is ~9s for all 9 repos, so even a full re-embed is cheap on GPU - lowers the urgency of the cache somewhat).",
+    "Thread-tuning: drop (0 = auto already).",
+    "Per-machine dependency: desktop = onnxruntime-gpu + CUDA libs; M1 Pro mac = onnxruntime + CoreML EP. Must be conditional (do NOT pin onnxruntime-gpu in shared pyproject)."
+  ],
+
+  "still_pending": [
+    "GPU peak VRAM measurement under batch 400 + big chunks (confirm 12GB headroom).",
+    "M1 Pro CoreML throughput (run on the mac).",
+    "Recall baseline (20-query golden set) - first implementation task; chunking changes must not regress it."
+  ]
+}
