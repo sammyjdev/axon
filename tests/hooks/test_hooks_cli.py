@@ -33,12 +33,14 @@ class TestHooksInstall:
     def test_apply_in_non_tty_refuses(self, tmp_path: Path) -> None:
         _init_git(tmp_path)
         (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n")
-        # CliRunner runs without a TTY by default
-        result = runner.invoke(
-            app, ["hooks", "install", "--path", str(tmp_path), "--apply"]
-        )
+        # Force no-TTY deterministically (a real terminal leaves os.isatty(0)
+        # True and the refusal path unexercised).
+        with patch("os.isatty", return_value=False):
+            result = runner.invoke(
+                app, ["hooks", "install", "--path", str(tmp_path), "--apply"]
+            )
         assert result.exit_code == 1
-        assert "TTY" in result.output
+        assert "TTY" in result.stderr
 
     def test_apply_in_tty_mutates_pre_commit_config(self, tmp_path: Path) -> None:
         _init_git(tmp_path)
