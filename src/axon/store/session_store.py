@@ -1,5 +1,4 @@
 import asyncio
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -270,9 +269,18 @@ class SessionStore:
 
     async def _sessions(self):
         if self._session_repo is None:
-            from axon.store.session_repository import SqliteSessionRepository
+            from axon.config.runtime import load_runtime_config
 
-            self._session_repo = SqliteSessionRepository(self)
+            rt = load_runtime_config()
+            if rt.sessions_backend == "postgres":
+                from axon.store.pg_session_repository import PostgresSessionRepository
+
+                self._session_repo = PostgresSessionRepository(rt.pg_url)
+                await self._session_repo.ensure_schema()
+            else:
+                from axon.store.session_repository import SqliteSessionRepository
+
+                self._session_repo = SqliteSessionRepository(self)
         return self._session_repo
 
     async def add_node(
