@@ -157,7 +157,7 @@ def _resolve_graph_backend(overrides: dict) -> str:
     raw = (
         os.environ.get("AXON_GRAPH_BACKEND")
         or overrides.get("graph_backend")
-        or "sqlite"
+        or "postgres"
     )
     backend = raw.strip().lower()
     if backend not in _VALID_GRAPH_BACKENDS:

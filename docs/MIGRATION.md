@@ -231,3 +231,42 @@ sqlite index reconciles it against the repo. No data is lost.
 Only `file_index` moves this wave; the graph, decisions, and sessions stay on
 SQLite until their waves. This is safe because `_open_file_cache` owns a
 dedicated connection separate from the graph/decisions `SessionStore`.
+
+# graph Cutover Runbook (dec-121 step 3, wave 2)
+
+The code graph (nodes/edges) is selected by `AXON_GRAPH_BACKEND` env >
+`axon.toml [runtime] graph_backend` > default. As of this wave the default is
+`postgres`. `SessionStore` delegates its 7 graph methods to the configured
+`GraphRepository`; GLYPH is unchanged (it builds a `NetworkXStore` from
+`all_nodes`/`all_edges`, ADR Option A).
+
+## Why a data copy (not a re-index)
+
+Nodes are index-derived, but the `touches` edges come from git events (commit
+history) and are NOT reproduced by a pure re-index. The copy preserves them.
+
+## Cutover sequence
+
+```bash
+docker compose up -d axon-postgres
+# Copy nodes/edges SQLite -> Postgres (idempotent):
+PYTHONPATH=src AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
+  .venv/Scripts/python.exe scripts/migrate_graph.py
+# Count parity (must equal the SQLite nodes/edges counts):
+docker compose exec -T axon-postgres psql -U axon -d axon -tAc \
+  "SELECT (SELECT count(*) FROM nodes), (SELECT count(*) FROM edges);"
+# GLYPH parity: a subgraph query returns the same neighborhood on both backends.
+```
+
+Then set `graph_backend = "postgres"` in `axon.toml` (already the default).
+
+## Rollback
+
+Set `graph_backend = "sqlite"` (or `AXON_GRAPH_BACKEND=sqlite` for one command).
+The copy is one-way and non-destructive, so the SQLite graph is intact.
+
+## Mixed backend is expected
+
+Only the graph moves this wave; decisions and session continuity stay on SQLite
+until their waves. SessionStore keeps a single aiosqlite connection for those
+while the graph methods delegate to the Postgres repository.
