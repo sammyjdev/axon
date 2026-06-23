@@ -203,7 +203,8 @@ async def test_on_commit_relinks_symbols_after_partial_failure(
     _git(["commit", "-m", "feat: add beta"], repo)
 
     calls = {"n": 0}
-    original = __import__("axon.hooks.git_event", fromlist=["_link_touched_symbols"])._link_touched_symbols
+    _git_event_mod = __import__("axon.hooks.git_event", fromlist=["_link_touched_symbols"])
+    original = _git_event_mod._link_touched_symbols
 
     async def flaky_link(store, decision_id, root, commit_hash, graph_store):
         calls["n"] += 1

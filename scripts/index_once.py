@@ -8,9 +8,10 @@ import logging
 import os
 from pathlib import Path
 
+from axon.store.vector import VectorStore
+
 from axon.embedder.engine import EmbedderEngine
 from axon.embedder.pipeline import ingest_file
-from axon.store.vector import VectorStore
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)

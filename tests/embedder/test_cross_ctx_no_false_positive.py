@@ -11,9 +11,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 import aiosqlite
+import pytest
 
 from axon.store.file_cache import SqliteFileCache
 
@@ -51,8 +50,8 @@ async def _make_real_cache_with_knowledge(
 @pytest.mark.asyncio
 async def test_indexing_work_does_not_delete_knowledge_entries(tmp_path: Path) -> None:
     """Indexing forced_ctx='work' must never call delete_by_file for ctx='knowledge'."""
-    from axon.embedder.pipeline import index_path
     from axon.embedder.chunker import Chunk
+    from axon.embedder.pipeline import index_path
 
     # Create a work file on disk
     work_dir = tmp_path / "work"

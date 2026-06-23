@@ -6,7 +6,6 @@ import asyncio
 from pathlib import Path
 
 import aiosqlite
-import pytest
 
 from axon.store.file_cache import SqliteFileCache, sha1_of_source
 

@@ -34,7 +34,9 @@ async def test_decision_upsert_and_json_queries(pg_dsn) -> None:
     try:
         await repo.ensure_schema()
         await repo.ensure_schema()  # idempotent
-        await repo.save_decision(_dec("dec-001", symbols=["alpha"], git_hash="abc", judged=True, score=3.5))
+        await repo.save_decision(
+            _dec("dec-001", symbols=["alpha"], git_hash="abc", judged=True, score=3.5)
+        )
         await repo.save_decision(_dec("dec-001", symbols=["alpha", "beta"]))  # upsert same id
         await repo.save_decision(_dec("dec-002", repo="other", symbols=["gamma"]))
         by_sym = await repo.find_decisions_by_symbol("beta")

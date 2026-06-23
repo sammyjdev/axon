@@ -8,7 +8,6 @@ developer's real ~/.axon data root during tests.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -56,8 +55,9 @@ def _isolate_axon_engine(
             )
 
     if "axon.hooks.git_event" in sys.modules:
-        from axon.observability.trace_store import TraceStore as _TS
         from types import SimpleNamespace
+
+        from axon.observability.trace_store import TraceStore as _TS
 
         hooks = sys.modules["axon.hooks.git_event"]
         if hasattr(hooks, "_TRACE_STORE"):

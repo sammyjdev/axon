@@ -12,8 +12,8 @@ def test_runtime_loads_mode_and_paths_from_axon_toml(monkeypatch, tmp_path: Path
             [
                 "[runtime]",
                 'mode = "hybrid-local"',
-                f'engine_root = "{tmp_path / "engine"}"',
-                f'vault_root = "{tmp_path / "vault"}"',
+                f'engine_root = "{(tmp_path / "engine").as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault").as_posix()}"',
                 "",
             ]
         ),
@@ -38,8 +38,8 @@ def test_runtime_env_vars_override_axon_toml(monkeypatch, tmp_path: Path) -> Non
             [
                 "[runtime]",
                 'mode = "minimal"',
-                f'engine_root = "{tmp_path / "engine-from-toml"}"',
-                f'vault_root = "{tmp_path / "vault-from-toml"}"',
+                f'engine_root = "{(tmp_path / "engine-from-toml").as_posix()}"',
+                f'vault_root = "{(tmp_path / "vault-from-toml").as_posix()}"',
                 "",
             ]
         ),
