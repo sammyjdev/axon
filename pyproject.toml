@@ -112,7 +112,9 @@ pythonpath = ["."]
 # ---------------------------------------------------------------------------
 
 [tool.ruff]
-target-version = "py312"
+# Match requires-python (>=3.11) so ruff never suggests py312-only syntax
+# (e.g. PEP 695 generics), which would SyntaxError on the 3.11 CI runner.
+target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
