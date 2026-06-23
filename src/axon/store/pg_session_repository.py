@@ -1,6 +1,6 @@
 """Postgres-backed SessionRepository (dec-121 step 3, wave 4). Plain columns;
-memory/note inserts use RETURNING id; code_change/session use ON CONFLICT;
-no SQLite-lock fallback."""
+memory/note inserts use ON CONFLICT natural-key dedup (not bare RETURNING id);
+code_change/session use ON CONFLICT PK upsert; no SQLite-lock fallback."""
 from __future__ import annotations
 
 import json
@@ -34,6 +34,14 @@ class PostgresSessionRepository:
                 " project text NOT NULL, body text NOT NULL, created_at text NOT NULL)"
             )
             await con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_session_memory_natural"
+                " ON session_memory (project, summary, raw_turns, created_at)"
+            )
+            await con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_session_note_natural"
+                " ON session_note (project, body, created_at)"
+            )
+            await con.execute(
                 "CREATE TABLE IF NOT EXISTS code_change (commit_hash text NOT NULL,"
                 " file_path text NOT NULL, diff_summary text NOT NULL,"
                 " why text NOT NULL DEFAULT '', changed_at text NOT NULL,"
@@ -48,11 +56,20 @@ class PostgresSessionRepository:
     async def save_session_memory(self, mem: SessionMemory) -> int:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            return await con.fetchval(
+            new_id = await con.fetchval(
                 "INSERT INTO session_memory (project, summary, raw_turns, created_at)"
-                " VALUES ($1, $2, $3, $4) RETURNING id",
+                " VALUES ($1, $2, $3, $4)"
+                " ON CONFLICT (project, summary, raw_turns, created_at) DO NOTHING"
+                " RETURNING id",
                 mem.project, mem.summary, mem.raw_turns, mem.created_at.isoformat(),
             )
+            if new_id is None:
+                new_id = await con.fetchval(
+                    "SELECT id FROM session_memory"
+                    " WHERE project=$1 AND summary=$2 AND raw_turns=$3 AND created_at=$4",
+                    mem.project, mem.summary, mem.raw_turns, mem.created_at.isoformat(),
+                )
+            return new_id
 
     async def get_session_memories(self, project: str, limit: int = 3) -> list[SessionMemory]:
         pool = await self._ensure_pool()
@@ -72,11 +89,20 @@ class PostgresSessionRepository:
     async def save_note(self, note: SessionNote) -> int:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            return await con.fetchval(
+            new_id = await con.fetchval(
                 "INSERT INTO session_note (project, body, created_at)"
-                " VALUES ($1, $2, $3) RETURNING id",
+                " VALUES ($1, $2, $3)"
+                " ON CONFLICT (project, body, created_at) DO NOTHING"
+                " RETURNING id",
                 note.project, note.body, note.created_at.isoformat(),
             )
+            if new_id is None:
+                new_id = await con.fetchval(
+                    "SELECT id FROM session_note"
+                    " WHERE project=$1 AND body=$2 AND created_at=$3",
+                    note.project, note.body, note.created_at.isoformat(),
+                )
+            return new_id
 
     async def get_notes(self, project: str, limit: int = 10) -> list[SessionNote]:
         pool = await self._ensure_pool()

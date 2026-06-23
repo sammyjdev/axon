@@ -1,5 +1,7 @@
 """One-shot copy of session continuity (memories/notes/code_changes/sessions)
-from SQLite to Postgres (idempotent)."""
+from SQLite to Postgres. Idempotent per type:
+- sessions + code_change: PK upsert (ON CONFLICT DO UPDATE).
+- memories + notes: natural-key UNIQUE index + ON CONFLICT DO NOTHING dedup."""
 from __future__ import annotations
 
 
