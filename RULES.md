@@ -53,3 +53,23 @@ change would violate one of these, STOP and surface it - do not work around it.
 ## Style
 
 - Plain hyphens only - never em or en dashes.
+
+## Proposed by the loop
+
+Candidate invariants surfaced by FORGE reviews. NOT yet enforced - the human
+promotes them into a section above after curation.
+
+- **Postgres `ON CONFLICT DO NOTHING` must not return a fake id.** On a dedup
+  skip, `RETURNING id` is NULL; never `return result or 0`. Fall back to
+  `SELECT id WHERE <natural key>` to return the real existing row id (the
+  `save_adr_inner` pattern). Check: a test asserting the SAME id is returned on a
+  second identical insert. (FORGE #27)
+- **A UNIQUE inline in `CREATE TABLE IF NOT EXISTS` never retrofits an existing
+  table.** Add uniqueness via a separate `CREATE UNIQUE INDEX IF NOT EXISTS` (or
+  `ALTER TABLE ... ADD CONSTRAINT`) so existing deployments get it too - otherwise
+  `ON CONFLICT` fails at runtime on upgrade. Check: a test that runs
+  `ensure_schema` against a pre-existing table and confirms the index exists.
+  (FORGE #27)
+- **DB-constraint behavior must be tested against a real engine, not a fake.**
+  A Python fake that simulates ON CONFLICT proves the loop, not the constraint;
+  use testcontainers Postgres for dedup/uniqueness assertions. (FORGE #27)
