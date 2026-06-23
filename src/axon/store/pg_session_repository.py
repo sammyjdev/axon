@@ -130,7 +130,6 @@ class PostgresSessionRepository:
                 "INSERT INTO sessions (id, agent, repo, started_at, ended_at, context_payload)"
                 " VALUES ($1, $2, $3, $4, NULL, $5)"
                 " ON CONFLICT (id) DO UPDATE SET agent=excluded.agent, repo=excluded.repo,"
-                " started_at=excluded.started_at, ended_at=excluded.ended_at,"
                 " context_payload=excluded.context_payload",
                 session_id, agent, repo, datetime.now(UTC).isoformat(),
                 json.dumps({"recall": context_payload}),
@@ -139,13 +138,16 @@ class PostgresSessionRepository:
     async def end_session(self, session_id: str) -> str | None:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            repo = await con.fetchval("SELECT repo FROM sessions WHERE id=$1", session_id)
-            if repo is not None:
-                await con.execute(
-                    "UPDATE sessions SET ended_at=$1 WHERE id=$2",
-                    datetime.now(UTC).isoformat(), session_id,
-                )
-        return repo
+            return await con.fetchval(
+                "WITH upd AS ("
+                " UPDATE sessions SET ended_at=$1 WHERE id=$2 AND ended_at IS NULL"
+                " RETURNING repo)"
+                " SELECT repo FROM upd"
+                " UNION ALL"
+                " SELECT repo FROM sessions WHERE id=$2 AND NOT EXISTS (SELECT 1 FROM upd)"
+                " LIMIT 1",
+                datetime.now(UTC).isoformat(), session_id,
+            )
 
     async def all_memories(self) -> list[SessionMemory]:
         pool = await self._ensure_pool()

@@ -203,9 +203,10 @@ class SqliteSessionRepository:
         async with self._session._lock:
             db = await self._session._connection()
             await db.execute(
-                "INSERT OR REPLACE INTO sessions"
-                " (id, agent, repo, started_at, ended_at, context_payload)"
-                " VALUES (?, ?, ?, ?, NULL, ?)",
+                "INSERT INTO sessions (id, agent, repo, started_at, ended_at, context_payload)"
+                " VALUES (?, ?, ?, ?, NULL, ?)"
+                " ON CONFLICT (id) DO UPDATE SET agent=excluded.agent, repo=excluded.repo,"
+                " context_payload=excluded.context_payload",
                 (
                     session_id,
                     agent,
@@ -217,20 +218,21 @@ class SqliteSessionRepository:
             await db.commit()
 
     async def end_session(self, session_id: str) -> str | None:
-        """Mark a session ended; return its repo, or None if the id is unknown."""
+        """Mark a session ended; return its repo, or None if the id is unknown.
+
+        First-close-wins: ended_at is only written once; subsequent calls return
+        repo without re-stamping.
+        """
         async with self._session._lock:
             db = await self._session._connection()
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT repo FROM sessions WHERE id = ?", (session_id,)
+            await db.execute(
+                "UPDATE sessions SET ended_at = ? WHERE id = ? AND ended_at IS NULL",
+                (datetime.now(UTC).isoformat(), session_id),
             )
+            await db.commit()
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT repo FROM sessions WHERE id = ?", (session_id,))
             row = await cursor.fetchone()
-            if row is not None:
-                await db.execute(
-                    "UPDATE sessions SET ended_at = ? WHERE id = ?",
-                    (datetime.now(UTC).isoformat(), session_id),
-                )
-                await db.commit()
         return row["repo"] if row is not None else None
 
     # ── Full-scan helpers (for data-copy script) ──────────────────────────────
