@@ -2483,11 +2483,12 @@ def index(
 
     async def _index() -> None:
         import uuid
+
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
+        from axon.observability.trace_store import TraceStore
         from axon.store.graph_store import GraphStore
         from axon.store.vector_store_factory import make_vector_store
-        from axon.observability.trace_store import TraceStore
 
         engine = EmbedderEngine()
         store = make_vector_store(_RUNTIME)

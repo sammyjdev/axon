@@ -59,6 +59,22 @@ class _FakeGraphStore:
         }
 
 
+class _FakeSessionStore:
+    """The "related deps" enrichment in ``_retrieve_context`` reads structural
+    neighbours from the session store (dec-101/dec-116), not the graph store.
+    This fake keeps the benchmark deterministic and offline: it returns the
+    fixture's graph nodes without touching SQLite/Postgres."""
+
+    def __init__(self, nodes: tuple[str, ...]) -> None:
+        self._nodes = list(nodes)
+
+    async def init(self) -> None:
+        return None
+
+    async def query_subgraph(self, symbol: str, depth: int) -> dict[str, object]:
+        return {"root": symbol, "nodes": [symbol, *self._nodes]}
+
+
 FIRST_RETRIEVAL_BENCHMARK = RetrievalBenchmarkFixture(
     name="code-analysis-context-pack",
     query="upsert vector",
@@ -114,6 +130,11 @@ async def execute_retrieval_benchmark(fixture: RetrievalBenchmarkFixture) -> Ben
             return_value=SimpleNamespace(embed_one=lambda _query: [0.1]),
         ),
         patch.object(server, "_get_graph_store", return_value=_FakeGraphStore(fixture.graph_nodes)),
+        patch.object(
+            server,
+            "_get_session_store",
+            return_value=_FakeSessionStore(fixture.graph_nodes),
+        ),
         patch(
             "axon.router.classifier.classify_task_with_source",
             return_value=(TaskType.CODE_ANALYSIS, "benchmark"),

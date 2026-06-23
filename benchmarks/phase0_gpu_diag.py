@@ -12,7 +12,12 @@ REPO = Path(__file__).resolve().parents[1]
 out: dict = {}
 
 variants = []
-for m in TextEmbedding._list_supported_models() if hasattr(TextEmbedding, "_list_supported_models") else TextEmbedding.list_supported_models():
+_supported_models = (
+    TextEmbedding._list_supported_models()
+    if hasattr(TextEmbedding, "_list_supported_models")
+    else TextEmbedding.list_supported_models()
+)
+for m in _supported_models:
     name = m.get("model", "") if isinstance(m, dict) else getattr(m, "model", "")
     if "bge" in name.lower() and ("base-en" in name.lower() or "small-en" in name.lower()):
         variants.append(name)
@@ -31,7 +36,12 @@ def try_model(name, providers):
         t = time.perf_counter()
         n = sum(1 for _ in mdl.embed(sample, batch_size=128))
         dt = time.perf_counter() - t
-        return {"providers": prov, "n": n, "sec": round(dt, 2), "chunks_per_sec": round(n / dt) if dt else 0}
+        return {
+            "providers": prov,
+            "n": n,
+            "sec": round(dt, 2),
+            "chunks_per_sec": round(n / dt) if dt else 0,
+        }
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}
 
@@ -41,4 +51,6 @@ out["default_explicit_cuda"] = try_model(
     "BAAI/bge-base-en-v1.5", ["CUDAExecutionProvider", "CPUExecutionProvider"]
 )
 
-(REPO / "benchmarks" / "phase0_gpu_diag.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+(REPO / "benchmarks" / "phase0_gpu_diag.json").write_text(
+    json.dumps(out, indent=2), encoding="utf-8"
+)

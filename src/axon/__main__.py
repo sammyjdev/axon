@@ -278,7 +278,7 @@ def doctor(
         7, "--stale-days", help="Threshold (days) after which an activity is reported as stale."
     ),
 ) -> None:
-    """Validate the AXON + RTK + caveman stack: presence (binaries) and liveness (recent activity)."""
+    """Validate the AXON + RTK + caveman stack: presence (binaries) and liveness (activity)."""
     import subprocess
     import sys
     from datetime import datetime, timedelta
@@ -376,7 +376,8 @@ def doctor(
                 latest_ts = latest_ts.replace(tzinfo=UTC)
             tag = "stale" if latest_ts < stale_cutoff else "ok"
             lines.append(
-                f"- compression telemetry: {tag} ({len(records)} records, last {fmt_age(latest_ts)})"
+                f"- compression telemetry: {tag} "
+                f"({len(records)} records, last {fmt_age(latest_ts)})"
             )
             caveman_recent = [
                 r for r in records[-50:] if r.engine.startswith("caveman/")
@@ -387,7 +388,8 @@ def doctor(
                 )
             else:
                 lines.append(
-                    "- caveman engine activity: not seen in last 50 records (compression may be falling back)"
+                    "- caveman engine activity: not seen in last 50 records "
+                    "(compression may be falling back)"
                 )
     except Exception as exc:
         lines.append(f"- compression telemetry: error ({exc})")

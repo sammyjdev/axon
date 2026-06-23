@@ -16,7 +16,6 @@ from axon.obsidian import discovery
 from axon.obsidian.importer import _note_chunks, ingest_vault
 from axon.store.session_store import SessionStore
 
-
 # ---------------------------------------------------------------------------
 # _note_chunks — heading-aware splitting
 # ---------------------------------------------------------------------------

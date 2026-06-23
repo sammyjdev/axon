@@ -7,7 +7,65 @@ import subprocess
 import textwrap
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _python3_runs() -> bool:
+    """setup.sh shells out to `python3`; on Windows this is often a non-functional
+    Microsoft Store stub. Only run these shell-integration tests when a real
+    interpreter answers to `python3`."""
+    python3 = shutil.which("python3")
+    if python3 is None:
+        return False
+    try:
+        result = subprocess.run(
+            [python3, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0 and "Python" in (result.stdout + result.stderr)
+
+
+def _symlinks_supported() -> bool:
+    """Creating a directory symlink needs elevated privileges on Windows
+    (WinError 1314); setup.sh needs a real `src` next to it via symlink."""
+    probe = Path(REPO_ROOT) / ".pytest-symlink-probe"
+    target = Path(REPO_ROOT) / "src"
+    try:
+        if probe.exists() or probe.is_symlink():
+            probe.unlink()
+        os.symlink(target, probe)
+    except OSError:
+        return False
+    finally:
+        try:
+            if probe.is_symlink():
+                probe.unlink()
+        except OSError:
+            pass
+    return True
+
+
+pytestmark = [
+    pytest.mark.skipif(
+        shutil.which("bash") is None,
+        reason="setup.sh is a bash script; bash is not available on PATH",
+    ),
+    pytest.mark.skipif(
+        not _python3_runs(),
+        reason="setup.sh invokes `python3`; no working python3 interpreter on PATH",
+    ),
+    pytest.mark.skipif(
+        not _symlinks_supported(),
+        reason="setup.sh needs a `src` symlink; symlinks require elevated privileges here",
+    ),
+]
 
 
 def test_setup_defaults_to_recommended_hybrid_local_mode_on_mac(tmp_path: Path) -> None:

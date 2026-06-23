@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import dataclasses
 
-import pytest
-
 
 async def test_open_file_cache_selects_postgres(monkeypatch) -> None:
     from axon.cli import pb

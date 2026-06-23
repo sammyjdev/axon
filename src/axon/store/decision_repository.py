@@ -13,15 +13,15 @@ from typing import Protocol, runtime_checkable
 import aiosqlite
 
 from axon.core.decision import Decision
+from axon.store.pending import (
+    emit_capture_warning,
+    write_pending,
+)
 from axon.store.session_store import (
     ADR,
     _is_db_locked,
     _pending_paths,
     _warnings_log,
-)
-from axon.store.pending import (
-    emit_capture_warning,
-    write_pending,
 )
 
 

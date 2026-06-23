@@ -47,7 +47,10 @@ out["n_chunks"] = len(texts)
 
 from fastembed import TextEmbedding  # noqa: E402
 
-model = TextEmbedding("BAAI/bge-base-en-v1.5", providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+model = TextEmbedding(
+    "BAAI/bge-base-en-v1.5",
+    providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+)
 try:
     out["model_providers"] = model.model.model.get_providers()
 except Exception as exc:  # noqa: BLE001

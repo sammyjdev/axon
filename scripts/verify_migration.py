@@ -147,7 +147,10 @@ def main(ctx: str, parity: bool = False) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Scroll a collection and flag orphan file_paths; or check parity between Qdrant and pgvector"
+        description=(
+            "Scroll a collection and flag orphan file_paths; "
+            "or check parity between Qdrant and pgvector"
+        )
     )
     parser.add_argument("--ctx", default="personal", help="collection name to verify")
     parser.add_argument(

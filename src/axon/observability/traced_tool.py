@@ -6,9 +6,10 @@ import inspect
 import logging
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from functools import wraps
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Literal
 
 from axon.observability.trace_store import TracePayload, TraceRecorder, TraceStore
 

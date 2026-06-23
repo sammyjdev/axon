@@ -3,9 +3,7 @@ from __future__ import annotations
 import ast
 from unittest.mock import patch
 
-import pytest
-
-from axon.embedder.chunker import Chunk, _PY_PARSER, chunk_source
+from axon.embedder.chunker import _PY_PARSER, Chunk, chunk_source
 from axon.embedder.graph_extractor import extract_calls
 
 
