@@ -18,31 +18,11 @@ from axon.store.pending import (
     emit_capture_warning,
     write_pending,
 )
-
-
-def _is_db_locked(exc: Exception) -> bool:
-    if not isinstance(exc, aiosqlite.OperationalError):
-        return False
-    msg = str(exc).lower()
-    return "locked" in msg or "busy" in msg
-
-
-def _pending_paths():
-    from axon.config.data_root import data_root
-    from axon.store.pending import PendingPaths
-
-    root = data_root()
-    return PendingPaths(
-        pending_dir=root / "pending",
-        quarantine_dir=root / "pending-quarantine",
-        quarantine_log=root / "quarantine.jsonl",
-    )
-
-
-def _warnings_log():
-    from axon.config.data_root import data_root
-
-    return data_root() / "capture-warnings.jsonl"
+from axon.store.sqlite_helpers import (
+    _is_db_locked,
+    _pending_paths,
+    _warnings_log,
+)
 
 
 @runtime_checkable

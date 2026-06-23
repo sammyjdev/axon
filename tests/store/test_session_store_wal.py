@@ -93,11 +93,15 @@ class TestSessionStorePendingFallback:
     ) -> None:
         """When DB write raises an unretryable-after-budget error, the payload
         must land in `.axon/pending/` and the call must still return success.
+
+        After MS-6: the pending fallback lives in SqliteSessionRepository.save_code_change.
+        SessionStore.save_code_change is a thin delegator, so we patch the repo layer.
         """
-        from axon.store import session_store as ss_module
+        from axon.store.session_repository import SqliteSessionRepository
 
         pending_root = tmp_path / "axon_data"
         monkeypatch.setenv("AXON_DATA_ROOT", str(pending_root))
+        monkeypatch.setenv("AXON_SESSIONS_BACKEND", "sqlite")
 
         store = SessionStore(db_path=tmp_path / "fail.db")
         await store.init()
@@ -107,7 +111,7 @@ class TestSessionStorePendingFallback:
             import aiosqlite
             raise aiosqlite.OperationalError("database is locked")
 
-        monkeypatch.setattr(ss_module.SessionStore, "_save_code_change_inner", boom)
+        monkeypatch.setattr(SqliteSessionRepository, "save_code_change_inner", boom)
 
         change = CodeChange(
             commit_hash="deadbeef",
