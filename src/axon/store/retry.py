@@ -11,13 +11,16 @@ import asyncio
 import random
 import time
 from collections.abc import Awaitable, Callable
+from typing import TypeVar
+
+T = TypeVar("T")
 
 
 class RetryExhausted(Exception):
     """Raised when the retry budget is exhausted without a successful call."""
 
 
-async def with_retry[T](
+async def with_retry(
     fn: Callable[[], Awaitable[T]],
     *,
     is_retryable: Callable[[Exception], bool],
