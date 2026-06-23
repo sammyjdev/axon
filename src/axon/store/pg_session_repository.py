@@ -3,6 +3,7 @@ memory/note inserts use RETURNING id; code_change/session use ON CONFLICT;
 no SQLite-lock fallback."""
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 
@@ -15,10 +16,13 @@ class PostgresSessionRepository:
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
         self._pool: asyncpg.Pool | None = None
+        self._pool_lock = asyncio.Lock()
 
     async def _ensure_pool(self) -> asyncpg.Pool:
         if self._pool is None:
-            self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
+            async with self._pool_lock:
+                if self._pool is None:
+                    self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
         return self._pool
 
     async def ensure_schema(self) -> None:
