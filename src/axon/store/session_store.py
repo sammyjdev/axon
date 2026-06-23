@@ -6,42 +6,23 @@ from typing import TYPE_CHECKING
 import aiosqlite
 from pydantic import BaseModel, Field
 
-from axon.config.data_root import data_root
 from axon.core.decision import Decision
 from axon.core.edge import Edge
 from axon.store.pending import (
     DrainResult,
-    PendingPaths,
     emit_capture_warning,
     write_pending,
+)
+from axon.store.sqlite_helpers import (
+    _is_db_locked,
+    _pending_paths,
+    _warnings_log,
 )
 
 if TYPE_CHECKING:
     from axon.store.file_cache import SqliteFileCache
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
-
-
-def _is_db_locked(exc: Exception) -> bool:
-    """Return True if ``exc`` indicates SQLite write contention."""
-    if not isinstance(exc, aiosqlite.OperationalError):
-        return False
-    msg = str(exc).lower()
-    return "locked" in msg or "busy" in msg
-
-
-def _pending_paths() -> PendingPaths:
-    """Resolve the pending/quarantine layout under the AXON data root."""
-    root = data_root()
-    return PendingPaths(
-        pending_dir=root / "pending",
-        quarantine_dir=root / "pending-quarantine",
-        quarantine_log=root / "quarantine.jsonl",
-    )
-
-
-def _warnings_log() -> Path:
-    return data_root() / "capture-warnings.jsonl"
 
 
 async def _apply_migrations(db: aiosqlite.Connection) -> None:
@@ -204,30 +185,15 @@ class SessionStore:
         return await (await self._sessions()).save_code_change_inner(change)
 
     async def save_code_change(self, change: CodeChange) -> None:
-        try:
-            await self._save_code_change_inner(change)
-        except aiosqlite.OperationalError as exc:
-            if not _is_db_locked(exc):
-                raise
-            paths = _pending_paths()
-            await write_pending(
-                payload={
-                    "kind": "code_change",
-                    "commit_hash": change.commit_hash,
-                    "file_path": change.file_path,
-                    "diff_summary": change.diff_summary,
-                    "why": change.why,
-                    "changed_at": change.changed_at.isoformat(),
-                },
-                commit_hash=change.commit_hash,
-                paths=paths,
-            )
-            emit_capture_warning(
-                _warnings_log(),
-                kind="code_change",
-                commit_hash=change.commit_hash,
-                reason=str(exc),
-            )
+        # Thin delegation: error handling lives in the repository layer.
+        # - SQLite path: SqliteSessionRepository.save_code_change handles
+        #   db-locked contention with a pending-file fallback (dec-112).
+        # - Postgres path: errors propagate to the caller; PostgresSessionRepository
+        #   does not catch transient PG errors here - the caller (e.g. the commit hook)
+        #   is responsible for retry or logging.  Swallowing them with a dead
+        #   aiosqlite catch would silently lose writes on the PG path.
+        repo = await self._sessions()
+        await repo.save_code_change(change)
 
     async def get_recent_changes(self, file_path: str, limit: int = 5) -> list[CodeChange]:
         repo = await self._sessions()
