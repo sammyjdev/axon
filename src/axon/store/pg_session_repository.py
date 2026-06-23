@@ -9,6 +9,11 @@ from datetime import UTC, datetime
 
 import asyncpg
 
+from axon.store._session_columns import (
+    row_to_code_change,
+    row_to_session_memory,
+    row_to_session_note,
+)
 from axon.store.session_store import CodeChange, SessionMemory, SessionNote
 
 
@@ -66,12 +71,7 @@ class PostgresSessionRepository:
                 " WHERE project=$1 ORDER BY created_at DESC LIMIT $2",
                 project, limit,
             )
-        return [
-            SessionMemory(id=r["id"], project=r["project"], summary=r["summary"],
-                          raw_turns=r["raw_turns"],
-                          created_at=datetime.fromisoformat(r["created_at"]))
-            for r in rows
-        ]
+        return [row_to_session_memory(r) for r in rows]
 
     async def save_note(self, note: SessionNote) -> int:
         pool = await self._ensure_pool()
@@ -90,11 +90,7 @@ class PostgresSessionRepository:
                 " WHERE project=$1 ORDER BY created_at DESC LIMIT $2",
                 project, limit,
             )
-        return [
-            SessionNote(id=r["id"], project=r["project"], body=r["body"],
-                        created_at=datetime.fromisoformat(r["created_at"]))
-            for r in rows
-        ]
+        return [row_to_session_note(r) for r in rows]
 
     async def save_code_change_inner(self, change: CodeChange) -> None:
         pool = await self._ensure_pool()
@@ -120,14 +116,11 @@ class PostgresSessionRepository:
                 " WHERE file_path=$1 ORDER BY changed_at DESC LIMIT $2",
                 file_path, limit,
             )
-        return [
-            CodeChange(commit_hash=r["commit_hash"], file_path=r["file_path"],
-                       diff_summary=r["diff_summary"], why=r["why"],
-                       changed_at=datetime.fromisoformat(r["changed_at"]))
-            for r in rows
-        ]
+        return [row_to_code_change(r) for r in rows]
 
-    async def save_session(self, session_id, agent, repo, *, context_payload: str = "") -> None:
+    async def save_session(
+        self, session_id: str, agent: str, repo: str, *, context_payload: str = ""
+    ) -> None:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             await con.execute(
@@ -157,23 +150,14 @@ class PostgresSessionRepository:
             rows = await con.fetch(
                 "SELECT id, project, summary, raw_turns, created_at FROM session_memory"
                 " ORDER BY created_at")
-        return [
-            SessionMemory(id=r["id"], project=r["project"], summary=r["summary"],
-                          raw_turns=r["raw_turns"],
-                          created_at=datetime.fromisoformat(r["created_at"]))
-            for r in rows
-        ]
+        return [row_to_session_memory(r) for r in rows]
 
     async def all_notes(self) -> list[SessionNote]:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             rows = await con.fetch(
                 "SELECT id, project, body, created_at FROM session_note ORDER BY created_at")
-        return [
-            SessionNote(id=r["id"], project=r["project"], body=r["body"],
-                        created_at=datetime.fromisoformat(r["created_at"]))
-            for r in rows
-        ]
+        return [row_to_session_note(r) for r in rows]
 
     async def all_code_changes(self) -> list[CodeChange]:
         pool = await self._ensure_pool()
@@ -181,12 +165,7 @@ class PostgresSessionRepository:
             rows = await con.fetch(
                 "SELECT commit_hash, file_path, diff_summary, why, changed_at"
                 " FROM code_change ORDER BY changed_at")
-        return [
-            CodeChange(commit_hash=r["commit_hash"], file_path=r["file_path"],
-                       diff_summary=r["diff_summary"], why=r["why"],
-                       changed_at=datetime.fromisoformat(r["changed_at"]))
-            for r in rows
-        ]
+        return [row_to_code_change(r) for r in rows]
 
     async def all_sessions(self) -> list[dict]:
         pool = await self._ensure_pool()
