@@ -102,6 +102,9 @@ class SessionStore:
         self._path = str(db_path)
         self._conn: aiosqlite.Connection | None = None
         self._lock = asyncio.Lock()
+        # Dedicated lock for lazy repo init - must NOT reuse self._lock to
+        # avoid deadlock (self._lock serializes SQLite I/O; dec-121 / issue #29).
+        self._repo_init_lock = asyncio.Lock()
         self._graph_repo = None
         self._decision_repo = None
         self._session_repo = None
@@ -237,50 +240,59 @@ class SessionStore:
 
     async def _graph(self):
         if self._graph_repo is None:
-            from axon.config.runtime import load_runtime_config
+            async with self._repo_init_lock:
+                if self._graph_repo is None:
+                    from axon.config.runtime import load_runtime_config
 
-            rt = load_runtime_config()
-            if rt.graph_backend == "postgres":
-                from axon.store.pg_graph_repository import PostgresGraphRepository
+                    rt = load_runtime_config()
+                    if rt.graph_backend == "postgres":
+                        from axon.store.pg_graph_repository import PostgresGraphRepository
 
-                self._graph_repo = PostgresGraphRepository(rt.pg_url)
-                await self._graph_repo.ensure_schema()
-            else:
-                from axon.store.graph_repository import SqliteGraphRepository
+                        repo = PostgresGraphRepository(rt.pg_url)
+                        await repo.ensure_schema()
+                        self._graph_repo = repo
+                    else:
+                        from axon.store.graph_repository import SqliteGraphRepository
 
-                self._graph_repo = SqliteGraphRepository(self)
+                        self._graph_repo = SqliteGraphRepository(self)
         return self._graph_repo
 
     async def _decisions(self):
         if self._decision_repo is None:
-            from axon.config.runtime import load_runtime_config
+            async with self._repo_init_lock:
+                if self._decision_repo is None:
+                    from axon.config.runtime import load_runtime_config
 
-            rt = load_runtime_config()
-            if rt.decisions_backend == "postgres":
-                from axon.store.pg_decision_repository import PostgresDecisionRepository
+                    rt = load_runtime_config()
+                    if rt.decisions_backend == "postgres":
+                        from axon.store.pg_decision_repository import PostgresDecisionRepository
 
-                self._decision_repo = PostgresDecisionRepository(rt.pg_url)
-                await self._decision_repo.ensure_schema()
-            else:
-                from axon.store.decision_repository import SqliteDecisionRepository
+                        repo = PostgresDecisionRepository(rt.pg_url)
+                        await repo.ensure_schema()
+                        self._decision_repo = repo
+                    else:
+                        from axon.store.decision_repository import SqliteDecisionRepository
 
-                self._decision_repo = SqliteDecisionRepository(self)
+                        self._decision_repo = SqliteDecisionRepository(self)
         return self._decision_repo
 
     async def _sessions(self):
         if self._session_repo is None:
-            from axon.config.runtime import load_runtime_config
+            async with self._repo_init_lock:
+                if self._session_repo is None:
+                    from axon.config.runtime import load_runtime_config
 
-            rt = load_runtime_config()
-            if rt.sessions_backend == "postgres":
-                from axon.store.pg_session_repository import PostgresSessionRepository
+                    rt = load_runtime_config()
+                    if rt.sessions_backend == "postgres":
+                        from axon.store.pg_session_repository import PostgresSessionRepository
 
-                self._session_repo = PostgresSessionRepository(rt.pg_url)
-                await self._session_repo.ensure_schema()
-            else:
-                from axon.store.session_repository import SqliteSessionRepository
+                        repo = PostgresSessionRepository(rt.pg_url)
+                        await repo.ensure_schema()
+                        self._session_repo = repo
+                    else:
+                        from axon.store.session_repository import SqliteSessionRepository
 
-                self._session_repo = SqliteSessionRepository(self)
+                        self._session_repo = SqliteSessionRepository(self)
         return self._session_repo
 
     async def add_node(
