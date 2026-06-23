@@ -8,7 +8,9 @@ from testcontainers.postgres import PostgresContainer  # noqa: E402
 
 @pytest.fixture(scope="module")
 def pg_dsn():
-    with PostgresContainer("pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon") as pg:
+    with PostgresContainer(
+        "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+    ) as pg:
         # asyncpg DSN form
         yield pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
 
@@ -33,8 +35,17 @@ async def test_ensure_collections_idempotent(pg_dsn) -> None:
 def _chunk(cid: str, ctx: str = "knowledge", file_path: str = "a.py", dim: int = None):
     from axon.store.vector_store import VECTOR_SIZE, Chunk
     n = dim or VECTOR_SIZE
-    return Chunk(id=cid, vector=[0.1] * n, file_path=file_path, language="python",
-                 chunk_type="function", symbol="f", project="proj", ctx=ctx, content="def f(): pass")
+    return Chunk(
+        id=cid,
+        vector=[0.1] * n,
+        file_path=file_path,
+        language="python",
+        chunk_type="function",
+        symbol="f",
+        project="proj",
+        ctx=ctx,
+        content="def f(): pass",
+    )
 
 
 async def test_upsert_batch_inserts_and_is_idempotent(pg_dsn) -> None:

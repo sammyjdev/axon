@@ -45,7 +45,7 @@ def test_chunk_id_exact_value() -> None:
 
 
 def test_old_start_line_key_no_longer_accepted() -> None:
-    """The new signature has 3 positional args; old 2-arg call (path, Chunk) must raise TypeError."""
+    """New signature has 3 positional args; old 2-arg call (path, Chunk) must raise TypeError."""
     from axon.embedder.pipeline import _chunk_id
     with pytest.raises(TypeError):
         _chunk_id("src/foo.py")  # type: ignore[call-arg]

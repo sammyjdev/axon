@@ -10,7 +10,6 @@ from axon.config.runtime import RuntimeConfig, is_corporate_context, load_runtim
 from axon.observability.compliance import ComplianceEvent, emit_compliance_event
 from axon.observability.trace_store import TracePayload, TraceStore
 
-
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 
@@ -47,7 +46,7 @@ class ReasonCode(StrEnum):
 
 
 class PolicyDenied(Exception):
-    def __init__(self, decision: "PolicyDecision") -> None:
+    def __init__(self, decision: PolicyDecision) -> None:
         super().__init__(
             f"policy denied tool action: {decision.reason_code.value}"
         )

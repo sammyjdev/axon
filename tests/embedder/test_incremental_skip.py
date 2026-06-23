@@ -29,8 +29,8 @@ class _MockFileCache:
 @pytest.mark.asyncio
 async def test_unchanged_file_skipped(tmp_path: Path) -> None:
     """Engine.embed must not be called for a file whose sha1 is cached."""
-    from axon.store.file_cache import sha1_of_source
     from axon.embedder.pipeline import index_path
+    from axon.store.file_cache import sha1_of_source
 
     py_file = tmp_path / "hello.py"
     py_file.write_text("def hello(): return 1\n", encoding="utf-8")

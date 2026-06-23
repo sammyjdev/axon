@@ -23,7 +23,9 @@ class TestPythonCap:
         fn_chunks = [c for c in chunks if c.symbol.startswith("exact")]
         assert len(fn_chunks) == 1
         c = fn_chunks[0]
-        assert c.end_line - c.start_line + 1 == _MAX_CHUNK_LINES, "single chunk must be exactly at cap"
+        assert (
+            c.end_line - c.start_line + 1 == _MAX_CHUNK_LINES
+        ), "single chunk must be exactly at cap"
 
     def test_function_one_over_cap_splits(self) -> None:
         # n=cap -> cap+1 physical lines -> must split under the strict cap

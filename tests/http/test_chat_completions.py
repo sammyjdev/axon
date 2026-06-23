@@ -43,8 +43,10 @@ _FAKE_STRATEGY = RetrievalStrategy(
 )
 
 _FAKE_SEGMENTS = (
-    "### recall_context (python)\nArquivo: axon/recall/strategy.py\nScore: 0.91\nTrecho: recall ranked by recency",
-    "### ContextPack (python)\nArquivo: axon/context/contracts.py\nScore: 0.85\nTrecho: frozen dataclass with segments",
+    "### recall_context (python)\nArquivo: axon/recall/strategy.py\n"
+    "Score: 0.91\nTrecho: recall ranked by recency",
+    "### ContextPack (python)\nArquivo: axon/context/contracts.py\n"
+    "Score: 0.85\nTrecho: frozen dataclass with segments",
 )
 
 _FAKE_PACK = ContextPack(

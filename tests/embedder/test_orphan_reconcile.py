@@ -11,9 +11,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 import aiosqlite
+import pytest
 
 from axon.store.file_cache import SqliteFileCache
 
@@ -41,8 +40,8 @@ async def _make_real_cache(db_path: str) -> SqliteFileCache:
 @pytest.mark.asyncio
 async def test_no_point_accumulation_on_reindex(tmp_path: Path) -> None:
     """Re-indexing a changed file must NOT accumulate old + new points in Qdrant."""
-    from axon.embedder.pipeline import index_path
     from axon.embedder.chunker import Chunk
+    from axon.embedder.pipeline import index_path
 
     py_file = tmp_path / "module.py"
     py_file.write_text("def alpha(): pass\n", encoding="utf-8")

@@ -3,16 +3,21 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 
 def test_iter_git_files_returns_only_matching_suffixes(tmp_path: Path) -> None:
-    import subprocess
     repo = tmp_path / "r"
     repo.mkdir()
     subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t.com"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.name", "T"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@t.com"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "T"],
+        check=True,
+        capture_output=True,
+    )
     (repo / "a.py").write_text("pass\n")
     (repo / "b.ts").write_text("const x = 1;\n")
     (repo / "c.md").write_text("# doc\n")

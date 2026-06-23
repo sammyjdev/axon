@@ -111,6 +111,7 @@ def test_preload_dlls_called_on_module_import() -> None:
     asserts the mock was NOT called (guard kept it safe).
     """
     import onnxruntime as ort
+
     from axon.embedder import engine as eng_module
 
     real_has_preload = hasattr(ort, "preload_dlls")
