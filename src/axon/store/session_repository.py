@@ -14,10 +14,16 @@ from typing import Protocol, runtime_checkable
 
 import aiosqlite
 
+from axon.store._session_columns import (
+    row_to_code_change,
+    row_to_session_memory,
+    row_to_session_note,
+)
 from axon.store.pending import (
     emit_capture_warning,
     write_pending,
 )
+from axon.store.session_store import CodeChange, SessionMemory, SessionNote
 
 
 def _is_db_locked(exc: Exception) -> bool:
@@ -47,21 +53,59 @@ def _warnings_log():
 
 @runtime_checkable
 class SessionRepository(Protocol):
-    async def save_session_memory(self, mem) -> int: ...
-    async def get_session_memories(self, project: str, limit: int = 3) -> list: ...
-    async def save_note(self, note) -> int: ...
-    async def get_notes(self, project: str, limit: int = 10) -> list: ...
-    async def save_code_change_inner(self, change) -> None: ...
-    async def save_code_change(self, change) -> None: ...
-    async def get_recent_changes(self, file_path: str, limit: int = 5) -> list: ...
+    async def save_session_memory(self, mem: SessionMemory) -> int:
+        """INSERT a session-memory summary row; return the new row id."""
+        ...
+
+    async def get_session_memories(self, project: str, limit: int = 3) -> list[SessionMemory]:
+        """SELECT the N most-recent session-memory rows for a project, newest first."""
+        ...
+
+    async def save_note(self, note: SessionNote) -> int:
+        """INSERT a session note row; return the new row id."""
+        ...
+
+    async def get_notes(self, project: str, limit: int = 10) -> list[SessionNote]:
+        """SELECT the N most-recent session notes for a project, newest first."""
+        ...
+
+    async def save_code_change_inner(self, change: CodeChange) -> None:
+        """INSERT OR REPLACE a code-change row without any fallback or retry."""
+        ...
+
+    async def save_code_change(self, change: CodeChange) -> None:
+        """Persist a code-change row; may write to the pending queue on transient failure."""
+        ...
+
+    async def get_recent_changes(self, file_path: str, limit: int = 5) -> list[CodeChange]:
+        """SELECT the N most-recent code-change rows for a file path, newest first."""
+        ...
+
     async def save_session(
         self, session_id: str, agent: str, repo: str, *, context_payload: str = ""
-    ) -> None: ...
-    async def end_session(self, session_id: str) -> str | None: ...
-    async def all_memories(self) -> list: ...
-    async def all_notes(self) -> list: ...
-    async def all_code_changes(self) -> list: ...
-    async def all_sessions(self) -> list: ...
+    ) -> None:
+        """INSERT OR REPLACE a session row, recording the start timestamp."""
+        ...
+
+    async def end_session(self, session_id: str) -> str | None:
+        """UPDATE sessions SET ended_at=now; return repo name, or None if id unknown."""
+        ...
+
+    async def all_memories(self) -> list[SessionMemory]:
+        """SELECT all session-memory rows ordered by created_at (full-scan for migration)."""
+        ...
+
+    async def all_notes(self) -> list[SessionNote]:
+        """SELECT all session-note rows ordered by created_at (full-scan for migration)."""
+        ...
+
+    async def all_code_changes(self) -> list[CodeChange]:
+        """SELECT all code-change rows ordered by changed_at (full-scan for migration)."""
+        ...
+
+    async def all_sessions(self) -> list[dict]:
+        """SELECT all session rows as plain dicts ordered by started_at (migration scan)."""
+        ...
 
 
 class SqliteSessionRepository:
@@ -73,9 +117,7 @@ class SqliteSessionRepository:
 
     # ── Session Memory ────────────────────────────────────────────────────────
 
-    async def save_session_memory(self, mem) -> int:
-        from axon.store.session_store import SessionMemory  # noqa: F401 (type guard only)
-
+    async def save_session_memory(self, mem: SessionMemory) -> int:
         async with self._session._lock:
             db = await self._session._connection()
             cursor = await db.execute(
@@ -86,9 +128,7 @@ class SqliteSessionRepository:
             await db.commit()
             return cursor.lastrowid  # type: ignore[return-value]
 
-    async def get_session_memories(self, project: str, limit: int = 3) -> list:
-        from axon.store.session_store import SessionMemory
-
+    async def get_session_memories(self, project: str, limit: int = 3) -> list[SessionMemory]:
         async with self._session._lock:
             db = await self._session._connection()
             db.row_factory = aiosqlite.Row
@@ -96,20 +136,11 @@ class SqliteSessionRepository:
                 "SELECT * FROM session_memory WHERE project = ? ORDER BY created_at DESC LIMIT ?",
                 (project, limit),
             )
-        return [
-            SessionMemory(
-                id=r["id"],
-                project=r["project"],
-                summary=r["summary"],
-                raw_turns=r["raw_turns"],
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        return [row_to_session_memory(r) for r in rows]
 
     # ── Session Note ──────────────────────────────────────────────────────────
 
-    async def save_note(self, note) -> int:
+    async def save_note(self, note: SessionNote) -> int:
         async with self._session._lock:
             db = await self._session._connection()
             cursor = await db.execute(
@@ -119,9 +150,7 @@ class SqliteSessionRepository:
             await db.commit()
             return cursor.lastrowid  # type: ignore[return-value]
 
-    async def get_notes(self, project: str, limit: int = 10) -> list:
-        from axon.store.session_store import SessionNote
-
+    async def get_notes(self, project: str, limit: int = 10) -> list[SessionNote]:
         async with self._session._lock:
             db = await self._session._connection()
             db.row_factory = aiosqlite.Row
@@ -129,19 +158,11 @@ class SqliteSessionRepository:
                 "SELECT * FROM session_note WHERE project = ? ORDER BY created_at DESC LIMIT ?",
                 (project, limit),
             )
-        return [
-            SessionNote(
-                id=r["id"],
-                project=r["project"],
-                body=r["body"],
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        return [row_to_session_note(r) for r in rows]
 
     # ── Code Change ───────────────────────────────────────────────────────────
 
-    async def save_code_change_inner(self, change) -> None:
+    async def save_code_change_inner(self, change: CodeChange) -> None:
         async with self._session._lock:
             db = await self._session._connection()
             await db.execute(
@@ -158,7 +179,7 @@ class SqliteSessionRepository:
             )
             await db.commit()
 
-    async def save_code_change(self, change) -> None:
+    async def save_code_change(self, change: CodeChange) -> None:
         try:
             await self.save_code_change_inner(change)
         except aiosqlite.OperationalError as exc:
@@ -184,9 +205,7 @@ class SqliteSessionRepository:
                 reason=str(exc),
             )
 
-    async def get_recent_changes(self, file_path: str, limit: int = 5) -> list:
-        from axon.store.session_store import CodeChange
-
+    async def get_recent_changes(self, file_path: str, limit: int = 5) -> list[CodeChange]:
         async with self._session._lock:
             db = await self._session._connection()
             db.row_factory = aiosqlite.Row
@@ -194,16 +213,7 @@ class SqliteSessionRepository:
                 "SELECT * FROM code_change WHERE file_path = ? ORDER BY changed_at DESC LIMIT ?",
                 (file_path, limit),
             )
-        return [
-            CodeChange(
-                commit_hash=r["commit_hash"],
-                file_path=r["file_path"],
-                diff_summary=r["diff_summary"],
-                why=r["why"],
-                changed_at=datetime.fromisoformat(r["changed_at"]),
-            )
-            for r in rows
-        ]
+        return [row_to_code_change(r) for r in rows]
 
     # ── Sessions ──────────────────────────────────────────────────────────────
 
@@ -245,71 +255,31 @@ class SqliteSessionRepository:
 
     # ── Full-scan helpers (for data-copy script) ──────────────────────────────
 
-    async def all_memories(self):
-        import aiosqlite as _a
-
-        from axon.store.session_store import SessionMemory
-
+    async def all_memories(self) -> list[SessionMemory]:
         async with self._session._lock:
             db = await self._session._connection()
-            db.row_factory = _a.Row
+            db.row_factory = aiosqlite.Row
             rows = await db.execute_fetchall("SELECT * FROM session_memory ORDER BY created_at")
-        return [
-            SessionMemory(
-                id=r["id"],
-                project=r["project"],
-                summary=r["summary"],
-                raw_turns=r["raw_turns"],
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        return [row_to_session_memory(r) for r in rows]
 
-    async def all_notes(self):
-        import aiosqlite as _a
-
-        from axon.store.session_store import SessionNote
-
+    async def all_notes(self) -> list[SessionNote]:
         async with self._session._lock:
             db = await self._session._connection()
-            db.row_factory = _a.Row
+            db.row_factory = aiosqlite.Row
             rows = await db.execute_fetchall("SELECT * FROM session_note ORDER BY created_at")
-        return [
-            SessionNote(
-                id=r["id"],
-                project=r["project"],
-                body=r["body"],
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        return [row_to_session_note(r) for r in rows]
 
-    async def all_code_changes(self):
-        import aiosqlite as _a
-
-        from axon.store.session_store import CodeChange
-
+    async def all_code_changes(self) -> list[CodeChange]:
         async with self._session._lock:
             db = await self._session._connection()
-            db.row_factory = _a.Row
+            db.row_factory = aiosqlite.Row
             rows = await db.execute_fetchall("SELECT * FROM code_change ORDER BY changed_at")
-        return [
-            CodeChange(
-                commit_hash=r["commit_hash"],
-                file_path=r["file_path"],
-                diff_summary=r["diff_summary"],
-                why=r["why"],
-                changed_at=datetime.fromisoformat(r["changed_at"]),
-            )
-            for r in rows
-        ]
+        return [row_to_code_change(r) for r in rows]
 
-    async def all_sessions(self):
-        import aiosqlite as _a
-
+    async def all_sessions(self) -> list[dict]:
         async with self._session._lock:
             db = await self._session._connection()
-            db.row_factory = _a.Row
+            db.row_factory = aiosqlite.Row
             rows = await db.execute_fetchall(
                 "SELECT id, agent, repo, started_at, ended_at, context_payload"
                 " FROM sessions ORDER BY started_at"
