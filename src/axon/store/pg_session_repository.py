@@ -14,6 +14,7 @@ from axon.store._session_columns import (
     row_to_session_memory,
     row_to_session_note,
 )
+from axon.store.pg_migrations import apply_pg_migrations
 from axon.store.session_store import CodeChange, SessionMemory, SessionNote
 
 
@@ -31,28 +32,12 @@ class PostgresSessionRepository:
         return self._pool
 
     async def ensure_schema(self) -> None:
+        # Delegate to the versioned Postgres migration runner (MS-4 / #30). The
+        # session baseline DDL is migration 0001; applying it is idempotent so
+        # repeated calls and pre-existing tables are safe.
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            await con.execute(
-                "CREATE TABLE IF NOT EXISTS session_memory (id bigserial PRIMARY KEY,"
-                " project text NOT NULL, summary text NOT NULL, raw_turns integer NOT NULL,"
-                " created_at text NOT NULL)"
-            )
-            await con.execute(
-                "CREATE TABLE IF NOT EXISTS session_note (id bigserial PRIMARY KEY,"
-                " project text NOT NULL, body text NOT NULL, created_at text NOT NULL)"
-            )
-            await con.execute(
-                "CREATE TABLE IF NOT EXISTS code_change (commit_hash text NOT NULL,"
-                " file_path text NOT NULL, diff_summary text NOT NULL,"
-                " why text NOT NULL DEFAULT '', changed_at text NOT NULL,"
-                " PRIMARY KEY (commit_hash, file_path))"
-            )
-            await con.execute(
-                "CREATE TABLE IF NOT EXISTS sessions (id text PRIMARY KEY, agent text NOT NULL,"
-                " repo text NOT NULL, started_at text NOT NULL, ended_at text,"
-                " context_payload text NOT NULL DEFAULT '{}')"
-            )
+            await apply_pg_migrations(con)
 
     async def save_session_memory(self, mem: SessionMemory) -> int:
         pool = await self._ensure_pool()
