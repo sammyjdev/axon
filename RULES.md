@@ -43,6 +43,17 @@ change would violate one of these, STOP and surface it - do not work around it.
   config and in-process value objects may use `dataclass`. Prefer either over
   ad-hoc dicts.
 
+## Onboarding lists (agent scope)
+
+- Two non-identical lists govern "which repos AXON knows about" and must NOT be
+  merged: `~/.claude/axon/ROUTER.md` (agent scope, canonical) and
+  `config/projects.json` (index manifest, per-machine and multi-machine by
+  design). See the "Onboarding layers" note in `CLAUDE.md`.
+- Invariant, enforced by `scripts/check_onboarding_drift.py` (gated under
+  `tests/scripts`): every repo onboarded on a machine (AXON git hooks installed)
+  MUST appear in the canonical ROUTER.md list. The reverse is allowed (a listed
+  repo may live on another machine). Onboard a repo -> add it to ROUTER.md.
+
 ## Safety
 
 - Never commit credentials, tokens, `.env` files, or user/vault data.
