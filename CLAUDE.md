@@ -87,6 +87,21 @@ production until reworded-revision recall is validated. See
 `docs/decisions/dec-115-supersession-ranking-penalty.md` and
 `docs/USAGE_GUIDE.md`.
 
+## Onboarding layers (do not conflate)
+
+Two separate, intentionally non-identical lists govern "which repos AXON knows
+about". Do **not** try to unify or sync them:
+
+- **Agent scope** — `~/.claude/axon/ROUTER.md` (global, synced dotfiles). The
+  **single source of truth** for which repos Claude should recall/capture in. Any
+  onboarded-repo list elsewhere (e.g. the integration plan/spec under
+  `docs/superpowers/`) only references this one.
+- **Index manifest** — `config/projects.json` (committed, read by
+  `src/axon/cli/pb.py` for batch indexing). Per-machine and **multi-machine by
+  design**: it carries absolute paths for the machine that authored it (e.g. macOS
+  `/Users/...`), so on another machine it is dormant and onboarding happens
+  per-repo via `axon init <path>`. Foreign paths here are expected, not stale.
+
 ## Code Conventions
 
 - Python 3.11+ with type hints
