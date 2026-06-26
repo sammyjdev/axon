@@ -1050,6 +1050,8 @@ async def axon_health() -> str:
     # asyncio/Proactor event-loop thread can stall for ~30s on Windows (handle
     # inheritance of the stdio pipes), which hung this whole tool. to_thread
     # keeps the loop free so the probe timeout is actually honoured.
+    # Probe inside the vault, not the server's process cwd — the vault is what
+    # we care about versioning, and the server rarely runs from inside it.
     try:
         await asyncio.wait_for(
             asyncio.to_thread(
@@ -1058,6 +1060,7 @@ async def axon_health() -> str:
                 text=True,
                 stdin=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                cwd=vault if vault else None,
             ),
             timeout=_PROBE_TIMEOUT,
         )
