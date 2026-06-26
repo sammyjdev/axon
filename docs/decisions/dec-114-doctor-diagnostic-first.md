@@ -1,63 +1,62 @@
-# dec-114 — `pb doctor` diagnóstico-first + validação de toolchain
+# dec-114 - `pb doctor` diagnostic-first + toolchain validation
 
 - Status: accepted
 - Date: 2026-05-27
 
 ## Context
 
-`pb doctor` (`src/axon/cli/pb.py:685`) hoje é check único, sem modos.
-ARD-010 já define hardware-fit detection. P0-T4 do roadmap pede
-`pb doctor` para emitir pass/warn/fail e recomendar modo de operação.
+`pb doctor` (`src/axon/cli/pb.py:685`) currently has a single check with no
+modes. ARD-010 already defines hardware-fit detection. P0-T4 of the roadmap
+asks `pb doctor` to emit pass/warn/fail and recommend an operating mode.
 
-Red-team R1 propôs `pb doctor --repair` para corrigir hooks
-divergentes. **Rejeitado** porque mutação automática em
-`.git/hooks/` ou outras superfícies compartilhadas é classificada
-como risco em qualquer revisão de ferramenta enterprise. R3 pediu
-validação de compatibilidade com toolchain de commit (`commitlint`,
-`semantic-release`) para o sinal `arch:` ([dec-110](dec-110-declarative-memory-signal.md)).
-R4-R5 pediram checks para backlog de `pending/`, drafts
-`stale-pending`, e tamanho do `pending-quarantine/`.
+Red-team R1 proposed `pb doctor --repair` to fix divergent hooks.
+**Rejected** because automatic mutation of `.git/hooks/` or other shared
+surfaces is classified as a risk in any enterprise tool review. R3 requested
+validation of compatibility with the commit toolchain (`commitlint`,
+`semantic-release`) for the `arch:` signal ([dec-110](dec-110-declarative-memory-signal.md)).
+R4-R5 requested checks for `pending/` backlog, `stale-pending` drafts,
+and the size of `pending-quarantine/`.
 
 ## Decision
 
-### Três modos
+### Three modes
 
-| Modo | Default? | Comportamento |
+| Mode | Default? | Behavior |
 |---|---|---|
-| `pb doctor` | sim | diagnóstico read-only, exit code reflete severidade |
-| `pb doctor --apply` | opt-in | sugere correções com confirmação interativa; **nunca** em CI |
-| `pb doctor --ci` | explícito | output JSON em stdout, exit 0 sempre |
+| `pb doctor` | yes | read-only diagnostics, exit code reflects severity |
+| `pb doctor --apply` | opt-in | suggests fixes with interactive confirmation; **never** in CI |
+| `pb doctor --ci` | explicit | structured JSON on stdout, exit 0 always |
 
-`--apply` requer TTY check; refuse com exit 1 em non-interactive.
+`--apply` requires a TTY check; refuses with exit 1 in non-interactive mode.
 
-### Checks obrigatórios
+### Required checks
 
-| Check | Categoria | Detalhe |
+| Check | Category | Detail |
 |---|---|---|
-| Hooks divergentes do esperado | hooks | sem reparar (dec-113) |
-| Dependências runtime | env | Python ≥ 3.11, SQLite WAL viability |
-| Hardware fit | env | reusa ARD-010 |
-| Backlog em `.axon/pending/` | captura | warning se > N arquivos ou > T dias |
-| Drafts em `stale-pending` (TTL excedido) | ADR | drafts sem L1-full após 24h |
-| Tamanho de `.axon/pending-quarantine/` | captura | warning + listagem |
-| Warnings persistentes em `capture-warnings.jsonl` | captura | sinal de contenção crônica |
-| Compatibilidade `arch:` com toolchain de commit | hooks | scan de `commitlint.config.*`, `.commitlintrc*`, `release.config.js`, `package.json#commitlint`; warning + snippet de fix se `type-enum` rígido sem `arch`/`decision` |
+| Hooks divergent from expected | hooks | without repairing (dec-113) |
+| Runtime dependencies | env | Python >= 3.11, SQLite WAL viability |
+| Hardware fit | env | reuses ARD-010 |
+| Backlog in `.axon/pending/` | capture | warning if > N files or > T days |
+| Drafts in `stale-pending` (TTL exceeded) | ADR | drafts without L1-full after 24h |
+| Size of `.axon/pending-quarantine/` | capture | warning + listing |
+| Persistent warnings in `capture-warnings.jsonl` | capture | signal of chronic contention |
+| `arch:` compatibility with commit toolchain | hooks | scan `commitlint.config.*`, `.commitlintrc*`, `release.config.js`, `package.json#commitlint`; warning + fix snippet if strict `type-enum` without `arch`/`decision` |
 
-### O que doctor NÃO faz
+### What doctor does NOT do
 
-- Não muta husky ou pre-commit do usuário
-- Não corrige `commitlint.config` automaticamente — só sugere
-- Não reinstala hooks AXON automaticamente — só reporta divergência
-- Não apaga drafts dormentes — só reporta acumulação
-- Não apaga quarantine — só reporta
+- Does not mutate the user's husky or pre-commit
+- Does not fix `commitlint.config` automatically - only suggests
+- Does not reinstall AXON hooks automatically - only reports divergence
+- Does not delete dormant drafts - only reports accumulation
+- Does not delete quarantine - only reports
 
 ### Output
 
-**Default mode**: tabela human-readable com colunas
-`check | status | detalhe | sugestão`. Exit code reflete severidade
-máxima (0=ok, 1=warn, 2=fail).
+**Default mode**: human-readable table with columns
+`check | status | detail | suggestion`. Exit code reflects maximum severity
+(0=ok, 1=warn, 2=fail).
 
-**CI mode**: JSON estruturado:
+**CI mode**: structured JSON:
 
 ```json
 {
@@ -71,34 +70,34 @@ máxima (0=ok, 1=warn, 2=fail).
 }
 ```
 
-Exit 0 sempre em `--ci` para não quebrar pipelines.
+Exit 0 always in `--ci` to avoid breaking pipelines.
 
-**Apply mode**: por check com `auto_fix` disponível (raro), prompt
-interativo `[y/N]`. Sem auto_fix → mesmo output do default.
+**Apply mode**: for each check with an available `auto_fix` (rare), interactive
+prompt `[y/N]`. Without auto_fix -> same output as default.
 
 ## Rationale
 
-- **Doctor mutador é risco** em qualquer security review enterprise.
-  Diagnóstico + `--apply` opt-in preserva valor sem cruzar a linha.
-- **CI mode exit 0** evita que doctor vire blocker de pipeline por
-  warnings; usuário decide quando agir.
-- **Validação de toolchain de commit** previne falha em produção:
-  dev configura `arch:`, type-enum rejeita, pipeline quebra. Doctor
-  detecta antes do primeiro uso.
-- **Checks de backlog/quarantine** dão visibilidade ao estado da
-  captura sem inspeção manual do `.axon/`.
+- **Mutating doctor is a risk** in any enterprise security review.
+  Diagnostics + opt-in `--apply` preserves value without crossing the line.
+- **CI mode exit 0** prevents doctor from becoming a pipeline blocker due to
+  warnings; the user decides when to act.
+- **Commit toolchain validation** prevents production failures: dev configures
+  `arch:`, type-enum rejects it, pipeline breaks. Doctor detects this before
+  first use.
+- **Backlog/quarantine checks** give visibility into capture state without
+  manual inspection of `.axon/`.
 
 ## Consequences
 
-- `pb doctor` refatorado em `pb.py:685` para 3 modos.
-- Novo módulo `axon.doctor` com `checks/` por categoria
+- `pb doctor` refactored in `pb.py:685` for 3 modes.
+- New module `axon.doctor` with `checks/` per category
   (hooks, env, capture, adr, toolchain).
-- Cada check expõe `(status, detail, suggestion, auto_fix?)`.
-- Output formatadores separados (`formatters/human.py`,
+- Each check exposes `(status, detail, suggestion, auto_fix?)`.
+- Separate output formatters (`formatters/human.py`,
   `formatters/json.py`).
-- `--ci` mode usado por CI workflows (referenciado em dec-107).
-- Aceito como risco residual: usuário ignora warnings persistentes —
-  doctor não força ação, apenas reporta.
-- Aceito como risco residual: toolchain custom de commit que não
-  segue convenção `commitlint`/`semantic-release` não é detectada —
-  workaround manual via trailer (dec-110).
+- `--ci` mode used by CI workflows (referenced in dec-107).
+- Accepted as residual risk: user ignores persistent warnings -
+  doctor does not force action, only reports.
+- Accepted as residual risk: custom commit toolchain that does not
+  follow `commitlint`/`semantic-release` convention is not detected -
+  manual workaround via trailer (dec-110).

@@ -1,33 +1,33 @@
-# dec-106 — Routing profiles: FREE (Groq + NIM) e PAID (OpenRouter + Groq pago)
+# dec-106 - Routing profiles: FREE (Groq + NIM) and PAID (OpenRouter + paid Groq)
 
 - Status: accepted
 - Date: 2026-05-25
 
 ## Context
 
-O router de AXON (D2 / ADR-002) define tiers Haiku/Sonnet/Opus rotando direto
-pra API Anthropic. Dois cenários reais não são bem servidos por isso:
+The AXON router (D2 / ADR-002) defines Haiku/Sonnet/Opus tiers routing directly
+to the Anthropic API. Two real-world scenarios are not well served by this:
 
-1. **Hardware modesto sem orçamento de API.** Mac 16GB não roda Ollama em
-   modelos úteis (gemma4:26b sai de questão; phi3:mini cai em qualidade).
-   Sem API key, AXON fica inoperante.
-2. **Quem tem créditos pagos preferiria OpenRouter** (unifica billing, sem
-   precisar gerenciar key Anthropic separada) mas mantendo o mesmo perfil
-   de tier Claude que D2 define.
+1. **Modest hardware with no API budget.** A 16 GB Mac cannot run Ollama with
+   useful models (gemma4:26b is out of the question; phi3:mini drops in quality).
+   Without an API key, AXON is inoperable.
+2. **Users with paid credits would prefer OpenRouter** (unified billing, no need
+   to manage a separate Anthropic key) while keeping the same Claude tier profile
+   that D2 defines.
 
-dec-102 congelou expansão do router. Esta decisão introduz o conceito de
-**profile** como configuração — sem novos modes, sem novos profiles TOML —
-respeitando esse congelamento.
+dec-102 froze router expansion. This decision introduces the concept of
+**profile** as configuration - no new modes, no new TOML profiles -
+respecting that freeze.
 
 ## Decision
 
-Introduzir dois routing profiles selecionáveis via `AXON_PROVIDER_PROFILE`:
+Introduce two routing profiles selectable via `AXON_PROVIDER_PROFILE`:
 
 ### FREE (default)
 
-Sem custo direto, sujeito a rate limits dos provedores.
+No direct cost, subject to provider rate limits.
 
-| TaskType | Modelo |
+| TaskType | Model |
 | --- | --- |
 | TRIVIAL_COMPLETION | `groq/llama-3.1-8b-instant` |
 | CODE_ANALYSIS | `groq/llama-3.3-70b-versatile` |
@@ -39,9 +39,9 @@ Sem custo direto, sujeito a rate limits dos provedores.
 
 ### PAID
 
-Crédito pago, preserva D2 via OpenRouter.
+Paid credit, preserves D2 via OpenRouter.
 
-| TaskType | Modelo |
+| TaskType | Model |
 | --- | --- |
 | TRIVIAL_COMPLETION | `openrouter/anthropic/claude-haiku-4` |
 | CODE_ANALYSIS | `openrouter/anthropic/claude-sonnet-4` |
@@ -51,81 +51,80 @@ Crédito pago, preserva D2 via OpenRouter.
 | UNKNOWN | `openrouter/anthropic/claude-haiku-4` |
 | classifier | `groq/llama-3.1-8b-instant` (cheap) |
 
-### Mudanças no engine
+### Engine changes
 
-- Mapping `task_type → model` agora vem de `axon.router.profiles`, não mais
-  hard-coded em `engine.py`.
-- Downgrade por budget vira **task-type-driven** (não compara strings de
-  modelo): ARCHITECTURE/DEEP_REASONING cai pra CODE_ANALYSIS quando estoura
-  `_OPUS_BUDGET`; CODE_ANALYSIS cai pra TRIVIAL_COMPLETION quando estoura
-  `_BUDGET_USD`. Funciona pra qualquer profile.
-- `request_opus=True` continua bypassando o gate de Opus budget.
-- Classifier deixa de usar SDK do Ollama diretamente; vai sempre via LiteLLM
-  com o modelo do profile.
-- Validação de compliance OpenRouter (`validate_openrouter_compliance`)
-  vira opt-in via `AXON_OPENROUTER_COMPLIANCE=1` (default off). Isso evita
-  quebrar PAID profile pra uso pessoal onde compliance metadata não faz
-  sentido. Quem precisa do guardrail original re-habilita explicitamente.
-- `AXON_PROVIDER_OLLAMA` muda default de `1` pra `0`. Ollama continua
-  suportado (ADR-003/D3 intacto), mas habilita explicitamente.
+- The `task_type → model` mapping now comes from `axon.router.profiles`, no
+  longer hard-coded in `engine.py`.
+- Budget downgrade becomes **task-type-driven** (no string comparison of model
+  names): ARCHITECTURE/DEEP_REASONING falls back to CODE_ANALYSIS when
+  `_OPUS_BUDGET` is exceeded; CODE_ANALYSIS falls back to TRIVIAL_COMPLETION
+  when `_BUDGET_USD` is exceeded. Works for any profile.
+- `request_opus=True` continues to bypass the Opus budget gate.
+- Classifier no longer calls the Ollama SDK directly; always goes through
+  LiteLLM with the profile's model.
+- OpenRouter compliance validation (`validate_openrouter_compliance`) becomes
+  opt-in via `AXON_OPENROUTER_COMPLIANCE=1` (default off). This avoids breaking
+  the PAID profile for personal use where compliance metadata does not apply.
+  Those who need the original guardrail can re-enable it explicitly.
+- `AXON_PROVIDER_OLLAMA` default changes from `1` to `0`. Ollama remains
+  supported (ADR-003/D3 intact), but must be enabled explicitly.
 
 ## Rationale
 
-- **Profile FREE resolve o caso "Mac sem hardware + sem budget de API"**
-  com qualidade decente (Llama 70B free na NIM é muito melhor que phi3:mini
-  local).
-- **Profile PAID preserva D2** semanticamente — só troca o transport
-  (Anthropic native → OpenRouter). Não viola ADR-002.
-- **Sem expandir surface do router** (dec-102): profiles são config, não
-  feature nova. Não há `axon profile create`, não há novos modes.
-- **Downgrade task-type-driven** é mais limpo que comparação de strings,
-  e escala pra qualquer profile futuro sem refatoração.
+- **FREE profile solves the "Mac with no hardware + no API budget" case**
+  with decent quality (Llama 70B free on NIM is far better than local phi3:mini).
+- **PAID profile preserves D2** semantically - only swaps the transport
+  (native Anthropic -> OpenRouter). Does not violate ADR-002.
+- **No router surface expansion** (dec-102): profiles are config, not a new
+  feature. There is no `axon profile create`, no new modes.
+- **Task-type-driven downgrade** is cleaner than string comparison, and scales
+  to any future profile without refactoring.
 
 ## Consequences
 
-- **ARD-001 (context isolation) reforçado por incompatibilidade**: profiles
-  FREE/PAID são puramente cloud. Para `ctx=work` (restricted), policy
-  bloqueia cloud — então essas tasks falham. **Suporte a work ctx fica
-  fora de escopo deste roadmap** (ver Out-of-scope abaixo). Os guardrails
-  em `policy/core.py` e a marca `.ctxguard` continuam ativos: work ctx
-  segue protegido contra cloud, só não há caminho de execução.
-- **Rate limit gate implementado** em `axon/resilience/rate_limiter.py`
-  (fixed-window por minuto e por dia, Redis com memory fallback).
-  Configurável via `AXON_<PROVIDER>_MAX_RPM` / `AXON_<PROVIDER>_MAX_RPD`.
-  Defaults: Groq 25/min e 13000/dia (margem sob 30/14400 reais), NIM
-  50/min e 950/dia. Quando estoura, `complete()` e classifier levantam
-  `RuntimeError(DENY_RATE_LIMIT)` — não conta como falha de modelo (não
-  abre o circuit breaker).
-- **Custo do PAID profile não bate exatamente com D2 nativa.** OpenRouter
-  adiciona ~10% sobre Anthropic direto. `_COST_PER_1K` em `profiles.py`
-  reflete estimativa OpenRouter, não preço Anthropic nativo.
-- **Slugs OpenRouter** (`openrouter/anthropic/claude-{haiku,sonnet,opus}-4`)
-  podem mudar quando OpenRouter versionar. Override via
-  `AXON_PROVIDER_PROFILE` + edição local de `profiles.py` ou env var futura.
-- **`expansion/service.py` continua usando `_RUNTIME.classifier_cloud_model`**
-  — agora resolve pelo profile, então custo estimado pode ficar 0 (Groq
-  free). Aceitável.
+- **ARD-001 (context isolation) reinforced by incompatibility**: FREE/PAID
+  profiles are purely cloud. For `ctx=work` (restricted), policy blocks cloud
+  - so those tasks fail. **Support for work ctx is out of scope for this
+  roadmap** (see Out-of-scope below). Guardrails in `policy/core.py` and the
+  `.ctxguard` marker remain active: work ctx stays protected against cloud;
+  there is just no execution path.
+- **Rate limit gate implemented** in `axon/resilience/rate_limiter.py`
+  (fixed-window per minute and per day, Redis with memory fallback).
+  Configurable via `AXON_<PROVIDER>_MAX_RPM` / `AXON_<PROVIDER>_MAX_RPD`.
+  Defaults: Groq 25/min and 13000/day (margin under real 30/14400), NIM
+  50/min and 950/day. When exceeded, `complete()` and classifier raise
+  `RuntimeError(DENY_RATE_LIMIT)` - not counted as a model failure (does not
+  open the circuit breaker).
+- **Cost of the PAID profile does not match native D2 exactly.** OpenRouter
+  adds ~10% over direct Anthropic. `_COST_PER_1K` in `profiles.py` reflects
+  the OpenRouter estimate, not the native Anthropic price.
+- **OpenRouter slugs** (`openrouter/anthropic/claude-{haiku,sonnet,opus}-4`)
+  may change when OpenRouter versions them. Override via
+  `AXON_PROVIDER_PROFILE` + local editing of `profiles.py` or a future env var.
+- **`expansion/service.py` continues using `_RUNTIME.classifier_cloud_model`**
+  - now resolved by the profile, so estimated cost may be 0 (Groq free).
+  Acceptable.
 
 ## Out-of-scope
 
-- **Suporte a `ctx=work` neste roadmap.** Hardware-alvo (Mac 16GB) não
-  comporta Ollama em modelo útil, e cloud é vedada por ARD-001. Habilitar
-  work ctx exigiria infra remota dedicada (Ollama self-hosted em outra
-  máquina via `AXON_OLLAMA_REMOTE_HOST`), o que está fora do foco atual.
-  Guardrails ficam ativos — tasks com `ctx=work` continuam sendo bloqueadas
-  pela policy, comportamento correto.
-- **Suporte multi-profile dinâmico** (trocar de profile mid-session). Profile
-  é lido na carga do módulo; restart resolve.
+- **Support for `ctx=work` in this roadmap.** The target hardware (16 GB Mac)
+  cannot run Ollama with a useful model, and cloud is blocked by ARD-001.
+  Enabling work ctx would require dedicated remote infrastructure (Ollama
+  self-hosted on another machine via `AXON_OLLAMA_REMOTE_HOST`), which is
+  outside the current focus. Guardrails remain active - tasks with `ctx=work`
+  continue to be blocked by policy, which is the correct behavior.
+- **Dynamic multi-profile support** (switching profiles mid-session). Profile
+  is read at module load time; a restart resolves this.
 
 ## Migration
 
-Para usuários existentes:
+For existing users:
 
-1. Sem ação: default vira FREE, requer `GROQ_API_KEY` e `NVIDIA_NIM_API_KEY`.
-2. Se quiser manter D2 nativa Anthropic: setar `AXON_PROVIDER_PROFILE=paid`
-   **não** funciona pra isso (PAID usa OpenRouter). Manter export de
-   `ANTHROPIC_API_KEY` e editar `profiles.py` localmente pra apontar pra
-   slugs nativos (`claude-haiku-4-5-20251001` etc.).
-3. Se tinha Ollama configurado: setar `AXON_PROVIDER_OLLAMA=1` explícito
-   (default mudou pra 0) e usar `AXON_CLASSIFIER_CLOUD_MODEL` apontando
-   pra `ollama/<modelo>` (LiteLLM resolve).
+1. No action: default becomes FREE, requires `GROQ_API_KEY` and `NVIDIA_NIM_API_KEY`.
+2. To keep native Anthropic D2: setting `AXON_PROVIDER_PROFILE=paid`
+   **does not** work for this (PAID uses OpenRouter). Keep exporting
+   `ANTHROPIC_API_KEY` and edit `profiles.py` locally to point to native
+   slugs (`claude-haiku-4-5-20251001` etc.).
+3. If Ollama was configured: set `AXON_PROVIDER_OLLAMA=1` explicitly
+   (default changed to 0) and use `AXON_CLASSIFIER_CLOUD_MODEL` pointing
+   to `ollama/<model>` (LiteLLM resolves).
