@@ -609,7 +609,9 @@ async def ask(
         max_tokens = rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS
         before_tokens = _estimate_tokens(pack.text)
 
-        caveman_out, caveman_err = await caveman_compress_guarded(pack.text, max_tokens=max_tokens)
+        caveman_out, caveman_err = await caveman_compress_guarded(
+            pack.text, max_tokens=max_tokens, ctx=effective_ctx
+        )
 
         compressed_context, rtk_err = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
         rtk_quality_err = compression_quality_note(pack.text, compressed_context)

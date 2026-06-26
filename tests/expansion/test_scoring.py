@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
+from types import SimpleNamespace
+
 from axon.expansion.scoring import (
-    DEFAULT_LOCAL_MODEL,
     ExpansionCandidate,
     ExpansionDecision,
     score_candidate,
@@ -9,43 +11,46 @@ from axon.expansion.scoring import (
 )
 
 
-def test_score_candidate_uses_local_slm_by_default(monkeypatch) -> None:
+def _runtime(**over):
+    base = {
+        "scoring_model": "groq/openai/gpt-oss-120b",
+        "ollama_local_host": "http://desktop:11434",
+        "scoring_num_ctx": 8192,
+        "provider_ollama_enabled": False,
+    }
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+def _resp(content: str):
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
+def _raise(**kw):
+    raise RuntimeError("provider offline")
+
+
+def _patch(monkeypatch, *, runtime, completion):
+    monkeypatch.setattr("axon.expansion.scoring._RUNTIME", runtime)
+    monkeypatch.setattr("axon.expansion.scoring.litellm.completion", completion)
+
+
+def test_score_candidate_uses_slm_when_enabled(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    class FakeClient:
-        def __init__(self, host: str) -> None:
-            captured["host"] = host
+    def fake_completion(**kw):
+        captured.update(kw)
+        return _resp(
+            '{"relevance":0.91,"novelty":0.63,"actionability":0.88,"evidence":0.84,'
+            '"decision":"keep","reasoning":"Alinhado ao topico.",'
+            '"evidence_quotes":["Run `pb index` after approving the note."]}'
+        )
 
-        def chat(self, *, model: str, format: str, messages, options):
-            captured["model"] = model
-            captured["format"] = format
-            captured["messages"] = messages
-            captured["options"] = options
-            return {
-                "message": {
-                    "content": """
-                    {
-                      "relevance": 0.91,
-                      "novelty": 0.63,
-                      "actionability": 0.88,
-                      "evidence": 0.84,
-                      "decision": "keep",
-                      "reasoning": "Muito alinhado ao topico e com exemplo claro.",
-                      "evidence_quotes": [
-                        "Run `pb index` after approving the note.",
-                        "Version 2.1 introduced staged review before publishing."
-                      ]
-                    }
-                    """
-                }
-            }
-
-    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
+    _patch(monkeypatch, runtime=_runtime(), completion=fake_completion)
 
     candidate = ExpansionCandidate(
         title="Staged review for expansion",
         source_url="https://example.com/release-notes",
-        published_at="2026-04-20",
         extracted_text=(
             "Version 2.1 introduced staged review before publishing.\n"
             "Run `pb index` after approving the note.\n"
@@ -56,64 +61,83 @@ def test_score_candidate_uses_local_slm_by_default(monkeypatch) -> None:
     result = score_candidate(candidate, "staged review for knowledge expansion")
 
     assert result.source == "local_slm"
-    assert result.model == DEFAULT_LOCAL_MODEL
+    assert result.model == "groq/openai/gpt-oss-120b"
     assert result.decision == ExpansionDecision.KEEP
     assert result.score.relevance == 0.91
-    assert result.score.evidence == 0.84
-    assert "Evidencia:" in result.reasoning
-    assert captured["model"] == DEFAULT_LOCAL_MODEL
-    assert captured["format"] == "json"
-    assert captured["options"] == {"temperature": 0}
+    assert captured["model"] == "groq/openai/gpt-oss-120b"
+    assert captured["response_format"] == {"type": "json_object"}
+    assert captured["temperature"] == 0
+    assert "api_base" not in captured  # cloud model carries no ollama host
 
 
 def test_score_candidate_falls_back_when_model_invents_evidence(monkeypatch) -> None:
-    class FakeClient:
-        def __init__(self, host: str) -> None:
-            self.host = host
+    def fake_completion(**kw):
+        return _resp(
+            '{"relevance":0.99,"novelty":0.80,"actionability":0.70,"evidence":0.90,'
+            '"decision":"keep","reasoning":"Tem evidencias.",'
+            '"evidence_quotes":["Texto que nao existe no documento extraido."]}'
+        )
 
-        def chat(self, *, model: str, format: str, messages, options):
-            _ = (model, format, messages, options)
-            return {
-                "message": {
-                    "content": """
-                    {
-                      "relevance": 0.99,
-                      "novelty": 0.80,
-                      "actionability": 0.70,
-                      "evidence": 0.90,
-                      "decision": "keep",
-                      "reasoning": "Tem boas evidencias.",
-                      "evidence_quotes": ["Texto que nao existe no documento extraido."]
-                    }
-                    """
-                }
-            }
-
-    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
+    _patch(monkeypatch, runtime=_runtime(), completion=fake_completion)
 
     candidate = ExpansionCandidate(
         title="Minimal notes",
         source_url="https://example.com/minimal",
-        published_at="2026-04-20",
         extracted_text="Plain operational note without the claimed quote.",
     )
 
     result = score_candidate(candidate, "operational note")
 
     assert result.source == "heuristic"
-    assert result.model == "heuristic"
     assert result.decision in {ExpansionDecision.MAYBE, ExpansionDecision.DISCARD}
 
 
+def test_score_candidate_skips_slm_when_ollama_opted_out(monkeypatch) -> None:
+    calls = {"n": 0}
+
+    def fake_completion(**kw):
+        calls["n"] += 1
+        raise AssertionError("must not be called when ollama is opted out")
+
+    _patch(
+        monkeypatch,
+        runtime=_runtime(scoring_model="ollama/gemma4:e4b", provider_ollama_enabled=False),
+        completion=fake_completion,
+    )
+
+    candidate = ExpansionCandidate(
+        title="Java profiling",
+        source_url="https://example.com/jp",
+        extracted_text="Use async-profiler to capture a flamegraph of JVM CPU time.",
+    )
+
+    result = score_candidate(candidate, "java profiling")
+
+    assert calls["n"] == 0
+    assert result.source == "heuristic"
+
+
+def test_score_candidate_logs_on_slm_failure(monkeypatch, caplog) -> None:
+    def boom(**kw):
+        raise RuntimeError("provider offline")
+
+    _patch(monkeypatch, runtime=_runtime(), completion=boom)
+
+    candidate = ExpansionCandidate(
+        title="Gardening notes",
+        source_url="https://example.com/garden",
+        extracted_text="Water tomatoes in the early morning.\nAdd compost once a month.",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = score_candidate(candidate, "java stream pipeline optimization")
+
+    assert result.source == "heuristic"
+    assert any("heuristic" in rec.message for rec in caplog.records)
+
+
 def test_score_candidate_discards_unrelated_content_with_heuristics(monkeypatch) -> None:
-    class FakeClient:
-        def __init__(self, host: str) -> None:
-            self.host = host
-
-        def chat(self, *, model: str, format: str, messages, options):
-            raise RuntimeError("ollama offline")
-
-    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
+    _patch(monkeypatch, runtime=_runtime(), completion=_raise)
 
     candidate = ExpansionCandidate(
         title="Gardening notes",
@@ -132,40 +156,8 @@ def test_score_candidate_discards_unrelated_content_with_heuristics(monkeypatch)
     assert result.score.relevance == 0.0
 
 
-def test_score_candidate_returns_maybe_for_relevant_but_thin_content(monkeypatch) -> None:
-    class FakeClient:
-        def __init__(self, host: str) -> None:
-            self.host = host
-
-        def chat(self, *, model: str, format: str, messages, options):
-            raise RuntimeError("use fallback")
-
-    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
-
-    candidate = ExpansionCandidate(
-        title="Java Streams gotcha",
-        source_url="https://example.com/streams",
-        extracted_text=(
-            "Java Streams can hide allocation costs.\nWatch collector choices during profiling."
-        ),
-    )
-
-    result = score_candidate(candidate, "java streams profiling")
-
-    assert result.source == "heuristic"
-    assert result.decision == ExpansionDecision.MAYBE
-    assert result.score.relevance >= 0.5
-
-
 def test_score_candidates_preserves_order(monkeypatch) -> None:
-    class FakeClient:
-        def __init__(self, host: str) -> None:
-            self.host = host
-
-        def chat(self, *, model: str, format: str, messages, options):
-            raise RuntimeError("fallback")
-
-    monkeypatch.setattr("axon.expansion.scoring.ollama.Client", FakeClient)
+    _patch(monkeypatch, runtime=_runtime(), completion=_raise)
 
     candidates = [
         ExpansionCandidate(

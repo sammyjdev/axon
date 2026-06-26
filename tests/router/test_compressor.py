@@ -53,6 +53,44 @@ async def test_strict_compression_includes_required_symbols() -> None:
 
 
 @pytest.mark.asyncio
+async def test_corporate_ctx_blocks_cloud_compression(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "axon.router.compressor._RUNTIME",
+        SimpleNamespace(
+            caveman_model="groq/openai/gpt-oss-120b",
+            ollama_local_host="http://desktop:11434",
+            caveman_num_ctx=4096,
+        ),
+    )
+    with patch("axon.router.compressor.litellm.acompletion", new=AsyncMock()) as mock_llm:
+        result, note = await caveman_compress(_LONG_TEXT, max_tokens=400, ctx="work")
+
+    mock_llm.assert_not_awaited()  # corporate content never leaves for a hosted provider
+    assert result == _LONG_TEXT
+    assert note is not None
+
+
+@pytest.mark.asyncio
+async def test_corporate_ctx_allows_local_compression(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "axon.router.compressor._RUNTIME",
+        SimpleNamespace(
+            caveman_model="phi3:mini",
+            ollama_local_host="http://desktop:11434",
+            caveman_num_ctx=4096,
+        ),
+    )
+    fake = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="local out"))])
+    with patch(
+        "axon.router.compressor.litellm.acompletion", new=AsyncMock(return_value=fake)
+    ) as mock_llm:
+        result, note = await caveman_compress(_LONG_TEXT, max_tokens=400, ctx="work")
+
+    mock_llm.assert_awaited_once()  # local model is fine for corporate ctx
+    assert result == "local out"
+
+
+@pytest.mark.asyncio
 async def test_guarded_compression_retries_with_strict_symbol_preservation() -> None:
     source = "\n".join(
         [
@@ -62,7 +100,7 @@ async def test_guarded_compression_retries_with_strict_symbol_preservation() -> 
     )
     calls: list[dict[str, object]] = []
 
-    async def fake_caveman(_text, max_tokens, *, required_symbols=None, strict=False):
+    async def fake_caveman(_text, max_tokens, *, required_symbols=None, strict=False, ctx=None):
         _ = max_tokens
         calls.append({"required_symbols": required_symbols, "strict": strict})
         if strict:
@@ -89,7 +127,7 @@ async def test_guarded_compression_falls_back_when_retry_fails_quality() -> None
         ]
     )
 
-    async def fake_caveman(_text, max_tokens, *, required_symbols=None, strict=False):
+    async def fake_caveman(_text, max_tokens, *, required_symbols=None, strict=False, ctx=None):
         _ = (max_tokens, required_symbols)
         if strict:
             return "## Your task: compress _semantic_search_hits", None
@@ -107,7 +145,7 @@ async def test_guarded_compression_falls_back_when_retry_fails_quality() -> None
 async def test_guarded_compression_falls_back_when_confidence_is_too_low() -> None:
     source = " ".join(f"token-{idx}" for idx in range(120))
 
-    async def fake_caveman(_text, max_tokens, *, required_symbols=None, strict=False):
+    async def fake_caveman(_text, max_tokens, *, required_symbols=None, strict=False, ctx=None):
         _ = (max_tokens, required_symbols, strict)
         return "brief summary only", None
 

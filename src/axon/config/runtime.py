@@ -9,6 +9,12 @@ from typing import Literal
 
 from dotenv import load_dotenv
 
+from axon.router.llm_backend import (
+    default_compressor_model,
+    default_scoring_model,
+    resolve_litellm_model,
+)
+
 # Carrega .env.local sobre .env, sem sobrescrever vars já exportadas pelo shell
 load_dotenv(Path(__file__).parents[3] / ".env", override=False)
 load_dotenv(Path(__file__).parents[3] / ".env.local", override=False)
@@ -88,6 +94,8 @@ class RuntimeConfig:
     ollama_remote_host: str | None
     ollama_local_host: str
     caveman_model: str
+    scoring_model: str
+    scoring_num_ctx: int
     classifier_cloud_model: str
     classifier_timeout_seconds: float
     policy_version: str
@@ -675,8 +683,12 @@ def load_runtime_config() -> RuntimeConfig:
         ollama_local_host=os.environ.get("AXON_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434"),
         caveman_model=os.environ.get(
             "AXON_CAVEMAN_MODEL",
-            os.environ.get("OLLAMA_MODEL_PRIMARY", "phi3:mini"),
+            os.environ.get("OLLAMA_MODEL_PRIMARY", default_compressor_model()),
         ),
+        scoring_model=resolve_litellm_model(
+            os.environ.get("AXON_SCORING_MODEL", default_scoring_model())
+        ),
+        scoring_num_ctx=int(os.environ.get("AXON_SCORING_NUM_CTX", "8192")),
         classifier_cloud_model=_resolve_classifier_model(),
         classifier_timeout_seconds=float(os.environ.get("AXON_CLASSIFIER_TIMEOUT", "4.0")),
         policy_version=os.environ.get("AXON_POLICY_VERSION", "2026-04-21"),
