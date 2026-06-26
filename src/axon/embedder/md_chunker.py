@@ -95,6 +95,7 @@ def pack_sections(sections: list[Section]) -> list[list[Section]]:
 
 
 _OVERLAP = 0.12
+_OVERLAP_CARRY_RATIO = _OVERLAP * 4  # carry the prior atom only if it fits in ~48% of MAX_TOKENS, leaving headroom for the next window
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -135,7 +136,7 @@ def split_text(text: str) -> list[str]:
             windows.append("\n\n".join(cur))
             # overlap: carry the last atom into the next window
             overlap_atom = cur[-1]
-            cur = [overlap_atom, atom] if estimate_tokens(overlap_atom) <= MAX_TOKENS * _OVERLAP * 4 else [atom]
+            cur = [overlap_atom, atom] if estimate_tokens(overlap_atom) <= MAX_TOKENS * _OVERLAP_CARRY_RATIO else [atom]
         else:
             cur = candidate
     if cur:
