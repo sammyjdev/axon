@@ -116,6 +116,30 @@ async def test_axon_health_reports_subsystems(store: SessionStore) -> None:
         assert subsystem in report
 
 
+async def test_axon_health_probes_git_in_vault_not_cwd(
+    store: SessionStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression: the git probe must check the vault, not the process cwd.
+
+    The MCP server rarely runs from inside the vault, so probing the process
+    working directory wrongly reported `git: not a repo` for a versioned vault.
+    """
+    import subprocess
+
+    non_git_cwd = tmp_path / "cwd"
+    non_git_cwd.mkdir()
+    monkeypatch.chdir(non_git_cwd)
+
+    vault_repo = tmp_path / "vault"
+    vault_repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=vault_repo, check=True)
+    monkeypatch.setattr(server, "discover_vault", lambda: vault_repo)
+
+    report = await server.axon_health()
+
+    assert "git: ok" in report
+
+
 async def test_axon_health_does_not_hang_when_backends_unreachable(
     store: SessionStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
