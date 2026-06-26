@@ -5,12 +5,15 @@ See docs/superpowers/specs/2026-06-25-md-chunking-standard-design.md.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from axon.embedder.tokens import estimate_tokens
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from axon.embedder.chunker import Chunk
@@ -92,7 +95,7 @@ def pack_sections(sections: list[Section]) -> list[list[Section]]:
             buf, buf_tokens = [sec], sec_tokens
             continue
         same_top = _top(sec) == _top(buf[0])
-        if same_top and buf_tokens + sec_tokens <= MAX_TOKENS:
+        if same_top and buf_tokens + sec_tokens <= TARGET_TOKENS:
             buf.append(sec)
             buf_tokens += sec_tokens
         else:
@@ -134,7 +137,14 @@ def _atoms(text: str, max_tokens: int = MAX_TOKENS) -> list[str]:
                     # A single word that exceeds the budget is emitted as-is (best-effort:
                     # cannot split further without breaking mid-token boundaries).
                     if not buf[1:] and estimate_tokens(buf[0]) > max_tokens:
-                        atoms.append(buf.pop())
+                        oversized = buf.pop()
+                        logger.warning(
+                            "md_chunker: emitting oversized atom (%d tokens > budget %d);"
+                            " content will be truncated by the embedder",
+                            estimate_tokens(oversized),
+                            max_tokens,
+                        )
+                        atoms.append(oversized)
                 if buf:
                     atoms.append(" ".join(buf))
     return atoms

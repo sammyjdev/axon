@@ -1,3 +1,5 @@
+import logging
+
 from axon.embedder.md_chunker import MAX_TOKENS, _atoms, split_text
 from axon.embedder.tokens import estimate_tokens
 
@@ -76,3 +78,26 @@ def test_atoms_long_token_words_stay_within_budget():
             assert estimate_tokens(atom) <= MAX_TOKENS, (
                 f"Atom exceeds MAX_TOKENS={MAX_TOKENS}: got {estimate_tokens(atom)} tokens"
             )
+
+
+def test_oversized_single_atom_emits_warning(caplog):
+    """A whitespace-less token whose estimate_tokens > MAX_TOKENS must:
+    1. Trigger a WARNING log from axon.embedder.md_chunker.
+    2. Still be present in the returned atoms (behavior unchanged).
+    """
+    # A single word with no spaces, sized to exceed MAX_TOKENS.
+    # ~600 tokens: 600 / 0.35 ~= 1715 chars
+    oversized_word = "z" * 1715
+    assert estimate_tokens(oversized_word) > MAX_TOKENS, "Test setup: word must exceed MAX_TOKENS"
+
+    with caplog.at_level(logging.WARNING, logger="axon.embedder.md_chunker"):
+        atoms = _atoms(oversized_word, MAX_TOKENS)
+
+    # Behavior unchanged: oversized atom is still emitted
+    assert oversized_word in atoms, "Oversized atom must still be present in output"
+
+    # New: a warning must have been logged
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warning_records, (
+        "Expected a WARNING log from axon.embedder.md_chunker for oversized atom, got none"
+    )
