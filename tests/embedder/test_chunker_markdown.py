@@ -196,3 +196,35 @@ class TestMarkdownChunkerBreadcrumb:
         chunks = chunk_source("just prose, no headings", "markdown", "/x/note.md")
         assert len(chunks) == 1
         assert chunks[0].symbol == "note"
+
+
+class TestSiblingBreadcrumb:
+    """Bug 3: when siblings are packed together, breadcrumb should be the common prefix."""
+
+    def test_sibling_sections_use_common_prefix_breadcrumb(self) -> None:
+        # ## Alpha and ## Beta are siblings under # Top.
+        # Both are small enough to be packed into one group.
+        # Bug: breadcrumb uses group[-1].heading_path = ("Top", "Beta"),
+        # so symbol is "stem > Top > Beta" instead of the correct "stem > Top".
+        md = "# Top\n## Alpha\nsmall alpha body\n## Beta\nsmall beta body\n"
+        chunks = chunk_source(md, "markdown", "/x/stem.md")
+        # Both sibling sections pack into one chunk (combined tokens << MAX_TOKENS).
+        # The common prefix of ("Top", "Alpha") and ("Top", "Beta") is ("Top",).
+        section_chunks = [c for c in chunks if c.chunk_type == "section"]
+        assert len(section_chunks) == 1, (
+            f"Expected siblings packed into 1 chunk, got {len(section_chunks)}: "
+            + str([c.symbol for c in section_chunks])
+        )
+        assert section_chunks[0].symbol == "stem > Top", (
+            f"Expected common-prefix breadcrumb 'stem > Top', got '{section_chunks[0].symbol}'"
+        )
+
+    def test_nested_descending_chain_still_uses_deepest_path(self) -> None:
+        # Pure descending chain: # Top > ## Sub > ### Deep.
+        # heading_paths: ("Top",), ("Top","Sub"), ("Top","Sub","Deep")
+        # Each is a prefix of the last, so the current behavior (use group[-1]) is correct.
+        md = "# Top\nsome text\n## Sub\nmore\n### Deep\ndeepest\n"
+        chunks = chunk_source(md, "markdown", "/x/doc.md")
+        section_chunks = [c for c in chunks if c.chunk_type == "section"]
+        assert len(section_chunks) == 1
+        assert section_chunks[0].symbol == "doc > Top > Sub > Deep"
