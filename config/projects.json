@@ -104,6 +104,20 @@
       "ctx": "knowledge",
       "enabled": true,
       "languages": ["python", "typescript", "markdown", "text"]
+    },
+    {
+      "name": "glyph-kg",
+      "path": "/Users/samdev/dev/glyph-kg",
+      "ctx": "knowledge",
+      "enabled": true,
+      "languages": ["python", "markdown", "text"]
+    },
+    {
+      "name": "lina",
+      "path": "/Users/samdev/dev/lina",
+      "ctx": "saas",
+      "enabled": true,
+      "languages": ["python", "markdown", "text"]
     }
   ]
 }
