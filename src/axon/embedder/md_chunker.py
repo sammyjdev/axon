@@ -1,12 +1,19 @@
-"""Structure-aware Markdown chunker (see docs/superpowers/specs/2026-06-25-md-chunking-standard-design.md)."""
+"""Structure-aware Markdown chunker.
+
+See docs/superpowers/specs/2026-06-25-md-chunking-standard-design.md.
+"""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from axon.embedder.tokens import estimate_tokens
+
+if TYPE_CHECKING:
+    from axon.embedder.chunker import Chunk
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -96,7 +103,9 @@ def pack_sections(sections: list[Section]) -> list[list[Section]]:
 
 
 _OVERLAP = 0.12
-_OVERLAP_CARRY_RATIO = _OVERLAP * 4  # carry the prior atom only if it fits in ~48% of MAX_TOKENS, leaving headroom for the next window
+# carry the prior atom only if it fits in ~48% of the active token budget,
+# leaving headroom for the next window; checked as combined size (Bug 1 fix).
+_OVERLAP_CARRY_RATIO = _OVERLAP * 4
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -118,10 +127,20 @@ def _atoms(text: str, max_tokens: int = MAX_TOKENS) -> list[str]:
             if estimate_tokens(sent) <= max_tokens:
                 atoms.append(sent)
             else:
-                words = sent.split()  # sentence too big -> word windows
-                step = max(1, int(max_tokens / 0.35 / 6))  # ~chars->words budget
-                for i in range(0, len(words), step):
-                    atoms.append(" ".join(words[i : i + step]))
+                # Sentence too big -> accumulate words until the token budget is full.
+                words = sent.split()
+                buf: list[str] = []
+                for word in words:
+                    if buf and estimate_tokens(" ".join(buf + [word])) > max_tokens:
+                        atoms.append(" ".join(buf))
+                        buf = []
+                    buf.append(word)
+                    # A single word that exceeds the budget is emitted as-is (best-effort:
+                    # cannot split further without breaking mid-token boundaries).
+                    if not buf[1:] and estimate_tokens(buf[0]) > max_tokens:
+                        atoms.append(buf.pop())
+                if buf:
+                    atoms.append(" ".join(buf))
     return atoms
 
 
@@ -135,9 +154,11 @@ def split_text(text: str, max_tokens: int = MAX_TOKENS) -> list[str]:
         candidate = cur + [atom]
         if cur and estimate_tokens("\n\n".join(candidate)) > max_tokens:
             windows.append("\n\n".join(cur))
-            # overlap: carry the last atom into the next window
+            # overlap: carry the last atom into the next window only if the
+            # combined [overlap_atom, atom] still fits within the budget.
             overlap_atom = cur[-1]
-            cur = [overlap_atom, atom] if estimate_tokens(overlap_atom) <= max_tokens * _OVERLAP_CARRY_RATIO else [atom]
+            combined = "\n\n".join([overlap_atom, atom])
+            cur = [overlap_atom, atom] if estimate_tokens(combined) <= max_tokens else [atom]
         else:
             cur = candidate
     if cur:
@@ -149,7 +170,31 @@ def _breadcrumb(stem: str, heading_path: tuple[str, ...]) -> str:
     return " > ".join([stem, *heading_path])
 
 
-def chunk_markdown(source: str, file_path: str):
+def _group_heading_path(group: list[Section]) -> tuple[str, ...]:
+    """Return the heading_path to use as breadcrumb for a packed group.
+
+    If every section's heading_path is a prefix of the last section's path
+    (a pure descending chain), return the last (deepest) path to preserve
+    the existing specific-symbol behavior.
+
+    Otherwise (siblings packed together), return the longest common prefix
+    across all sections so the breadcrumb is not misleadingly specific.
+    """
+    last_path = group[-1].heading_path
+    # Check whether all paths are prefixes of the last (descending chain).
+    if all(last_path[: len(sec.heading_path)] == sec.heading_path for sec in group):
+        return last_path
+    # Siblings case: compute longest common prefix.
+    if not group:
+        return ()
+    common = list(group[0].heading_path)
+    for sec in group[1:]:
+        path = sec.heading_path
+        common = [c for i, c in enumerate(common) if i < len(path) and path[i] == c]
+    return tuple(common)
+
+
+def chunk_markdown(source: str, file_path: str) -> list[Chunk]:
     from axon.embedder.chunker import Chunk  # local import avoids cycle
 
     stem = Path(file_path).stem
@@ -162,16 +207,15 @@ def chunk_markdown(source: str, file_path: str):
 
     chunks: list[Chunk] = []
     for group in pack_sections(sections):
-        lead = group[0]
-        # Use the last section's heading_path: it is the deepest / most specific
-        # heading in the packed group, which makes the symbol unambiguous when
-        # sections with the same top-level heading are merged.
-        crumb = _breadcrumb(stem, group[-1].heading_path)
+        first = group[0]
+        crumb = _breadcrumb(stem, _group_heading_path(group))
         body = "\n".join(ln for sec in group for ln in sec.lines)
-        start = lead.start_line
+        start = first.start_line
         end = group[-1].start_line + len(group[-1].lines) - 1
         crumb_tokens = estimate_tokens(f"{crumb}\n\n")
-        body_budget = max(MIN_TOKENS, MAX_TOKENS - crumb_tokens)
+        # Subtract 1 extra token to absorb floor-truncation: int(a)+int(b) can be
+        # 1 less than int(a+b) when fractional parts sum to >= 1.
+        body_budget = max(MIN_TOKENS, MAX_TOKENS - crumb_tokens - 1)
         windows = split_text(body, body_budget)
         for i, win in enumerate(windows):
             symbol = crumb if len(windows) == 1 else f"{crumb}[{i}]"
