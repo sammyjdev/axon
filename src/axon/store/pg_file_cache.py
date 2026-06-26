@@ -63,7 +63,7 @@ class PostgresFileCache:
         *,
         status: str = "done",
     ) -> None:
-        fp = Path(file_path).as_posix()
+        fp = Path(file_path.replace("\\", "/")).as_posix()
         now = datetime.now(UTC).isoformat()
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
@@ -82,7 +82,7 @@ class PostgresFileCache:
             )
 
     async def delete_entry(self, file_path: str, ctx: str) -> None:
-        fp = Path(file_path).as_posix()
+        fp = Path(file_path.replace("\\", "/")).as_posix()
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             await con.execute(
