@@ -105,39 +105,39 @@ def _is_table_block(block: str) -> bool:
     return bool(rows) and all(ln.lstrip().startswith("|") for ln in rows)
 
 
-def _atoms(text: str) -> list[str]:
+def _atoms(text: str, max_tokens: int = MAX_TOKENS) -> list[str]:
     """Break text into the smallest units we are willing to keep whole."""
     atoms: list[str] = []
     for block in re.split(r"\n\s*\n", text):
         if not block.strip():
             continue
-        if _is_table_block(block) or estimate_tokens(block) <= MAX_TOKENS:
-            atoms.append(block)  # paragraph / table kept whole
+        if _is_table_block(block) or estimate_tokens(block) <= max_tokens:
+            atoms.append(block)  # paragraph / table kept whole (tables are always atomic)
             continue
         for sent in _SENTENCE_RE.split(block):  # paragraph too big -> sentences
-            if estimate_tokens(sent) <= MAX_TOKENS:
+            if estimate_tokens(sent) <= max_tokens:
                 atoms.append(sent)
             else:
                 words = sent.split()  # sentence too big -> word windows
-                step = max(1, int(MAX_TOKENS / 0.35 / 6))  # ~chars->words budget
+                step = max(1, int(max_tokens / 0.35 / 6))  # ~chars->words budget
                 for i in range(0, len(words), step):
                     atoms.append(" ".join(words[i : i + step]))
     return atoms
 
 
-def split_text(text: str) -> list[str]:
-    if estimate_tokens(text) <= MAX_TOKENS:
+def split_text(text: str, max_tokens: int = MAX_TOKENS) -> list[str]:
+    if estimate_tokens(text) <= max_tokens:
         return [text]
-    atoms = _atoms(text)
+    atoms = _atoms(text, max_tokens)
     windows: list[str] = []
     cur: list[str] = []
     for atom in atoms:
         candidate = cur + [atom]
-        if cur and estimate_tokens("\n\n".join(candidate)) > MAX_TOKENS:
+        if cur and estimate_tokens("\n\n".join(candidate)) > max_tokens:
             windows.append("\n\n".join(cur))
             # overlap: carry the last atom into the next window
             overlap_atom = cur[-1]
-            cur = [overlap_atom, atom] if estimate_tokens(overlap_atom) <= MAX_TOKENS * _OVERLAP_CARRY_RATIO else [atom]
+            cur = [overlap_atom, atom] if estimate_tokens(overlap_atom) <= max_tokens * _OVERLAP_CARRY_RATIO else [atom]
         else:
             cur = candidate
     if cur:
@@ -170,7 +170,9 @@ def chunk_markdown(source: str, file_path: str):
         body = "\n".join(ln for sec in group for ln in sec.lines)
         start = lead.start_line
         end = group[-1].start_line + len(group[-1].lines) - 1
-        windows = split_text(body)
+        crumb_tokens = estimate_tokens(f"{crumb}\n\n")
+        body_budget = max(MIN_TOKENS, MAX_TOKENS - crumb_tokens)
+        windows = split_text(body, body_budget)
         for i, win in enumerate(windows):
             symbol = crumb if len(windows) == 1 else f"{crumb}[{i}]"
             chunks.append(
