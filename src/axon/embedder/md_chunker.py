@@ -102,10 +102,6 @@ def pack_sections(sections: list[Section]) -> list[list[Section]]:
     return groups
 
 
-_OVERLAP = 0.12
-# carry the prior atom only if it fits in ~48% of the active token budget,
-# leaving headroom for the next window; checked as combined size (Bug 1 fix).
-_OVERLAP_CARRY_RATIO = _OVERLAP * 4
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -185,8 +181,6 @@ def _group_heading_path(group: list[Section]) -> tuple[str, ...]:
     if all(last_path[: len(sec.heading_path)] == sec.heading_path for sec in group):
         return last_path
     # Siblings case: compute longest common prefix.
-    if not group:
-        return ()
     common = list(group[0].heading_path)
     for sec in group[1:]:
         path = sec.heading_path
