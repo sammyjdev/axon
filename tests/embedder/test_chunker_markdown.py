@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from axon.embedder.chunker import _MAX_CHUNK_LINES, chunk_source
-from axon.embedder.md_chunker import MAX_TOKENS, MIN_TOKENS
+from axon.embedder.md_chunker import MAX_TOKENS, MIN_TOKENS, _is_table_block, chunk_markdown
 from axon.embedder.tokens import estimate_tokens
 
 
@@ -111,6 +111,49 @@ class TestMarkdownChunker:
         assert chunks[0].start_line == 1
         assert chunks[1].symbol == "doc > Section"
         assert chunks[1].start_line == 2
+
+
+class TestBreadcrumbBudget:
+    """The full chunk content (breadcrumb + body) must never exceed MAX_TOKENS."""
+
+    def test_deep_heading_full_content_within_cap(self) -> None:
+        # Deep heading path produces a long breadcrumb that eats into the token budget.
+        # Bug: split_text sized windows to MAX_TOKENS ignoring breadcrumb overhead,
+        # so full content = crumb + "\n\n" + window exceeded MAX_TOKENS.
+        long_body = "\n\n".join(
+            f"This is a prose paragraph number {i} with enough words to contribute to the token budget."
+            for i in range(60)
+        )
+        md = f"# Level1\n## Level2\n### Level3\n#### Level4\n{long_body}\n"
+        chunks = chunk_source(md, "markdown", "deep.md")
+        over_cap = [
+            c for c in chunks
+            if not _is_table_block(c.content.split("\n\n", 1)[-1] if "\n\n" in c.content else c.content)
+            and estimate_tokens(c.content) > MAX_TOKENS
+        ]
+        assert over_cap == [], (
+            f"{len(over_cap)} chunk(s) exceeded MAX_TOKENS={MAX_TOKENS}: "
+            + ", ".join(f"{c.symbol}={estimate_tokens(c.content)}" for c in over_cap)
+        )
+
+    def test_atomic_table_may_exceed_cap(self) -> None:
+        # A pure table block exceeding the token budget must remain whole (atomic exception).
+        # After the fix, split_text accepts a max_tokens budget; even so, tables bypass it.
+        from axon.embedder.md_chunker import split_text
+        wide_row = "| " + " | ".join(f"col{i}" for i in range(40)) + " |"
+        sep_row = "| " + " | ".join("---" for _ in range(40)) + " |"
+        data_rows = "\n".join(
+            "| " + " | ".join(f"val{j}" for j in range(40)) + " |"
+            for _ in range(5)
+        )
+        table = f"{wide_row}\n{sep_row}\n{data_rows}"
+        assert _is_table_block(table), "Precondition: block must be a table"
+        assert estimate_tokens(table) > MAX_TOKENS, "Precondition: table must exceed MAX_TOKENS"
+        # Even with a very tight budget, the table stays as a single window
+        windows = split_text(table, max_tokens=MIN_TOKENS)
+        assert len(windows) == 1, f"Table was split into {len(windows)} windows; must stay atomic"
+        assert _is_table_block(windows[0]), "Window must still be a table"
+        assert estimate_tokens(windows[0]) > MAX_TOKENS, "Table window may exceed cap (atomic exception)"
 
 
 class TestTextCatchall:
