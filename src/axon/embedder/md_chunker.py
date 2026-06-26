@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from axon.embedder.tokens import estimate_tokens
 
@@ -142,3 +143,40 @@ def split_text(text: str) -> list[str]:
     if cur:
         windows.append("\n\n".join(cur))
     return windows or [text]
+
+
+def _breadcrumb(stem: str, heading_path: tuple[str, ...]) -> str:
+    return " > ".join([stem, *heading_path])
+
+
+def chunk_markdown(source: str, file_path: str):
+    from axon.embedder.chunker import Chunk  # local import avoids cycle
+
+    stem = Path(file_path).stem
+    sections = parse_sections(source)
+    if not sections:
+        return [
+            Chunk(symbol=stem, chunk_type="section", start_line=1, end_line=1,
+                  content="", file_path=file_path, language="markdown")
+        ]
+
+    chunks: list[Chunk] = []
+    for group in pack_sections(sections):
+        lead = group[0]
+        # Use the last section's heading_path: it is the deepest / most specific
+        # heading in the packed group, which makes the symbol unambiguous when
+        # sections with the same top-level heading are merged.
+        crumb = _breadcrumb(stem, group[-1].heading_path)
+        body = "\n".join(ln for sec in group for ln in sec.lines)
+        start = lead.start_line
+        end = group[-1].start_line + len(group[-1].lines) - 1
+        windows = split_text(body)
+        for i, win in enumerate(windows):
+            symbol = crumb if len(windows) == 1 else f"{crumb}[{i}]"
+            chunks.append(
+                Chunk(symbol=symbol, chunk_type="section",
+                      start_line=start, end_line=end,
+                      content=f"{crumb}\n\n{win}", file_path=file_path,
+                      language="markdown")
+            )
+    return chunks
