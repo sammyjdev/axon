@@ -9,6 +9,7 @@ from axon.context.registry import VALID_CONTEXTS
 from axon.embedder.chunker import Chunk, chunk_source
 from axon.embedder.engine import EmbedderEngine
 from axon.embedder.graph_extractor import build_dependency_records
+from axon.embedder.tokens import estimate_tokens as _estimate_tokens
 from axon.store.file_cache import FileCache, sha1_of_source
 from axon.store.graph_store import GraphStore
 from axon.store.vector_store import Chunk as VectorChunk
@@ -32,12 +33,6 @@ _MAX_BATCH_TOKENS: int = int(os.environ.get("AXON_MAX_BATCH_TOKENS", "8192"))
 # vector_store.py:153 uses len//4 (=0.25) for output budget where underestimate
 # is safe. Here we are bounding onnxruntime INPUT batches to avoid the CPU
 # activation arena blowup (Phase 0: batch 64 -> 4.1 GB RSS on CPU).
-_TOKENS_PER_CHAR: float = 0.35
-
-
-def _estimate_tokens(text: str) -> int:
-    """Estimate token count as 0.35 * len(text). Returns at least 1."""
-    return max(1, int(len(text) * _TOKENS_PER_CHAR))
 
 
 def _make_token_bounded_batches(
