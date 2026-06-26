@@ -1,64 +1,64 @@
-# dec-110 — Memória declarativa exige sinalização leve no commit
+# dec-110 - Declarative memory requires a lightweight signal in the commit
 
 - Status: accepted
 - Date: 2026-05-27
 
 ## Context
 
-A inferência automática de ADR a partir de cada commit (`pb adr
-infer-commit`, implementado em `src/axon/cli/pb.py:1439`) hoje dispara
-em todo post-commit hook. ~95% dos commits não são arquiteturais
-(bugfixes, deps, formatação, refactor menor) mas o LLM ainda é chamado
-e produz JSON. Resultado: ruído no vault, custo de token, e principal
-vetor de "ADR alucinado" identificado pelo red-team R1.
+Automatic ADR inference from each commit (`pb adr
+infer-commit`, implemented in `src/axon/cli/pb.py:1439`) currently fires on
+every post-commit hook. ~95% of commits are not architectural
+(bugfixes, deps, formatting, minor refactor) but the LLM is still called
+and produces JSON. Result: vault noise, token cost, and the primary
+"hallucinated ADR" vector identified by red-team R1.
 
-Cinco rounds de red-team consideraram: confidence-score (rejeitado,
-não calibrado), inferência sempre-ligada com gate (parcial, mas custo
-de chamada LLM persiste), handshake explícito tipo `axon snapshot
---adr` (rejeitado, destrói event-driven). Convergiu em sinalização
-leve no commit como discriminador.
+Five red-team rounds considered: confidence-score (rejected,
+not calibrated), always-on inference with a gate (partial, but LLM
+call cost persists), explicit handshake like `axon snapshot
+--adr` (rejected, destroys event-driven model). Converged on a
+lightweight commit signal as the discriminator.
 
 ## Decision
 
-Inferência de ADR só dispara quando o commit contém um dos sinais
-explícitos abaixo. Sem sinal, captura derivada (`CodeChange`) persiste
-normalmente; inferência de ADR não é executada.
+ADR inference fires only when the commit contains one of the explicit
+signals below. Without a signal, the derived capture (`CodeChange`) persists
+normally; ADR inference is not executed.
 
-| Sinal | Status | Compatibilidade |
+| Signal | Status | Compatibility |
 |---|---|---|
-| `arch:` subject prefix | **primário** | Conventional Commits via `type-enum` |
-| `decision:` subject prefix | sinônimo aceito | idem |
-| `ADR-Decision: <título>` trailer no body | **metadado opcional** | sempre compatível |
-| `pb adr infer-commit --force` | escape hatch manual | n/a |
+| `arch:` subject prefix | **primary** | Conventional Commits via `type-enum` |
+| `decision:` subject prefix | accepted synonym | same |
+| `ADR-Decision: <title>` trailer in body | **optional metadata** | always compatible |
+| `pb adr infer-commit --force` | manual escape hatch | n/a |
 
-O trailer **não é** path canônico — existe para anotação suplementar
-que AXON consome se presente, mas nenhum outro tooling precisa
-entender. Isso evita conflito com `commitlint` `type-enum` rígido e
-parsers de `semantic-release`.
+The trailer is **not** the canonical path - it exists for supplemental
+annotation that AXON consumes if present, but no other tooling needs to
+understand it. This avoids conflict with strict `commitlint` `type-enum` and
+`semantic-release` parsers.
 
 ## Rationale
 
-- **Subject prefix `arch:` é Conventional-Commits-friendly**: integra
-  ao ecossistema via configuração trivial (`'type-enum': [2, 'always',
+- **Subject prefix `arch:` is Conventional-Commits-friendly**: integrates
+  with the ecosystem via trivial configuration (`'type-enum': [2, 'always',
   [..., 'arch', 'decision']]`).
-- **Trailer fora do path canônico**: usuários com `commitlint`/
-  `semantic-release` rígidos podem usar trailer sem quebrar pipeline;
-  AXON parseia silenciosamente.
-- **Sinal substitui inferência probabilística**: dev sinaliza
-  explicitamente quando há decisão arquitetural. Reduz tanto custo de
-  chamada LLM quanto superfície de alucinação.
-- **Custo de 5–10 caracteres por commit arquitetural** é trivial
-  comparado a custo de revisão de drafts ruidosos.
+- **Trailer outside the canonical path**: users with strict `commitlint`/
+  `semantic-release` can use the trailer without breaking their pipeline;
+  AXON parses it silently.
+- **Signal replaces probabilistic inference**: the developer signals
+  explicitly when there is an architectural decision. Reduces both LLM
+  call cost and hallucination surface.
+- **Cost of 5-10 characters per architectural commit** is trivial
+  compared to the cost of reviewing noisy drafts.
 
 ## Consequences
 
-- `pb adr infer-commit` recebe `axon.adr.signal.detect()` no início e
-  retorna early se ausente.
-- `pb commit` helper opcional pode ser adicionado depois para sugerir
-  prefix com base em diff stats.
-- Documentar em `docs/USAGE_GUIDE.md` que captura declarativa requer
-  sinal.
-- Documentar em [dec-114](dec-114-doctor-diagnostic-first.md) que
-  `pb doctor` valida compatibilidade com toolchain de commit.
-- Dev pode esquecer prefix — workaround: `pb adr add` direto sempre
-  disponível. Aceito como risco residual.
+- `pb adr infer-commit` receives `axon.adr.signal.detect()` at the start and
+  returns early if absent.
+- `pb commit` optional helper can be added later to suggest the prefix based
+  on diff stats.
+- Document in `docs/USAGE_GUIDE.md` that declarative capture requires a
+  signal.
+- Document in [dec-114](dec-114-doctor-diagnostic-first.md) that
+  `pb doctor` validates compatibility with the commit toolchain.
+- Developer may forget the prefix - workaround: `pb adr add` directly is
+  always available. Accepted as residual risk.
