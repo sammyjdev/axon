@@ -12,7 +12,17 @@ _SHORT_TEXT = " ".join(["word"] * 40)
 
 
 @pytest.mark.asyncio
-async def test_compresses_long_text() -> None:
+async def test_compresses_long_text(monkeypatch) -> None:
+    # Pin the ollama local role so the num_ctx path is exercised deterministically,
+    # independent of the dec-122 hosted-default flag / .env.local.
+    monkeypatch.setattr(
+        "axon.router.compressor._RUNTIME",
+        SimpleNamespace(
+            caveman_model="phi3:mini",
+            ollama_local_host="http://desktop:11434",
+            caveman_num_ctx=4096,
+        ),
+    )
     fake_response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content="compressed result"))]
     )
@@ -29,7 +39,16 @@ async def test_compresses_long_text() -> None:
 
 
 @pytest.mark.asyncio
-async def test_strict_compression_includes_required_symbols() -> None:
+async def test_strict_compression_includes_required_symbols(monkeypatch) -> None:
+    # Pin the ollama local role so the num_ctx path is exercised deterministically.
+    monkeypatch.setattr(
+        "axon.router.compressor._RUNTIME",
+        SimpleNamespace(
+            caveman_model="phi3:mini",
+            ollama_local_host="http://desktop:11434",
+            caveman_num_ctx=4096,
+        ),
+    )
     fake_response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content="index_path preserved"))]
     )
