@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from enum import StrEnum
 
-import ollama
+import litellm
 
 from axon.config.runtime import load_runtime_config
+from axon.router.llm_backend import litellm_kwargs
 
-DEFAULT_LOCAL_MODEL = "gemma4:e4b"
+logger = logging.getLogger(__name__)
 _RUNTIME = load_runtime_config()
 _SCORING_PROMPT = """
 Voce classifica candidatos de expansao de conhecimento.
@@ -82,9 +84,9 @@ def score_candidate(
     candidate: ExpansionCandidate,
     topic: str,
     *,
-    model: str = DEFAULT_LOCAL_MODEL,
-    host: str | None = None,
+    model: str | None = None,
 ) -> ExpansionScoreResult:
+    model = model or _RUNTIME.scoring_model
     normalized = ExpansionCandidate(
         title=candidate.title.strip(),
         extracted_text=_normalize_text(candidate.extracted_text),
@@ -93,47 +95,58 @@ def score_candidate(
     )
     heuristic = _heuristic_result(normalized, topic)
 
-    if not normalized.extracted_text:
+    if not normalized.extracted_text or not _slm_enabled(model):
         return heuristic
 
     try:
-        local_result = _score_with_local_slm(normalized, topic, model=model, host=host)
+        local_result = _score_with_slm(normalized, topic, model=model)
         if local_result is not None:
             return local_result
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 — any provider failure degrades to heuristic
+        logger.warning("scoring fell back to heuristic (%s): %s", model, exc)
 
     return heuristic
+
+
+def _slm_enabled(model: str | None) -> bool:
+    """Gate the SLM call. dec-106: an ollama model needs the opt-in flag."""
+    if not model:
+        return False
+    if model.startswith("ollama/") and not _RUNTIME.provider_ollama_enabled:
+        return False
+    return True
 
 
 def score_candidates(
     candidates: list[ExpansionCandidate],
     topic: str,
     *,
-    model: str = DEFAULT_LOCAL_MODEL,
-    host: str | None = None,
+    model: str | None = None,
 ) -> list[ExpansionScoreResult]:
-    return [score_candidate(candidate, topic, model=model, host=host) for candidate in candidates]
+    return [score_candidate(candidate, topic, model=model) for candidate in candidates]
 
 
-def _score_with_local_slm(
+def _score_with_slm(
     candidate: ExpansionCandidate,
     topic: str,
     *,
     model: str,
-    host: str | None,
 ) -> ExpansionScoreResult | None:
-    client = ollama.Client(host=host or _RUNTIME.ollama_local_host)
-    response = client.chat(
-        model=model,
-        format="json",
+    kwargs = litellm_kwargs(
+        model,
+        ollama_host=_RUNTIME.ollama_local_host,
+        num_ctx=_RUNTIME.scoring_num_ctx,
+    )
+    response = litellm.completion(
+        **kwargs,
+        temperature=0,
+        response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": _SCORING_PROMPT},
             {"role": "user", "content": _build_scoring_input(candidate, topic)},
         ],
-        options={"temperature": 0},
     )
-    raw = response["message"]["content"]
+    raw = response.choices[0].message.content
     payload = _parse_score_payload(raw)
     if payload is None:
         return None
