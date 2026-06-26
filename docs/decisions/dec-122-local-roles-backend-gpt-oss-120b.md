@@ -64,12 +64,21 @@ The desktop Ollama path also exposed a latency/OOM trap: scoring never pins
 
 - Replaces `phi3:mini` for the compressor (a real quality fix, not just eval).
 - Removes the hard dependency on the desktop being on / VRAM free.
-- The production wiring is **not yet implemented** (this ADR records the
-  decision and lands the eval harness only). Follow-up: migrate scoring to
-  litellm (today it calls `ollama.Client` directly), make
-  provider/model/`num_ctx` configurable per handle via env, add the dec-106
-  Ollama gate to scoring, switch the compressor model, and replace the silent
-  `except: pass` in scoring with a logged fallback (mirroring the compressor).
+- Production wiring is **implemented** (`axon.router.llm_backend` +
+  `expansion/scoring.py` + `router/compressor.py`): scoring now goes through
+  litellm; both roles resolve a full litellm model id (`resolve_litellm_model`)
+  and get provider-aware kwargs (`litellm_kwargs` — ollama gets `api_base` +
+  `num_ctx`, hosted providers get neither). The dec-106 Ollama gate applies to
+  scoring, and the silent `except: pass` is now a logged heuristic fallback.
+  Corporate context (`is_corporate_context`) never reaches a hosted provider —
+  the compressor falls back to the original text.
+- Configuration (env):
+  - `AXON_SCORING_MODEL` (default `gemma4:e4b` → `ollama/gemma4:e4b`); set to
+    `groq/openai/gpt-oss-120b` for the decided scoring backend.
+  - `AXON_CAVEMAN_MODEL` (default `phi3:mini`); set to `cerebras/gpt-oss-120b`
+    for the decided compressor backend.
+  - `AXON_SCORING_NUM_CTX` (default 8192) and `AXON_CAVEMAN_NUM_CTX` (4096) only
+    apply to ollama models. Bare names get an `ollama/` prefix for back-compat.
 - Free-tier limits remain a constraint (Groq 30 RPM / 1K RPD / 200K TPD;
   Cerebras 5 RPM / 30K TPM / 1M TPD). The fallback chain absorbs bursts; a Groq/
   Cerebras paid tier is the lever if volume outgrows the split.
