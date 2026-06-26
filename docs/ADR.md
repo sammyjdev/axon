@@ -181,3 +181,8 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
 - [dec-114](decisions/dec-114-doctor-diagnostic-first.md): `pb doctor` has
   three modes (default read-only, `--apply` opt-in interactive, `--ci` JSON
   exit-0); validates commit-msg toolchain compatibility for `arch:` signal.
+- [dec-122](decisions/dec-122-local-roles-backend-gpt-oss-120b.md): back the
+  local roles (scoring, compressor) with gpt-oss-120b on hosted inference; split
+  scoring→Groq / compressor→Cerebras to stack the free quotas; `ctx=work` stays
+  local. Lands the eval harness `axon.benchmark.model_eval`; production wiring is
+  a follow-up.
