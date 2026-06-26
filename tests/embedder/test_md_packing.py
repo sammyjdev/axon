@@ -1,4 +1,4 @@
-from axon.embedder.md_chunker import MAX_TOKENS, MIN_TOKENS, TARGET_TOKENS, Section, pack_sections
+from axon.embedder.md_chunker import MAX_TOKENS, TARGET_TOKENS, Section, pack_sections
 from axon.embedder.tokens import estimate_tokens
 
 

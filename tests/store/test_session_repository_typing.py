@@ -10,7 +10,6 @@ Verifies:
 """
 from __future__ import annotations
 
-import typing
 from datetime import UTC, datetime
 from typing import get_type_hints
 
@@ -19,7 +18,6 @@ import pytest
 from axon.store.pg_session_repository import PostgresSessionRepository
 from axon.store.session_repository import SessionRepository, SqliteSessionRepository
 from axon.store.session_store import CodeChange, SessionMemory, SessionNote
-
 
 # ── isinstance checks (runtime_checkable) ────────────────────────────────────
 

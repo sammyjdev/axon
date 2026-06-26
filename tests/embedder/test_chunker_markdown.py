@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from axon.embedder.chunker import _MAX_CHUNK_LINES, chunk_source
-from axon.embedder.md_chunker import MAX_TOKENS, MIN_TOKENS, _is_table_block, chunk_markdown
+from axon.embedder.md_chunker import MAX_TOKENS, MIN_TOKENS, _is_table_block
 from axon.embedder.tokens import estimate_tokens
 
 
