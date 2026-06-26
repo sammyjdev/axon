@@ -84,7 +84,7 @@ class SqliteFileCache:
         *,
         status: str = "done",
     ) -> None:
-        fp = Path(file_path).as_posix()
+        fp = Path(file_path.replace("\\", "/")).as_posix()
         now = datetime.now(UTC).isoformat()
         async with self._lock:
             await self._conn.execute(
@@ -103,7 +103,7 @@ class SqliteFileCache:
             await self._conn.commit()
 
     async def delete_entry(self, file_path: str, ctx: str) -> None:
-        fp = Path(file_path).as_posix()
+        fp = Path(file_path.replace("\\", "/")).as_posix()
         async with self._lock:
             await self._conn.execute(
                 "DELETE FROM file_index WHERE file_path=? AND ctx=?",
