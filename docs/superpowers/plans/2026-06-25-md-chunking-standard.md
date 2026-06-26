@@ -559,7 +559,7 @@ git commit -m "feat(embedder): structure-aware md chunker with heading-path brea
 ```bash
 export AXON_PG_URL="postgresql://axon:axon@localhost:5434/axon"
 for p in axon glyph-kg pharos-backend lume gnomon-eval pharos-frontend lina; do
-  pb index-dev --project "$p" 2>&1 | grep -iE "arquivo|erro"
+  pb index-dev --project "$p" 2>&1 | grep -iE "file|error"
 done
 ```
 

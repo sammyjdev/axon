@@ -1,28 +1,27 @@
-# dec-112 — SQLite WAL + pending dir + drain idempotente; sem daemon
+# dec-112 - SQLite WAL + pending dir + idempotent drain; no daemon
 
 - Status: accepted
 - Date: 2026-05-27
 
 ## Context
 
-`SessionStore` (`src/axon/store/session_store.py`) hoje usa `aiosqlite`
-com `asyncio.Lock()` in-process e **sem `PRAGMA journal_mode=WAL`**
-(rollback journal default). Cada CLI invocation abre conexão própria.
-Multi-processo concorrente (dois hooks paralelos, agente + dev CLI
-simultâneos) entra em contenção real de lock.
+`SessionStore` (`src/axon/store/session_store.py`) currently uses `aiosqlite`
+with an in-process `asyncio.Lock()` and **no `PRAGMA journal_mode=WAL`**
+(default rollback journal). Each CLI invocation opens its own connection.
+Concurrent multi-process access (two parallel hooks, an agent and dev CLI
+simultaneously) causes real lock contention.
 
-Red-team R1 identificou risco de `database is locked` sob carga
-multi-agente. R2 propôs daemon + socket Unix; rejeitado por quebrar
-Windows nativo e introduzir IPC complexa. R3 identificou que retry
-sem fallback definido causa drift de estado. R4 identificou corrida
-de escrita/drenagem no fallback file. R5 identificou ausência de
-isolamento de erro no drain.
+Red-team R1 identified `database is locked` risk under multi-agent load.
+R2 proposed a daemon + Unix socket; **rejected** because it breaks native
+Windows and introduces complex IPC. R3 identified that retry without a
+defined fallback causes state drift. R4 identified a write/drain race in
+the fallback file. R5 identified lack of error isolation in the drain.
 
 ## Decision
 
-### Concorrência SQLite
+### SQLite concurrency
 
-`SessionStore._connection()` aplica no connect:
+`SessionStore._connection()` applies on connect:
 
 ```sql
 PRAGMA journal_mode=WAL;
@@ -30,110 +29,109 @@ PRAGMA busy_timeout=5000;
 PRAGMA synchronous=NORMAL;
 ```
 
-Multi-writer cross-process via SQLite nativo. WAL permite readers
-concorrentes durante writes.
+Cross-process multi-writer via native SQLite. WAL allows concurrent readers
+during writes.
 
-### Retry com fallback
+### Retry with fallback
 
-Sob `SQLITE_BUSY`, writes seguem:
+Under `SQLITE_BUSY`, writes follow:
 
 ```
-retry com backoff exponencial + jitter
-budget total: 2 * busy_timeout = 10s
-após esgotar:
-  1. escreve a captura em .axon/pending/{commit_hash}-{ts_ns}.json
-     (path único por construção; rename atômico)
-  2. emite warning estruturado em .axon/capture-warnings.jsonl
-  3. retorna sucesso ao hook (NUNCA quebra git)
+retry with exponential backoff + jitter
+total budget: 2 * busy_timeout = 10s
+after exhausting:
+  1. write the capture to .axon/pending/{commit_hash}-{ts_ns}.json
+     (unique path by construction; atomic rename)
+  2. emit structured warning to .axon/capture-warnings.jsonl
+  3. return success to the hook (NEVER breaks git)
 ```
 
-Garantia dura: **hook nunca quebra git por causa de captura.**
+Hard guarantee: **the hook never breaks git because of a capture.**
 
-### Pending dir, não fallback file único
+### Pending dir, not a single fallback file
 
-`.axon/context.md` deixa de ser sink ativo. Vira **view derivada**,
-regenerada do `pending/` consumido + estado do SessionStore.
+`.axon/context.md` stops being an active sink. It becomes a **derived view**,
+regenerated from consumed `pending/` + SessionStore state.
 
-Vantagens de pending dir sobre arquivo único:
+Advantages of pending dir over a single file:
 
-- Paths únicos (`commit_hash + ts_ns`) eliminam colisão por construção
-- `rename` em filesystem POSIX é atômico
-- Sem necessidade de `flock` ou append-only com PIPE_BUF
-- Drainer enumera, processa em ordem cronológica via stat, deleta
-- Crash mid-drain: arquivo permanece em `pending/`, próximo drain
-  processa
-- Idempotência natural: chave `(commit_hash, ts_ns)` única; reprocessar
-  é seguro
+- Unique paths (`commit_hash + ts_ns`) eliminate collisions by construction
+- `rename` on a POSIX filesystem is atomic
+- No need for `flock` or append-only with PIPE_BUF
+- Drainer enumerates, processes in chronological order via stat, deletes
+- Crash mid-drain: file remains in `pending/`, next drain processes it
+- Natural idempotence: key `(commit_hash, ts_ns)` is unique; reprocessing
+  is safe
 
 ### Drain
 
-Disparado por:
+Triggered by:
 
-- Próximo `pb capture-*` bem-sucedido
-- Hook `post-merge` / `post-checkout`
-- `pb doctor` (informativo)
-- `pb drain` manual
+- Next successful `pb capture-*`
+- `post-merge` / `post-checkout` hook
+- `pb doctor` (informational)
+- Manual `pb drain`
 
-Loop de drain:
+Drain loop:
 
 ```
-para cada arquivo em .axon/pending/ (ordem cronológica):
+for each file in .axon/pending/ (chronological order):
   try:
     parse JSON
-    write para SessionStore (com retry SQLite)
-    delete arquivo
+    write to SessionStore (with SQLite retry)
+    delete file
   except (JSONDecodeError, UnicodeError, ValueError, ...):
-    move para .axon/pending-quarantine/{basename}.{ts}.json
-    append em .axon/quarantine.jsonl: {original_path, reason,
+    move to .axon/pending-quarantine/{basename}.{ts}.json
+    append to .axon/quarantine.jsonl: {original_path, reason,
                                        exception, ts}
-    continue  # não trava o loop
-  except SQLITE_BUSY após retry esgotado:
-    deixa em pending/, próximo drain tenta novamente
+    continue  # does not block the loop
+  except SQLITE_BUSY after retry exhausted:
+    leave in pending/, next drain tries again
 ```
 
-Quarantine **nunca** é apagada automaticamente — preserva evidência
-para debug. `pb pending recover [--id=X]` permite re-tentativa manual.
+Quarantine is **never** deleted automatically - preserves evidence
+for debugging. `pb pending recover [--id=X]` allows manual retry.
 
-### Não implementar
+### Do not implement
 
 - Daemon process
-- Socket Unix / Named Pipes / HTTP loopback
-- Fila externa
-- Postgres opcional
-- `flock` ou outras primitivas de coordenação
+- Unix socket / Named Pipes / HTTP loopback
+- External queue
+- Optional Postgres
+- `flock` or other coordination primitives
 
 ## Rationale
 
-- **Load real é baixo**: hooks de dev local geram ~1 write/s
-  sustentado; SQLite WAL aguenta ~100 writes/s sem contenção.
-- **Pending dir + paths únicos** elimina corrida de escrita por
-  construção, sem dependência de primitiva POSIX.
-- **Daemon era overengineering**: quebrava Windows nativo, introduzia
-  IPC complexa, e o load não justifica.
-- **Fallback file (dec-103)** continua válido como view derivada
-  para agentes sem MCP, agora alimentado pelo drain consumido.
-- **Quarantine pattern** padrão de fila resiliente: payload corrompido
-  não bloqueia processamento dos válidos.
+- **Real load is low**: local dev hooks generate ~1 write/s
+  sustained; SQLite WAL handles ~100 writes/s without contention.
+- **Pending dir + unique paths** eliminates write races by
+  construction, without depending on POSIX primitives.
+- **Daemon was overengineering**: broke native Windows, introduced
+  complex IPC, and the load does not justify it.
+- **Fallback file (dec-103)** remains valid as a derived view
+  for agents without MCP, now fed by the consumed drain.
+- **Quarantine pattern** standard resilient-queue pattern: corrupted
+  payload does not block processing of valid ones.
 
 ## Consequences
 
-- `SessionStore._connection()` aplica PRAGMAs no abre.
-- Writes encapsulados em retry helper (`axon.store.retry`).
-- Novo módulo `axon.store.pending` com `write()`, `drain()`,
+- `SessionStore._connection()` applies PRAGMAs on open.
+- Writes wrapped in a retry helper (`axon.store.retry`).
+- New module `axon.store.pending` with `write()`, `drain()`,
   `quarantine_invalid()`.
 - `.axon/pending/`, `.axon/pending-quarantine/`,
-  `.axon/capture-warnings.jsonl`, `.axon/quarantine.jsonl` adicionados
-  ao layout do repo.
-- `.gitignore` deve incluir `.axon/pending/`,
-  `.axon/pending-quarantine/`, `.axon/*.jsonl` (decisão do usuário se
-  versionar drafts ou não — não bloqueante).
-- `pb doctor` reporta backlog persistente em `pending/` e tamanho do
+  `.axon/capture-warnings.jsonl`, `.axon/quarantine.jsonl` added
+  to the repo layout.
+- `.gitignore` should include `.axon/pending/`,
+  `.axon/pending-quarantine/`, `.axon/*.jsonl` (user's choice whether
+  to version drafts or not - not blocking).
+- `pb doctor` reports persistent backlog in `pending/` and size of
   `quarantine/` ([dec-114](dec-114-doctor-diagnostic-first.md)).
-- Testes existentes do SessionStore podem precisar ajuste (mocks que
-  assumiam rollback journal).
-- Aceito como risco residual: filesystems sem rename atômico (alguns
-  FUSE) não suportados para pending path — documentado em
+- Existing SessionStore tests may need adjustment (mocks that assumed
+  rollback journal).
+- Accepted as residual risk: filesystems without atomic rename (some
+  FUSE) are not supported for pending path - documented in
   `SUPPORT_MATRIX.md`.
-- Aceito como risco residual: pending dir pode acumular se
-  SessionStore fica down indefinidamente — doctor reporta, self-heal
-  no próximo drain.
+- Accepted as residual risk: pending dir can accumulate if
+  SessionStore is down indefinitely - doctor reports it, self-heals
+  on next drain.

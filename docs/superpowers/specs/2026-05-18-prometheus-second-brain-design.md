@@ -145,10 +145,10 @@ Auto-discover git repos in a directory, let the user approve candidates, and upd
 3. For each new repo: detects dominant language (file extension count), infers ctx heuristic (`personal` default; `work` if `.work` marker file exists)
 4. Interactive prompt per candidate:
    ```
-   [?] linkedin_content_manager  python  ctx=personal → adicionar? [y/n/skip]
+   [?] linkedin_content_manager  python  ctx=personal → add? [y/n/skip]
    ```
 5. Approved repos appended to `engine/config/projects.json` (created if missing)
-6. After scan: `Adicionar ao índice agora? [y/n]` — if yes, runs `pb index-dev`
+6. After scan: `Add to index now? [y/n]` - if yes, runs `pb index-dev`
 
 ### Language detection
 Count files by extension in repo root + one level deep. Top extension wins. Mapped to Prometheus `VALID_LANGUAGES` (`python`, `java`, `typescript`, `markdown`, `text`).
