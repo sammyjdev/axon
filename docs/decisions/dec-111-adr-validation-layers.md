@@ -1,154 +1,156 @@
-# dec-111 — Validação L1-L3 com tiers, densidade e draft pool dormente
+# dec-111 - L1-L3 validation with tiers, density, and dormant draft pool
 
 - Status: accepted
 - Date: 2026-05-27
 
 ## Context
 
-A inferência de ADR via LLM (`src/axon/cli/pb.py:1439`) hoje persiste
-diretamente no `SessionStore` sem nenhum gate de validação. Red-team
-R1 identificou isso como vetor de "ADR alucinado": LLM pode gerar
-ADR sintaticamente válido sobre decisão inexistente, e o vault aceita.
+ADR inference via LLM (`src/axon/cli/pb.py:1439`) currently persists
+directly to `SessionStore` with no validation gate. Red-team
+R1 identified this as a "hallucinated ADR" vector: the LLM can generate
+a syntactically valid ADR about a non-existent decision, and the vault
+accepts it.
 
-Iterações sucessivas convergiram em validação em camadas determinística,
-não probabilística (confidence-score de LLM não é calibrada — R2),
-considerando `diff ∪ commit_msg_body` para cobrir ADRs abstratos
-(R3), com gate de densidade anti-boilerplate (R4), L1 em dois tiers
-para preservar SLA do hook (R4), e detector estrutural para evitar
-falsos-negativos em refator topológico (R5).
+Successive iterations converged on deterministic, layered validation
+rather than probabilistic (LLM confidence-score is not calibrated - R2),
+using `diff ∪ commit_msg_body` to cover abstract ADRs (R3), with an
+anti-boilerplate density gate (R4), L1 in two tiers to preserve hook SLA
+(R4), and a structural detector to avoid false negatives on topological
+refactors (R5).
 
 ## Decision
 
-ADR inferido passa por camadas determinísticas. Falha em qualquer →
-draft pool dormente em `.axon/adr-draft/` (não-indexado, recuperável),
-não vai para vault.
+An inferred ADR passes through deterministic layers. Failure at any layer ->
+dormant draft pool in `.axon/adr-draft/` (not indexed, recoverable),
+not stored in the vault.
 
-### Camadas de validação
+### Validation layers
 
-| Camada | Onde roda | Check | Pool considerado |
+| Layer | Runs in | Check | Pool considered |
 |---|---|---|---|
-| **L1-light** | hook (SLA <100ms) | `git cat-file` para arquivos, `git grep` para símbolos no working tree pós-commit | working tree |
-| **L1-full** | background / `pb adr review` | grafo tree-sitter (via `axon.code`) | índice quente |
-| **L2 lexical** | hook | overlap rationale × tokens ≥ N (default 3 não-stopword) | `diff ∪ commit_msg_body`, após denylist |
-| **L3 polaridade** | hook | termos-chave do ADR têm grep-match | idem |
-| **Densidade** | hook | denylist boilerplate + architectural lexicon não-no-diff + overlap ratio cap 0.7 | idem |
-| **Detector estrutural** | hook | renames/moves relaxam gates de densidade | n/a |
-| **L4 humano** | opt-in batch | `pb adr review` confirma drafts | n/a |
+| **L1-light** | hook (SLA <100ms) | `git cat-file` for files, `git grep` for symbols in the working tree after commit | working tree |
+| **L1-full** | background / `pb adr review` | tree-sitter graph (via `axon.code`) | hot index |
+| **L2 lexical** | hook | rationale × token overlap >= N (default 3 non-stopword) | `diff ∪ commit_msg_body`, after denylist |
+| **L3 polarity** | hook | ADR key terms have grep-match | same |
+| **Density** | hook | boilerplate denylist + architectural lexicon not-in-diff + overlap ratio cap 0.7 | same |
+| **Structural detector** | hook | renames/moves relax density gates | n/a |
+| **L4 human** | opt-in batch | `pb adr review` confirms drafts | n/a |
 
-### L1 em dois tiers
+### L1 in two tiers
 
-Hook **sempre** usa L1-light. Contribuição máxima ao hook: <100ms.
+The hook **always** uses L1-light. Maximum contribution to hook: <100ms.
 
-Background revalida com L1-full em três triggers determinísticos
-(sem daemon — dec-112 proíbe):
+Background revalidates with L1-full on three deterministic triggers
+(no daemon - dec-112 prohibits it):
 
-1. Hook `post-merge` / `post-checkout` (escopo do `pb hooks install`)
-2. Próximo `pb capture-*` ou `pb adr infer-commit` (amortizado)
+1. `post-merge` / `post-checkout` hook (within `pb hooks install` scope)
+2. Next `pb capture-*` or `pb adr infer-commit` (amortized)
 3. `pb doctor` (manual)
 
-TTL hard de 24h: drafts sem L1-full revalidação → estado
-`stale-pending`, reportado por doctor.
+Hard TTL of 24h: drafts without L1-full revalidation -> `stale-pending`
+state, reported by doctor.
 
-L1-full pode **promover** (válido), **rebaixar para dormant** (símbolo
-não existe nem no índice quente), ou **manter draft** (indeterminado).
+L1-full can **promote** (valid), **demote to dormant** (symbol does not
+exist even in the hot index), or **keep as draft** (indeterminate).
 
-### Gate de densidade
+### Density gate
 
-Três checks combinados, anti-boilerplate:
+Three combined checks, anti-boilerplate:
 
-1. **Denylist**: tokens em conjunto fixo (`JIRA-*`, `#\d+`,
-   `Co-authored-by`, `Signed-off-by`, types de conventional commit)
-   não contam para overlap.
-2. **Architectural lexicon hit**: rationale deve conter ≥ 1 token do
-   lexicon (`migrate|replace|adopt|introduce|deprecate|refactor|
-   pattern|layer|interface|contract|dependency|invariant|...`) que
-   **não** está no diff. Prova comentário genuíno, não paráfrase.
-3. **Overlap ratio cap**: rejeita se >70% dos tokens do rationale são
-   literal substring do diff (LLM copy-paste).
+1. **Denylist**: tokens in a fixed set (`JIRA-*`, `#\d+`,
+   `Co-authored-by`, `Signed-off-by`, conventional commit types)
+   do not count toward overlap.
+2. **Architectural lexicon hit**: rationale must contain >= 1 token from
+   the lexicon (`migrate|replace|adopt|introduce|deprecate|refactor|
+   pattern|layer|interface|contract|dependency|invariant|...`) that
+   is **not** in the diff. Proves genuine commentary, not paraphrase.
+3. **Overlap ratio cap**: rejected if >70% of the rationale's tokens are
+   literal substrings of the diff (LLM copy-paste).
 
-Lexicon inicial: `axon/data/architectural_lexicon.txt`, ~30 termos.
-Expansível via `axon.toml#adr.lexicon_path`.
+Initial lexicon: `axon/data/architectural_lexicon.txt`, ~30 terms.
+Expandable via `axon.toml#adr.lexicon_path`.
 
-### Detector estrutural
+### Structural detector
 
-Commit é classificado `structural` se qualquer:
+A commit is classified `structural` if any of:
 
-- `git diff --find-renames=80% --name-status` reporta ≥ 2 renames
-- ≥ 3 arquivos novos em diretórios não-existentes
-- ≥ 2 diretórios renomeados/movidos
-- Diff é >90% mudanças de path
+- `git diff --find-renames=80% --name-status` reports >= 2 renames
+- >= 3 new files in non-existing directories
+- >= 2 directories renamed/moved
+- Diff is >90% path changes
 
-Em modo structural, gates de densidade relaxam:
+In structural mode, density gates relax:
 
 | Gate | Default | Structural |
 |---|---|---|
 | `overlap_ratio_cap` | 0.7 | 0.9 |
-| Architectural lexicon fora do diff | obrigatório | dispensado |
+| Architectural lexicon outside diff | mandatory | waived |
 | L2 min overlap | 3 | 2 |
 
-Audit log registra `structural_mode: true` para auditoria pós-fato.
+Audit log records `structural_mode: true` for post-hoc auditing.
 
 ### Draft pool
 
-- Drafts em `.axon/adr-draft/{commit_hash}.md`
-- Após 30 dias (configurável): marcados `dormant`, fora do retrieval
-  default, recuperáveis via `pb adr review --dormant`
-- **Não expiram destrutivamente** — preservam memória institucional
+- Drafts at `.axon/adr-draft/{commit_hash}.md`
+- After 30 days (configurable): marked `dormant`, excluded from default
+  retrieval, recoverable via `pb adr review --dormant`
+- **Do not expire destructively** - preserves institutional memory
 
-### Observabilidade
+### Observability
 
-- Toda rejeição → `.axon/adr-rejected.jsonl`:
+- Every rejection -> `.axon/adr-rejected.jsonl`:
   `{commit_hash, layer, reason, tokens_missing?, file_missing?,
   density_score?, structural_mode?, ts}`
-- Passes com densidade abaixo de threshold (mas acima de rejeição) →
-  registrados como **weak-pass** no mesmo log
-- `pb adr audit [--since=7d] [--weak-passes]` lista candidatos
-- Thresholds configuráveis em `axon.toml#adr.*`
+- Passes with density below threshold (but above rejection) ->
+  recorded as **weak-pass** in the same log
+- `pb adr audit [--since=7d] [--weak-passes]` lists candidates
+- Thresholds configurable in `axon.toml#adr.*`
 
-### SLA do hook
+### Hook SLA
 
-<500ms p99 total (L1-light + L2 + L3 + densidade + write para
-pending). Excedeu → fallback: captura derivada apenas, ADR vai para
-pending sem validação L1, revalidado depois por background.
+<500ms p99 total (L1-light + L2 + L3 + density + write to
+pending). Exceeded -> fallback: derived capture only, ADR goes to
+pending without L1 validation, revalidated later by background.
 
 ## Rationale
 
-- **Validação estrutural sozinha não captura inversão causal** —
-  precisa camadas lexical + polaridade.
-- **Pool `diff ∪ commit_msg_body`** — ADRs abstratos têm rationale
-  conceitual cujo diff é só imports; commit body é parte legítima do
-  sinal arquitetural.
-- **Densidade contra boilerplate** — sem ela, copy-paste de diff no
-  body passa L2/L3 trivialmente.
-- **L1 em tiers preserva SLA** — tree-sitter graph é caro; git-only é
-  rápido e suficiente para hook path. Precisão final via background.
-- **Detector estrutural** — refator topológico (renomear diretório
-  para quebrar acoplamento) tem rationale ≈ diff por natureza;
-  rejeitar seria falso-negativo crítico.
-- **Draft dormente** — não expirar destrutivamente preserva memória
-  institucional contra pressão de sprint.
+- **Structural validation alone does not capture causal inversion** -
+  needs lexical + polarity layers.
+- **Pool `diff ∪ commit_msg_body`** - abstract ADRs have conceptual
+  rationale whose diff is only imports; the commit body is a legitimate
+  part of the architectural signal.
+- **Density against boilerplate** - without it, a diff copy-paste in the
+  body trivially passes L2/L3.
+- **L1 in tiers preserves SLA** - the tree-sitter graph is expensive;
+  git-only is fast and sufficient for the hook path. Final precision via
+  background.
+- **Structural detector** - topological refactors (renaming a directory
+  to break coupling) have rationale ≈ diff by nature; rejecting them
+  would be a critical false negative.
+- **Dormant draft** - not expiring destructively preserves institutional
+  memory against sprint pressure.
 
 ## Consequences
 
-- Novo módulo `axon.adr.gates` com submódulos `l1`, `l2`, `l3`,
+- New module `axon.adr.gates` with submodules `l1`, `l2`, `l3`,
   `density`, `structural`.
-- Novo módulo `axon.adr.draft_pool` para escrita/dormency em
+- New module `axon.adr.draft_pool` for write/dormancy in
   `.axon/adr-draft/`.
-- Novo recurso `axon/data/architectural_lexicon.txt`.
-- `adr_infer_commit` (`pb.py:1439`) refatorado para orquestrar:
-  signal → infer → L1-light → L2 → L3 → density → structural → draft
-  pool ou SessionStore.
-- Novas CLIs:
+- New resource `axon/data/architectural_lexicon.txt`.
+- `adr_infer_commit` (`pb.py:1439`) refactored to orchestrate:
+  signal -> infer -> L1-light -> L2 -> L3 -> density -> structural -> draft
+  pool or SessionStore.
+- New CLIs:
   - `pb adr review [--dormant] [--weak-passes]`
   - `pb adr audit [--since=7d]`
-  - `pb adr validate-drafts` (chamado por triggers)
-- Hooks `post-merge` e `post-checkout` adicionados ao escopo do
+  - `pb adr validate-drafts` (called by triggers)
+- `post-merge` and `post-checkout` hooks added to the scope of
   `pb hooks install` ([dec-113](dec-113-hooks-pre-commit-framework.md)).
-- `pb doctor` reporta drafts `stale-pending` (TTL excedido) —
+- `pb doctor` reports `stale-pending` drafts (TTL exceeded) -
   [dec-114](dec-114-doctor-diagnostic-first.md).
-- Aceito como risco residual: alucinação que passa L1-light + L2/L3 +
-  densidade (baixa probabilidade); rebaixada por L1-full depois.
-- Aceito como risco residual: L1-full pode rebaixar draft horas depois
-  do hook; usuário pode ler vault entre os dois pontos.
-- Aceito como risco residual: lexicon inicial pode rejeitar ADRs
-  válidos — configurável, evolui por feedback.
+- Accepted as residual risk: hallucination that passes L1-light + L2/L3 +
+  density (low probability); demoted by L1-full later.
+- Accepted as residual risk: L1-full may demote a draft hours after the
+  hook; user may read the vault between the two points.
+- Accepted as residual risk: initial lexicon may reject valid ADRs -
+  configurable, evolves from feedback.

@@ -1,37 +1,37 @@
-# Design: Cache incremental persistente - tabela `file_index` no SQLite (Pilar C)
+# Design: Persistent incremental cache - `file_index` table in SQLite (Pillar C)
 
-Data: 2026-06-19
-Status: rascunho - aguardando gate de medicao (Phase 0) antes de implementar
-Escopo: persistir hashes de arquivo em SQLite para skip cross-process; reconciliar pontos
-Qdrant por arquivo (delete+re-add) em vez de por chunk-id; pipelinear upserts Redis;
-definir locking de concorrencia; migrar one-shot os 9 repos ja indexados.
+Date: 2026-06-19
+Status: draft - waiting for measurement gate (Phase 0) before implementing
+Scope: persist file hashes in SQLite for cross-process skip; reconcile Qdrant
+points per file (delete+re-add) instead of per chunk-id; pipeline Redis upserts;
+define concurrency locking; one-shot migrate the 9 already-indexed repos.
 
-Este spec cobre o **Pilar C** do overhaul de performance do AXON (linear, cacheavel,
-paralelo). O Pilar A trata cap de chunks/chunker; o Pilar B trata aceleracao de embedding
-via providers onnxruntime. Este pilar e o pre-requisito dos outros dois: sem cache
-persistente, nenhuma execucao incremental e possivel, e sem reconcile por arquivo, pontos
-orfaos acumulam a cada re-index.
+This spec covers **Pillar C** of the AXON performance overhaul (linear, cacheable,
+parallel). Pillar A handles chunk cap/chunker; Pillar B handles embedding acceleration
+via onnxruntime providers. This pillar is the prerequisite for the other two: without
+persistent cache, no incremental execution is possible, and without per-file reconcile,
+orphan points accumulate on every re-index.
 
 ---
 
-## Contexto
+## Context
 
-### Problema raiz
+### Root problem
 
-O `_FILE_HASH_CACHE` atual (`pipeline.py:28`) e um dict em memoria, escopo de processo:
+The current `_FILE_HASH_CACHE` (`pipeline.py:28`) is an in-memory dict, process-scoped:
 
 ```python
 # pipeline.py:28
 _FILE_HASH_CACHE: dict[str, str] = {}
 ```
 
-Consequencia: toda nova invocacao do indexer (hook post-commit, `axon init`, `pb index`)
-recalcula e re-embeda **todos** os arquivos do repo, mesmo que 0 linhas tenham mudado.
-Para os 9 repos ja indexados, isso significa minutos de CPU + I/O Qdrant a cada hook.
+Consequence: every new invocation of the indexer (post-commit hook, `axon init`, `pb index`)
+recalculates and re-embeds **all** files in the repo, even if 0 lines have changed.
+For the 9 already-indexed repos, this means minutes of CPU + Qdrant I/O on every hook.
 
-### Instabilidade do chunk-id
+### Chunk-id instability
 
-O `_chunk_id` e derivado de `uuid5(path::symbol::start_line)` (`pipeline.py:206-211`):
+The `_chunk_id` is derived from `uuid5(path::symbol::start_line)` (`pipeline.py:206-211`):
 
 ```python
 # pipeline.py:206-211
@@ -41,26 +41,26 @@ def _chunk_id(path: Path, chunk: Chunk) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
 ```
 
-Editar 3 linhas acima de um simbolo desloca `start_line` de todos os chunks abaixo -
-todos os IDs mudam - os pontos antigos ficam orfaos no Qdrant. O upsert atual nao deleta
-os pontos do arquivo antes de reinserir; apenas faz `upsert` com novos IDs, deixando os
-pontos velhos acumulados.
+Editing 3 lines above a symbol shifts `start_line` for all chunks below -
+all IDs change - the old points become orphans in Qdrant. The current upsert does not
+delete the file's points before reinserting; it only does `upsert` with new IDs, leaving
+the old accumulated points behind.
 
-**Decisao D1** resolve isso: o novo `_chunk_id` usa `uuid5(NAMESPACE_URL,
-f"{file_path}::{symbol}::{occurrence_index}")` onde `occurrence_index` e o indice
-0-based daquele nome de simbolo dentro do arquivo. Isso desambigua overloads e sub-chunks
-(ex: `foo[0]`/`foo[1]`). Com IDs estaveis, editar linhas acima de um simbolo nao mais
-muda o id daquele simbolo - logo nenhum ponto orfao e criado por deslocamento de linha.
+**Decision D1** resolves this: the new `_chunk_id` uses `uuid5(NAMESPACE_URL,
+f"{file_path}::{symbol}::{occurrence_index}")` where `occurrence_index` is the 0-based
+index of that symbol name within the file. This disambiguates overloads and sub-chunks
+(e.g. `foo[0]`/`foo[1]`). With stable IDs, editing lines above a symbol no longer
+changes that symbol's id - so no orphan points are created by line-shift.
 
-A solucao para os orfaos que ja existem e o delete-by-file descrito em 3d abaixo.
+The solution for orphans that already exist is the delete-by-file described in 3d below.
 
-Verificacao empirica necessaria antes de implementar (ver ledger de hipoteses abaixo):
-rolar `client.scroll()` para um arquivo editado e confirmar que o count aumenta em vez de
-manter-se estavel.
+Empirical verification needed before implementing (see hypothesis ledger below):
+scroll `client.scroll()` for an edited file and confirm that the count increases rather
+than remaining stable.
 
-### Redis sequencial nao-pipelinado
+### Non-pipelined sequential Redis
 
-O loop de `upsert_deps` em `pipeline.py:196-202`:
+The `upsert_deps` loop in `pipeline.py:196-202`:
 
 ```python
 # pipeline.py:196-202
@@ -73,106 +73,106 @@ if graph_store is not None and graph_chunks:
         )
 ```
 
-Cada `upsert_deps` dispara **um** `hset` Redis (`graph_store.py:34-46`). Para 100 simbolos
-com latencia de 1 ms/round-trip = minimo de 100 ms sequenciais. Redis suporta pipelining
-nativo; nao esta sendo usado.
+Each `upsert_deps` fires **one** Redis `hset` (`graph_store.py:34-46`). For 100 symbols
+at 1 ms/round-trip latency = minimum 100 ms sequentially. Redis supports native pipelining;
+it is not being used.
 
-### Hipotese de uso de memoria excessivo
+### Excessive memory usage hypothesis
 
-A chamada `build_dependency_records(graph_chunks)` ocorre no final de `index_path()`
-(`pipeline.py:196`) apos a variavel `graph_chunks: list[Chunk]` (`pipeline.py:141`) ter
-acumulado **todos** os chunks de **todos** os arquivos do repo durante o walk. Esta e a
-hipotese mais provavel para uso de memoria elevado em repos grandes. A confirmacao ou
-refutacao depende do profiling de Phase 0. O streaming de `build_dependency_records` por
-arquivo (processar e descartar por arquivo em vez de acumular a lista inteira) e a correcao
-proposta, mas pertence ao escopo do **Pilar A** - nao deste spec. Nenhuma afirmacao causal
-sobre "14 GB" deve ser tratada como fato antes da medicao.
+The call to `build_dependency_records(graph_chunks)` occurs at the end of `index_path()`
+(`pipeline.py:196`) after the variable `graph_chunks: list[Chunk]` (`pipeline.py:141`) has
+accumulated **all** chunks from **all** files in the repo during the walk. This is the
+most likely hypothesis for high memory usage in large repos. Confirmation or refutation
+depends on Phase 0 profiling. Streaming `build_dependency_records` per file (process and
+discard per file instead of accumulating the full list) is the proposed fix, but belongs
+to the scope of **Pillar A** - not this spec. No causal claim about "14 GB" should be
+treated as fact before measurement.
 
-### Infraestrutura de migracao SQLite ja existente
+### Already-existing SQLite migration infrastructure
 
-O `SessionStore` ja usa migrations `.sql` em ordem alfabetica, rastreadas em
-`schema_version` (`session_store.py:44-61`). Adicionar `003_file_index.sql` e suficiente
-sem mudanca de codigo - o `_apply_migrations()` ja lida com novos arquivos.
+The `SessionStore` already uses `.sql` migrations in alphabetical order, tracked in
+`schema_version` (`session_store.py:44-61`). Adding `003_file_index.sql` is sufficient
+with no code change - `_apply_migrations()` already handles new files.
 
-Fatos verificados no codigo:
-- `session_store.py:44-61` - `_apply_migrations()` le migrations de `store/migrations/`,
-  compara com `schema_version`, executa apenas as novas. Usa `executescript()` para cada
-  arquivo .sql encontrado via `sorted(_MIGRATIONS_DIR.glob("*.sql"))`.
-- `session_store.py:101` - `asyncio.Lock` presente no `SessionStore.__init__`.
-- `session_store.py:109-112` - WAL mode + `busy_timeout=5000` + `synchronous=NORMAL` ja
-  configurados via PRAGMA na primeira conexao.
-- `store/migrations/000_baseline.sql` - tabelas base: `adr`, `session_memory`, etc.
-- `store/migrations/001_axon_graph.sql` - tabelas de grafo: `nodes`, `edges`, `sessions`.
-- `store/migrations/002_unique_edges.sql` - dedup de edges, index `ux_edges_triple`.
-- `pipeline.py:59-75` - `iter_supported_files` usa `rglob('*')` com poda manual de dirs.
-- `pipeline.py:161` - hash calculado como `hashlib.sha1(source.encode("utf-8")).hexdigest()`
-  (texto UTF-8, NAO bytes brutos).
-- `vector_store.py:93-114` - `upsert_batch` agrupa por ctx, um upsert Qdrant por ctx.
-- `vector_store.py:163-169` - `delete_by_file(ctx, file_path)` ja existe; recebe ctx e
-  file_path, deleta por filtro `FieldCondition(key="file_path")`.
-- `graph_store.py:34-46` - `upsert_deps(symbol, calls, called_by)` = um `hset` Redis
-  por simbolo.
-- `code/indexer.py:71-89` - `_iter_repo_files` ja usa `git ls-files --cached --others
-  --exclude-standard`; serve de referencia para a versao a adotar em `pipeline.py`.
+Facts verified in the code:
+- `session_store.py:44-61` - `_apply_migrations()` reads migrations from `store/migrations/`,
+  compares with `schema_version`, executes only the new ones. Uses `executescript()` for each
+  .sql file found via `sorted(_MIGRATIONS_DIR.glob("*.sql"))`.
+- `session_store.py:101` - `asyncio.Lock` present in `SessionStore.__init__`.
+- `session_store.py:109-112` - WAL mode + `busy_timeout=5000` + `synchronous=NORMAL` already
+  configured via PRAGMA on first connection.
+- `store/migrations/000_baseline.sql` - base tables: `adr`, `session_memory`, etc.
+- `store/migrations/001_axon_graph.sql` - graph tables: `nodes`, `edges`, `sessions`.
+- `store/migrations/002_unique_edges.sql` - edge dedup, index `ux_edges_triple`.
+- `pipeline.py:59-75` - `iter_supported_files` uses `rglob('*')` with manual dir pruning.
+- `pipeline.py:161` - hash calculated as `hashlib.sha1(source.encode("utf-8")).hexdigest()`
+  (UTF-8 text, NOT raw bytes).
+- `vector_store.py:93-114` - `upsert_batch` groups by ctx, one Qdrant upsert per ctx.
+- `vector_store.py:163-169` - `delete_by_file(ctx, file_path)` already exists; receives ctx and
+  file_path, deletes by `FieldCondition(key="file_path")` filter.
+- `graph_store.py:34-46` - `upsert_deps(symbol, calls, called_by)` = one Redis `hset`
+  per symbol.
+- `code/indexer.py:71-89` - `_iter_repo_files` already uses `git ls-files --cached --others
+  --exclude-standard`; serves as reference for the version to adopt in `pipeline.py`.
 
 ---
 
-## Ledger de hipoteses (verificar barato antes de implementar)
+## Hypothesis ledger (verify cheaply before implementing)
 
-| # | Hipotese | Verificacao barata | Onde registrar |
+| # | Hypothesis | Cheap verification | Where to record |
 |---|---|---|---|
-| H1 | Pontos orfaos ja existem nos 9 repos indexados | `client.scroll()` antes e depois de editar 1 arquivo; checar se count sobe | `benchmarks/phase0_baseline.json` |
-| H2 | `_FILE_HASH_CACHE` in-memory e a causa do re-embed total a cada processo | Logar hash-hits vs misses num `axon init` em repo ja indexado; se 0 hits, confirma | log de debug temporario |
-| H3 | Redis loop sequential adiciona latencia mensuravel (>100 ms para 100+ simbolos) | `perf_counter()` ao redor do loop em `pipeline.py:196-202` num repo de 200+ simbolos | `benchmarks/phase0_profile.json` |
-| H4 | O `rglob` sem poda nao e o gargalo principal de wall time (embedding domina) | `time` em `iter_supported_files()` isolado vs wall time total de `index_path()` | `benchmarks/phase0_profile.json` |
-| H5 | Colisoes de `uuid5` nao ocorrem hoje nos 9 repos | Script de varredura de IDs duplicados; resultado esperado: dict vazio | verificacao unica pre-deploy |
-| H6 | Acumulacao de `graph_chunks` e a causa principal do pico de RAM em repos grandes | Profilear RSS com `psutil` ao redor de `pipeline.py:141-196`; comparar antes/apos streamer | `benchmarks/phase0_baseline.json` |
-| H7 | `os.kill(pid, 0)` para reclaim de lock stale funciona corretamente no Windows 11 | `test_index_lock_windows.py`: criar lockfile com PID de processo terminado; executar `acquire_index_lock`; verificar que o reclaim ocorre sem erro | `benchmarks/phase0_baseline.json` |
+| H1 | Orphan points already exist in the 9 indexed repos | `client.scroll()` before and after editing 1 file; check if count increases | `benchmarks/phase0_baseline.json` |
+| H2 | In-memory `_FILE_HASH_CACHE` is the cause of full re-embed on every process | Log hash-hits vs misses in an `axon init` on an already-indexed repo; if 0 hits, confirmed | temporary debug log |
+| H3 | Sequential Redis loop adds measurable latency (>100 ms for 100+ symbols) | `perf_counter()` around the loop in `pipeline.py:196-202` on a repo with 200+ symbols | `benchmarks/phase0_profile.json` |
+| H4 | `rglob` without pruning is not the main wall-time bottleneck (embedding dominates) | `time` on `iter_supported_files()` isolated vs total wall time of `index_path()` | `benchmarks/phase0_profile.json` |
+| H5 | `uuid5` collisions do not occur today in the 9 repos | Script scanning for duplicate IDs; expected result: empty dict | one-time pre-deploy check |
+| H6 | `graph_chunks` accumulation is the main cause of RAM peaks in large repos | Profile RSS with `psutil` around `pipeline.py:141-196`; compare before/after streamer | `benchmarks/phase0_baseline.json` |
+| H7 | `os.kill(pid, 0)` for stale lock reclaim works correctly on Windows 11 | `test_index_lock_windows.py`: create lockfile with PID of terminated process; run `acquire_index_lock`; verify reclaim occurs without error | `benchmarks/phase0_baseline.json` |
 
-**Nenhuma hipotese pode ser declarada como fato no plano de implementacao ate ser medida.**
-O gate de Phase 0 (definido abaixo) e o controle.
+**No hypothesis can be declared a fact in the implementation plan until it has been measured.**
+The Phase 0 gate (defined below) is the control.
 
 ---
 
-## Decisoes
+## Decisions
 
-| Tema | Decisao | Racional |
+| Topic | Decision | Rationale |
 |---|---|---|
-| Chunk-id estavel (D1) | `uuid5(NAMESPACE_URL, f"{file_path}::{symbol}::{occurrence_index}")` onde `occurrence_index` e o indice 0-based daquele nome no arquivo | Elimina re-indexacao forcada por deslocamento de linha; desambigua overloads e sub-chunks sem depender de `start_line` |
-| Armazenamento do cache de hash | Tabela `file_index` no SQLite existente (mesmo DB do `SessionStore`) | Reutiliza infra, migrations, locking e WAL ja configurados; zero nova dependencia |
-| Schema da tabela | `file_path TEXT, ctx TEXT, sha1 TEXT, status TEXT, chunk_count INTEGER, indexed_at TEXT, PRIMARY KEY (file_path, ctx)` | Coluna `status` habilita o sentinel de crash-safety (D2) |
-| Versao de schema | Migration `003_file_index.sql` na pasta `store/migrations/` | O `_apply_migrations()` existente executa sem mudanca de codigo |
-| Crash-safety / sentinel (D2) | Escrever `status='pending'` + novo sha ANTES de mutar o Qdrant; setar `status='done'` apos upsert bem-sucedido; ao iniciar, tratar qualquer linha `pending` como dirty e re-indexar | Elimina a janela de dados perdidos: crash entre delete e upsert resulta em re-index na proxima execucao, nunca em cache stale + Qdrant vazio |
-| Migracao one-shot (D2 blue/green) | Para os 9 repos ja indexados: indexar em nova colecao Qdrant, rodar recall gate, promover via alias swap somente se aprovado | Normal incremental nao usa blue/green; apenas a migracao one-shot usa |
-| Reconcile Qdrant | Delete-all-for-file + re-add, usando `vector_store.delete_by_file` existente (D4) | Com D1 (ids estaveis), arquivos nao-modificados mantem pontos validos mesmo com deslocamento de linha; arquivos modificados (hash miss) passam por delete+upsert, eliminando simbolos deletados/renomeados |
-| Orfaos resolvidos por D1 + D6 | Arquivos sem hash-change mantem pontos validos (D1 garante ids estaveis); arquivos com hash-change fazem delete_by_file + re-upsert (limpa simbolos removidos/renomeados) | O problema de orfaos e resolvido pela combinacao de D1 (sem mudanca de id por linha shift) e delete-by-file no hash-miss (limpa simbolos extintos); nao ha necessidade de diff por chunk-id |
-| Metodo de delete | Reutilizar `vector_store.delete_by_file(ctx, file_path)` ja em `vector_store.py:163`; chamar em loop sobre COLLECTIONS / VALID_CONTEXTS para delete all-context quando necessario (D4) | Nao adicionar nenhum novo metodo de delete; `delete_by_file` ja existe e cobre o caso |
-| Walk de arquivos (D3) | Substituir `rglob` em `iter_supported_files` por `git ls-files --cached` (NAO --others) como fonte primaria; filtrar cada path por `git check-ignore` para excluir arquivos que foram commitados e depois adicionados ao .gitignore; fallback para `rglob` se nao for repo git | Garantia de seguranca: nenhum arquivo gitignored e jamais embeddado; arquivos nao-rastreados requerem `git add` antes de serem indexados |
-| Hash de arquivo | Manter `hashlib.sha1(source.encode("utf-8")).hexdigest()` - identico ao codigo atual em `pipeline.py:161` | Evita full re-embed no primeiro deploy; qualquer mudanca de metodo de hash causaria cold-start completo e deve ser documentada explicitamente como one-time cost |
-| Redis pipelining | Batch de N `hset` num unico pipeline por `upsert_deps_batch` | `redis-py` suporta `pipe()` nativo; mudanca de 3 linhas, ganho proporcional a N simbolos |
-| Atomicidade Redis | `pipeline(transaction=False)` - sem MULTI/EXEC overhead | Falha parcial e corrigida na proxima execucao (reconcile re-indexara o arquivo); adicionar um teste que verifica ausencia de dados corrompidos apos falha simulada |
-| `FileCache` obrigatoria | `FileCache` e parametro obrigatorio de `index_path`; remover guards `if file_cache:` | YAGNI - o bypass opcional e especulativo; todos os callers devem passar uma instancia real ou mock |
-| Locking de concorrencia | Lockfile `.axon/index.lock` com PID escrito no arquivo; verificar se PID existe via `os.kill(pid, 0)` antes de reclamar lock stale; adicionar TTL como fallback adicional. HIPOTESE em Windows 11: `os.kill(pid, 0)` pode nao ter o mesmo comportamento que em Unix - verificar em Phase 0 com teste Windows-especifico antes de confiar no reclaim automatico em producao | `O_EXCL` sozinho bloqueia indexacoes futuras apos crash; escrever PID permite reclaim automatico de locks abandonados |
-| Score de recall cross-plataforma | Calibrar `min_score` separadamente para bge-base (768-dim) e bge-small (384-dim); armazenar em `score_calibration.json` | Um threshold fixo de 0.70 sem calibracao nao e confiavel entre modelos com dimensoes diferentes |
-| `executescript` SQLite | Comportar como propriedade conhecida: `executescript` emite COMMIT implicito antes de executar; `003_file_index.sql` e DDL puro com `IF NOT EXISTS` logo re-execucoes sao seguras | Nao e um bug; e documentado como comportamento do modulo sqlite3 do Python |
-| Migracao scroll paginado | Paginar `client.scroll()` via `next_page_offset` ate `None` (ou usar `count()` para verificar zero orfaos) em vez de `limit=10000` | Colecoes com >10000 pontos retornariam resultado truncado silenciosamente |
-| Cache de sha1 em batch | Adicionar `get_all_sha1s(ctx)` ao `SqliteFileCache`: um unico `SELECT` retorna todos os (file_path, sha1) do ctx; comparacao feita em memoria | Evita N roundtrips asyncio no tight loop de `index_path`; reducao de contencao no Lock |
-| Normalizacao de path | Normalizar todos os `file_path` armazenados para `Path(p).as_posix()` antes de escrever no `file_index` e antes de usar como filtro Qdrant | Git emite `/` em todos os OS; `Path` no Windows emite `\\`; inconsistencia causaria misses no lookup e orfaos nao-detectados |
+| Stable chunk-id (D1) | `uuid5(NAMESPACE_URL, f"{file_path}::{symbol}::{occurrence_index}")` where `occurrence_index` is the 0-based index of that name in the file | Eliminates forced re-indexing due to line-shift; disambiguates overloads and sub-chunks without depending on `start_line` |
+| Hash cache storage | `file_index` table in the existing SQLite (same DB as `SessionStore`) | Reuses already-configured infra, migrations, locking, and WAL; zero new dependency |
+| Table schema | `file_path TEXT, ctx TEXT, sha1 TEXT, status TEXT, chunk_count INTEGER, indexed_at TEXT, PRIMARY KEY (file_path, ctx)` | `status` column enables the crash-safety sentinel (D2) |
+| Schema version | Migration `003_file_index.sql` in the `store/migrations/` folder | The existing `_apply_migrations()` executes without code changes |
+| Crash-safety / sentinel (D2) | Write `status='pending'` + new sha BEFORE mutating Qdrant; set `status='done'` after successful upsert; on startup, treat any `pending` row as dirty and re-index | Eliminates the data loss window: crash between delete and upsert results in re-index on next run, never in stale cache + empty Qdrant |
+| One-shot migration (D2 blue/green) | For the 9 already-indexed repos: index into new Qdrant collection, run recall gate, promote via alias swap only if approved | Normal incremental does not use blue/green; only the one-shot migration uses it |
+| Qdrant reconcile | Delete-all-for-file + re-add, using the existing `vector_store.delete_by_file` (D4) | With D1 (stable ids), unmodified files keep valid points even with line-shift; modified files (hash miss) go through delete+upsert, eliminating deleted/renamed symbols |
+| Orphans resolved by D1 + D6 | Files without hash-change keep valid points (D1 guarantees stable ids); files with hash-change do delete_by_file + re-upsert (clears removed/renamed symbols) | The orphan problem is resolved by the combination of D1 (no id change from line shift) and delete-by-file on hash-miss (clears extinct symbols); no per-chunk-id diff needed |
+| Delete method | Reuse `vector_store.delete_by_file(ctx, file_path)` already in `vector_store.py:163`; call in a loop over COLLECTIONS / VALID_CONTEXTS for delete all-context when needed (D4) | Do not add any new delete method; `delete_by_file` already exists and covers the case |
+| File walk (D3) | Replace `rglob` in `iter_supported_files` with `git ls-files --cached` (NOT --others) as primary source; filter each path with `git check-ignore` to exclude files that were committed and later added to .gitignore; fallback to `rglob` if not a git repo | Safety guarantee: no gitignored file is ever embedded; untracked files require `git add` before being indexed |
+| File hash | Keep `hashlib.sha1(source.encode("utf-8")).hexdigest()` - identical to current code at `pipeline.py:161` | Avoids full re-embed on first deploy; any change in hash method would cause a full cold-start and must be explicitly documented as a one-time cost |
+| Redis pipelining | Batch of N `hset` in a single pipeline per `upsert_deps_batch` | `redis-py` supports native `pipe()`; 3-line change, gain proportional to N symbols |
+| Redis atomicity | `pipeline(transaction=False)` - no MULTI/EXEC overhead | Partial failure is corrected on the next run (reconcile will re-index the file); add a test that verifies absence of corrupted data after simulated failure |
+| Mandatory `FileCache` | `FileCache` is a mandatory parameter of `index_path`; remove `if file_cache:` guards | YAGNI - the optional bypass is speculative; all callers must pass a real instance or mock |
+| Concurrency locking | Lockfile `.axon/index.lock` with PID written to the file; check if PID exists via `os.kill(pid, 0)` before reclaiming stale lock; add TTL as additional fallback. HYPOTHESIS on Windows 11: `os.kill(pid, 0)` may not have the same behavior as on Unix - verify in Phase 0 with a Windows-specific test before relying on automatic reclaim in production | `O_EXCL` alone blocks future indexing after a crash; writing PID allows automatic reclaim of abandoned locks |
+| Cross-platform recall score | Calibrate `min_score` separately for bge-base (768-dim) and bge-small (384-dim); store in `score_calibration.json` | A fixed threshold of 0.70 without calibration is not reliable across models with different dimensions |
+| SQLite `executescript` | Treat as known behavior: `executescript` issues an implicit COMMIT before executing; `003_file_index.sql` is pure DDL with `IF NOT EXISTS` so re-executions are safe | Not a bug; documented behavior of Python's sqlite3 module |
+| Paginated scroll migration | Paginate `client.scroll()` via `next_page_offset` until `None` (or use `count()` to verify zero orphans) instead of `limit=10000` | Collections with >10000 points would return silently truncated results |
+| Batch sha1 cache | Add `get_all_sha1s(ctx)` to `SqliteFileCache`: a single `SELECT` returns all (file_path, sha1) for the ctx; comparison done in memory | Avoids N asyncio round-trips in the tight loop of `index_path`; reduces Lock contention |
+| Path normalization | Normalize all `file_path` values stored to `Path(p).as_posix()` before writing to `file_index` and before using as Qdrant filter | Git emits `/` on all OSes; `Path` on Windows emits `\\`; inconsistency would cause lookup misses and undetected orphans |
 
 ---
 
-## Componentes e mudancas
+## Components and changes
 
 ### 1. Migration `003_file_index.sql`
 
-Arquivo novo em `C:/Users/samde/dev/axon/src/axon/store/migrations/003_file_index.sql`:
+New file at `C:/Users/samde/dev/axon/src/axon/store/migrations/003_file_index.sql`:
 
 ```sql
 -- 003_file_index.sql
--- Cache persistente de hashes por arquivo para skip incremental cross-process.
--- Requer: 000_baseline, 001_axon_graph, 002_unique_edges ja aplicados.
--- executescript() emite COMMIT implicito antes de executar; DDL puro com
--- IF NOT EXISTS torna re-execucao segura.
+-- Persistent per-file hash cache for cross-process incremental skip.
+-- Requires: 000_baseline, 001_axon_graph, 002_unique_edges already applied.
+-- executescript() emits an implicit COMMIT before running; pure DDL with
+-- IF NOT EXISTS makes re-execution safe.
 
 CREATE TABLE IF NOT EXISTS file_index (
     file_path   TEXT    NOT NULL,
@@ -191,20 +191,22 @@ CREATE INDEX IF NOT EXISTS ix_file_index_status
     ON file_index (status);
 ```
 
-Notas de design:
-- PK composta `(file_path, ctx)` porque o mesmo arquivo pode ser indexado em contextos
-  diferentes (ex: `knowledge` e `work`).
-- Coluna `status` implementa o sentinel de crash-safety (D2): `'pending'` indica que a
-  mutacao Qdrant esta em andamento ou foi interrompida; `'done'` indica estado consistente.
-- `chunk_count` permite validar se o numero de chunks mudou sem precisar ler o Qdrant.
-- `CREATE TABLE IF NOT EXISTS` garante idempotencia (re-aplicacao segura).
-- O `_apply_migrations()` em `session_store.py:44-61` detecta `003_file_index.sql` e
-  executa na proxima inicializacao do `SessionStore` - nenhuma mudanca de codigo necessaria.
+Design notes:
+- Composite PK `(file_path, ctx)` because the same file can be indexed in different
+  contexts (e.g. `knowledge` and `work`).
+- The `status` column implements the crash-safety sentinel (D2): `'pending'` indicates
+  that the Qdrant mutation is in progress or was interrupted; `'done'` indicates
+  consistent state.
+- `chunk_count` allows validating whether the number of chunks changed without reading
+  Qdrant.
+- `CREATE TABLE IF NOT EXISTS` guarantees idempotency (safe re-application).
+- The `_apply_migrations()` in `session_store.py:44-61` detects `003_file_index.sql` and
+  executes it on the next `SessionStore` initialization - no code change required.
 
-### 2. Modulo `axon/store/file_cache.py` (novo)
+### 2. Module `axon/store/file_cache.py` (new)
 
-Responsabilidade unica: ler e escrever `file_index`. Isola toda a logica de cache do
-`pipeline.py`. `FileCache` e um Protocol; `SqliteFileCache` e a implementacao concreta.
+Single responsibility: read and write `file_index`. Isolates all cache logic from
+`pipeline.py`. `FileCache` is a Protocol; `SqliteFileCache` is the concrete implementation.
 
 ```python
 # axon/store/file_cache.py
@@ -217,7 +219,7 @@ from typing import Protocol
 
 class FileCache(Protocol):
     async def get_all_sha1s(self, ctx: str) -> dict[str, str]: ...
-    # Retorna {file_path_posix: sha1} para o ctx dado (um unico SELECT)
+    # Returns {file_path_posix: sha1} for the given ctx (a single SELECT)
 
     async def set_entry(
         self, file_path: str, ctx: str, sha1: str, chunk_count: int, *,
@@ -227,18 +229,18 @@ class FileCache(Protocol):
     async def delete_entry(self, file_path: str, ctx: str) -> None: ...
 
     async def list_entries(self, ctx: str) -> list[tuple[str, str]]: ...
-    # Retorna lista de (file_path_posix, sha1) para o ctx dado
+    # Returns a list of (file_path_posix, sha1) for the given ctx
 
 
 class SqliteFileCache:
-    """Implementacao concreta usando a conexao aiosqlite do SessionStore."""
+    """Concrete implementation using the SessionStore's aiosqlite connection."""
 
     def __init__(self, conn, lock):  # aiosqlite.Connection, asyncio.Lock
         self._conn = conn
         self._lock = lock
 
     async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
-        """Retorna {file_path: sha1} em um unico SELECT; comparacao feita em memoria."""
+        """Returns {file_path: sha1} in a single SELECT; comparison done in memory."""
         async with self._lock:
             cur = await self._conn.execute(
                 "SELECT file_path, sha1 FROM file_index WHERE ctx=? AND status='done'",
@@ -256,7 +258,7 @@ class SqliteFileCache:
         *,
         status: str = "done",
     ) -> None:
-        # Normalizar para posix antes de armazenar
+        # Normalize to posix before storing
         fp = Path(file_path).as_posix()
         now = datetime.now(timezone.utc).isoformat()
         async with self._lock:
@@ -293,73 +295,73 @@ class SqliteFileCache:
 
 
 def sha1_of_source(source: str) -> str:
-    """Hash do conteudo UTF-8 do arquivo - identico ao pipeline.py:161 atual.
+    """Hash of the file's UTF-8 content - identical to the current pipeline.py:161.
 
-    NAO usar path.read_bytes() - isso produziria digest diferente e causaria
-    full re-embed no primeiro deploy. Se for necessario migrar para read_bytes(),
-    documentar como one-time cold-start explicito.
+    Do NOT use path.read_bytes() - that would produce a different digest and cause
+    a full re-embed on the first deploy. If migrating to read_bytes() becomes necessary,
+    document it as an explicit one-time cold-start.
 
-    Sem kwarg usedforsecurity: identico ao pipeline.py:161 que tambem nao usa o kwarg.
-    Em sistemas FIPS o Python pode rejeitar hashlib.sha1() sem usedforsecurity=False;
-    se isso for necessario, pipeline.py:161 deve ser atualizado no mesmo PR para manter
-    os digests identicos entre as duas chamadas.
+    No usedforsecurity kwarg: identical to pipeline.py:161, which also does not use the kwarg.
+    On FIPS systems Python may reject hashlib.sha1() without usedforsecurity=False;
+    if that becomes necessary, pipeline.py:161 must be updated in the same PR to keep
+    the digests identical between the two calls.
     """
     return hashlib.sha1(source.encode("utf-8")).hexdigest()
 ```
 
-Dependencias: `aiosqlite` (ja em uso), `asyncio.Lock` (ja no `SessionStore`).
-Sem nova dependencia de terceiros.
+Dependencies: `aiosqlite` (already in use), `asyncio.Lock` (already in `SessionStore`).
+No new third-party dependency.
 
-### 3. Alteracoes em `pipeline.py`
+### 3. Changes in `pipeline.py`
 
-#### 3a. Substituir `_FILE_HASH_CACHE` por `FileCache` (obrigatoria)
+#### 3a. Replace `_FILE_HASH_CACHE` with `FileCache` (mandatory)
 
-Remover `pipeline.py:28`:
+Remove `pipeline.py:28`:
 ```python
 # REMOVER:
 _FILE_HASH_CACHE: dict[str, str] = {}
 ```
 
-Adicionar `file_cache: FileCache` como parametro **obrigatorio** de `index_path`.
-Nao ha fallback `None` - todos os callers devem passar uma instancia real ou mock.
-O comportamento anterior (sem skip) era resultado de sempre ter um dict vazio; os testes
-que precisam desse comportamento devem passar um mock que sempre retorna `None` para
+Add `file_cache: FileCache` as a **mandatory** parameter of `index_path`.
+There is no `None` fallback - all callers must pass a real instance or mock.
+The previous behavior (no skip) was the result of always having an empty dict; tests
+that need that behavior should pass a mock that always returns `None` for
 `get_all_sha1s`.
 
-#### 3b. Novo `_chunk_id` estavel (D1)
+#### 3b. New stable `_chunk_id` (D1)
 
-Substituir a funcao atual (`pipeline.py:206-211`) por:
+Replace the current function (`pipeline.py:206-211`) with:
 
 ```python
-# pipeline.py - substitui a funcao _chunk_id
+# pipeline.py - replaces the _chunk_id function
 def _chunk_id(file_path: Path, chunk: Chunk, occurrence_index: int) -> str:
-    """ID estavel: nao depende de start_line.
+    """Stable ID: does not depend on start_line.
 
-    occurrence_index = indice 0-based daquele nome de simbolo dentro do arquivo
-    (ex: segundo metodo com nome 'process' tem occurrence_index=1).
-    Desambigua overloads e sub-chunks (foo[0]/foo[1]) sem usar numero de linha.
+    occurrence_index = 0-based index of that symbol name within the file
+    (e.g. the second method named 'process' has occurrence_index=1).
+    Disambiguates overloads and sub-chunks (foo[0]/foo[1]) without using a line number.
     """
     import uuid
     key = f"{Path(file_path).as_posix()}::{chunk.symbol}::{occurrence_index}"
     return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
 ```
 
-O caller deve rastrear um `Counter[str]` de nomes de simbolo por arquivo e passar
-`counter[chunk.symbol]` como `occurrence_index` antes de incrementar.
+The caller must track a `Counter[str]` of symbol names per file and pass
+`counter[chunk.symbol]` as `occurrence_index` before incrementing.
 
-#### 3c. Logica de skip incremental com sentinel de crash-safety (D2)
+#### 3c. Incremental skip logic with crash-safety sentinel (D2)
 
 ```python
-# Pseudocodigo - index_path() apos receber file_cache: FileCache
+# Pseudocode - index_path() after receiving file_cache: FileCache
 
-# --- Pre-carregamento de todos os sha1s em um unico SELECT ---
+# --- Pre-load all sha1s in a single SELECT ---
 cached_sha1s: dict[str, str] = await file_cache.get_all_sha1s(ctx)
-# cached_sha1s contem apenas linhas com status='done'
+# cached_sha1s contains only rows with status='done'
 
-# Qualquer linha 'pending' sobrevivente de crash sera invisivel aqui ->
-# ausente em cached_sha1s -> tratada como hash miss -> re-indexada
+# Any 'pending' row that survived a crash will be invisible here ->
+# absent from cached_sha1s -> treated as a hash miss -> re-indexed
 
-# --- Loop por arquivo ---
+# --- Per-file loop ---
 for file_path in files:
     fp_posix = Path(file_path).as_posix()
     source = file_path.read_text(encoding="utf-8", errors="replace")
@@ -367,48 +369,48 @@ for file_path in files:
 
     if cached_sha1s.get(fp_posix) == current_sha1:
         stats["skipped"] += 1
-        continue  # arquivo nao mudou - pular
+        continue  # file unchanged - skip
 
-    # (1) Escrever sentinel ANTES de mutar Qdrant
+    # (1) Write sentinel BEFORE mutating Qdrant
     await file_cache.set_entry(fp_posix, ctx, current_sha1, 0, status="pending")
 
-    # (2) Deletar pontos antigos; acumular chunks no batch deferred
+    # (2) Delete old points; accumulate chunks in the deferred batch
     await store.delete_by_file(ctx, fp_posix)
     chunks = chunk_source(source, language, str(file_path))
     pending_batch.extend(chunks)
     pending_file_meta.append((fp_posix, current_sha1, len(chunks)))
-    # IMPORTANTE: set_entry(done) NAO ocorre aqui dentro do loop.
-    # Chunks ainda nao foram upsertados ao Qdrant (estao no pending_batch).
-    # Marcar done antes do flush causaria: crash => cache='done' mas Qdrant vazio.
+    # IMPORTANT: set_entry(done) does NOT happen here inside the loop.
+    # Chunks have not yet been upserted to Qdrant (they are in pending_batch).
+    # Marking done before the flush would cause: crash => cache='done' but Qdrant empty.
 
     if len(pending_batch) >= _BATCH_SIZE:
-        # (3a) Flush do batch ANTES de marcar done
+        # (3a) Flush the batch BEFORE marking done
         await _flush_batch(pending_batch, engine, store, ctx)
         pending_batch.clear()
-        # (3b) Somente apos flush bem-sucedido, marcar todos os arquivos do batch como done
+        # (3b) Only after a successful flush, mark all files in the batch as done
         for fp, s1, cc in pending_file_meta:
             await file_cache.set_entry(fp, ctx, s1, cc, status="done")
         pending_file_meta.clear()
 
-# Apos o loop: flush do ultimo batch parcial, depois marcar done
+# After the loop: flush the last partial batch, then mark done
 await _flush_batch(pending_batch, engine, store, ctx)
 for fp, s1, cc in pending_file_meta:
     await file_cache.set_entry(fp, ctx, s1, cc, status="done")
 ```
 
-Se o processo travar entre (1) e (3b), a linha permanece `status='pending'`. Na proxima
-execucao, `get_all_sha1s` filtra apenas `status='done'`, logo o arquivo e tratado como
-miss e re-indexado completamente. A invariante e: `status='done'` implica que o batch
-contendo os chunks daquele arquivo ja foi persistido no Qdrant.
+If the process crashes between (1) and (3b), the row remains `status='pending'`. On the
+next run, `get_all_sha1s` filters only `status='done'`, so the file is treated as a
+miss and re-indexed completely. The invariant is: `status='done'` implies that the batch
+containing that file's chunks has already been persisted to Qdrant.
 
-#### 3d. Substituir `git ls-files` por `rglob` em `iter_supported_files` (D3)
+#### 3d. Replace `rglob` with `git ls-files` in `iter_supported_files` (D3)
 
-Alterar `pipeline.py:59-75` para usar `git ls-files --cached` (NAO --others) como
-fonte primaria, com filtro de `git check-ignore` para arquivos que foram commitados e
-depois adicionados ao .gitignore:
+Change `pipeline.py:59-75` to use `git ls-files --cached` (NOT --others) as the
+primary source, with `git check-ignore` filtering for files that were committed and
+later added to .gitignore:
 
 ```python
-# Pseudocodigo - iter_supported_files (D3)
+# Pseudocode - iter_supported_files (D3)
 import subprocess
 
 def iter_supported_files(target: Path, *, languages: set[str] | None = None):
@@ -425,23 +427,23 @@ def iter_supported_files(target: Path, *, languages: set[str] | None = None):
         )
         for line in result.stdout.splitlines():
             p = target / line.strip()
-            # Normalizar para comparacoes consistentes
+            # Normalize for consistent comparisons
             if p.suffix not in _LANGUAGE_MAP:
                 continue
             if not p.is_file():
                 continue
-            # Excluir arquivos que foram commitados e depois gitignored
+            # Exclude files that were committed and later gitignored
             chk = subprocess.run(
                 ["git", "-C", str(target), "check-ignore", "-q", str(p)],
                 capture_output=True,
             )
             if chk.returncode == 0:
-                continue  # gitignored - nao embeddar
+                continue  # gitignored - do not embed
             language = _language_for_suffix(p.suffix)
             if language and (languages is None or language in languages):
                 yield p
     except (subprocess.CalledProcessError, FileNotFoundError):
-        # Fallback: rglob com poda manual (repo nao-git ou git nao disponivel)
+        # Fallback: rglob with manual pruning (non-git repo or git not available)
         for p in target.rglob("*"):
             if any(part in EXCLUDED_DIR_NAMES for part in p.parts):
                 continue
@@ -450,57 +452,56 @@ def iter_supported_files(target: Path, *, languages: set[str] | None = None):
                 yield p
 ```
 
-Garantia de seguranca (D3): `git ls-files --cached` lista apenas arquivos rastreados.
-Arquivos nao-rastreados (nao submetidos a `git add`) nao aparecem. O filtro
-`git check-ignore` exclui arquivos que foram commitados e depois adicionados ao .gitignore.
-Resultado: **nenhum arquivo gitignored e jamais embeddado**. Adicionar um teste de
-seguranca obrigatorio (ver secao de testes).
+Safety guarantee (D3): `git ls-files --cached` lists only tracked files.
+Untracked files (not submitted to `git add`) do not appear. The `git check-ignore`
+filter excludes files that were committed and then added to .gitignore.
+Result: **no gitignored file is ever embedded**. Add a mandatory safety test (see tests section).
 
-Todos os `file_path` armazenados devem ser normalizados via `Path(p).as_posix()` antes
-de qualquer escrita em `file_index` ou uso como filtro Qdrant - evita mismatch entre
-paths emitidos pelo git (sempre `/`) e `Path` no Windows (emite `\\`).
+All `file_path` values stored must be normalized via `Path(p).as_posix()` before
+any write to `file_index` or use as Qdrant filter - avoids mismatch between paths
+emitted by git (always `/`) and `Path` on Windows (emits `\\`).
 
-#### 3e. Reconcile Qdrant por arquivo (delete-then-upsert) (D4 + D6)
+#### 3e. Qdrant reconcile per file (delete-then-upsert) (D4 + D6)
 
-Antes de chunk/embed de um arquivo modificado (hash miss), deletar todos os pontos do
-arquivo naquele ctx usando o metodo **ja existente** `vector_store.delete_by_file`:
+Before chunk/embed of a modified file (hash miss), delete all points for the
+file in that ctx using the **already existing** `vector_store.delete_by_file` method:
 
 ```python
-# Pseudocodigo - apos detectar hash miss, antes de chunk/embed
-# NAO criar novo metodo; usar delete_by_file que ja existe em vector_store.py:163
+# Pseudocode - after detecting a hash miss, before chunk/embed
+# Do NOT create a new method; use delete_by_file that already exists in vector_store.py:163
 await store.delete_by_file(ctx, fp_posix)
 ```
 
-Para delete all-context (ex: arquivo deletado do repo), chamar em loop:
+For delete all-context (e.g. file deleted from repo), call in a loop:
 
 ```python
-# Pseudocodigo - arquivo removido do repo
+# Pseudocode - file removed from the repo
 from axon.context.registry import VALID_CONTEXTS
 for ctx_name in VALID_CONTEXTS:
     await store.delete_by_file(ctx_name, fp_posix)
 ```
 
-Nao adicionar `delete_file_points`, `delete_by_file_path`, `_collections()` ou qualquer
-outro metodo de delete. O `delete_by_file` existente e suficiente (D4).
+Do not add `delete_file_points`, `delete_by_file_path`, `_collections()`, or any
+other delete method. The existing `delete_by_file` is sufficient (D4).
 
-**Como D1 + D6 resolvem o problema de orfaos:**
-- Arquivo **nao modificado** (hash hit): ids sao estaveis (D1 garante que deslocamento de
-  linha nao muda o id), logo os pontos existentes continuam validos. Nenhum re-index.
-- Arquivo **modificado** (hash miss): `delete_by_file` remove todos os pontos do arquivo
-  antes do upsert. Simbolos deletados ou renomeados nao sao mais inseridos - orfaos
-  eliminados automaticamente.
+**How D1 + D6 resolve the orphan problem:**
+- **Unmodified file** (hash hit): ids are stable (D1 guarantees that line-shift does not
+  change the id), so existing points remain valid. No re-indexing.
+- **Modified file** (hash miss): `delete_by_file` removes all points for the file
+  before the upsert. Deleted or renamed symbols are not re-inserted - orphans
+  eliminated automatically.
 
-#### 3f. Deteccao de arquivos deletados
+#### 3f. Deleted file detection
 
-Apos o walk de arquivos, comparar a lista de arquivos encontrados com `list_entries(ctx)`
-do cache, **escopado ao mesmo ctx**. Arquivos no cache para aquele ctx mas ausentes no
-walk foram deletados:
+After the file walk, compare the list of found files with `list_entries(ctx)`
+from the cache, **scoped to the same ctx**. Files in the cache for that ctx but absent in
+the walk have been deleted:
 
 ```python
-# Pseudocodigo - ao final de index_path(), antes de retornar
-# found_paths contem apenas paths do ctx atual (nao misturar ctxs)
+# Pseudocode - at the end of index_path(), before returning
+# found_paths contains only paths of the current ctx (do not mix ctxs)
 found_paths = {Path(p).as_posix() for p in iterated_files_for_this_ctx}
-cached_entries = await file_cache.list_entries(ctx)  # escopado ao mesmo ctx
+cached_entries = await file_cache.list_entries(ctx)  # scoped to the same ctx
 for cached_path, _ in cached_entries:
     if cached_path not in found_paths:
         await store.delete_by_file(ctx, cached_path)
@@ -508,12 +509,12 @@ for cached_path, _ in cached_entries:
         stats["deleted"] += 1
 ```
 
-A comparacao usa apenas entradas do mesmo ctx, evitando falsos positivos onde um arquivo
-existe em `knowledge` mas nao em `work`.
+The comparison uses only entries from the same ctx, avoiding false positives where a file
+exists in `knowledge` but not in `work`.
 
-### 4. Redis pipelining em `pipeline.py` e `graph_store.py`
+### 4. Redis pipelining in `pipeline.py` and `graph_store.py`
 
-#### 4a. Assinatura atual de `upsert_deps` (`graph_store.py:34-46`)
+#### 4a. Current `upsert_deps` signature (`graph_store.py:34-46`)
 
 ```python
 # graph_store.py:34-46 - ATUAL
@@ -532,7 +533,7 @@ async def upsert_deps(
     )
 ```
 
-#### 4b. Novo metodo `upsert_deps_batch` em `graph_store.py`
+#### 4b. New `upsert_deps_batch` method in `graph_store.py`
 
 ```python
 # graph_store.py - novo metodo
@@ -554,39 +555,39 @@ async def upsert_deps_batch(
         await pipe.execute()
 ```
 
-`transaction=False` evita o overhead do `MULTI/EXEC` para upserts sem necessidade de
-atomicidade entre simbolos distintos. Falha parcial e corrigida na proxima execucao de
-`index_path` (o arquivo sera re-indexado por hash miss ou por nova edicao). Adicionar um
-teste que simula falha no meio do pipeline e verifica ausencia de dados corrompidos.
+`transaction=False` avoids the `MULTI/EXEC` overhead for upserts that do not require
+atomicity across distinct symbols. Partial failure is corrected on the next run of
+`index_path` (the file will be re-indexed by hash miss or new edit). Add a
+test that simulates mid-pipeline failure and verifies absence of corrupted data.
 
-#### 4c. Chamada no `pipeline.py`
+#### 4c. Call in `pipeline.py`
 
 ```python
 # pipeline.py - substituir loop sequencial por batch
 await graph_store.upsert_deps_batch(dep_records)
 ```
 
-Verificacao de ganho: medir `perf_counter()` ao redor do loop atual num repo de 200+
-simbolos antes de deployar (hipotese H3 no ledger). Se o ganho for < 20 ms, o pipeline
-continua valendo pela reducao de roundtrips mas nao e urgente.
+Gain verification: measure `perf_counter()` around the current loop on a repo with 200+
+symbols before deploying (hypothesis H3 in the ledger). If the gain is < 20 ms, the pipeline
+is still worth it for round-trip reduction but is not urgent.
 
-### 5. Locking e concorrencia
+### 5. Locking and concurrency
 
-#### Cenario de risco
+#### Risk scenario
 
-O git hook (`python -m axon.hooks.git_event post-commit`) e um `axon index` manual podem
-ser disparados em paralelo - processos separados, mesmo repo.
+The git hook (`python -m axon.hooks.git_event post-commit`) and a manual `axon index` can
+be triggered in parallel - separate processes, same repo.
 
-#### Camadas de protecao
+#### Protection layers
 
-| Camada | Mecanismo | Cobre |
+| Layer | Mechanism | Covers |
 |---|---|---|
-| SQLite WAL | `journal_mode=WAL` + `busy_timeout=5000` (`session_store.py:109-112`) | Dois processos lendo/escrevendo `file_index` simultaneamente |
-| `asyncio.Lock` | Lock existente no `SessionStore.__init__` (linha 101), repassado ao `SqliteFileCache` | Coroutines concorrentes no mesmo processo |
-| Qdrant | Qdrant aceita upserts e deletes concorrentes sem corrupcao de dados | Duplicate-upsert possivel; resolvido pelo reconcile por arquivo |
-| Arquivo `.axon/index.lock` | Lockfile com PID; verificacao `os.kill(pid, 0)` para reclaim de lock stale | Impede dois processos de indexar o mesmo repo simultaneamente; lock abandonado por crash e reclamado automaticamente |
+| SQLite WAL | `journal_mode=WAL` + `busy_timeout=5000` (`session_store.py:109-112`) | Two processes reading/writing `file_index` simultaneously |
+| `asyncio.Lock` | Existing lock in `SessionStore.__init__` (line 101), passed to `SqliteFileCache` | Concurrent coroutines in the same process |
+| Qdrant | Qdrant accepts concurrent upserts and deletes without data corruption | Duplicate-upsert possible; resolved by per-file reconcile |
+| `.axon/index.lock` file | Lockfile with PID; `os.kill(pid, 0)` check for stale lock reclaim | Prevents two processes from indexing the same repo simultaneously; lock abandoned by crash is reclaimed automatically |
 
-O lockfile com PID resolve o problema de lock stale:
+The lockfile with PID resolves the stale lock problem:
 
 ```python
 # axon/store/index_lock.py - novo modulo
@@ -600,16 +601,16 @@ class IndexLockError(Exception):
 
 
 def _pid_alive(pid: int) -> bool:
-    """Retorna True se o processo com o pid dado ainda esta em execucao.
+    """Returns True if the process with the given pid is still running.
 
-    HIPOTESE (verificar em Phase 0 no Windows 11):
-    - Em Unix/macOS: os.kill(pid, 0) levanta ProcessLookupError se o PID nao existe,
-      PermissionError se existe mas pertence a outro usuario - comportamento confiavel.
-    - Em Windows 11 (R7 5800X3D): os.kill() e implementado via TerminateProcess() com
-      signal=0 nao tendo efeito padronizado; o comportamento pode diferir.
-      Adicionar um teste de integracao Windows-especifico (test_index_lock_windows.py)
-      que cria um lockfile com PID de processo ja terminado e verifica que o reclaim
-      automatico funciona corretamente antes de confiar nesta logica em producao.
+    HYPOTHESIS (verify in Phase 0 on Windows 11):
+    - On Unix/macOS: os.kill(pid, 0) raises ProcessLookupError if the PID does not exist,
+      PermissionError if it exists but belongs to another user - reliable behavior.
+    - On Windows 11 (R7 5800X3D): os.kill() is implemented via TerminateProcess() with
+      signal=0 having no standardized effect; the behavior may differ.
+      Add a Windows-specific integration test (test_index_lock_windows.py)
+      that creates a lockfile with the PID of an already-terminated process and verifies that the
+      automatic reclaim works correctly before relying on this logic in production.
     """
     try:
         os.kill(pid, 0)
@@ -628,13 +629,13 @@ async def acquire_index_lock(repo_root: Path):
             existing_pid = int(lock_path.read_text().strip())
             if _pid_alive(existing_pid):
                 raise IndexLockError(
-                    f"Outro processo (pid={existing_pid}) esta indexando {repo_root}. "
-                    f"Se o processo anterior travou, remova: {lock_path}"
+                    f"Another process (pid={existing_pid}) is indexing {repo_root}. "
+                    f"If the previous process crashed, remove: {lock_path}"
                 )
-            # PID nao existe mais - lock abandonado por crash, reclamar
+            # PID no longer exists - lock abandoned by a crash, reclaim it
             lock_path.unlink(missing_ok=True)
         except ValueError:
-            # Arquivo de lock com conteudo invalido - reclamar
+            # Lock file with invalid content - reclaim it
             lock_path.unlink(missing_ok=True)
 
     try:
@@ -651,36 +652,36 @@ async def acquire_index_lock(repo_root: Path):
         lock_path.unlink(missing_ok=True)
 ```
 
-O hook post-commit nunca deve bloquear o git. Se o lockfile existir e o PID estiver
-ativo, o hook loga um aviso e sai com exit 0 (comportamento identico ao pattern em
-`git_installer.py` onde falhas sao swallowed via `|| true`). A indexacao sera feita
-no proximo commit ou via `axon index` manual.
+The post-commit hook must never block git. If the lockfile exists and the PID is
+active, the hook logs a warning and exits with exit 0 (identical behavior to the pattern in
+`git_installer.py` where failures are swallowed via `|| true`). Indexing will be done
+on the next commit or via manual `axon index`.
 
-Adicionar um teste que verifica reclaim automatico de lock stale (pid inexistente).
-Adicionar `test_index_lock_windows.py` especificamente para o R7 5800X3D (Windows 11):
-verificar que `_pid_alive` retorna False para um PID de processo terminado e que o
-reclaim prossegue corretamente. Este teste e obrigatorio antes de declarar o reclaim
-como funcionalidade suportada em Windows - ate ser validado, tratar como hipotese H7
-(ver ledger de hipoteses).
+Add a test that verifies automatic reclaim of stale lock (non-existent pid).
+Add `test_index_lock_windows.py` specifically for the R7 5800X3D (Windows 11):
+verify that `_pid_alive` returns False for a terminated process's PID and that the
+reclaim proceeds correctly. This test is mandatory before declaring reclaim as a
+supported feature on Windows - until validated, treat as hypothesis H7
+(see hypothesis ledger).
 
-### 6. Migracao one-shot dos 9 repos ja indexados (D2 blue/green)
+### 6. One-shot migration of the 9 already-indexed repos (D2 blue/green)
 
-#### Contexto
+#### Context
 
-Os 9 repos foram indexados com a logica antiga (sem `file_index`, possivelmente com ctx
-`personal` ou outros ctx legados). Apos deployar este pilar, o cache SQLite estara vazio
-para todos eles.
+The 9 repos were indexed with the old logic (without `file_index`, possibly with ctx
+`personal` or other legacy contexts). After deploying this pillar, the SQLite cache will
+be empty for all of them.
 
-O problema e que pontos orfaos ja existem no Qdrant (hipotese H1). O reindex sem purge
-apenas adiciona novos pontos por cima dos velhos.
+The problem is that orphan points already exist in Qdrant (hypothesis H1). Re-indexing
+without purge only adds new points on top of old ones.
 
-#### Procedimento blue/green (somente para migracao one-shot)
+#### Blue/green procedure (for one-shot migration only)
 
-A migracao one-shot usa blue/green para garantir rollback sem downtime. Execucoes
-incrementais normais **nao** usam blue/green.
+The one-shot migration uses blue/green to guarantee rollback without downtime. Normal
+incremental runs **do not** use blue/green.
 
 ```bash
-# Passo 1 - listar colecoes existentes e confirmar nomes de ctx legados
+# Step 1 - list existing collections and confirm legacy ctx names
 python - <<'EOF'
 from qdrant_client import QdrantClient
 client = QdrantClient("http://localhost:6333")
@@ -688,40 +689,40 @@ for col in client.get_collections().collections:
     print(col.name)
 EOF
 
-# Passo 2 - criar colecoes novas com sufixo _new (blue/green)
-# (substituir "knowledge" pelo(s) ctx real(is) confirmado(s) no passo 1)
+# Step 2 - create new collections with the _new suffix (blue/green)
+# (replace "knowledge" with the real ctx(es) confirmed in step 1)
 python - <<'EOF'
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
 client = QdrantClient("http://localhost:6333")
-# Exemplo para ctx "knowledge" - repetir para cada ctx a migrar
+# Example for ctx "knowledge" - repeat for each ctx to migrate
 client.create_collection(
     collection_name="knowledge_new",
     vectors_config=VectorParams(size=768, distance=Distance.COSINE),
 )
 EOF
 
-# Passo 3 - reindex completo dos 9 repos apontando para colecoes _new
-# (requer parametro de target_collection no indexer ou renomeio temporario)
+# Step 3 - full re-index of the 9 repos pointing at the _new collections
+# (requires a target_collection parameter in the indexer or a temporary rename)
 axon index <vault_root> --ctx knowledge --target-collection knowledge_new
 
-# Passo 4 - rodar recall gate contra knowledge_new
-# (preencher os 20 queries do golden set contra a nova colecao)
+# Step 4 - run the recall gate against knowledge_new
+# (fill in the 20 golden-set queries against the new collection)
 # Gate: Top-1 >= 0.90, Top-3 >= 0.95, score >= 0.90
-# Se falhar, manter colecao antiga e investigar antes de prosseguir
+# If it fails, keep the old collection and investigate before proceeding
 
-# Passo 5 - promover via alias swap SOMENTE se recall gate aprovado
+# Step 5 - promote via alias swap ONLY if the recall gate passed
 python - <<'EOF'
 from qdrant_client import QdrantClient
 client = QdrantClient("http://localhost:6333")
-# Alias swap atomico
+# Atomic alias swap
 client.update_collection_aliases(change_aliases_operations=[
     {"delete_alias": {"alias_name": "knowledge"}},
     {"create_alias": {"collection_name": "knowledge_new", "alias_name": "knowledge"}},
 ])
 EOF
 
-# Passo 6 - verificar ausencia de orfaos pos-migracao via scroll paginado
+# Step 6 - verify absence of orphans post-migration via paginated scroll
 python - <<'EOF'
 from qdrant_client import QdrantClient
 client = QdrantClient("http://localhost:6333")
@@ -736,20 +737,20 @@ while True:
         break
     offset = next_offset
 paths = {p.payload.get("file_path") for p in all_points}
-print(f"Total pontos: {len(all_points)}")
-print(f"Paths distintos: {len(paths)}")
-# Inspecionar manualmente se algum path e inesperado
+print(f"Total points: {len(all_points)}")
+print(f"Distinct paths: {len(paths)}")
+# Manually inspect whether any path is unexpected
 EOF
 ```
 
-O reindex completo e necessario uma unica vez. Apos isso, o `file_index` tem estado
-correto e todos os refreshes subsequentes serao incrementais.
+The full re-index is needed only once. After that, `file_index` has correct state
+and all subsequent refreshes will be incremental.
 
-### 7. Calibracao de scores cross-plataforma
+### 7. Cross-platform score calibration
 
-O threshold `min_score` no golden set nao pode ser um valor fixo sem calibracao entre
-modelos com dimensoes diferentes (bge-base 768-dim no R7 desktop vs bge-small 384-dim
-no M1 Pro). A calibracao deve ser feita uma vez em cada maquina e armazenada em
+The `min_score` threshold in the golden set cannot be a fixed value without calibration
+across models with different dimensions (bge-base 768-dim on the R7 desktop vs bge-small
+384-dim on M1 Pro). Calibration must be done once on each machine and stored in
 `tests/recall/score_calibration.json`:
 
 ```json
@@ -759,300 +760,299 @@ no M1 Pro). A calibracao deve ser feita uma vez em cada maquina e armazenada em
 }
 ```
 
-O harness de recall le `score_calibration.json` e usa o threshold correto para o modelo
-ativo. Os valores XX devem ser determinados experimentalmente na Phase 0, nao assumidos.
+The recall harness reads `score_calibration.json` and uses the correct threshold for
+the active model. The XX values must be determined experimentally in Phase 0, not assumed.
 
 ---
 
-## Fluxo de dados (apos este pilar)
+## Data flow (after this pillar)
 
 ```
 axon index <repo> --ctx knowledge
     |
-    +-- acquire_index_lock(repo_root)   # impede concorrencia multi-processo
-    |                                   # reclaim automatico de lock stale (PID)
+    +-- acquire_index_lock(repo_root)   # prevents multi-process concurrency
+    |                                   # automatic reclaim of stale lock (PID)
     |
-    +-- cached_sha1s = await file_cache.get_all_sha1s(ctx)  # um SELECT
-    |   # rows com status='pending' sao filtradas -> tratadas como hash miss
+    +-- cached_sha1s = await file_cache.get_all_sha1s(ctx)  # one SELECT
+    |   # rows with status='pending' are filtered out -> treated as hash miss
     |
     +-- iter_supported_files(repo)      # git ls-files --cached + git check-ignore
-    |   pending_file_meta = []  # acumula (fp_posix, sha1, chunk_count) ate apos flush
-    |   para cada arquivo (normalizar path para posix):
+    |   pending_file_meta = []  # accumulates (fp_posix, sha1, chunk_count) until after flush
+    |   for each file (normalize path to posix):
     |     current_sha1 = sha1_of_source(source)
     |     if cached_sha1s.get(fp_posix) == current_sha1:  SKIP
     |     else:
-    |       # (1) sentinel ANTES de mutar Qdrant
+    |       # (1) sentinel BEFORE mutating Qdrant
     |       await file_cache.set_entry(fp_posix, ctx, sha1, 0, status="pending")
-    |       # (2) delete; chunks entram no batch deferred (NAO upsertados ainda)
-    |       await store.delete_by_file(ctx, fp_posix)  # metodo existente
+    |       # (2) delete; chunks go into the deferred batch (NOT upserted yet)
+    |       await store.delete_by_file(ctx, fp_posix)  # existing method
     |       chunks = chunk_source(source, language, str(file_path))
     |       pending_batch.extend(chunks)
     |       pending_file_meta.append((fp_posix, sha1, len(chunks)))
     |       if len(pending_batch) >= _BATCH_SIZE:
-    |         # (3) flush ANTES de marcar done - garante chunks persistidos no Qdrant
+    |         # (3) flush BEFORE marking done - guarantees chunks persisted in Qdrant
     |         await _flush_batch(pending_batch, engine, store, ctx)
     |         pending_batch.clear()
     |         for fp, s1, cc in pending_file_meta:
     |           await file_cache.set_entry(fp, ctx, s1, cc, status="done")
     |         pending_file_meta.clear()
-    |         # Invariante: status='done' => chunks ja persistidos no Qdrant
+    |         # Invariant: status='done' => chunks already persisted in Qdrant
     |
-    +-- _flush_batch (ultimo batch restante)
-    +-- para cada (fp, s1, cc) em pending_file_meta:
+    +-- _flush_batch (last remaining batch)
+    +-- for each (fp, s1, cc) in pending_file_meta:
     |     await file_cache.set_entry(fp, ctx, s1, cc, status="done")
-    |   # set_entry(done) so ocorre APOS o flush que contem os chunks do arquivo
+    |   # set_entry(done) only happens AFTER the flush that contains the file's chunks
     |
-    +-- build_dependency_records(graph_chunks)   # 2a parse - streaming por arquivo
-    |   e escopo do Pilar A; aqui ainda e acumulado para manter compatibilidade
-    +-- await graph_store.upsert_deps_batch(dep_records)  # pipelinado
+    +-- build_dependency_records(graph_chunks)   # 2nd parse - streaming per file
+    |   is Pillar A scope; here it is still accumulated to keep compatibility
+    +-- await graph_store.upsert_deps_batch(dep_records)  # pipelined
     |
-    +-- deteccao de arquivos deletados (list_entries vs found_paths, escopado ao ctx)
-    |   para cada deletado: delete_by_file(ctx, path) + delete_entry(path, ctx)
+    +-- deleted-file detection (list_entries vs found_paths, scoped to the ctx)
+    |   for each deleted: delete_by_file(ctx, path) + delete_entry(path, ctx)
     |
     +-- release_index_lock()
 ```
 
 ---
 
-## Gate de Phase 0 (pre-requisito de implementacao)
+## Phase 0 gate (implementation prerequisite)
 
-**Nenhuma linha de codigo deste pilar pode ser mergeada antes que todas as condicoes
-abaixo sejam satisfeitas e registradas em `benchmarks/phase0_baseline.json`.**
+**No line of code from this pillar can be merged until all conditions below are satisfied
+and recorded in `benchmarks/phase0_baseline.json`.**
 
-| Condicao | Metrica alvo | Como medir |
+| Condition | Target metric | How to measure |
 |---|---|---|
-| Throughput baseline capturado | Registrar chunks/s no corpus sintetico de 500 funcoes | `time index_path()` em corpus fixo |
-| Peak RSS baseline capturado | Registrar MB nos 9 repos | `psutil` amostrado a cada 2 s |
-| H1 verificada | Confirmar se orfaos existem hoje | `scroll()` paginado antes/depois de editar 1 arquivo |
-| H3 verificada | Medir latencia do loop Redis em 200+ simbolos | `perf_counter()` ao redor de `pipeline.py:196-202` |
-| H4 verificada | Medir wall time do `rglob` isolado vs total | `time iter_supported_files()` isolado |
-| H6 verificada | Medir RSS antes/depois de `build_dependency_records` vs accumulator | `psutil.Process().memory_info().rss` no breakpoint |
-| GPU disponivel (Pilar B) | `bool` em `phase0_baseline.json` | `ort.get_available_providers()` |
-| Recall baseline >= 0.80 | Top-1 e Top-3 no golden set de 20 queries | Harness de recall (ver abaixo) |
-| Score calibrado por modelo | `score_calibration.json` preenchido para ambos os modelos | Medicao experimental em R7 e M1 Pro |
+| Throughput baseline captured | Record chunks/s on the synthetic corpus of 500 functions | `time index_path()` on fixed corpus |
+| Peak RSS baseline captured | Record MB on the 9 repos | `psutil` sampled every 2 s |
+| H1 verified | Confirm whether orphans exist today | Paginated `scroll()` before/after editing 1 file |
+| H3 verified | Measure Redis loop latency on 200+ symbols | `perf_counter()` around `pipeline.py:196-202` |
+| H4 verified | Measure wall time of `rglob` isolated vs total | `time iter_supported_files()` isolated |
+| H6 verified | Measure RSS before/after `build_dependency_records` vs accumulator | `psutil.Process().memory_info().rss` at breakpoint |
+| GPU available (Pillar B) | `bool` in `phase0_baseline.json` | `ort.get_available_providers()` |
+| Recall baseline >= 0.80 | Top-1 and Top-3 on the 20-query golden set | Recall harness (see below) |
+| Score calibrated per model | `score_calibration.json` filled for both models | Experimental measurement on R7 and M1 Pro |
 
-Se o peak RSS exceder 8 GB durante a medicao baseline, a evidencia deve ser registrada
-e comunicada ao Pilar A (que e dono do streaming de `build_dependency_records`). Este
-pilar nao implementa o streaming - apenas reporta os dados de Phase 0.
+If peak RSS exceeds 8 GB during baseline measurement, the evidence must be recorded
+and communicated to Pillar A (which owns `build_dependency_records` streaming). This
+pillar does not implement streaming - it only reports Phase 0 data.
 
 ---
 
-## Guard de recall/qualidade
+## Recall/quality guard
 
-Este pilar nao toca o chunker nem o embedder diretamente, mas o reconcile por arquivo
-(delete-then-upsert) pode, em hipotese, alterar quais pontos estao no Qdrant. O guard de
-recall e obrigatorio antes e depois do deploy.
+This pillar does not touch the chunker or the embedder directly, but the per-file
+reconcile (delete-then-upsert) could, in theory, alter which points are in Qdrant. The
+recall guard is mandatory before and after deploy.
 
-### Conjunto golden (fixo, 20 queries)
+### Golden set (fixed, 20 queries)
 
-Arquivo: `tests/recall/golden_set.json` (criado manualmente, nunca auto-gerado).
+File: `tests/recall/golden_set.json` (created manually, never auto-generated).
 
-Distribuicao:
-- 8 queries Python (funcao, metodo, utilitario curto)
-- 5 queries Java (classe, metodo de interface, enum)
-- 4 queries TypeScript (funcao, arrow function, tipo exportado)
-- 3 queries cross-file/arquiteturais
+Distribution:
+- 8 Python queries (function, method, short utility)
+- 5 Java queries (class, interface method, enum)
+- 4 TypeScript queries (function, arrow function, exported type)
+- 3 cross-file/architectural queries
 
-Cada entrada:
+Each entry:
 ```json
 {
-  "query": "string de busca semantica",
-  "expected_file": "caminho/posix/normalizado.py",
-  "expected_symbol": "nome_da_funcao_ou_classe",
-  "min_score": "<ver score_calibration.json para o modelo ativo>"
+  "query": "semantic search string",
+  "expected_file": "normalized/posix/path.py",
+  "expected_symbol": "function_or_class_name",
+  "min_score": "<see score_calibration.json for the active model>"
 }
 ```
 
-### Metricas de gate
+### Gate metrics
 
-| Metrica | Alvo |
+| Metric | Target |
 |---|---|
 | Top-1 hit rate (hits[0].file_path == expected) | >= 0.90 |
-| Top-3 hit rate (expected em hits[0..2]) | >= 0.95 |
-| Score geral (BenchmarkRunSummary.score) | >= 0.90 |
+| Top-3 hit rate (expected in hits[0..2]) | >= 0.95 |
+| Overall score (BenchmarkRunSummary.score) | >= 0.90 |
 
-Qualquer regressao vs `tests/recall/baseline.json` bloqueia o merge.
+Any regression vs `tests/recall/baseline.json` blocks the merge.
 
-### Estabilidade cross-plataforma
+### Cross-platform stability
 
-As mesmas queries e expected_files devem passar em R7 5800X3D e M1 Pro. O threshold
-`min_score` e lido de `score_calibration.json` para o modelo ativo em cada maquina
-(bge-base 768-dim no desktop, bge-small 384-dim no mac). Se um par query/expected_file
-falhar no mac, o golden set precisa ser revisado antes de deployar.
+The same queries and expected_files must pass on R7 5800X3D and M1 Pro. The `min_score`
+threshold is read from `score_calibration.json` for the active model on each machine
+(bge-base 768-dim on desktop, bge-small 384-dim on mac). If a query/expected_file pair
+fails on mac, the golden set must be revised before deploying.
 
 ---
 
-## Criterios de sucesso mensuraveis (por maquina)
+## Measurable success criteria (per machine)
 
-| Metrica | R7 5800X3D | M1 Pro | Como medir |
+| Metric | R7 5800X3D | M1 Pro | How to measure |
 |---|---|---|---|
-| Wall time index completo (9 repos, cache frio) | <= 5 min | <= 8 min | `time axon index <vault>` com cache vazio; mediana de 3 runs |
-| Wall time refresh incremental (1 arquivo, 10-50 chunks) | <= 10 s | <= 15 s | 5 arquivos de tamanhos variados (10/20/30/40/50 chunks); todos devem passar |
-| Wall time hook post-commit (20 arquivos alterados) | <= 30 s | <= 45 s | `python -m axon.hooks.git_event post-commit` cronometrado; maximo de 3 runs |
-| Peak RSS index completo (9 repos) | <= 2 GB | <= 1.5 GB | `psutil.Process().memory_info().rss` amostrado a cada 2 s |
-| Throughput embedding (chunks/s end-to-end) | >= 300 chunks/s | >= 200 chunks/s | corpus sintetico fixo de 500 funcoes Python (15-30 linhas cada) |
-| Recall Top-1 (golden set 20 queries) | >= 0.90 | >= 0.90 | harness em Qdrant real com corpus de referencia (`src/axon/embedder/`, `src/axon/store/`) |
-| Recall Top-3 (golden set 20 queries) | >= 0.95 | >= 0.95 | mesmo harness |
-| Exclusao de arquivos gitignored | 0 pontos cujo file_path bate .gitignore | 0 pontos | scroll Qdrant pos-index em repo com `.env` e `secrets.json` gitignored |
-| Orphan-free pos-reconcile | 0 pontos orfaos apos editar 3 linhas acima de simbolo | 0 pontos orfaos | scroll por file_path antes e depois; count deve ser igual (nao acumular) |
-| Seguranca de concorrencia | 0 corrupcoes em 20 trials de index+hook simultaneos | 0 corrupcoes | 2 processos em paralelo via subprocess; scroll pos-execucao; sem IDs duplicados nem JSON invalido no Redis |
-| Reclaim de lock stale | Lock abandonado por crash reclamado automaticamente | idem | teste de integracao: criar lock com PID falso, executar index_path, confirmar sucesso |
+| Full index wall time (9 repos, cold cache) | <= 5 min | <= 8 min | `time axon index <vault>` with empty cache; median of 3 runs |
+| Incremental refresh wall time (1 file, 10-50 chunks) | <= 10 s | <= 15 s | 5 files of varying sizes (10/20/30/40/50 chunks); all must pass |
+| Post-commit hook wall time (20 changed files) | <= 30 s | <= 45 s | `python -m axon.hooks.git_event post-commit` timed; maximum of 3 runs |
+| Peak RSS full index (9 repos) | <= 2 GB | <= 1.5 GB | `psutil.Process().memory_info().rss` sampled every 2 s |
+| Embedding throughput (chunks/s end-to-end) | >= 300 chunks/s | >= 200 chunks/s | fixed synthetic corpus of 500 Python functions (15-30 lines each) |
+| Recall Top-1 (golden set 20 queries) | >= 0.90 | >= 0.90 | harness on real Qdrant with reference corpus (`src/axon/embedder/`, `src/axon/store/`) |
+| Recall Top-3 (golden set 20 queries) | >= 0.95 | >= 0.95 | same harness |
+| Gitignored file exclusion | 0 points whose file_path matches .gitignore | 0 points | Qdrant scroll post-index on repo with `.env` and `secrets.json` gitignored |
+| Orphan-free post-reconcile | 0 orphan points after editing 3 lines above a symbol | 0 orphan points | scroll by file_path before and after; count must be equal (no accumulation) |
+| Concurrency safety | 0 corruptions in 20 trials of simultaneous index+hook | 0 corruptions | 2 parallel processes via subprocess; scroll post-execution; no duplicate IDs or invalid JSON in Redis |
+| Stale lock reclaim | Lock abandoned by crash reclaimed automatically | same | integration test: create lock with fake PID, run index_path, confirm success |
 
 ---
 
-## Unidades (isolamento e testabilidade)
+## Units (isolation and testability)
 
-| Modulo | Responsabilidade | Dependencias injetaveis |
+| Module | Responsibility | Injectable dependencies |
 |---|---|---|
-| `axon/store/file_cache.py::SqliteFileCache` | CRUD na `file_index`; calculo de sha1 | `aiosqlite.Connection`, `asyncio.Lock` |
-| `axon/store/index_lock.py::acquire_index_lock` | Lockfile com PID; reclaim de stale | `Path` (repo root) |
-| `axon/store/graph_store.py::upsert_deps_batch` | Batch pipeline Redis | `redis.asyncio.Redis` |
-| `axon/embedder/vector_store.py::delete_by_file` | Delete Qdrant por (ctx, file_path) - JA EXISTE | `AsyncQdrantClient` |
-| `axon/embedder/pipeline.py::index_path` (modificado) | Orquestra skip, reconcile, flush, delete-orfaos | `FileCache`, `VectorStore`, `GraphStore`, `EmbedderEngine` |
-| `axon/store/migrations/003_file_index.sql` | Schema da tabela com coluna status | n/a - SQL puro |
+| `axon/store/file_cache.py::SqliteFileCache` | CRUD on `file_index`; sha1 calculation | `aiosqlite.Connection`, `asyncio.Lock` |
+| `axon/store/index_lock.py::acquire_index_lock` | Lockfile with PID; stale reclaim | `Path` (repo root) |
+| `axon/store/graph_store.py::upsert_deps_batch` | Redis batch pipeline | `redis.asyncio.Redis` |
+| `axon/embedder/vector_store.py::delete_by_file` | Qdrant delete by (ctx, file_path) - ALREADY EXISTS | `AsyncQdrantClient` |
+| `axon/embedder/pipeline.py::index_path` (modified) | Orchestrates skip, reconcile, flush, orphan-delete | `FileCache`, `VectorStore`, `GraphStore`, `EmbedderEngine` |
+| `axon/store/migrations/003_file_index.sql` | Table schema with status column | n/a - pure SQL |
 
-Cada unidade e testavel com mocks injetados:
-- `SqliteFileCache`: testar `get_all_sha1s` miss/hit, `set_entry` UPSERT com status,
-  `delete_entry`, `list_entries` filtrando por ctx.
-- `acquire_index_lock`: testar lock adquirido, lock de PID ativo (levanta `IndexLockError`),
-  lock de PID inexistente (reclaim automatico), release no `finally`.
-- `upsert_deps_batch`: mock do `pipeline()` Redis; verificar que N simbolos resultam em
-  exatamente 1 `pipe.execute()`.
-- `delete_by_file` (existente): mock do `AsyncQdrantClient.delete`; verificar filtro
-  `file_path`.
-- `index_path` com `FileCache` mockado: verificar que arquivos com sha1 identico sao
-  pulados; arquivos alterados passam pelo ciclo sentinel-pending / delete_by_file /
-  upsert / sentinel-done.
+Each unit is testable with injected mocks:
+- `SqliteFileCache`: test `get_all_sha1s` miss/hit, `set_entry` UPSERT with status,
+  `delete_entry`, `list_entries` filtering by ctx.
+- `acquire_index_lock`: test lock acquired, lock of active PID (raises `IndexLockError`),
+  lock of non-existent PID (automatic reclaim), release in `finally`.
+- `upsert_deps_batch`: mock of Redis `pipeline()`; verify that N symbols result in
+  exactly 1 `pipe.execute()`.
+- `delete_by_file` (existing): mock of `AsyncQdrantClient.delete`; verify `file_path`
+  filter.
+- `index_path` with mocked `FileCache`: verify that files with identical sha1 are
+  skipped; modified files go through the sentinel-pending / delete_by_file /
+  upsert / sentinel-done cycle.
 
 ---
 
-## Verificacao end-to-end
+## End-to-end verification
 
-1. **Skip incremental:** indexar um repo; sem modificar nenhum arquivo, re-rodar `axon index`;
-   verificar que o output e `0 arquivos re-embeddados` (todos pulados pelo cache com
+1. **Incremental skip:** index a repo; without modifying any file, re-run `axon index`;
+   verify that output shows `0 files re-embedded` (all skipped by cache with
    `status='done'`).
 
-2. **Reconcile orfao (D1 + D6):** indexar um arquivo Python de 5 funcoes; editar 3
-   linhas antes da primeira funcao (antes: ids baseados em start_line mudavam; agora com
-   D1 os ids sao estaveis); re-indexar; scroll Qdrant para esse `file_path`; count deve
-   ser 5 (nao 10) independente do deslocamento de linha.
+2. **Orphan reconcile (D1 + D6):** index a Python file with 5 functions; edit 3
+   lines before the first function (before: ids based on start_line changed; now with
+   D1 ids are stable); re-index; Qdrant scroll for that `file_path`; count should
+   be 5 (not 10) regardless of line-shift.
 
-3. **Arquivo deletado:** indexar repo; deletar 1 arquivo; re-indexar; scroll Qdrant para
-   o `file_path` deletado deve retornar 0 pontos. `file_index` nao deve conter a entrada.
+3. **Deleted file:** index repo; delete 1 file; re-index; Qdrant scroll for the
+   deleted `file_path` should return 0 points. `file_index` should not contain the entry.
 
-4. **Gitignore guard (D3 - teste de seguranca obrigatorio):** criar `.env` no repo com
-   `SECRET=abc`; fazer `git add .env`; adicionar `.env` ao `.gitignore`; `axon index`;
-   scroll Qdrant por `file_path` contendo `.env`; deve retornar 0 resultados. O arquivo
-   nao pode aparecer no Qdrant em nenhuma circunstancia.
+4. **Gitignore guard (D3 - mandatory safety test):** create `.env` in the repo with
+   `SECRET=abc`; `git add .env`; add `.env` to `.gitignore`; `axon index`;
+   Qdrant scroll by `file_path` containing `.env`; must return 0 results. The file
+   cannot appear in Qdrant under any circumstance.
 
-5. **Concorrencia:** lancar `axon index <repo>` e `python -m axon.hooks.git_event post-commit`
-   via `subprocess` simultaneamente; apos ambos terminarem, scroll Qdrant e verificar
-   ausencia de IDs duplicados; checar Redis por JSON invalido em chaves `dep:*`. Repetir
-   20 vezes.
+5. **Concurrency:** launch `axon index <repo>` and `python -m axon.hooks.git_event post-commit`
+   via `subprocess` simultaneously; after both finish, Qdrant scroll and verify
+   absence of duplicate IDs; check Redis for invalid JSON in `dep:*` keys. Repeat
+   20 times.
 
-6. **Lockfile com PID:** durante um `axon index` em andamento (artificialmente lentificado
-   via sleep em teste de integracao), tentar um segundo `axon index` no mesmo repo; o
-   segundo deve sair com aviso `outro processo indexando` e exit 0 (sem stacktrace).
-   Apos o primeiro terminar, criar lock com PID invalido (ex: 99999999) e verificar que
-   o proximo `axon index` reclama o lock e prossegue normalmente.
+6. **Lockfile with PID:** during an ongoing `axon index` (artificially slowed
+   via sleep in integration test), attempt a second `axon index` on the same repo; the
+   second should exit with `another process indexing` warning and exit 0 (no stacktrace).
+   After the first finishes, create lock with invalid PID (e.g. 99999999) and verify that
+   the next `axon index` reclaims the lock and proceeds normally.
 
-7. **Crash-safety (D2):** simular crash entre o sentinel `status='pending'` e o
-   `status='done'` (ex: `KeyboardInterrupt` no meio do upsert); verificar que na proxima
-   execucao o arquivo e re-indexado completo e o `status` fica `done`.
+7. **Crash-safety (D2):** simulate crash between the `status='pending'` sentinel and
+   `status='done'` (e.g. `KeyboardInterrupt` mid-upsert); verify that on the next
+   run the file is fully re-indexed and `status` ends up `done`.
 
-8. **Normalizacao de path no Windows:** criar um arquivo cujo path seria emitido com `\\`
-   pelo `Path` do Windows; verificar que o lookup no `file_index` e no Qdrant usa a forma
-   posix e encontra o registro correto.
+8. **Path normalization on Windows:** create a file whose path would be emitted with `\\`
+   by Windows `Path`; verify that the lookup in `file_index` and Qdrant uses the posix
+   form and finds the correct record.
 
-9. **Migracao one-shot:** apos purge das colecoes legadas e reindex completo via
-   blue/green, executar `axon search_code "funcao conhecida"`; deve retornar hits dos 9
-   repos em ctx `knowledge`.
+9. **One-shot migration:** after purging legacy collections and full re-index via
+   blue/green, run `axon search_code "known function"`; must return hits from the 9
+   repos in ctx `knowledge`.
 
 ---
 
-## Testes
+## Tests
 
-### Unitarios
+### Unit
 
 - `test_file_cache.py`:
-  - `test_get_all_sha1s_empty`: nenhum entry no cache -> dict vazio.
-  - `test_get_all_sha1s_filters_done`: entries com `status='pending'` nao aparecem.
-  - `test_get_all_sha1s_hit`: arquivo no cache com `status='done'` -> sha1 correto.
-  - `test_set_entry_upsert`: segunda chamada com sha1 diferente atualiza a linha.
-  - `test_set_entry_pending_then_done`: set pending, depois done, apenas done aparece
-    em `get_all_sha1s`.
-  - `test_delete_entry`: entrada removida, ausente em `get_all_sha1s`.
-  - `test_list_entries_filters_by_ctx`: entries de ctx `work` nao aparecem em `knowledge`.
-  - `test_path_normalization`: path com backslash armazenado e lido como posix.
+  - `test_get_all_sha1s_empty`: no entry in cache -> empty dict.
+  - `test_get_all_sha1s_filters_done`: entries with `status='pending'` do not appear.
+  - `test_get_all_sha1s_hit`: file in cache with `status='done'` -> correct sha1.
+  - `test_set_entry_upsert`: second call with different sha1 updates the row.
+  - `test_set_entry_pending_then_done`: set pending, then done, only done appears
+    in `get_all_sha1s`.
+  - `test_delete_entry`: entry removed, absent from `get_all_sha1s`.
+  - `test_list_entries_filters_by_ctx`: entries from ctx `work` do not appear in `knowledge`.
+  - `test_path_normalization`: path with backslash stored and read as posix.
 
 - `test_index_lock.py`:
-  - `test_acquire_releases_on_exit`: lockfile removido apos bloco.
-  - `test_acquire_raises_if_pid_alive`: segundo `acquire` com PID ativo levanta
+  - `test_acquire_releases_on_exit`: lockfile removed after block.
+  - `test_acquire_raises_if_pid_alive`: second `acquire` with active PID raises
     `IndexLockError`.
-  - `test_acquire_reclaims_stale_lock`: lock com PID inexistente e reclamado e indexacao
-    prossegue normalmente.
-  - `test_acquire_releases_on_exception`: lockfile removido mesmo com excecao interna.
-  - `test_index_lock_windows.py` (Windows 11 / R7 5800X3D - hipotese H7): verificar que
-    `_pid_alive` retorna False para PID de processo terminado e que o reclaim ocorre
-    corretamente. Marcar com `@pytest.mark.skipif(sys.platform != 'win32', ...)`.
-    OBRIGATORIO antes de declarar reclaim como suportado em Windows.
+  - `test_acquire_reclaims_stale_lock`: lock with non-existent PID is reclaimed and
+    indexing proceeds normally.
+  - `test_acquire_releases_on_exception`: lockfile removed even on internal exception.
+  - `test_index_lock_windows.py` (Windows 11 / R7 5800X3D - hypothesis H7): verify that
+    `_pid_alive` returns False for a terminated process's PID and that reclaim occurs
+    correctly. Mark with `@pytest.mark.skipif(sys.platform != 'win32', ...)`.
+    MANDATORY before declaring reclaim as supported on Windows.
 
 - `test_upsert_deps_batch.py`:
-  - `test_batch_single_pipeline_call`: N simbolos resultam em exatamente 1 `pipe.execute()`.
-  - `test_empty_batch_no_op`: lista vazia nao chama `pipeline()`.
-  - `test_partial_failure_no_corrupt_data`: falha simulada no `pipe.execute()` nao deixa
-    dados malformados em chaves `dep:*` existentes.
+  - `test_batch_single_pipeline_call`: N symbols result in exactly 1 `pipe.execute()`.
+  - `test_empty_batch_no_op`: empty list does not call `pipeline()`.
+  - `test_partial_failure_no_corrupt_data`: simulated failure in `pipe.execute()` does not
+    leave malformed data in existing `dep:*` keys.
 
 - `test_chunk_id_stable.py`:
-  - `test_id_stable_after_line_shift`: mesmo simbolo com `start_line` diferente produz
-    id identico (D1 - occurrence_index e usado, nao start_line).
-  - `test_id_disambiguates_overloads`: dois metodos com mesmo nome no mesmo arquivo
-    recebem ids distintos (occurrence_index 0 vs 1).
+  - `test_id_stable_after_line_shift`: same symbol with different `start_line` produces
+    identical id (D1 - occurrence_index is used, not start_line).
+  - `test_id_disambiguates_overloads`: two methods with the same name in the same file
+    receive distinct ids (occurrence_index 0 vs 1).
 
-### Integracao
+### Integration
 
-- `test_incremental_skip.py`: index + re-index sem mudancas; mock do embedder; assertar
-  que `engine.embed()` nao foi chamado na segunda rodada.
-- `test_orphan_reconcile.py`: index -> editar arquivo -> re-index -> scroll Qdrant;
-  count identico antes/depois (nao acumula).
-- `test_deleted_file_cleanup.py`: index -> deletar arquivo -> re-index -> scroll = 0.
-- `test_gitignore_exclusion.py`: arquivo commitado e depois adicionado ao .gitignore ->
-  index -> scroll = 0. (TESTE DE SEGURANCA - obrigatorio, nao pode ser pulado por
-  coverage.)
-- `test_crash_safety.py`: sentinel `pending` sobrevive a crash simulado; proxima execucao
-  re-indexa e seta `done`.
-- `test_cross_ctx_no_false_positive.py`: arquivo existente em `knowledge` mas ausente
-  em `work` nao e deletado do Qdrant de `knowledge` durante index de `work`.
+- `test_incremental_skip.py`: index + re-index without changes; mock embedder; assert
+  that `engine.embed()` was not called on the second run.
+- `test_orphan_reconcile.py`: index -> edit file -> re-index -> Qdrant scroll;
+  count identical before/after (no accumulation).
+- `test_deleted_file_cleanup.py`: index -> delete file -> re-index -> scroll = 0.
+- `test_gitignore_exclusion.py`: file committed and then added to .gitignore ->
+  index -> scroll = 0. (SAFETY TEST - mandatory, cannot be skipped for coverage.)
+- `test_crash_safety.py`: `pending` sentinel survives simulated crash; next run
+  re-indexes and sets `done`.
+- `test_cross_ctx_no_false_positive.py`: file existing in `knowledge` but absent
+  in `work` is not deleted from `knowledge` Qdrant during `work` index.
 
-### Regressao de recall
+### Recall regression
 
-- `test_recall_guard.py`: carrega `tests/recall/baseline.json`; roda harness de 20 queries
-  contra Qdrant real (testcontainers); `compare_benchmark_runs(current, baseline)`;
-  `assert len(report.regressions) == 0` e `assert summary.score >= 0.90`.
-  O threshold `min_score` por query e lido de `score_calibration.json`.
+- `test_recall_guard.py`: loads `tests/recall/baseline.json`; runs 20-query harness
+  against real Qdrant (testcontainers); `compare_benchmark_runs(current, baseline)`;
+  `assert len(report.regressions) == 0` and `assert summary.score >= 0.90`.
+  The `min_score` threshold per query is read from `score_calibration.json`.
 
-### Cobertura
+### Coverage
 
-Minimo 80% nos modulos novos/alterados: `file_cache.py`, `index_lock.py`, modulo
-`graph_store.py` nas funcoes adicionadas, `pipeline.py` nos caminhos de skip/reconcile/
-delete/sentinel.
+Minimum 80% on new/modified modules: `file_cache.py`, `index_lock.py`, the
+`graph_store.py` module on added functions, `pipeline.py` on skip/reconcile/
+delete/sentinel paths.
 
 ---
 
-## Fora de escopo
+## Out of scope
 
-- **Eliminacao da dupla-parse em `graph_extractor.py`:** o `extract_calls()` re-parseia o
-  conteudo dos chunks; unificar com a parse do chunker reduz CPU mas e uma mudanca
-  arquitetural maior. Enderecar no Pilar A ou num spec dedicado.
-- **Cap de tamanho de chunks (Python/TypeScript):** o `_MAX_CHUNK_LINES` so existe para
-  Java (`chunker.py:37`). Adicionar cap para Python/TypeScript e escopo do Pilar A.
-- **GPU / `CUDAExecutionProvider`:** escopo do Pilar B (providers onnxruntime). Este pilar
-  nao toca o `EmbedderEngine`.
-- **Multiprocessing customizado (pool de workers):** YAGNI ate Pilar B medir throughput
-  com threading nativo do onnxruntime.
-- **Streaming de `build_dependency_records`:** a hipotese de que a acumulacao de
-  `graph_chunks` causa pico de RAM esta registrada como H6 e sera confirmada ou refutada
-  em Phase 0. A correcao (stream por arquivo) pertence ao Pilar A.
-- **Suporte a novos languages (Rust, Go, Bash):** escopo do chunker, nao deste pilar.
-- **Rollback de migration SQLite:** o sistema de migration atual nao tem down-migration;
-  adicionar esse mecanismo e escopo separado de infra de DB.
+- **Elimination of double-parse in `graph_extractor.py`:** `extract_calls()` re-parses the
+  chunk content; unifying with the chunker's parse reduces CPU but is a larger architectural
+  change. Address in Pillar A or a dedicated spec.
+- **Chunk size cap (Python/TypeScript):** `_MAX_CHUNK_LINES` only exists for
+  Java (`chunker.py:37`). Adding a cap for Python/TypeScript is Pillar A scope.
+- **GPU / `CUDAExecutionProvider`:** Pillar B scope (onnxruntime providers). This pillar
+  does not touch `EmbedderEngine`.
+- **Custom multiprocessing (worker pool):** YAGNI until Pillar B measures throughput
+  with onnxruntime's native threading.
+- **Streaming `build_dependency_records`:** the hypothesis that `graph_chunks` accumulation
+  causes RAM peaks is recorded as H6 and will be confirmed or refuted in Phase 0. The fix
+  (stream per file) belongs to Pillar A.
+- **Support for new languages (Rust, Go, Bash):** chunker scope, not this pillar.
+- **SQLite migration rollback:** the current migration system has no down-migration;
+  adding that mechanism is a separate DB infra scope.

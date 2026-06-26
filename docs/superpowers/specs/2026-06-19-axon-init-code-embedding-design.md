@@ -1,47 +1,47 @@
-# Design: `axon init` faz o onboarding completo (símbolos + embeddings)
+# Design: `axon init` performs complete onboarding (symbols + embeddings)
 
-Data: 2026-06-19
-Status: aprovado (aguardando review do spec escrito)
-Escopo: unificar a indexação de código no `axon init`. Sem auto-refresh por hook (fora de escopo).
+Date: 2026-06-19
+Status: approved (awaiting review of the written spec)
+Scope: unify code indexing in `axon init`. No auto-refresh via hook (out of scope).
 
-## Contexto
+## Context
 
-Hoje o onboarding de um repo exige **dois comandos**:
+Today onboarding a repo requires **two commands**:
 
-- `axon init <repo>` → instala git hooks + `index_repo` (símbolos no **SQLite**, só `.py`/`.java`).
-- `python -m axon.cli.pb index <repo> --ctx <ctx>` → `index_path` (embeddings no **Qdrant**,
-  `.py`/`.java`/`.ts`/`.md`/`.txt`) + dep records no Redis.
+- `axon init <repo>` -> installs git hooks + `index_repo` (symbols in **SQLite**, `.py`/`.java` only).
+- `python -m axon.cli.pb index <repo> --ctx <ctx>` -> `index_path` (embeddings in **Qdrant**,
+  `.py`/`.java`/`.ts`/`.md`/`.txt`) + dep records in Redis.
 
-Os dois populam stores **complementares**, não redundantes: o `search_code` faz o match
-semântico no **Qdrant** e enriquece o hit com o subgrafo de símbolos do **SQLite**. Sem o
-passo de embedding, o `search_code` não retorna nada. O `pb index` ser um passo manual
-separado "deixou de fazer sentido" agora que o foco é evoluir o próprio AXON.
+The two populate **complementary**, not redundant, stores: `search_code` does the semantic
+match in **Qdrant** and enriches the hit with the symbol subgraph from **SQLite**. Without the
+embedding step, `search_code` returns nothing. Having `pb index` as a separate manual step
+"stopped making sense" now that the focus is on evolving AXON itself.
 
-Fatos verificados no código:
-- `axon.code.indexer.index_repo(repo, *, store)` → SQLite symbol nodes (`.py`/`.java`).
+Facts verified in the code:
+- `axon.code.indexer.index_repo(repo, *, store)` -> SQLite symbol nodes (`.py`/`.java`).
 - `axon.embedder.pipeline.index_path(target, *, engine, store, vault_root, forced_ctx, graph_store, languages)`
-  → embeddings no Qdrant por ctx + dep records no Redis. Já é **incremental** (hash-cache por
-  arquivo) e exclui `node_modules`/`.venv`/`dist`/etc.
-- `index_path` pula arquivos de ctx `work` **a menos que** `forced_ctx == "work"`.
-- Embedder é **local** (fastembed `BAAI/bge-base-en-v1.5`, 768-dim, sem API key).
-- O setup de `EmbedderEngine` + `VectorStore` + `GraphStore` está **duplicado** em ~5 comandos
-  do `pb.py` (`index`, `index-dev`, etc.).
+  -> embeddings in Qdrant by ctx + dep records in Redis. Already **incremental** (hash-cache per
+  file) and excludes `node_modules`/`.venv`/`dist`/etc.
+- `index_path` skips files with ctx `work` **unless** `forced_ctx == "work"`.
+- Embedder is **local** (fastembed `BAAI/bge-base-en-v1.5`, 768-dim, no API key).
+- The setup of `EmbedderEngine` + `VectorStore` + `GraphStore` is **duplicated** across ~5 commands
+  in `pb.py` (`index`, `index-dev`, etc.).
 
-## Decisões
+## Decisions
 
-| Tema | Decisão |
+| Topic | Decision |
 |---|---|
-| Escopo do `init` | `axon init` = hooks + símbolos SQLite + **embeddings Qdrant**, numa chamada. Refresh é manual (re-rodar `axon init`). |
-| ctx padrão | `--ctx knowledge` (default). Código = base de conhecimento; está no conjunto de busca default. |
-| ctx `work` | **Só** quando `--ctx work` é passado explicitamente. O default nunca escreve em `work`. |
-| Abordagem | Extrair helper único `embed_repo(...)` consumido por `init` **e** `pb`; remove a duplicação do `pb.py`. |
-| Degradação | Qdrant fora → `init` não falha: instala hooks + símbolos e avisa que embeddings foram pulados. Redis fora → dep records pulados. |
-| Migração | Re-indexar os 9 repos onboardados de `personal` → `knowledge` e limpar a collection `personal`. |
-| Fora de escopo | Auto-refresh do índice por git hook no commit. `pb index`/`index-dev` continuam existindo (uso de vault/manifesto). |
+| `init` scope | `axon init` = hooks + SQLite symbols + **Qdrant embeddings**, in one call. Refresh is manual (re-run `axon init`). |
+| Default ctx | `--ctx knowledge` (default). Code = knowledge base; it is in the default search set. |
+| `work` ctx | **Only** when `--ctx work` is passed explicitly. The default never writes to `work`. |
+| Approach | Extract a single helper `embed_repo(...)` consumed by `init` **and** `pb`; removes duplication from `pb.py`. |
+| Degradation | Qdrant down -> `init` does not fail: installs hooks + symbols and warns that embeddings were skipped. Redis down -> dep records skipped. |
+| Migration | Re-index the 9 onboarded repos from `personal` -> `knowledge` and clean up the `personal` collection. |
+| Out of scope | Auto-refresh of the index via git hook on commit. `pb index`/`index-dev` continue to exist (vault/manifest use case). |
 
-## Componentes e mudanças
+## Components and changes
 
-### 1. Novo helper isolado — `axon/code/embedder.py`
+### 1. New isolated helper - `axon/code/embedder.py`
 ```
 async def embed_repo(
     repo_path: Path | str,
@@ -52,102 +52,101 @@ async def embed_repo(
     graph_store: GraphStore | None = None,
 ) -> tuple[int, int]:  # (indexed_files, total_chunks)
 ```
-- Responsabilidade única: embeddar um repo num ctx. Monta engine/store/graph_store se não
-  forem injetados (default: runtime config), chama `ensure_collections()` e
+- Single responsibility: embed a repo into a ctx. Builds engine/store/graph_store if not
+  injected (default: runtime config), calls `ensure_collections()` and
   `index_path(repo_path, engine=..., store=..., vault_root=..., forced_ctx=ctx, graph_store=...)`.
-- `forced_ctx=ctx` faz todo arquivo ir pro ctx escolhido (o `infer_ctx_from_path` não decide).
-- Fecha store/graph_store no fim (`finally`).
-- Testável isolado: injeta mocks, conta chunks por ctx, valida idempotência (hash-cache).
+- `forced_ctx=ctx` routes every file to the chosen ctx (overrides `infer_ctx_from_path`).
+- Closes store/graph_store at the end (`finally`).
+- Testable in isolation: inject mocks, count chunks by ctx, validate idempotence (hash-cache).
 
-### 2. `axon init` (em `axon/__main__.py`)
-- Nova opção: `--ctx` (default `"knowledge"`).
-- Fluxo: `install_hooks` → `index_repo` (símbolos) → `embed_repo(repo, ctx=ctx)` (embeddings).
-- Saída agregada:
+### 2. `axon init` (in `axon/__main__.py`)
+- New option: `--ctx` (default `"knowledge"`).
+- Flow: `install_hooks` -> `index_repo` (symbols) -> `embed_repo(repo, ctx=ctx)` (embeddings).
+- Aggregated output:
   ```
   hooks installed: post-commit, pre-push, post-merge, post-checkout
   indexed N symbols from <repo>
   embedded M chunks into ctx=knowledge
   ```
-- Degradação: o passo de embedding é envolvido de modo que falha de Qdrant/Redis vire um aviso
-  (`embeddings skipped (<motivo>)`), sem abortar o `init` nem mudar o exit code para os passos
-  que deram certo.
+- Degradation: the embedding step is wrapped so that a Qdrant/Redis failure becomes a warning
+  (`embeddings skipped (<reason>)`), without aborting the `init` or changing the exit code for
+  steps that succeeded.
 
-### 3. Refactor do `pb.py` (DRY, escopo contido)
-- `pb index` e `pb index-dev` passam a chamar `embed_repo`/`index_path` via o mesmo caminho do
-  helper, eliminando a montagem duplicada de engine/store/graph_store. Comportamento externo
-  inalterado (mesmos flags, mesma saída).
+### 3. `pb.py` refactor (DRY, contained scope)
+- `pb index` and `pb index-dev` will call `embed_repo`/`index_path` via the same helper path,
+  eliminating the duplicated engine/store/graph_store setup. External behavior unchanged (same
+  flags, same output).
 
-### 4. Migração one-shot (parte da entrega, não código permanente)
-- Re-indexar os 9 repos onboardados com `ctx=knowledge`.
-- Limpar a collection `personal` (hoje só contém o código que foi indexado na integração).
-- Verificar: `search_code` (sem ctx) retorna hits vindos de `knowledge`.
+### 4. One-shot migration (part of the delivery, not permanent code)
+- Re-index the 9 onboarded repos with `ctx=knowledge`.
+- Clean the `personal` collection (today contains only code indexed during the integration).
+- Verify: `search_code` (without ctx) returns hits from `knowledge`.
 
-## Fluxo de dados (depois)
+## Data flow (after)
 
 ```
-axon init <repo> ─ install_hooks ─→ .git/hooks/*
-                 ─ index_repo     ─→ SQLite symbol graph (.py/.java)
-                 ─ embed_repo     ─→ Qdrant (ctx=knowledge) + Redis dep records (.py/.java/.ts/.md/.txt)
-search_code <q>  ─ embed(q) → Qdrant(knowledge,...) → enrich via SQLite subgraph
+axon init <repo> - install_hooks -> .git/hooks/*
+                 - index_repo    -> SQLite symbol graph (.py/.java)
+                 - embed_repo    -> Qdrant (ctx=knowledge) + Redis dep records (.py/.java/.ts/.md/.txt)
+search_code <q>  - embed(q) -> Qdrant(knowledge,...) -> enrich via SQLite subgraph
 ```
 
-## Unidades (isolamento)
+## Units (isolation)
 
-- **embed_repo** (`axon/code/embedder.py`) — embedda um repo num ctx; depende de
-  engine/store/graph_store; testável com mocks.
-- **init** (`axon/__main__.py`) — orquestra hooks + símbolos + embeddings; depende de
+- **embed_repo** (`axon/code/embedder.py`) - embeds a repo into a ctx; depends on
+  engine/store/graph_store; testable with mocks.
+- **init** (`axon/__main__.py`) - orchestrates hooks + symbols + embeddings; depends on
   `install_hooks`, `index_repo`, `embed_repo`.
-- **pb index/index-dev** — passam a delegar ao mesmo caminho; sem mudança de interface.
+- **pb index/index-dev** - delegate to the same path; no interface change.
 
-## Verificação (end-to-end)
+## Verification (end-to-end)
 
-1. `axon init <repo-py>` num repo limpo → imprime os 3 passos; `embedded M chunks` com M>0.
-2. Qdrant parado → `axon init` ainda instala hooks + símbolos e avisa `embeddings skipped`; exit 0.
-3. `search_code "<símbolo conhecido>"` retorna o trecho do repo recém-`init`ado (ctx default).
-4. Re-rodar `axon init` no mesmo repo sem mudanças → `embedded 0 chunks` (hash-cache).
-5. `--ctx work` → embeddings vão pra collection `work` e **não** aparecem no `search_code` sem ctx.
-6. Migração: collection `personal` vazia/removida; os 9 repos buscáveis via `knowledge`.
+1. `axon init <py-repo>` on a clean repo -> prints the 3 steps; `embedded M chunks` with M>0.
+2. Qdrant stopped -> `axon init` still installs hooks + symbols and warns `embeddings skipped`; exit 0.
+3. `search_code "<known symbol>"` returns the snippet from the newly `init`-ed repo (default ctx).
+4. Re-run `axon init` on the same repo with no changes -> `embedded 0 chunks` (hash-cache).
+5. `--ctx work` -> embeddings go to `work` collection and **do not** appear in `search_code` without ctx.
+6. Migration: `personal` collection empty/removed; the 9 repos searchable via `knowledge`.
 
-## Testes
+## Tests
 
-- Unit `embed_repo`: conta chunks, ctx correto, idempotência (hash-cache), store/graph fechados.
-- Unit/integração `init`: os 3 passos rodam; caminho "qdrant fora não quebra" (mock que levanta).
-- Regressão `pb index`: saída/flags inalterados após o refactor.
-- Cobertura alvo: 80%+ nas unidades novas/alteradas.
+- Unit `embed_repo`: chunk count, correct ctx, idempotence (hash-cache), store/graph closed.
+- Unit/integration `init`: all 3 steps run; "qdrant down does not break" path (mock that raises).
+- Regression `pb index`: output/flags unchanged after the refactor.
+- Target coverage: 80%+ on new/changed units.
 
-## Fora de escopo
-- Auto-refresh do índice por git hook no commit (re-index incremental automático).
-- Remover ou renomear `pb index`/`index-dev`.
-- Mudar o conjunto de linguagens suportadas pelo embedder.
+## Out of scope
+- Auto-refresh of the index via git hook on commit (automatic incremental re-index).
+- Remove or rename `pb index`/`index-dev`.
+- Change the set of languages supported by the embedder.
 
-## Validação de performance (PENDENTE — passe dedicado)
+## Performance validation (PENDING - dedicated pass)
 
-Medição preliminar (1 amostra, máquina sob carga; tratar como ordem de grandeza,
-não número final):
+Preliminary measurement (1 sample, machine under load; treat as order of magnitude,
+not a final number):
 
-| Cenário | Throughput |
+| Scenario | Throughput |
 |---|---|
-| Load do modelo fastembed (1x/processo) | ~0.6s |
-| Chunks curtos (funções pequenas) | ~240 chunks/s |
-| Chunks longos (~300 tokens) | ~3 chunks/s |
+| fastembed model load (1x/process) | ~0.6s |
+| Short chunks (small functions) | ~240 chunks/s |
+| Long chunks (~300 tokens) | ~3 chunks/s |
 
-Throughput é dominado pelo tamanho do chunk. O onboarding real dos 9 repos (~4555
-chunks) levou poucos minutos por ser uma mistura. **A medição precisa ser refeita
-num passe de perf dedicado, com a máquina ociosa**, antes de fechar o escopo abaixo.
+Throughput is dominated by chunk size. Real onboarding of the 9 repos (~4555
+chunks) took a few minutes because it was a mix. **Measurement needs to be redone
+in a dedicated perf pass, with an idle machine**, before closing the scope below.
 
-Riscos/achados que essa validação levantou e que o spec ainda precisa endereçar:
+Risks/findings raised by this validation that the spec still needs to address:
 
-1. **Memória.** O caminho de chunk longo estourou ~14 GB num processo de benchmark.
-   `axon init` não pode poder derrubar a máquina → provável necessidade de teto de
-   memória / cap no tamanho do chunk / batch menor. **A confirmar no passe de perf.**
-2. **Sem incrementalidade entre execuções.** O `_FILE_HASH_CACHE` é em memória, por
-   processo. Logo, hoje **todo `axon init` re-embeda tudo** (custo = minutos em repo
-   grande). Refresh barato exigiria estado persistente (hashes em SQLite). Decidir se
-   entra no escopo.
-3. **Threading.** 16 cores, `OMP_NUM_THREADS` unset; o ~3/s em texto longo sugere
-   possível subutilização de cores. Checar config do onnxruntime/fastembed (sem
-   benchmark pesado) — pode mudar o cálculo de custo.
+1. **Memory.** The long-chunk path overflowed ~14 GB in a benchmark process.
+   `axon init` must not be able to take down the machine -> likely need for a
+   memory ceiling / chunk size cap / smaller batch. **To be confirmed in the perf pass.**
+2. **No cross-run incrementality.** `_FILE_HASH_CACHE` is in-memory, per-process.
+   So today **every `axon init` re-embeds everything** (cost = minutes on a large repo).
+   Cheap refresh would require persistent state (hashes in SQLite). Decide if this enters scope.
+3. **Threading.** 16 cores, `OMP_NUM_THREADS` unset; the ~3/s on long text suggests
+   possible core underutilization. Check onnxruntime/fastembed config (without heavy
+   benchmarking) - may change the cost calculation.
 
-**Decisão de escopo em aberto** (depende do passe de perf): mínimo (só wire) ×
-médio (wire + memória-safety + progress) × completo (+ incremental persistente).
-Não prosseguir para o plano de implementação até essa validação fechar o escopo.
+**Open scope decision** (depends on the perf pass): minimum (wire only) vs
+medium (wire + memory-safety + progress) vs complete (+ persistent incremental).
+Do not proceed to the implementation plan until this validation closes the scope.
