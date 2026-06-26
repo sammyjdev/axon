@@ -92,3 +92,52 @@ def pack_sections(sections: list[Section]) -> list[list[Section]]:
             buf, buf_tokens = [sec], sec_tokens
     flush()
     return groups
+
+
+_OVERLAP = 0.12
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _is_table_block(block: str) -> bool:
+    rows = [ln for ln in block.splitlines() if ln.strip()]
+    return bool(rows) and all(ln.lstrip().startswith("|") for ln in rows)
+
+
+def _atoms(text: str) -> list[str]:
+    """Break text into the smallest units we are willing to keep whole."""
+    atoms: list[str] = []
+    for block in re.split(r"\n\s*\n", text):
+        if not block.strip():
+            continue
+        if _is_table_block(block) or estimate_tokens(block) <= MAX_TOKENS:
+            atoms.append(block)  # paragraph / table kept whole
+            continue
+        for sent in _SENTENCE_RE.split(block):  # paragraph too big -> sentences
+            if estimate_tokens(sent) <= MAX_TOKENS:
+                atoms.append(sent)
+            else:
+                words = sent.split()  # sentence too big -> word windows
+                step = max(1, int(MAX_TOKENS / 0.35 / 6))  # ~chars->words budget
+                for i in range(0, len(words), step):
+                    atoms.append(" ".join(words[i : i + step]))
+    return atoms
+
+
+def split_text(text: str) -> list[str]:
+    if estimate_tokens(text) <= MAX_TOKENS:
+        return [text]
+    atoms = _atoms(text)
+    windows: list[str] = []
+    cur: list[str] = []
+    for atom in atoms:
+        candidate = cur + [atom]
+        if cur and estimate_tokens("\n\n".join(candidate)) > MAX_TOKENS:
+            windows.append("\n\n".join(cur))
+            # overlap: carry the last atom into the next window
+            overlap_atom = cur[-1]
+            cur = [overlap_atom, atom] if estimate_tokens(overlap_atom) <= MAX_TOKENS * _OVERLAP * 4 else [atom]
+        else:
+            cur = candidate
+    if cur:
+        windows.append("\n\n".join(cur))
+    return windows or [text]
