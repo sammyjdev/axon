@@ -319,6 +319,8 @@ def _runtime(
         ollama_remote_host=ollama_remote_host,
         ollama_local_host="http://127.0.0.1:11434",
         caveman_model="phi3:mini",
+        scoring_model="ollama/gemma4:e4b",
+        scoring_num_ctx=8192,
         classifier_cloud_model="claude-haiku-4-5-20251001",
         classifier_timeout_seconds=4.0,
         policy_version="2026-04-21",
