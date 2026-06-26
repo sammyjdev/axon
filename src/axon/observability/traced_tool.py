@@ -69,7 +69,7 @@ def _summarize_args(bound: inspect.BoundArguments) -> TracePayload:
         if value is None:
             payload[name] = None
             continue
-        if isinstance(value, bool) or isinstance(value, (int, float)):
+        if isinstance(value, bool) or isinstance(value, int | float):
             payload[name] = value
             continue
         if isinstance(value, str):
@@ -79,7 +79,7 @@ def _summarize_args(bound: inspect.BoundArguments) -> TracePayload:
                 payload[f"{name}_len"] = len(value)
                 payload[f"{name}_sha8"] = _sha8(value)
             continue
-        if isinstance(value, (list, tuple, set)):
+        if isinstance(value, list | tuple | set):
             payload[f"{name}_len"] = len(value)
             continue
         if isinstance(value, dict):
