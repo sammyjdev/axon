@@ -282,69 +282,9 @@ def _split_lines_into_chunks(
 
 
 def _chunk_markdown(source: str, file_path: str) -> list[Chunk]:
-    """Chunk a Markdown file by heading boundaries.
-
-    Each heading (# through ######) starts a new section. Content before the
-    first heading becomes a chunk with symbol = Path(file_path).stem.
-    Sections exceeding _MAX_CHUNK_LINES are split via _split_lines_into_chunks.
-    A file with no headings is treated as a single section and split on line cap.
-    """
-    lines = source.splitlines()
-    _HEADING_RE = re.compile(r"^#{1,6}\s+(.+)")
-
-    sections: list[tuple[str, int, list[str]]] = []  # (symbol, start_1based, lines)
-    current_symbol = Path(file_path).stem
-    current_start = 1
-    current_lines: list[str] = []
-
-    for lineno, line in enumerate(lines, start=1):
-        m = _HEADING_RE.match(line)
-        if m:
-            if current_lines:
-                sections.append((current_symbol, current_start, current_lines))
-            current_symbol = re.sub(r"[^a-zA-Z0-9_]", "_", m.group(1).strip())[:64]
-            current_start = lineno
-            current_lines = [line]
-        else:
-            current_lines.append(line)
-
-    if current_lines:
-        sections.append((current_symbol, current_start, current_lines))
-
-    if not sections:
-        return [
-            Chunk(
-                symbol=Path(file_path).stem,
-                chunk_type="section",
-                start_line=1,
-                end_line=1,
-                content="",
-                file_path=file_path,
-                language="markdown",
-            )
-        ]
-
-    chunks: list[Chunk] = []
-    for symbol, start_1based, sec_lines in sections:
-        if len(sec_lines) > _MAX_CHUNK_LINES:
-            chunks.extend(
-                _split_lines_into_chunks(
-                    sec_lines, start_1based, symbol, "section", file_path, "markdown"
-                )
-            )
-        else:
-            chunks.append(
-                Chunk(
-                    symbol=symbol,
-                    chunk_type="section",
-                    start_line=start_1based,
-                    end_line=start_1based + len(sec_lines) - 1,
-                    content="\n".join(sec_lines),
-                    file_path=file_path,
-                    language="markdown",
-                )
-            )
-    return chunks
+    """Structure-aware markdown chunking. See embedder/md_chunker.py."""
+    from axon.embedder.md_chunker import chunk_markdown
+    return chunk_markdown(source, file_path)
 
 
 def chunk_java_file(path: str | Path) -> list[Chunk]:
