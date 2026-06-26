@@ -88,7 +88,6 @@ async def test_postgres_path_transient_error_surfaces(tmp_path, monkeypatch) -> 
     simulate a transient PG error.
     """
     monkeypatch.setenv("AXON_SESSIONS_BACKEND", "postgres")
-    from unittest.mock import AsyncMock
 
     from axon.store.session_store import CodeChange, SessionStore
 

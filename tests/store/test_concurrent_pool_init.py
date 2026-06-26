@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helper: count how many times create_pool is called under concurrency
 # ---------------------------------------------------------------------------
@@ -23,7 +22,6 @@ async def _count_create_pool_calls(repo_class, dsn: str) -> int:
     Returns the number of times asyncpg.create_pool was actually invoked.
     """
     call_count = 0
-    original_pool_sentinel = object()
 
     async def fake_create_pool(*args, **kwargs):
         nonlocal call_count
@@ -146,8 +144,9 @@ async def test_session_store_decisions_repo_init_once(tmp_path):
 
 def test_session_store_has_dedicated_repo_init_lock():
     """SessionStore.__init__ must create self._repo_init_lock separate from self._lock."""
-    from axon.store.session_store import SessionStore
     import asyncio
+
+    from axon.store.session_store import SessionStore
 
     store = SessionStore()
     assert hasattr(store, "_repo_init_lock"), "SessionStore must have _repo_init_lock"
@@ -158,8 +157,9 @@ def test_session_store_has_dedicated_repo_init_lock():
 
 
 def test_pg_session_repository_has_init_lock():
-    from axon.store.pg_session_repository import PostgresSessionRepository
     import asyncio
+
+    from axon.store.pg_session_repository import PostgresSessionRepository
 
     repo = PostgresSessionRepository(dsn="postgresql://fake/db")
     assert hasattr(repo, "_pool_lock"), "PostgresSessionRepository must have _pool_lock"
@@ -167,8 +167,9 @@ def test_pg_session_repository_has_init_lock():
 
 
 def test_pg_graph_repository_has_init_lock():
-    from axon.store.pg_graph_repository import PostgresGraphRepository
     import asyncio
+
+    from axon.store.pg_graph_repository import PostgresGraphRepository
 
     repo = PostgresGraphRepository(dsn="postgresql://fake/db")
     assert hasattr(repo, "_pool_lock"), "PostgresGraphRepository must have _pool_lock"
@@ -176,8 +177,9 @@ def test_pg_graph_repository_has_init_lock():
 
 
 def test_pg_decision_repository_has_init_lock():
-    from axon.store.pg_decision_repository import PostgresDecisionRepository
     import asyncio
+
+    from axon.store.pg_decision_repository import PostgresDecisionRepository
 
     repo = PostgresDecisionRepository(dsn="postgresql://fake/db")
     assert hasattr(repo, "_pool_lock"), "PostgresDecisionRepository must have _pool_lock"
