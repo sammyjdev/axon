@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import UTC, datetime
 
 import pytest
 
@@ -76,7 +75,8 @@ async def test_backfill_copies_legacy_and_renumbers_native(pg_dsn, tmp_path):
         await con.execute("DELETE FROM adr")
         for did, gh in [("dec-001", "native-a"), ("dec-002", "native-b")]:
             await con.execute(
-                "INSERT INTO decisions (id, frontmatter, body, created_at) VALUES ($1,$2::jsonb,$3,$4)",
+                "INSERT INTO decisions (id, frontmatter, body, created_at) "
+                "VALUES ($1,$2::jsonb,$3,$4)",
                 did, json.dumps(_fm(did, git_hash=gh)), "s", "2026-01-01T00:00:00+00:00",
             )
     finally:
@@ -85,7 +85,11 @@ async def test_backfill_copies_legacy_and_renumbers_native(pg_dsn, tmp_path):
     sqlite_path = str(tmp_path / "legacy.db")
     _make_sqlite(
         sqlite_path,
-        [_fm("dec-001", git_hash="h1"), _fm("dec-002", git_hash="h2"), _fm("dec-003", git_hash="h3")],
+        [
+            _fm("dec-001", git_hash="h1"),
+            _fm("dec-002", git_hash="h2"),
+            _fm("dec-003", git_hash="h3"),
+        ],
         [{"project": "axon", "title": "ADR-1", "created_at": "2026-01-01T00:00:00+00:00"}],
     )
 
@@ -117,7 +121,7 @@ async def test_backfill_is_idempotent(pg_dsn, tmp_path):
     finally:
         await con.close()
 
-    first = await run_backfill(sqlite_path, pg_dsn, dry_run=False)
+    await run_backfill(sqlite_path, pg_dsn, dry_run=False)
     before = await _pg_ids(pg_dsn)
     second = await run_backfill(sqlite_path, pg_dsn, dry_run=False)
     after = await _pg_ids(pg_dsn)

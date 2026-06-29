@@ -1,4 +1,4 @@
-from axon.store.decision_backfill import BackfillPlan, DecRef, content_key, plan_backfill
+from axon.store.decision_backfill import DecRef, content_key, plan_backfill
 
 
 def _r(i, gh="", ck=""):
