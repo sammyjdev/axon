@@ -274,7 +274,6 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
         vault_root=tmp_path / "vault",
         db_path=tmp_path / "engine" / "data" / "axon.db",
         pg_url="postgresql://axon:axon@localhost:5433/axon",
-        qdrant_url="http://localhost:6333",
         redis_url="redis://localhost:6379",
         rtk_max_tokens=450,
         caveman_num_ctx=4096,

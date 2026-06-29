@@ -37,14 +37,12 @@ def test_runtime_supports_remote_desktop_infra(monkeypatch, tmp_path) -> None:
     vault_root = tmp_path / "vault"
     monkeypatch.setenv("AXON_ENGINE", str(engine_root))
     monkeypatch.setenv("AXON_VAULT", str(vault_root))
-    monkeypatch.setenv("QDRANT_URL", "http://desktop.local:6333")
     monkeypatch.setenv("REDIS_URL", "redis://desktop.local:6379")
     monkeypatch.setenv("AXON_OLLAMA_LOCAL_HOST", "http://desktop.local:11434")
     monkeypatch.setenv("AXON_OLLAMA_REMOTE_HOST", "http://desktop.local:11434")
 
     runtime = load_runtime_config()
 
-    assert runtime.qdrant_url == "http://desktop.local:6333"
     assert runtime.redis_url == "redis://desktop.local:6379"
     assert runtime.caveman_num_ctx == 4096
     assert runtime.ollama_local_host == "http://desktop.local:11434"
