@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import asyncpg
 from pgvector.asyncpg import register_vector
 
-from axon.store.vector_store import VECTOR_SIZE, _rank_and_limit
+from axon.store.vector_common import VECTOR_SIZE, _rank_and_limit
 
 _TABLE_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
