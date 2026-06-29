@@ -29,18 +29,3 @@ async def test_open_file_cache_selects_postgres(monkeypatch) -> None:
     assert constructed["ensured"] is True
     await handle.close()
     assert constructed["closed"] is True
-
-
-async def test_open_file_cache_defaults_to_sqlite(monkeypatch, tmp_path) -> None:
-    from axon.cli import pb
-    from axon.store.file_cache import SqliteFileCache
-
-    monkeypatch.setattr(pb, "_get_db_path", lambda: tmp_path / "axon.db")
-    monkeypatch.setattr(
-        pb, "_RUNTIME", dataclasses.replace(pb._RUNTIME, fileindex_backend="sqlite")
-    )
-    cache, conn = await pb._open_file_cache()
-    try:
-        assert isinstance(cache, SqliteFileCache)
-    finally:
-        await conn.close()

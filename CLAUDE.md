@@ -60,25 +60,24 @@ the supported models are:
 Default profiles (FREE/PAID) never route to Ollama; enable it explicitly for
 `ctx=work` or any other path that requires local-only execution.
 
-### D4: Split graph backends (revised by dec-101, being superseded by dec-121)
+### D4: Single Postgres backend (dec-101 fully superseded by dec-121)
 
-- SQLite is the source-of-truth for the code graph and decisions.
-- Redis is retired (dec-121 Phase 2): the `dep:*` call-graph now lives in the
-  Postgres `symbol_deps` table; the rate limiter / circuit breaker are in-memory.
-- Mem0 runs vector-only over Qdrant. Neo4j was evaluated and dropped — see
-  `docs/decisions/dec-101-revoke-d4-drop-neo4j.md`.
+dec-121 is **complete** (all three slices landed; ADR accepted 2026-06-29).
+Persistence is consolidated on a single PostgreSQL instance:
 
-> **Superseded in progress (dec-121):** persistence is consolidating onto a
-> single Postgres instance — `pgvector` replaces Qdrant, the relational
-> source-of-truth (decisions/ADRs/sessions/graph nodes+edges/file_index) moves
-> off SQLite, the Redis `dep:*` call-graph ports to a `symbol_deps` PG table
-> (its dead `subgraph:*` cache + Mem0 are dropped). GLYPH keeps graph
-> **retrieval** (dec-116/117 stand). Rollout is phased (vector → graph/Redis →
-> relational); Phase 1 (vector/Qdrant) and Phase 2 (graph/Redis) have landed, so
-> only the relational SQLite source-of-truth (Phase 3) is still pending. See
-> `docs/decisions/dec-121-postgres-unified-storage.md` and the phase plans under
-> `docs/superpowers/plans/`. Until Phase 3 lands, the SQLite statement above
-> remains true for the relational data not yet migrated.
+- **Relational source-of-truth** (decisions/ADRs/sessions/graph nodes+edges/
+  file_index, plus FailureStore/OutcomeStore) lives in Postgres. SQLite is fully
+  retired — the SQLite repositories, `SessionStore`'s aiosqlite connection, the
+  SQL migrations, and the `aiosqlite` dependency are deleted.
+- **Vectors**: `pgvector` (Qdrant + mem0 dropped).
+- **Code-dependency call-graph**: the `dep:*` graph lives in the Postgres
+  `symbol_deps` table (Redis retired; rate limiter / circuit breaker are in-memory).
+- GLYPH keeps graph **retrieval** (dec-116/117 stand). Neo4j was evaluated and
+  dropped — see `docs/decisions/dec-101-revoke-d4-drop-neo4j.md`.
+
+Guards `tests/test_no_{qdrant,redis,sqlite}.py` keep the retired backends out. See
+`docs/decisions/dec-121-postgres-unified-storage.md` and the phase plans under
+`docs/superpowers/plans/`.
 
 ### D5: Chunker quality is a release gate
 
