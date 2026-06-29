@@ -4,11 +4,6 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 
-try:
-    import redis
-except Exception:  # pragma: no cover
-    redis = None
-
 
 class CircuitState(StrEnum):
     CLOSED = "CLOSED"
@@ -27,7 +22,6 @@ class _Snapshot:
 class CircuitBreaker:
     def __init__(
         self,
-        redis_url: str | None = None,
         failure_threshold: int = 3,
         recovery_timeout_seconds: int = 30,
         half_open_max_calls: int = 1,
@@ -36,12 +30,6 @@ class CircuitBreaker:
         self._recovery_timeout_seconds = recovery_timeout_seconds
         self._half_open_max_calls = half_open_max_calls
         self._memory: dict[str, _Snapshot] = {}
-        self._redis = None
-        if redis is not None and redis_url:
-            try:
-                self._redis = redis.Redis.from_url(redis_url, decode_responses=True)
-            except Exception:
-                self._redis = None
 
     def allow_call(self, key: str) -> bool:
         snap = self._load(key)
@@ -89,36 +77,8 @@ class CircuitBreaker:
     def state(self, key: str) -> CircuitState:
         return self._load(key).state
 
-    def _redis_key(self, key: str) -> str:
-        return f"cb:{key}"
-
     def _load(self, key: str) -> _Snapshot:
-        if self._redis is not None:
-            try:
-                data = self._redis.hgetall(self._redis_key(key))
-                if data:
-                    return _Snapshot(
-                        state=CircuitState(data.get("state", CircuitState.CLOSED.value)),
-                        failures=int(data.get("failures", "0")),
-                        opened_at=float(data.get("opened_at", "0")),
-                        half_open_calls=int(data.get("half_open_calls", "0")),
-                    )
-            except Exception:
-                pass
         return self._memory.get(key, _Snapshot())
 
     def _save(self, key: str, snap: _Snapshot) -> None:
         self._memory[key] = snap
-        if self._redis is not None:
-            try:
-                self._redis.hset(
-                    self._redis_key(key),
-                    mapping={
-                        "state": snap.state.value,
-                        "failures": str(snap.failures),
-                        "opened_at": str(snap.opened_at),
-                        "half_open_calls": str(snap.half_open_calls),
-                    },
-                )
-            except Exception:
-                pass

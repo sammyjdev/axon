@@ -36,8 +36,8 @@ Responda apenas com uma das categorias acima, sem texto extra.
 
 _RUNTIME = load_runtime_config()
 _POLICY = PolicyRegistry(_RUNTIME)
-_BREAKER = CircuitBreaker(redis_url=_RUNTIME.redis_url)
-_RATE_LIMITER = RateLimiter(redis_url=_RUNTIME.redis_url)
+_BREAKER = CircuitBreaker()
+_RATE_LIMITER = RateLimiter()
 
 
 def _normalize_task_type(raw: str) -> TaskType:

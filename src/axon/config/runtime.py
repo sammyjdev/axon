@@ -87,7 +87,6 @@ class RuntimeConfig:
     vault_root: Path
     db_path: Path
     pg_url: str
-    redis_url: str
     rtk_max_tokens: int
     caveman_num_ctx: int
     ollama_remote_host: str | None
@@ -674,7 +673,6 @@ def load_runtime_config() -> RuntimeConfig:
         vault_root=vault_root,
         db_path=engine_root / "data" / "axon.db",
         pg_url=os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5433/axon"),
-        redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379"),
         rtk_max_tokens=int(os.environ.get("AXON_RTK_MAX_TOKENS", "450")),
         caveman_num_ctx=int(os.environ.get("AXON_CAVEMAN_NUM_CTX", "4096")),
         ollama_remote_host=os.environ.get("AXON_OLLAMA_REMOTE_HOST") or None,

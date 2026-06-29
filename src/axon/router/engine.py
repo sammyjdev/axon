@@ -24,8 +24,8 @@ from axon.router.provider_validation import (
 logger = logging.getLogger(__name__)
 _RUNTIME = load_runtime_config()
 _POLICY = PolicyRegistry(_RUNTIME)
-_BREAKER = CircuitBreaker(redis_url=_RUNTIME.redis_url)
-_RATE_LIMITER = RateLimiter(redis_url=_RUNTIME.redis_url)
+_BREAKER = CircuitBreaker()
+_RATE_LIMITER = RateLimiter()
 
 # Mapping task -> model é selecionado pelo profile ativo (free | paid).
 # D2 (Haiku/Sonnet/Opus) é preservado pelo profile PAID via OpenRouter.

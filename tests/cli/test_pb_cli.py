@@ -274,7 +274,6 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
         vault_root=tmp_path / "vault",
         db_path=tmp_path / "engine" / "data" / "axon.db",
         pg_url="postgresql://axon:axon@localhost:5433/axon",
-        redis_url="redis://localhost:6379",
         rtk_max_tokens=450,
         caveman_num_ctx=4096,
         ollama_remote_host=None,
@@ -1370,11 +1369,11 @@ def test_watch_reindexes_changed_files(monkeypatch, tmp_path) -> None:
     class FakeEngine:
         pass
 
-    class FakeGraphStore:
-        def __init__(self, url: str) -> None:
-            self.url = url
+    class FakeSymbolDeps:
+        def __init__(self, dsn: str) -> None:
+            self.dsn = dsn
 
-        async def connect(self) -> None:
+        async def ensure_schema(self) -> None:
             await asyncio.sleep(0)
 
         async def close(self) -> None:
@@ -1395,7 +1394,7 @@ def test_watch_reindexes_changed_files(monkeypatch, tmp_path) -> None:
         "axon.store.vector_store_factory.make_vector_store",
         lambda *a, **k: FakeStore(url="fake://"),
     )
-    monkeypatch.setattr("axon.store.graph_store.GraphStore", FakeGraphStore)
+    monkeypatch.setattr("axon.store.pg_symbol_deps.PostgresSymbolDeps", FakeSymbolDeps)
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", FakeEngine)
     monkeypatch.setattr("axon.embedder.pipeline.index_path", fake_index_path)
     monkeypatch.setattr("axon.watcher.main.run_watcher", fake_run_watcher)
