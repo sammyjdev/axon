@@ -2486,12 +2486,12 @@ def index(
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.observability.trace_store import TraceStore
-        from axon.store.graph_store import GraphStore
+        from axon.store.pg_symbol_deps import PostgresSymbolDeps
         from axon.store.vector_store_factory import make_vector_store
 
         engine = EmbedderEngine()
         store = make_vector_store(_RUNTIME)
-        graph_store = GraphStore(url=_RUNTIME.redis_url)
+        graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
         file_cache, db_conn = await _open_file_cache()
 
         # Emit index-start activity into TraceStore (best-effort; never breaks indexing)
@@ -2511,7 +2511,7 @@ def index(
 
         try:
             await store.ensure_collections()
-            await graph_store.connect()
+            await graph_store.ensure_schema()
             vault_root = _RUNTIME.vault_root
             async with _index_lock_guard(fatal=True):
                 indexed_files, total_chunks = await index_path(
@@ -2599,17 +2599,17 @@ def index_dev(
     async def _index_dev() -> None:
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
-        from axon.store.graph_store import GraphStore
+        from axon.store.pg_symbol_deps import PostgresSymbolDeps
         from axon.store.vector_store_factory import make_vector_store
 
         engine = EmbedderEngine()
         store = make_vector_store(_RUNTIME)
-        graph_store = GraphStore(url=_RUNTIME.redis_url)
+        graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
         file_cache, db_conn = await _open_file_cache()
 
         try:
             await store.ensure_collections()
-            await graph_store.connect()
+            await graph_store.ensure_schema()
             total_files = 0
             total_chunks = 0
             for entry in selected:
@@ -2661,13 +2661,13 @@ def watch(
     async def _watch() -> None:
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
-        from axon.store.graph_store import GraphStore
+        from axon.store.pg_symbol_deps import PostgresSymbolDeps
         from axon.store.vector_store_factory import make_vector_store
         from axon.watcher.main import run_watcher
 
         engine = EmbedderEngine()
         store = make_vector_store(_RUNTIME)
-        graph_store = GraphStore(url=_RUNTIME.redis_url)
+        graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
         file_cache, db_conn = await _open_file_cache()
 
         async def _on_file(changed_path: Path) -> None:
@@ -2690,7 +2690,7 @@ def watch(
 
         try:
             await store.ensure_collections()
-            await graph_store.connect()
+            await graph_store.ensure_schema()
             await run_watcher(target, _on_file)
         finally:
             await store.close()
@@ -2838,16 +2838,16 @@ def scan(
             async def _index_one(entry: ProjectEntry = entry) -> None:
                 from axon.embedder.engine import EmbedderEngine
                 from axon.embedder.pipeline import index_path
-                from axon.store.graph_store import GraphStore
+                from axon.store.pg_symbol_deps import PostgresSymbolDeps
                 from axon.store.vector_store_factory import make_vector_store
 
                 engine = EmbedderEngine()
                 store = make_vector_store(_RUNTIME)
-                graph_store = GraphStore(url=_RUNTIME.redis_url)
+                graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
                 file_cache, db_conn = await _open_file_cache()
                 try:
                     await store.ensure_collections()
-                    await graph_store.connect()
+                    await graph_store.ensure_schema()
                     async with _index_lock_guard(fatal=True):
                         indexed, chunks = await index_path(
                             entry.path,
