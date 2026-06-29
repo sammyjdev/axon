@@ -184,5 +184,13 @@ usage (these refine the migration outline above):
    `SessionStore`'s `aiosqlite` connection, `store/migrations/*.sql`, and the
    `aiosqlite` dependency.
 
-Status remains `proposed`; the vector slice flips to `accepted` when Phase 1's
-recall gate passes on real data (Phase 1 plan Task 5).
+**Vector slice — ACCEPTED (2026-06-29).** Phase 1 landed (commits `92160e9..f0ccfa6`):
+pgvector is the only vector backend, the Qdrant `VectorStore` + benchmark arm +
+`qdrant-client` are gone, and Mem0 + `mem0ai` are dropped. The recall gate passes on
+real data (`AXON_RUN_RECALL=1`): `recall_top3=0.80` at parity with a regenerated
+**pgvector** baseline. The prior `0.90` Qdrant baseline measured `vector_store.py`
+(deleted here); the 3 stale golden queries were repointed to the `pg_vector_store`
+equivalents and the baseline regenerated on the current corpus. ef_search tuning was
+ruled out by experiment (the q05/q13 misses are true cosine rank-4, not HNSW
+approximation). The overall ADR stays `proposed` until Phases 2 (Redis) and 3
+(SQLite) also land.
