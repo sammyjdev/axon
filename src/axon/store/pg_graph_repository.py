@@ -190,6 +190,23 @@ class PostgresGraphRepository:
             for r in rows
         ]
 
+    async def graph_signature(self) -> str:
+        """Cheap monotonic fingerprint of the graph for cache invalidation.
+
+        Changes whenever a node/edge is added or a node is updated (add_node
+        bumps updated_at; edges are insert-only). Replaces the SQLite WAL mtime
+        signal, which is a no-op under Postgres.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            row = await con.fetchrow(
+                "SELECT (SELECT count(*) FROM nodes) AS nc,"
+                " (SELECT count(*) FROM edges) AS ec,"
+                " (SELECT max(updated_at) FROM nodes) AS mu,"
+                " (SELECT max(created_at) FROM edges) AS me"
+            )
+        return f"{row['nc']}:{row['ec']}:{row['mu']}:{row['me']}"
+
     async def close(self) -> None:
         if self._pool is not None:
             await self._pool.close()
