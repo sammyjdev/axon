@@ -1,14 +1,19 @@
-"""Populate tests/recall/baseline.json with real GPU+Qdrant recall metrics.
+"""Populate tests/recall/baseline.json with real GPU+pgvector recall metrics.
 
 Usage:
-    .venv/Scripts/python.exe scripts/populate_recall_baseline.py
+    AXON_PG_URL=postgresql://axon:axon@localhost:5434/axon \
+        python3 scripts/populate_recall_baseline.py
 
-The script uses a temporary collection "_recall_guard_tmp" which is dropped
-unconditionally in the finally block. PRODUCTION collections are never touched.
+Indexes the corpus into the dedicated recall table (RECALL_TABLE) via PgVectorStore
+and records the resulting recall metrics as the regression baseline. PRODUCTION
+tables are never touched (RECALL_TABLE is separate and TRUNCATEd per run by
+index_corpus_pg). dec-121 retired Qdrant; this is the pgvector regenerator.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -16,94 +21,88 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from qdrant_client import QdrantClient  # noqa: E402
-
-from axon.benchmark.recall import TEMP_COLLECTION, index_corpus, run_recall_guard  # noqa: E402
+from axon.benchmark.recall import (  # noqa: E402
+    RECALL_TABLE,
+    index_corpus_pg,
+    run_recall_guard_pg,
+)
 from axon.embedder.engine import EmbedderEngine  # noqa: E402
+from axon.store.pg_vector_store import PgVectorStore  # noqa: E402
 
 GOLDEN_SET_PATH = REPO_ROOT / "tests" / "recall" / "golden_set.json"
 BASELINE_PATH = REPO_ROOT / "tests" / "recall" / "baseline.json"
 SRC_ROOT = REPO_ROOT / "src" / "axon"
 
 
+async def _run(golden_set: list[dict], engine: EmbedderEngine, dsn: str):
+    store = PgVectorStore(dsn=dsn, table=RECALL_TABLE)
+    try:
+        indexed_points = await index_corpus_pg(
+            store, engine, src_root=SRC_ROOT, repo_root=REPO_ROOT
+        )
+        print(f"Indexed {indexed_points} points into {RECALL_TABLE}")
+        _summary, metrics = await run_recall_guard_pg(golden_set, engine, store)
+        return indexed_points, metrics
+    finally:
+        await store.close()
+
+
 def main() -> None:
+    dsn = os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5434/axon")
     golden_set = json.loads(GOLDEN_SET_PATH.read_text(encoding="utf-8"))
     print(f"Loaded {len(golden_set)} queries from {GOLDEN_SET_PATH.name}")
 
     engine = EmbedderEngine()
-    client = QdrantClient(url="http://localhost:6333")
-
     print(f"Indexing Python source under {SRC_ROOT} ...")
-    try:
-        indexed_points = index_corpus(
-            client,
-            engine,
-            src_root=SRC_ROOT,
-            repo_root=REPO_ROOT,
-        )
-        print(f"Indexed {indexed_points} points into {TEMP_COLLECTION}")
+    indexed_points, metrics = asyncio.run(_run(golden_set, engine, dsn))
 
-        print("Running recall guard ...")
-        _summary, metrics = run_recall_guard(golden_set, engine, client)
+    recall_top1 = metrics["recall_top1"]
+    recall_top3 = metrics["recall_top3"]
+    results_by_query = metrics["results_by_query"]
 
-        recall_top1 = metrics["recall_top1"]
-        recall_top3 = metrics["recall_top3"]
-        results_by_query = metrics["results_by_query"]
+    print(f"\nrecall_top1 = {recall_top1:.3f}")
+    print(f"recall_top3 = {recall_top3:.3f}")
 
-        print(f"\nrecall_top1 = {recall_top1:.3f}")
-        print(f"recall_top3 = {recall_top3:.3f}")
+    misses = [(qid, r) for qid, r in results_by_query.items() if not r["hit_top1"]]
+    if misses:
+        print(f"\nMissed queries ({len(misses)}):")
+        for qid, r in misses:
+            rank_str = str(r["rank"]) if r["rank"] is not None else "none"
+            hit3 = "top3" if r["hit_top3"] else "miss"
+            print(
+                f"  {qid}: rank={rank_str} ({hit3}) "
+                f"score={r['top_score']:.4f} "
+                f"expected={r['expected_symbol']} in {r['expected_file']}"
+            )
+    else:
+        print("\nAll queries hit top-1.")
 
-        misses = [
-            (qid, r)
-            for qid, r in results_by_query.items()
-            if not r["hit_top1"]
-        ]
-        if misses:
-            print(f"\nMissed queries ({len(misses)}):")
-            for qid, r in misses:
-                rank_str = str(r["rank"]) if r["rank"] is not None else "none"
-                hit3 = "top3" if r["hit_top3"] else "miss"
-                print(
-                    f"  {qid}: rank={rank_str} ({hit3}) "
-                    f"score={r['top_score']:.4f} "
-                    f"expected={r['expected_symbol']} in {r['expected_file']}"
-                )
-        else:
-            print("\nAll queries hit top-1.")
-
-        # Serialize - replace None ranks with the string "none" to avoid JSON nulls
-        serializable_results: dict = {}
-        for qid, r in results_by_query.items():
-            serializable_results[qid] = {
-                **r,
-                "rank": r["rank"] if r["rank"] is not None else "none",
-            }
-
-        baseline = {
-            "_note": (
-                "Real GPU+Qdrant recall run. "
-                "Generated by scripts/populate_recall_baseline.py. "
-                "Do not edit manually."
-            ),
-            "recall_top1": recall_top1,
-            "recall_top3": recall_top3,
-            "indexed_points": indexed_points,
-            "results_by_query": serializable_results,
+    # Serialize - replace None ranks with the string "none" to avoid JSON nulls
+    serializable_results: dict = {}
+    for qid, r in results_by_query.items():
+        serializable_results[qid] = {
+            **r,
+            "rank": r["rank"] if r["rank"] is not None else "none",
         }
-        BASELINE_PATH.write_text(json.dumps(baseline, indent=2), encoding="utf-8")
-        print(f"\nBaseline written to {BASELINE_PATH}")
-        print(
-            "\nThis baseline is the REGRESSION reference. The gate "
-            "(test_recall_guard_no_regression) checks that no query regresses in "
-            "rank and Top-3 does not drop - there is no absolute Top-1 threshold."
-        )
 
-    finally:
-        try:
-            client.delete_collection(collection_name=TEMP_COLLECTION)
-            print(f"Dropped temporary collection {TEMP_COLLECTION}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"Warning: could not drop {TEMP_COLLECTION}: {exc}")
+    baseline = {
+        "_note": (
+            "Real GPU+pgvector recall run. "
+            "Generated by scripts/populate_recall_baseline.py. "
+            "Do not edit manually."
+        ),
+        "recall_top1": recall_top1,
+        "recall_top3": recall_top3,
+        "indexed_points": indexed_points,
+        "results_by_query": serializable_results,
+    }
+    BASELINE_PATH.write_text(json.dumps(baseline, indent=2), encoding="utf-8")
+    print(f"\nBaseline written to {BASELINE_PATH}")
+    print(
+        "\nThis baseline is the REGRESSION reference. The gate "
+        "(test_recall_guard_no_regression) checks that no query regresses in "
+        "rank and Top-3 does not drop - there is no absolute Top-1 threshold."
+    )
 
 
 if __name__ == "__main__":
