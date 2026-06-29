@@ -32,7 +32,7 @@ from axon.policy.core import PolicyRegistry
 from axon.recall import recall_context
 from axon.router.compressor import caveman_compress_guarded
 from axon.store.collections import get_search_collections
-from axon.store.graph_store import GraphStore
+from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.session_store import ADR, SessionNote, SessionStore
 from axon.store.vector_store_factory import make_vector_store
 
@@ -48,7 +48,6 @@ CONTEXT_BUDGETS: dict[str, int] = {
 _RUNTIME = load_runtime_config()
 _POLICY = PolicyRegistry(_RUNTIME)
 _DB_PATH = _RUNTIME.db_path
-_REDIS_URL = _RUNTIME.redis_url
 _RTK_MAX_TOKENS = _RUNTIME.rtk_max_tokens
 _COMPRESSION_TELEMETRY = CompressionTelemetryStore(_RUNTIME)
 _TRACE_STORE = TraceStore(_RUNTIME)
@@ -57,7 +56,7 @@ mcp = FastMCP("axon-context-engine")
 
 # Stores são inicializados lazy no primeiro uso
 _vector_store: object | None = None
-_graph_store: GraphStore | None = None
+_graph_store: PostgresSymbolDeps | None = None
 _session_store: SessionStore | None = None
 _embedder: EmbedderEngine | None = None
 
@@ -87,10 +86,10 @@ def _get_vector_store():
     return _vector_store
 
 
-def _get_graph_store() -> GraphStore:
+def _get_graph_store() -> PostgresSymbolDeps:
     global _graph_store
     if _graph_store is None:
-        _graph_store = GraphStore(url=_REDIS_URL)
+        _graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
     return _graph_store
 
 
@@ -468,7 +467,7 @@ async def get_dependencies(
     Retorna o grafo de dependências de uma classe ou função.
     """
     store = _get_graph_store()
-    await store.connect()
+    await store.ensure_schema()
     deps = await store.get_subgraph(symbol)
     if not deps["exists"]:
         return f"Sem dependências indexadas para '{symbol}'."
