@@ -1,6 +1,34 @@
 # dec-121 Phase 1 — Retire Qdrant (pgvector-only + drop Mem0) Implementation Plan
 
+> **STATUS: ✅ EXECUTED & MERGED to master (2026-06-29).** See the Execution Record below. Next: Phase 2 (`2026-06-29-dec121-phase2-retire-redis.md`), Phase 3 (`2026-06-29-dec121-phase3-retire-sqlite.md`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+## Execution Record (2026-06-29)
+
+All 5 tasks executed via subagent-driven-development (fresh implementer + spec/quality review per task, opus whole-branch review at the end). Range: `3e60833..fcda95ec` on master.
+
+| Task | Commit | Notes |
+|---|---|---|
+| 1. Extract `VECTOR_SIZE`/`_rank_and_limit`→`vector_common` | `92160e9` | byte-for-byte relocation, reviewed clean |
+| 2. pgvector-only factory + runtime | `d34a561` | removed `qdrant_url`, `"qdrant"` from valid backends |
+| 3. Relocate `Chunk` + delete Qdrant `VectorStore` | `a66d6f5` | scope corrected mid-flight (`vector_store.py` also held `Chunk`); plan Task 3 revised in `207a8d3` |
+| 4. Drop Mem0 + `mem0ai` | `0232ea8` | preserved `session_compressor`/`session_hook` |
+| 5. Remove residual Qdrant arm + `qdrant-client` | `a1e75f9` | benchmark arm + dep + `testcontainers[qdrant]` |
+
+**Regression fixes (cross-cutting escapes the scoped reviews missed; full-suite/final-review caught them):**
+- `8273e1f` — ~20 tests built `RuntimeConfig(qdrant_url=...)` (field removed in Task 2).
+- `793bf83` — `doctor` test asserted `vector_backend: qdrant`.
+- `be86898` — final-review fixes: lazy `qdrant_client` imports in `scripts/`, dead `QDRANT_DEFAULT_URL`, `axon_health` label `qdrant`→`pgvector`.
+- `fcda95ec` — deleted the obsolete Qdrant blue-green migration scripts, dropped `QDRANT_URL` from generated env (`platform.py`), fixed `test_axon_tools.py` (broken by the `be86898` health rename), reworded stale "Qdrant" docstrings, added the **`tests/test_no_qdrant.py` import/dep guard** (institutionalizes the no-Qdrant invariant; would have caught both escapes above).
+
+**Recall gate (dec-121 acceptance criterion):** the Qdrant `0.90` baseline measured `vector_store.py`, deleted here. Repointed golden queries q04/q05/q13 → `pg_vector_store`, rewrote the baseline generator for pgvector (`scripts/populate_recall_baseline.py`), regenerated `baseline.json` on the current corpus (`f0ccfa6`). Gate green at `recall_top3=0.80` (pgvector parity). `ef_search=200` tuning was ruled out by experiment (the misses are true cosine rank-4, not HNSW approximation).
+
+**End state:** pgvector is the sole vector backend; Qdrant + Mem0 are 100% gone (source, `pyproject`, scripts, container `axon-qdrant-1` removed). dec-121 **vector slice accepted** (`c4428c6`). Guard tests `test_no_qdrant.py` + `test_no_mem0.py` lock the invariant.
+
+**Lesson carried into Phases 2–3:** a field/dependency/label removal needs a REPO-WIDE grep (including `scripts/`) + a guard test, not just the task's obvious files — three regressions escaped per-task scoped reviews this way.
+
+---
 
 **Goal:** Make `pgvector` the only vector backend and remove every Qdrant code path and the dead Mem0 integration, so the runtime no longer imports `qdrant-client` or `mem0ai` and the Qdrant container can be torn down — gated by the dec-121 recall guard staying green on real data.
 
