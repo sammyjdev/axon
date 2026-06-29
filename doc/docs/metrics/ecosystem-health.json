@@ -1,0 +1,99 @@
+{
+  "timestamp": "2026-06-29T14:56:43.927760Z",
+  "overall_status": "healthy",
+  "metrics": {
+    "versioning": {
+      "gnomon_pin_in_glyph": {
+        "status": "ok",
+        "value": "gnomon-eval @ git+https://github.com/sammyjdev/gnomon-eval.git",
+        "severity": "critical"
+      },
+      "glyph_pin_in_axon": {
+        "status": "ok",
+        "value": "glyph-kg[retrieval] @ git+https://github.com/sammyjdev/glyph-kg.git@v0.1.0",
+        "severity": "warning"
+      },
+      "forge_axon_dep": {
+        "status": "missing",
+        "value": null,
+        "severity": "warning"
+      }
+    },
+    "coupling": {
+      "axon_imports_glyph": {
+        "status": "ok",
+        "imports_found": 14,
+        "severity": "info"
+      },
+      "glyph_imports_axon": {
+        "status": "ok",
+        "imports_found": 0,
+        "severity": "critical"
+      },
+      "gnomon_imports_axon": {
+        "status": "ok",
+        "imports_found": 0,
+        "severity": "critical"
+      },
+      "forge_imports_axon": {
+        "status": "ok",
+        "imports_found": 0,
+        "severity": "critical"
+      }
+    },
+    "drift": {
+      "forge_vs_axon_router": {
+        "status": "missing",
+        "forge_exists": true,
+        "axon_exists": false,
+        "severity": "warning"
+      }
+    },
+    "performance": {
+      "glyph_graph_build_latency_ms": {
+        "status": "unknown",
+        "value": null,
+        "target_ms": 500,
+        "severity": "info",
+        "note": "Requires instrumentation in AXON _build_glyph_graph()"
+      },
+      "glyph_cache_hit_rate": {
+        "status": "unknown",
+        "value": null,
+        "target_percent": 80,
+        "severity": "info",
+        "note": "Requires cache implementation in AXON"
+      }
+    },
+    "ci_status": {
+      "axon": {
+        "status": "unknown",
+        "note": "GitHub API integration pending",
+        "last_commit": "886ee6b",
+        "last_message": "fix(store): next_decision_id uses max(id)+1 not count+1 (prevents id reuse/collision)",
+        "severity": "info"
+      },
+      "glyph": {
+        "status": "unknown",
+        "note": "GitHub API integration pending",
+        "last_commit": "9bff58e",
+        "last_message": "chore: bump version to 0.1.0",
+        "severity": "info"
+      },
+      "gnomon": {
+        "status": "unknown",
+        "note": "GitHub API integration pending",
+        "last_commit": "f7b91d3",
+        "last_message": "docs: translate Portuguese commit examples to English for OSS launch",
+        "severity": "info"
+      },
+      "forge": {
+        "status": "unknown",
+        "note": "GitHub API integration pending",
+        "last_commit": "9949d5d",
+        "last_message": "fix: add RULES.md template + porting guide step; test validate() in local-infer",
+        "severity": "info"
+      }
+    }
+  }
+}
