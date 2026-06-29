@@ -174,40 +174,50 @@ git add -A && git commit -m "feat(store): pgvector-only vector backend; drop qdr
 
 ---
 
-### Task 3: Delete the Qdrant `VectorStore`
+### Task 3: Relocate `Chunk`, repoint importers, retype pipeline, delete the Qdrant `VectorStore`
+
+**Revised scope (discovered during execution):** `vector_store.py` does NOT only hold the Qdrant class. It also defines `class Chunk(BaseModel)` — the backend-agnostic vector-chunk model the embedder produces and BOTH stores consume — which is imported across `src/` and `tests/`. And `embedder/pipeline.py` imports the Qdrant `VectorStore` purely as a type hint. So you cannot just delete the file: first move `Chunk` to `vector_common.py`, repoint every importer, retype the pipeline hint, trim the one Qdrant-only test class, THEN delete `vector_store.py`. Verified facts:
+- `Chunk` is at `vector_store.py:23-34` (a `pydantic.BaseModel`; needs `BaseModel, Field` and `datetime`). Move it verbatim into `vector_common.py`.
+- `COLLECTIONS` (`vector_store.py:20`) and `_utcnow` (`vector_store.py:159`) are used ONLY by the Qdrant class — they die with the file. `pg_vector_store.py` passes `now=datetime.now(UTC)` inline and does NOT use `_utcnow`, so the `_utcnow` copy that Task 1 left in `vector_common.py` is a true orphan — DELETE it from `vector_common.py` in this task.
+- `pipeline.py` uses the store via dependency injection (duck-typed); the `VectorStore` import is only the `store: VectorStore` type hint at lines ~140 and ~184. Change those hints to `PgVectorStore` (import from `axon.store.pg_vector_store`).
+- `obsidian/importer.py` and `pipeline.py` get their store from `make_vector_store()` / injection; their only hard dependency on `vector_store.py` is `Chunk`.
 
 **Files:**
+- Modify: `src/axon/store/vector_common.py` (add `class Chunk`; remove the orphan `_utcnow`)
 - Delete: `src/axon/store/vector_store.py`
-- Delete: any Qdrant-only test (e.g. `tests/store/test_vector_store.py` if it targets the Qdrant class) — verify first.
-- Modify: any remaining importer of `axon.store.vector_store` flagged by grep.
+- Modify (repoint `Chunk` / `VECTOR_SIZE` imports from `vector_store` → `vector_common`):
+  `src/axon/benchmark/recall.py` (lines ~252, ~364), `src/axon/embedder/pipeline.py` (line ~15, and the `VectorStore` type hint at ~16/140/184), `src/axon/obsidian/importer.py` (line ~113)
+- Modify tests (repoint imports): `tests/embedder/test_parse_once.py` (~110), `tests/recall/test_recall_pgvector_path.py` (~34), `tests/store/test_pg_vector_store.py` (~36, ~67, ~101), `tests/store/test_rank_and_limit.py` (~18, ~28)
+- Modify: `tests/store/test_stores.py` (remove the `from axon.store.vector_store import VectorStore` import at line ~21 and the Qdrant-only `TestVectorStoreSearch` class + its section comment; KEEP every other test in the file)
 
-- [ ] **Step 1: Prove nothing in `src/` still imports the Qdrant module**
+- [ ] **Step 1: Move `Chunk` into `vector_common.py`; drop the orphan `_utcnow`**
 
-Run: `rtk proxy grep -rn "from axon.store.vector_store import\|import vector_store\b\|VectorStore(" src/`
-Expected after Tasks 1–2: the only hit is `pg_vector_store.py`'s `class PgVectorStore` definition and `vector_common` re-export — NO references to the Qdrant `VectorStore` class or `vector_store` module remain in `src/`. If any remain, fix them (route through `make_vector_store`) before deleting.
+Copy `class Chunk(BaseModel)` verbatim from `vector_store.py:23-34` into `vector_common.py` (ensure `from pydantic import BaseModel, Field` and `datetime` are imported there). Delete the `def _utcnow()` block from `vector_common.py` (it is unused — `pg_vector_store` inlines `datetime.now(UTC)`).
 
-- [ ] **Step 2: Identify Qdrant-only tests**
+- [ ] **Step 2: Repoint every importer (src + tests)**
 
-Run: `rtk proxy grep -rln "AsyncQdrantClient\|qdrant\|vector_store import VectorStore" tests/`
-Inspect each hit. Tests that exercise the Qdrant `VectorStore` directly (not `PgVectorStore`, not the recall guard's Qdrant arm) are deleted with the module. The recall guard (`tests/recall/`) keeps BOTH arms in code today — leave its pgvector arm; only remove a test that cannot run without Qdrant. If unsure whether a recall-guard test still references the Qdrant arm, report DONE_WITH_CONCERNS and leave it; the recall guard is touched explicitly in Task 5.
+For each file listed under **Files**, change `from axon.store.vector_store import <names>` to `from axon.store.vector_common import <names>` (for `Chunk`, `VECTOR_SIZE`, `_rank_and_limit`). In `pipeline.py`, also replace the `from axon.store.vector_store import VectorStore` and the `store: VectorStore` annotations with `from axon.store.pg_vector_store import PgVectorStore` and `store: PgVectorStore`. In `tests/store/test_stores.py`, delete the Qdrant `VectorStore` import and the `TestVectorStoreSearch` class.
 
-- [ ] **Step 3: Delete the module (and confirmed Qdrant-only tests)**
+- [ ] **Step 3: Prove `vector_store.py` is now unreferenced, then delete it**
+
+Run: `rtk proxy grep -rn "axon.store.vector_store import\|axon\.store\.vector_store\b" src/ tests/`
+Expected: ZERO hits (note: `axon.store.vector_store_factory` and `axon.store.vector_common` are DIFFERENT modules and are fine; the regex word-boundary excludes them). If any hit remains, repoint it before deleting.
+Then: `git rm src/axon/store/vector_store.py`
+
+- [ ] **Step 4: Verify imports + the touched suites are green**
+
+Run: `rtk python3 -m compileall src/axon` (no import errors), then
+`rtk pytest tests/store tests/embedder tests/recall/test_recall_pgvector_path.py tests/obsidian -q`
+Expected: PASS, no `ModuleNotFoundError: axon.store.vector_store`. (Suites needing a Postgres container will spin one; if the container cannot start, report DONE_WITH_CONCERNS with the compileall + non-container results and name the blocked tests — do not fake them.)
+
+- [ ] **Step 5: Lint + commit (explicit paths, NEVER `git add -A`)**
 
 ```bash
-git rm src/axon/store/vector_store.py
-# git rm <each confirmed Qdrant-only test file>
+rtk ruff check src/axon/store/vector_common.py src/axon/benchmark/recall.py src/axon/embedder/pipeline.py src/axon/obsidian/importer.py
+git add src/axon/store/vector_common.py src/axon/store/vector_store.py src/axon/benchmark/recall.py src/axon/embedder/pipeline.py src/axon/obsidian/importer.py tests/embedder/test_parse_once.py tests/recall/test_recall_pgvector_path.py tests/store/test_pg_vector_store.py tests/store/test_rank_and_limit.py tests/store/test_stores.py
+git commit -m "feat(store): relocate Chunk to vector_common, delete Qdrant VectorStore (pgvector is the only backend)"
 ```
-
-- [ ] **Step 4: Verify the suite imports cleanly**
-
-Run: `rtk python3 -m compileall src/axon/store` then `rtk pytest tests/store -q`
-Expected: PASS, no `ModuleNotFoundError: axon.store.vector_store`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add -A && git commit -m "feat(store): delete Qdrant VectorStore (pgvector is the only backend)"
-```
+(`git rm` already staged the deletion; the explicit `git add` stages the edits. Do NOT use `git add -A` — `data/compression/stats.jsonl` must stay unstaged.)
 
 ---
 
