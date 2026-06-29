@@ -136,3 +136,53 @@ behind GLYPH's `Embedder`/index seam.
    in-memory budget.
 
 Status stays `proposed` until step 2's recall gate passes on real data.
+
+## Update 2026-06-29 — execution started, sub-decisions resolved
+
+The migration is further along than the outline assumed: the runtime loader
+already defaults every relational concern to `postgres` and the vector backend to
+`pgvector`, and PG implementations exist for all five concerns
+(`Postgres{Decision,Graph,Session}Repository`, `PostgresFileCache`,
+`PgVectorStore`). The remaining work is finishing the long tail and deleting the
+SQLite/Qdrant/Redis paths. Three sub-decisions, resolved after investigating real
+usage (these refine the migration outline above):
+
+- **Decisions/ADRs backfill: DONE.** `pb migrate decisions-sqlite-to-pg`
+  (`src/axon/store/decision_backfill.py`) shipped and was applied: 110 legacy
+  decisions copied + 5 PG-native renumbered → 115 decisions, 33 ADRs. See
+  commits 46ab541..823febb.
+- **Historical session/commit data: START CLEAN (no backfill).** Refines outline
+  step 3. `sessions`, `session_memory`, `session_note`, `code_change`, `commits`
+  are NOT migrated; PG starts empty for them. `nodes/edges` and `file_index`
+  regenerate via re-index. Accepts loss of pre-migration session history.
+- **Mem0: DROP (not migrate).** Mem0 is orphaned — no MCP tool or recall path
+  invokes it; only `pb memory smoke` + an `axon_health` presence probe. Remove
+  the `memory/mem0_tool.py` + `memory/config.py` files, the `memory_app` CLI
+  sub-app, and the `mem0ai` dependency. `recall/strategy.py`'s `semantic_search`
+  seam is kept as the future pgvector-semantic-recall extension point.
+- **Redis: PORT the live half, DELETE the dead half.** Corrects outline step 4
+  ("replace subgraph cache with materialized views"): the `subgraph:*` cache +
+  `traverse()` + `upsert_deps_batch()` are dead (zero production callers — the
+  no-op `git_event.py` `invalidate()` included) and are deleted outright. The
+  `dep:*` call-graph backs ONE live MCP tool, `get_dependencies`, and is ported
+  to a small `symbol_deps` PG table.
+
+### Phasing (each phase independently shippable; backend switch is the fallback until the final delete)
+
+1. **Phase 1 — vector (Qdrant out).** pgvector-only factory/runtime, delete the
+   Qdrant `VectorStore`, drop Mem0 + `mem0ai`; recall guard on real data is the
+   acceptance gate that promotes this slice to `accepted`. Plan:
+   `docs/superpowers/plans/2026-06-29-dec121-phase1-retire-qdrant.md`.
+2. **Phase 2 — graph + Redis (Redis out).** Port `dep:*` → `symbol_deps` PG
+   table; delete the dead `subgraph:*` cache; fix `graph_source.py`'s in-memory
+   GLYPH cache invalidation (today keys on the SQLite WAL mtime — a no-op under
+   PG). Graph retrieval stays GLYPH/NetworkX (Option A).
+3. **Phase 3 — relational (SQLite out).** Fix the 6 callsites that bypass the
+   repository abstraction (`familiar.py`, `__main__.py`, `validation/aggregate.py`,
+   `expansion/service.py`, `pb.py adr sync`, the index `GraphStore` sites);
+   port or drop `FailureStore`/`OutcomeStore`; delete the SQLite repositories,
+   `SessionStore`'s `aiosqlite` connection, `store/migrations/*.sql`, and the
+   `aiosqlite` dependency.
+
+Status remains `proposed`; the vector slice flips to `accepted` when Phase 1's
+recall gate passes on real data (Phase 1 plan Task 5).
