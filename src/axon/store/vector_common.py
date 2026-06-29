@@ -34,8 +34,7 @@ def _rank_and_limit(
     max_tokens: int,
     now: datetime,
 ) -> list[dict]:
-    """Staleness-rank then apply the max_nodes / token-budget cap. Shared by the
-    Qdrant and pgvector backends so they rank identically."""
+    """Used by the pgvector backend to rank and truncate search hits."""
     ranked = _apply_staleness_ranking(results, now=now)
     limited: list[dict] = []
     token_budget = max_tokens

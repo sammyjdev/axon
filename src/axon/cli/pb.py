@@ -50,7 +50,6 @@ app.add_typer(pending_app, name="pending")
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(migrate_app, name="migrate")
 
-QDRANT_DEFAULT_URL = "http://localhost:6333"
 _MAX_CHUNK_INPUT_CHARS = 4_000
 _RUNTIME = load_runtime_config()
 _CTX_HELP = f"Contexto: {'|'.join(VALID_CONTEXTS)}"
