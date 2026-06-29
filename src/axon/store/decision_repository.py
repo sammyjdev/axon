@@ -193,10 +193,13 @@ class SqliteDecisionRepository:
         """Return the next sequential decision id (dec-NNN, zero-padded)."""
         async with self._session._lock:
             db = await self._session._connection()
-            cursor = await db.execute("SELECT COUNT(*) FROM decisions")
+            cursor = await db.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(id, 5) AS INTEGER)), 0)"
+                " FROM decisions WHERE id LIKE 'dec-%'"
+            )
             row = await cursor.fetchone()
-        count = row[0] if row else 0
-        return f"dec-{count + 1:03d}"
+        highest = row[0] if row else 0
+        return f"dec-{highest + 1:03d}"
 
     async def all_decisions(self) -> list[Decision]:
         async with self._session._lock:

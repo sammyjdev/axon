@@ -50,6 +50,30 @@ async def test_decision_upsert_and_json_queries(pg_dsn) -> None:
         await repo.close()
 
 
+async def test_next_decision_id_non_contiguous_gap(pg_dsn) -> None:
+    """Regression: next_decision_id must return max(id)+1, not count+1.
+
+    With dec-001 and dec-003 (gap at dec-002, count=2), count+1 would yield
+    dec-003 — an existing id, causing a collision. max+1 must yield dec-004.
+    """
+    from axon.store.pg_decision_repository import PostgresDecisionRepository
+
+    repo = PostgresDecisionRepository(dsn=pg_dsn)
+    try:
+        await repo.ensure_schema()
+        async with (await repo._ensure_pool()).acquire() as con:
+            await con.execute("TRUNCATE decisions")
+        await repo.save_decision(_dec("dec-001"))
+        await repo.save_decision(_dec("dec-003"))
+        result = await repo.next_decision_id()
+        assert result == "dec-004", (
+            f"expected dec-004 (max=3, +1), got {result!r}; "
+            "count+1 would return dec-003, colliding with existing id"
+        )
+    finally:
+        await repo.close()
+
+
 async def test_judged_roundtrip_and_git_hash(pg_dsn) -> None:
     from axon.store.pg_decision_repository import PostgresDecisionRepository
 

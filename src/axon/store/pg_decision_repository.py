@@ -135,8 +135,11 @@ class PostgresDecisionRepository:
     async def next_decision_id(self) -> str:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            count = await con.fetchval("SELECT count(*) FROM decisions")
-        return f"dec-{(count or 0) + 1:03d}"
+            value = await con.fetchval(
+                "SELECT COALESCE(MAX(CAST(SUBSTRING(id FROM 5) AS INTEGER)), 0)"
+                " FROM decisions WHERE id LIKE 'dec-%'"
+            )
+        return f"dec-{(value or 0) + 1:03d}"
 
     async def save_adr_inner(self, adr: ADR) -> int:
         pool = await self._ensure_pool()
