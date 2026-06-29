@@ -15,7 +15,7 @@ def _r(i: int, content: str) -> dict:
 
 
 def test_rank_and_limit_respects_top_k() -> None:
-    from axon.store.vector_store import _rank_and_limit
+    from axon.store.vector_common import _rank_and_limit
     results = [_r(i, "word " * 10) for i in range(10)]
     out = _rank_and_limit(
         results, top_k=3, max_nodes=25, max_tokens=10_000,
@@ -25,7 +25,7 @@ def test_rank_and_limit_respects_top_k() -> None:
 
 
 def test_rank_and_limit_respects_token_budget() -> None:
-    from axon.store.vector_store import _rank_and_limit
+    from axon.store.vector_common import _rank_and_limit
     # each content ~ 400 chars -> ~100 estimated tokens; budget 150 fits 1
     results = [_r(i, "x" * 400) for i in range(5)]
     out = _rank_and_limit(

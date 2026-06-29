@@ -107,7 +107,7 @@ class TestChunkerTreeInMetadata:
         """Confirm that VectorChunk construction (pipeline) does not spread metadata."""
         # The pipeline constructs VectorChunk with explicit fields - no **chunk.metadata.
         # We verify the Chunk model does not bleed into VectorChunk accidentally.
-        from axon.store.vector_store import Chunk as VectorChunk
+        from axon.store.vector_common import Chunk as VectorChunk
         # VectorChunk has no metadata field - instantiation without it must succeed.
         vc = VectorChunk(
             id="abc",

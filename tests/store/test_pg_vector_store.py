@@ -33,7 +33,7 @@ async def test_ensure_collections_idempotent(pg_dsn) -> None:
 
 
 def _chunk(cid: str, ctx: str = "knowledge", file_path: str = "a.py", dim: int = None):
-    from axon.store.vector_store import VECTOR_SIZE, Chunk
+    from axon.store.vector_common import VECTOR_SIZE, Chunk
     n = dim or VECTOR_SIZE
     return Chunk(
         id=cid,
@@ -64,7 +64,7 @@ async def test_upsert_batch_inserts_and_is_idempotent(pg_dsn) -> None:
 
 async def test_search_round_trip_and_ctx_filter(pg_dsn) -> None:
     from axon.store.pg_vector_store import PgVectorStore
-    from axon.store.vector_store import VECTOR_SIZE
+    from axon.store.vector_common import VECTOR_SIZE
     store = PgVectorStore(dsn=pg_dsn)
     try:
         await store.ensure_collections()
@@ -98,7 +98,7 @@ def test_invalid_table_name_raises() -> None:
 async def test_table_isolation(pg_dsn) -> None:
     """Two stores on the same DSN with different table names must not share rows."""
     from axon.store.pg_vector_store import PgVectorStore
-    from axon.store.vector_store import VECTOR_SIZE, Chunk
+    from axon.store.vector_common import VECTOR_SIZE, Chunk
 
     store_a = PgVectorStore(dsn=pg_dsn, table="embeddings")
     store_b = PgVectorStore(dsn=pg_dsn, table="recall_embeddings")

@@ -12,8 +12,8 @@ from axon.embedder.graph_extractor import build_dependency_records
 from axon.embedder.tokens import estimate_tokens as _estimate_tokens
 from axon.store.file_cache import FileCache, sha1_of_source
 from axon.store.graph_store import GraphStore
-from axon.store.vector_store import Chunk as VectorChunk
-from axon.store.vector_store import VectorStore
+from axon.store.pg_vector_store import PgVectorStore
+from axon.store.vector_common import Chunk as VectorChunk
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ def infer_ctx_from_path(path: Path, vault_root: Path) -> str:
     return "knowledge"
 
 
-async def ingest_file(path: Path, engine: EmbedderEngine, store: VectorStore) -> int:
+async def ingest_file(path: Path, engine: EmbedderEngine, store: PgVectorStore) -> int:
     """Chunks a file, embeds each chunk, and upserts into the vector store.
 
     Returns the number of chunks upserted.
@@ -181,7 +181,7 @@ async def index_path(
     target: Path,
     *,
     engine: EmbedderEngine,
-    store: VectorStore,
+    store: PgVectorStore,
     vault_root: Path,
     file_cache: FileCache,
     forced_ctx: str | None = None,

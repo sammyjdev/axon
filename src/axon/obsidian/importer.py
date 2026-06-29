@@ -110,7 +110,7 @@ async def _index_note_vectors(
         embedder = EmbedderEngine()
     vectors = embedder.embed([body for _, _, body in items])  # type: ignore[attr-defined]
 
-    from axon.store.vector_store import Chunk as VectorChunk
+    from axon.store.vector_common import Chunk as VectorChunk
 
     chunks = [
         VectorChunk(

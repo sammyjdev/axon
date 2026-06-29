@@ -1,4 +1,4 @@
-"""Tests that VECTOR_SIZE in vector_store aligns with the embedder's dimension.
+"""Tests that VECTOR_SIZE in vector_common aligns with the embedder's dimension.
 
 VECTOR_SIZE is a module-level constant resolved at import time, so we test
 the underlying resolution logic directly rather than reloading the module.
@@ -41,7 +41,7 @@ class TestVectorSizeResolution:
         # Reload the module with AXON_VECTOR_SIZE absent and confirm the constant
         # equals the embedder default. This validates the wiring end-to-end.
         monkeypatch.delenv("AXON_VECTOR_SIZE", raising=False)
-        import axon.store.vector_store as vs_mod
+        import axon.store.vector_common as vs_mod
         reloaded = importlib.reload(vs_mod)
         assert reloaded.VECTOR_SIZE == default_embedding_dimension()
 
@@ -49,6 +49,6 @@ class TestVectorSizeResolution:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("AXON_VECTOR_SIZE", "1536")
-        import axon.store.vector_store as vs_mod
+        import axon.store.vector_common as vs_mod
         reloaded = importlib.reload(vs_mod)
         assert reloaded.VECTOR_SIZE == 1536
