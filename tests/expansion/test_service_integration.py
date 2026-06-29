@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from axon.config.runtime import load_runtime_config
 from axon.expansion.models import SourceDefinition, SourceFormat
 from axon.expansion.registry import SourceRegistry
@@ -259,6 +261,9 @@ def test_run_approve_reject_persist_outcomes(monkeypatch, tmp_path: Path) -> Non
 def test_approve_reindex_failures_are_persisted_for_repeated_failure_queries(
     monkeypatch, tmp_path: Path
 ) -> None:
+    pytest.importorskip("testcontainers.postgres")
+    from testcontainers.postgres import PostgresContainer
+
     engine_root = tmp_path / "engine"
     vault_root = tmp_path / "vault"
     monkeypatch.setenv("AXON_ENGINE", str(engine_root))
@@ -275,29 +280,37 @@ def test_approve_reindex_failures_are_persisted_for_repeated_failure_queries(
         encoding="utf-8",
     )
 
-    service = ExpansionService(load_runtime_config())
-    monkeypatch.setattr(
-        "axon.expansion.service.score_candidates",
-        lambda candidates, topic: _scored_candidates(candidates),
-    )
+    with PostgresContainer(
+        "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+    ) as pg:
+        dsn = pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
+        monkeypatch.setenv("AXON_PG_URL", dsn)
 
-    async def failing_reindex_publish_path(publish_path: Path, ctx: str) -> None:
-        _ = (publish_path, ctx)
-        raise RuntimeError("qdrant unavailable")
+        service = ExpansionService(load_runtime_config())
+        monkeypatch.setattr(
+            "axon.expansion.service.score_candidates",
+            lambda candidates, topic: _scored_candidates(candidates),
+        )
 
-    monkeypatch.setattr(service, "_reindex_publish_path", failing_reindex_publish_path)
+        async def failing_reindex_publish_path(publish_path: Path, ctx: str) -> None:
+            _ = (publish_path, ctx)
+            raise RuntimeError("qdrant unavailable")
 
-    first_stage = service.run(ctx="knowledge", topic="vector search", fast=True, allow_cloud=False)
-    second_stage = service.run(ctx="knowledge", topic="hybrid search", fast=True, allow_cloud=False)
+        monkeypatch.setattr(service, "_reindex_publish_path", failing_reindex_publish_path)
 
-    _, first_status = service.approve(first_stage)
-    _, second_status = service.approve(second_stage)
+        first_stage = service.run(
+            ctx="knowledge", topic="vector search", fast=True, allow_cloud=False
+        )
+        second_stage = service.run(
+            ctx="knowledge", topic="hybrid search", fast=True, allow_cloud=False
+        )
 
-    store = FailureStore(engine_root / "data" / "failures.db")
-    asyncio.run(store.init())
-    failures = asyncio.run(store.get_recent_failures("axon", limit=10))
-    repeated = asyncio.run(store.get_repeated_failures("axon", min_occurrences=2, limit=10))
-    asyncio.run(store.close())
+        _, first_status = service.approve(first_stage)
+        _, second_status = service.approve(second_stage)
+
+        store = FailureStore(dsn=dsn)
+        failures = asyncio.run(store.get_recent_failures("axon", limit=10))
+        repeated = asyncio.run(store.get_repeated_failures("axon", min_occurrences=2, limit=10))
 
     assert first_status == "reindex_skipped"
     assert second_status == "reindex_skipped"

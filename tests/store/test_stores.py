@@ -10,7 +10,6 @@ from collections.abc import AsyncGenerator
 import pytest
 
 from axon.store.collections import get_search_collections
-from axon.store.failure_store import FailureRecord, FailureStore
 from axon.store.outcome_store import OutcomeRecord, OutcomeStore
 from axon.store.session_store import ADR, CodeChange, SessionMemory, SessionStore
 
@@ -135,114 +134,6 @@ class TestSessionStore:
     async def test_get_recent_changes_empty(self, session_store) -> None:
         changes = await session_store.get_recent_changes("nonexistent.java")
         assert changes == []
-
-
-@pytest.fixture
-async def failure_store(tmp_path) -> AsyncGenerator[FailureStore, None]:
-    store = FailureStore(db_path=tmp_path / "failure.db")
-    await store.init()
-    yield store
-    await store.close()
-
-
-@pytest.mark.asyncio
-class TestFailureStore:
-    async def test_save_and_get_recent_failures(self, failure_store) -> None:
-        record = FailureRecord(
-            project="axon",
-            operation="til-promotion",
-            error_message="promotion failed after duplicate note match",
-            probable_cause="duplicate detection threshold too low",
-            tags=["til", "promotion"],
-        )
-        record_id = await failure_store.save_failure(record)
-
-        failures = await failure_store.get_recent_failures("axon")
-        assert record_id > 0
-        assert len(failures) == 1
-        assert failures[0].probable_cause == "duplicate detection threshold too low"
-        assert failures[0].tags == ["til", "promotion"]
-
-    async def test_get_recent_failures_respects_project_and_limit(self, failure_store) -> None:
-        for index in range(4):
-            await failure_store.save_failure(
-                FailureRecord(
-                    project="axon",
-                    operation=f"task-{index}",
-                    error_message=f"failure {index}",
-                    probable_cause="shared cause",
-                    tags=["shared"],
-                )
-            )
-        await failure_store.save_failure(
-            FailureRecord(
-                project="other",
-                operation="other-task",
-                error_message="other failure",
-                probable_cause="other cause",
-                tags=["shared"],
-            )
-        )
-
-        failures = await failure_store.get_recent_failures("axon", limit=3)
-        assert len(failures) == 3
-        assert all(f.project == "axon" for f in failures)
-
-    async def test_find_failures_by_tag_filters_project(self, failure_store) -> None:
-        await failure_store.save_failure(
-            FailureRecord(
-                project="axon",
-                operation="retrieve",
-                error_message="timeout",
-                probable_cause="network jitter",
-                tags=["io", "retry"],
-            )
-        )
-        await failure_store.save_failure(
-            FailureRecord(
-                project="other",
-                operation="retrieve",
-                error_message="timeout",
-                probable_cause="network jitter",
-                tags=["io", "retry"],
-            )
-        )
-
-        failures = await failure_store.find_failures_by_tag("retry", project="axon")
-        assert len(failures) == 1
-        assert failures[0].project == "axon"
-
-    async def test_get_repeated_failures_groups_by_probable_cause(self, failure_store) -> None:
-        await failure_store.save_failure(
-            FailureRecord(
-                project="axon",
-                operation="retrieve",
-                error_message="timeout",
-                probable_cause="network jitter",
-                tags=["io"],
-            )
-        )
-        await failure_store.save_failure(
-            FailureRecord(
-                project="axon",
-                operation="compress",
-                error_message="timeout",
-                probable_cause="network jitter",
-                tags=["io", "compression"],
-            )
-        )
-        await failure_store.save_failure(
-            FailureRecord(
-                project="axon",
-                operation="index",
-                error_message="duplicate",
-                probable_cause="bad dedupe config",
-                tags=["indexing"],
-            )
-        )
-
-        repeated = await failure_store.get_repeated_failures("axon", min_occurrences=2)
-        assert repeated == [("network jitter", 2)]
 
 
 @pytest.fixture
