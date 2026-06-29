@@ -98,3 +98,33 @@ def test_export_adr_chunks_without_redundant_breadcrumb(tmp_path: Path) -> None:
     assert "dec-001 > dec-001" not in " ".join(symbols)  # no doubled id
     assert "validation_score" not in contents  # facets not embedded
     assert "---" not in contents
+
+
+def test_architecture_doc_groups_by_status(tmp_path: Path) -> None:
+    decisions = [
+        _decision(id="dec-001", status="active", summary="keep postgres"),
+        _decision(id="dec-002", status="superseded", summary="old qdrant path"),
+    ]
+    text = export_architecture_doc(decisions, vault=tmp_path).read_text(encoding="utf-8")
+    assert text.startswith("---\n")  # frontmatter
+    assert "## Active" in text and "## Superseded" in text
+    assert "- [[dec-001]] — keep postgres" in text
+    assert "- [[dec-002]] — old qdrant path" in text
+    # Active group precedes Superseded group
+    assert text.index("## Active") < text.index("## Superseded")
+
+
+def test_architecture_doc_empty_renders_none(tmp_path: Path) -> None:
+    text = export_architecture_doc([], vault=tmp_path).read_text(encoding="utf-8")
+    assert "_None._" in text
+
+
+def test_summary_filters_by_date_and_groups(tmp_path: Path) -> None:
+    old = _decision(id="dec-001", timestamp=datetime(2026, 1, 1, tzinfo=UTC))
+    new = _decision(id="dec-002", status="active", timestamp=datetime(2026, 5, 20, tzinfo=UTC))
+    text = export_project_summary(
+        "axon", date(2026, 5, 1), [old, new], vault=tmp_path
+    ).read_text(encoding="utf-8")
+    assert "[[dec-002]]" in text
+    assert "[[dec-001]]" not in text
+    assert "## Active" in text

@@ -21,6 +21,14 @@ _ARCHITECTURE_DIR = "Architecture"
 _SUMMARIES_DIR = "Summaries"
 _DECISIONS_DIR = "Decisions"
 
+_STATUS_ORDER = ("active", "draft", "superseded", "deprecated")
+_STATUS_HEADING = {
+    "active": "Active",
+    "draft": "Draft",
+    "superseded": "Superseded",
+    "deprecated": "Deprecated",
+}
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
@@ -39,6 +47,22 @@ def _render_note(frontmatter: dict[str, object], body: str) -> str:
     """Render a vault note: YAML frontmatter block + markdown body."""
     front = yaml.safe_dump(frontmatter, sort_keys=True, allow_unicode=True).strip()
     return f"---\n{front}\n---\n\n{body}\n"
+
+
+def _grouped_decisions(decisions: list[Decision]) -> str:
+    """Body of grouped decision links: an H2 per non-empty status, in fixed
+    order, with ``- [[id]] — summary`` entries. Empty input -> ``_None._``."""
+    if not decisions:
+        return "_None._"
+    blocks: list[str] = []
+    for status in _STATUS_ORDER:
+        group = [d for d in decisions if d.status == status]
+        if not group:
+            continue
+        lines = [f"## {_STATUS_HEADING[status]}", ""]
+        lines += [f"- [[{d.id}]] — {d.summary}" for d in group]
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) if blocks else "_None._"
 
 
 def export_adr(decision: Decision, *, vault: Path) -> Path:
@@ -71,24 +95,16 @@ def export_adr(decision: Decision, *, vault: Path) -> Path:
 def export_architecture_doc(
     decisions: list[Decision], *, vault: Path, name: str = "architecture"
 ) -> Path:
-    """Write an architecture overview that wikilinks to each decision's note."""
-    lines = [
-        f"# Architecture — {name}",
-        "",
-        f"_Exported {_now()} · {len(decisions)} decision(s)._",
-        "",
-        "## Decisions",
-        "",
-    ]
-    if decisions:
-        lines += [
-            f"- [[{d.id}]] ({d.status}) — {d.summary}" for d in decisions
-        ]
-    else:
-        lines.append("_None._")
-    lines.append("")
+    """Write an architecture overview grouping decisions by status."""
+    frontmatter: dict[str, object] = {
+        "kind": "architecture",
+        "name": name,
+        "generated": _now(),
+    }
+    body = f"# Architecture — {name}\n\n{_grouped_decisions(decisions)}"
     return _atomic_write(
-        vault / _ROOT / _ARCHITECTURE_DIR / f"{name}.md", "\n".join(lines)
+        vault / _ROOT / _ARCHITECTURE_DIR / f"{name}.md",
+        _render_note(frontmatter, body),
     )
 
 
@@ -97,20 +113,14 @@ def export_project_summary(
 ) -> Path:
     """Write a summary of a repo's decisions made on or after ``since``."""
     recent = [d for d in decisions if d.timestamp.date() >= since]
-    lines = [
-        f"# Summary — {repo}",
-        "",
-        f"_Exported {_now()} · since {since.isoformat()} · "
-        f"{len(recent)} decision(s)._",
-        "",
-        "## Decisions",
-        "",
-    ]
-    if recent:
-        lines += [f"- [[{d.id}]] — {d.summary}" for d in recent]
-    else:
-        lines.append("_None in range._")
-    lines.append("")
+    frontmatter: dict[str, object] = {
+        "kind": "summary",
+        "repo": repo,
+        "since": since.isoformat(),
+        "generated": _now(),
+    }
+    body = f"# Summary — {repo}\n\n{_grouped_decisions(recent)}"
     return _atomic_write(
-        vault / _ROOT / _SUMMARIES_DIR / f"{repo}.md", "\n".join(lines)
+        vault / _ROOT / _SUMMARIES_DIR / f"{repo}.md",
+        _render_note(frontmatter, body),
     )
