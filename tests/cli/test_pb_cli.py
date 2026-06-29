@@ -792,8 +792,9 @@ def test_configure_rejects_invalid_restricted_remote_combination(monkeypatch, tm
     )
 
     assert result.exit_code == 2
-    # typer.BadParameter writes to stderr; click >=8.2 no longer mixes it into stdout.
-    assert "privacy=restricted is incompatible with infra=remote" in result.stderr
+    # CliRunner(mix_stderr=True) merges stderr into output; use result.output until
+    # the runner is created with mix_stderr=False.
+    assert "privacy=restricted is incompatible with infra=remote" in result.output
     assert config_path.read_text(encoding="utf-8") == original_payload
 
 

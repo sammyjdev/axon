@@ -6,8 +6,18 @@ from axon.context import rtk
 
 # These exercise the real rtkx binary end-to-end; skip where it is not installed
 # (CI bootstraps it via `axon rtk-install`).
+# rtk_binary_path() falls back to the regular `rtk` binary which does not support
+# `ccr store/restore`, so check specifically for rtkx.
+def _rtkx_available() -> bool:
+    boot = rtk._bootstrap_binary()
+    if rtk._usable(boot):
+        return True
+    import shutil
+    return shutil.which("rtkx") is not None
+
+
 pytestmark = pytest.mark.skipif(
-    rtk.rtk_binary_path() is None,
+    not _rtkx_available(),
     reason="rtkx binary not installed (run `axon rtk-install`)",
 )
 
