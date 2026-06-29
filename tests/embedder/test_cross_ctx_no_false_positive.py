@@ -7,48 +7,36 @@ Uses mock store + real SqliteFileCache (tmp sqlite) preloaded with a
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import aiosqlite
 import pytest
 
-from axon.store.file_cache import SqliteFileCache
+pytest.importorskip("testcontainers.postgres")
+from testcontainers.postgres import PostgresContainer  # noqa: E402
+
+from axon.store.pg_file_cache import PostgresFileCache  # noqa: E402
 
 
-async def _make_real_cache_with_knowledge(
-    db_path: str, knowledge_path: str
-) -> tuple[SqliteFileCache, object]:
-    conn = await aiosqlite.connect(db_path)
-    await conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS file_index (
-            file_path TEXT NOT NULL,
-            ctx TEXT NOT NULL,
-            sha1 TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'done',
-            chunk_count INTEGER NOT NULL DEFAULT 0,
-            indexed_at TEXT NOT NULL,
-            PRIMARY KEY (file_path, ctx)
-        )
-        """
-    )
-    # Pre-seed a 'knowledge' entry
-    await conn.execute(
-        """
-        INSERT INTO file_index (file_path, ctx, sha1, status, chunk_count, indexed_at)
-        VALUES (?, 'knowledge', 'abc123', 'done', 1, '2026-01-01T00:00:00+00:00')
-        """,
-        (knowledge_path,),
-    )
-    await conn.commit()
-    lock = asyncio.Lock()
-    return SqliteFileCache(conn, lock), conn
+@pytest.fixture(scope="module")
+def pg_dsn():
+    with PostgresContainer(
+        "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+    ) as pg:
+        yield pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
+
+
+async def _make_real_cache_with_knowledge(dsn: str, knowledge_path: str):
+    cache = PostgresFileCache(dsn=dsn)
+    await cache.ensure_schema()
+    await cache.set_entry(knowledge_path, "knowledge", "abc123", 1, status="done")
+    return cache, cache
 
 
 @pytest.mark.asyncio
-async def test_indexing_work_does_not_delete_knowledge_entries(tmp_path: Path) -> None:
+async def test_indexing_work_does_not_delete_knowledge_entries(
+    tmp_path: Path, pg_dsn
+) -> None:
     """Indexing forced_ctx='work' must never call delete_by_file for ctx='knowledge'."""
     from axon.embedder.chunker import Chunk
     from axon.embedder.pipeline import index_path
@@ -62,8 +50,7 @@ async def test_indexing_work_does_not_delete_knowledge_entries(tmp_path: Path) -
     # The knowledge file does NOT exist on disk - it is only in the cache
     knowledge_posix = (tmp_path / "knowledge" / "notes.py").as_posix()
 
-    db_path = str(tmp_path / "test_cache.db")
-    file_cache, conn = await _make_real_cache_with_knowledge(db_path, knowledge_posix)
+    file_cache, closer = await _make_real_cache_with_knowledge(pg_dsn, knowledge_posix)
 
     try:
         chunk_work = Chunk(
@@ -111,4 +98,4 @@ async def test_indexing_work_does_not_delete_knowledge_entries(tmp_path: Path) -
         )
 
     finally:
-        await conn.close()
+        await closer.close()

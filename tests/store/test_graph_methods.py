@@ -14,17 +14,32 @@ from axon.core.edge import Edge
 from axon.store.session_store import SessionStore
 
 
+@pytest.fixture(scope="module")
+def pg_dsn():
+    pytest.importorskip("testcontainers.postgres")
+    from testcontainers.postgres import PostgresContainer
+
+    with PostgresContainer(
+        "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+    ) as pg:
+        yield pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
+
+
 @pytest.fixture
 async def store(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    pg_dsn, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> AsyncGenerator[SessionStore, None]:
-    # Isolated per-test SQLite store; pin both backends so these graph AND
-    # decision tests do not route to the shared postgres after the wave-2/3
-    # cutover flips.
-    monkeypatch.setenv("AXON_GRAPH_BACKEND", "sqlite")
-    monkeypatch.setenv("AXON_DECISIONS_BACKEND", "sqlite")
+    # Isolated per-test Postgres store via a fresh container + TRUNCATE.
+    import asyncpg
+
+    monkeypatch.setenv("AXON_PG_URL", pg_dsn)
     s = SessionStore(db_path=tmp_path / "axon.db")
     await s.init()
+    await s._graph()
+    await s._decisions()
+    con = await asyncpg.connect(pg_dsn)
+    await con.execute("TRUNCATE nodes, edges, decisions, adr")
+    await con.close()
     yield s
     await s.close()
 

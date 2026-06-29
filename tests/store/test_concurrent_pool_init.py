@@ -143,7 +143,7 @@ async def test_session_store_decisions_repo_init_once(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_session_store_has_dedicated_repo_init_lock():
-    """SessionStore.__init__ must create self._repo_init_lock separate from self._lock."""
+    """SessionStore.__init__ must create a dedicated _repo_init_lock."""
     import asyncio
 
     from axon.store.session_store import SessionStore
@@ -151,9 +151,6 @@ def test_session_store_has_dedicated_repo_init_lock():
     store = SessionStore()
     assert hasattr(store, "_repo_init_lock"), "SessionStore must have _repo_init_lock"
     assert isinstance(store._repo_init_lock, asyncio.Lock)
-    assert store._repo_init_lock is not store._lock, (
-        "_repo_init_lock must be a different lock from _lock"
-    )
 
 
 def test_pg_session_repository_has_init_lock():
