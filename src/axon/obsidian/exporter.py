@@ -12,6 +12,8 @@ import os
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import yaml  # type: ignore[import-untyped]
+
 from axon.core.decision import Decision
 
 _ROOT = "AXON"
@@ -33,35 +35,36 @@ def _atomic_write(target: Path, content: str) -> Path:
     return target
 
 
+def _render_note(frontmatter: dict[str, object], body: str) -> str:
+    """Render a vault note: YAML frontmatter block + markdown body."""
+    front = yaml.safe_dump(frontmatter, sort_keys=True, allow_unicode=True).strip()
+    return f"---\n{front}\n---\n\n{body}\n"
+
+
 def export_adr(decision: Decision, *, vault: Path) -> Path:
-    """Write one decision as an ADR note at ``AXON/Decisions/<id>.md``."""
-    files = "\n".join(f"- `{f}`" for f in decision.files) or "_none_"
-    symbols = "\n".join(f"- `{s}`" for s in decision.symbols) or "_none_"
-    linked = " ".join(f"[[{d}]]" for d in decision.linked_decisions) or "_none_"
-    content = "\n".join(
-        [
-            f"# {decision.id} — {decision.summary}",
-            "",
-            f"_Exported {_now()}_",
-            "",
-            f"- **Status:** {decision.status}",
-            f"- **Repo:** {decision.repo}",
-            f"- **Agent:** {decision.agent}",
-            f"- **Timestamp:** {decision.timestamp.isoformat()}",
-            f"- **Validation score:** {decision.validation_score}",
-            f"- **Git hash:** {decision.git_hash or '—'}",
-            f"- **Linked decisions:** {linked}",
-            "",
-            "## Files",
-            "",
-            files,
-            "",
-            "## Symbols",
-            "",
-            symbols,
-            "",
-        ]
-    )
+    """Write one decision as an ADR note at ``AXON/Decisions/<id>.md``.
+
+    Metadata lives in YAML frontmatter (filter facets, not embedded); the body
+    is the summary as an H1 plus optional ``#tags`` and ``[[related]]`` links.
+    """
+    frontmatter: dict[str, object] = {
+        "id": decision.id,
+        "status": decision.status,
+        "repo": decision.repo,
+        "agent": decision.agent,
+        "timestamp": decision.timestamp.isoformat(),
+        "validation_score": decision.validation_score,
+        "git_hash": decision.git_hash or "",
+        "files": [f.as_posix() for f in decision.files],
+        "symbols": list(decision.symbols),
+    }
+    body_lines = [f"# {decision.summary}"]
+    if decision.tags:
+        body_lines += ["", " ".join(f"#{t}" for t in decision.tags)]
+    if decision.linked_decisions:
+        related = " ".join(f"[[{d}]]" for d in decision.linked_decisions)
+        body_lines += ["", f"**Related:** {related}"]
+    content = _render_note(frontmatter, "\n".join(body_lines))
     return _atomic_write(vault / _ROOT / _DECISIONS_DIR / f"{decision.id}.md", content)
 
 
