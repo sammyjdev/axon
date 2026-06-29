@@ -1,48 +1,12 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-import aiosqlite
 from pydantic import BaseModel, Field
 
 from axon.core.decision import Decision
 from axon.core.edge import Edge
-from axon.store.pending import (
-    DrainResult,
-    emit_capture_warning,
-    write_pending,
-)
-from axon.store.sqlite_helpers import (
-    _is_db_locked,
-    _pending_paths,
-    _warnings_log,
-)
-
-if TYPE_CHECKING:
-    from axon.store.file_cache import SqliteFileCache
-
-_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
-
-
-async def _apply_migrations(db: aiosqlite.Connection) -> None:
-    """Apply pending SQL migrations in filename order, tracked in schema_version."""
-    await db.execute(
-        "CREATE TABLE IF NOT EXISTS schema_version ("
-        " version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
-    )
-    await db.commit()
-    cursor = await db.execute("SELECT version FROM schema_version")
-    applied = {row[0] for row in await cursor.fetchall()}
-    for path in sorted(_MIGRATIONS_DIR.glob("*.sql")):
-        if path.stem in applied:
-            continue
-        await db.executescript(path.read_text(encoding="utf-8"))
-        await db.execute(
-            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
-            (path.stem, datetime.now(UTC).isoformat()),
-        )
-        await db.commit()
+from axon.store.pending import DrainResult, _pending_paths
 
 
 class ADR(BaseModel):
@@ -80,48 +44,17 @@ class CodeChange(BaseModel):
 
 class SessionStore:
     def __init__(self, db_path: str | Path = "./data/axon.db") -> None:
+        # db_path is retained for call-site compatibility; the relational
+        # backend is Postgres-only (dec-121 Phase 3) and ignores it.
         self._path = str(db_path)
-        self._conn: aiosqlite.Connection | None = None
-        self._lock = asyncio.Lock()
-        # Dedicated lock for lazy repo init - must NOT reuse self._lock to
-        # avoid deadlock (self._lock serializes SQLite I/O; dec-121 / issue #29).
         self._repo_init_lock = asyncio.Lock()
         self._graph_repo = None
         self._decision_repo = None
         self._session_repo = None
 
-    async def _connection(self) -> aiosqlite.Connection:
-        if self._conn is None:
-            self._conn = await aiosqlite.connect(self._path)
-            # PRAGMAs from dec-112: WAL enables concurrent readers during
-            # writes; busy_timeout lets SQLite internally retry under
-            # contention; synchronous=NORMAL is safe with WAL.
-            await self._conn.execute("PRAGMA journal_mode=WAL")
-            await self._conn.execute("PRAGMA busy_timeout=5000")
-            await self._conn.execute("PRAGMA synchronous=NORMAL")
-            await self._conn.commit()
-        return self._conn
-
     async def init(self) -> None:
-        Path(self._path).parent.mkdir(parents=True, exist_ok=True)
-        async with self._lock:
-            db = await self._connection()
-            await _apply_migrations(db)
-
-    def make_file_cache(self) -> "SqliteFileCache":
-        """Return a SqliteFileCache sharing this store's connection and lock.
-
-        Call after init() so the connection exists and the file_index
-        migration has been applied. The cache shares this store's asyncio.Lock
-        so all SQLite writes stay serialized on a single connection.
-        """
-        from axon.store.file_cache import SqliteFileCache
-
-        if self._conn is None:
-            raise RuntimeError(
-                "SessionStore.init() must be called before make_file_cache()"
-            )
-        return SqliteFileCache(self._conn, self._lock)
+        """No-op: the Postgres repositories ensure their own schema lazily on
+        first access (see _graph/_decisions/_sessions)."""
 
     # ── ADR ──────────────────────────────────────────────────────────────────
 
@@ -129,33 +62,7 @@ class SessionStore:
         return await (await self._decisions()).save_adr_inner(adr)
 
     async def save_adr(self, adr: ADR) -> int:
-        try:
-            return await self._save_adr_inner(adr)
-        except aiosqlite.OperationalError as exc:
-            if not _is_db_locked(exc):
-                raise
-            # Fallback (dec-112): persist to pending, warn, return 0
-            paths = _pending_paths()
-            await write_pending(
-                payload={
-                    "kind": "adr",
-                    "project": adr.project,
-                    "title": adr.title,
-                    "context": adr.context,
-                    "decision": adr.decision,
-                    "rationale": adr.rationale,
-                    "created_at": adr.created_at.isoformat(),
-                },
-                commit_hash=adr.project,
-                paths=paths,
-            )
-            emit_capture_warning(
-                _warnings_log(),
-                kind="adr",
-                commit_hash=adr.project,
-                reason=str(exc),
-            )
-            return 0
+        return await self._save_adr_inner(adr)
 
     async def get_adrs(self, project: str, limit: int = 10) -> list[ADR]:
         repo = await self._decisions()
@@ -188,13 +95,8 @@ class SessionStore:
         return await (await self._sessions()).save_code_change_inner(change)
 
     async def save_code_change(self, change: CodeChange) -> None:
-        # Thin delegation: error handling lives in the repository layer.
-        # - SQLite path: SqliteSessionRepository.save_code_change handles
-        #   db-locked contention with a pending-file fallback (dec-112).
-        # - Postgres path: errors propagate to the caller; PostgresSessionRepository
-        #   does not catch transient PG errors here - the caller (e.g. the commit hook)
-        #   is responsible for retry or logging.  Swallowing them with a dead
-        #   aiosqlite catch would silently lose writes on the PG path.
+        # Thin delegation: transient PG errors propagate to the caller (e.g. the
+        # commit hook), which owns retry/logging. They are not swallowed here.
         repo = await self._sessions()
         await repo.save_code_change(change)
 
@@ -209,18 +111,11 @@ class SessionStore:
             async with self._repo_init_lock:
                 if self._graph_repo is None:
                     from axon.config.runtime import load_runtime_config
+                    from axon.store.pg_graph_repository import PostgresGraphRepository
 
-                    rt = load_runtime_config()
-                    if rt.graph_backend == "postgres":
-                        from axon.store.pg_graph_repository import PostgresGraphRepository
-
-                        repo = PostgresGraphRepository(rt.pg_url)
-                        await repo.ensure_schema()
-                        self._graph_repo = repo
-                    else:
-                        from axon.store.graph_repository import SqliteGraphRepository
-
-                        self._graph_repo = SqliteGraphRepository(self)
+                    repo = PostgresGraphRepository(load_runtime_config().pg_url)
+                    await repo.ensure_schema()
+                    self._graph_repo = repo
         return self._graph_repo
 
     async def _decisions(self):
@@ -228,18 +123,11 @@ class SessionStore:
             async with self._repo_init_lock:
                 if self._decision_repo is None:
                     from axon.config.runtime import load_runtime_config
+                    from axon.store.pg_decision_repository import PostgresDecisionRepository
 
-                    rt = load_runtime_config()
-                    if rt.decisions_backend == "postgres":
-                        from axon.store.pg_decision_repository import PostgresDecisionRepository
-
-                        repo = PostgresDecisionRepository(rt.pg_url)
-                        await repo.ensure_schema()
-                        self._decision_repo = repo
-                    else:
-                        from axon.store.decision_repository import SqliteDecisionRepository
-
-                        self._decision_repo = SqliteDecisionRepository(self)
+                    repo = PostgresDecisionRepository(load_runtime_config().pg_url)
+                    await repo.ensure_schema()
+                    self._decision_repo = repo
         return self._decision_repo
 
     async def _sessions(self):
@@ -247,18 +135,11 @@ class SessionStore:
             async with self._repo_init_lock:
                 if self._session_repo is None:
                     from axon.config.runtime import load_runtime_config
+                    from axon.store.pg_session_repository import PostgresSessionRepository
 
-                    rt = load_runtime_config()
-                    if rt.sessions_backend == "postgres":
-                        from axon.store.pg_session_repository import PostgresSessionRepository
-
-                        repo = PostgresSessionRepository(rt.pg_url)
-                        await repo.ensure_schema()
-                        self._session_repo = repo
-                    else:
-                        from axon.store.session_repository import SqliteSessionRepository
-
-                        self._session_repo = SqliteSessionRepository(self)
+                    repo = PostgresSessionRepository(load_runtime_config().pg_url)
+                    await repo.ensure_schema()
+                    self._session_repo = repo
         return self._session_repo
 
     async def add_node(
@@ -363,10 +244,6 @@ class SessionStore:
             await self._decision_repo.close()
         if self._session_repo is not None and hasattr(self._session_repo, "close"):
             await self._session_repo.close()
-        async with self._lock:
-            if self._conn is not None:
-                await self._conn.close()
-                self._conn = None
 
     async def drain_pending(self) -> DrainResult:
         """Drain ``.axon/pending/`` into the DB (dec-112).
@@ -405,4 +282,4 @@ class SessionStore:
             else:
                 raise ValueError(f"unknown payload kind: {kind!r}")
 
-        return await _drain(paths, sink=sink, is_retryable=_is_db_locked)
+        return await _drain(paths, sink=sink)

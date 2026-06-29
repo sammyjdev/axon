@@ -42,14 +42,30 @@ class TestGetSearchCollections:
 # ── session_store.py ────────────────────────────────────────────────────────────
 
 
+@pytest.fixture(scope="module")
+def pg_dsn():
+    pytest.importorskip("testcontainers.postgres")
+    from testcontainers.postgres import PostgresContainer
+
+    with PostgresContainer(
+        "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+    ) as pg:
+        yield pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
+
+
 @pytest.fixture
-async def session_store(tmp_path, monkeypatch) -> AsyncGenerator[SessionStore, None]:
-    # Isolated per-test SQLite store; pin graph + decisions backends so these
-    # tests do not route to the shared postgres after the wave-2/3 cutover flips.
-    monkeypatch.setenv("AXON_GRAPH_BACKEND", "sqlite")
-    monkeypatch.setenv("AXON_DECISIONS_BACKEND", "sqlite")
+async def session_store(pg_dsn, tmp_path, monkeypatch) -> AsyncGenerator[SessionStore, None]:
+    # Isolated per-test Postgres store via a fresh container + TRUNCATE.
+    import asyncpg
+
+    monkeypatch.setenv("AXON_PG_URL", pg_dsn)
     store = SessionStore(db_path=tmp_path / "test.db")
     await store.init()
+    await store._decisions()
+    await store._sessions()
+    con = await asyncpg.connect(pg_dsn)
+    await con.execute("TRUNCATE decisions, adr, sessions, session_memory, session_note, code_change")
+    await con.close()
     yield store
     await store.close()
 

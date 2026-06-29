@@ -22,15 +22,3 @@ async def test_session_decisions_routes_to_postgres(monkeypatch, tmp_path) -> No
     assert isinstance(repo, FakePgRepo)
     assert constructed["ensured"] is True
     await store.close()
-
-
-async def test_session_decisions_routes_to_sqlite(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("AXON_DECISIONS_BACKEND", "sqlite")  # pinned, survives the flip
-    from axon.store.decision_repository import SqliteDecisionRepository
-    from axon.store.session_store import SessionStore
-
-    store = SessionStore(db_path=tmp_path / "axon.db")
-    await store.init()
-    repo = await store._decisions()
-    assert isinstance(repo, SqliteDecisionRepository)
-    await store.close()

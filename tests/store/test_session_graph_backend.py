@@ -22,15 +22,3 @@ async def test_session_graph_routes_to_postgres(monkeypatch, tmp_path) -> None:
     assert isinstance(repo, FakePgRepo)
     assert constructed["ensured"] is True
     await store.close()
-
-
-async def test_session_graph_routes_to_sqlite(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("AXON_GRAPH_BACKEND", "sqlite")  # pinned, survives the Task 6 flip
-    from axon.store.graph_repository import SqliteGraphRepository
-    from axon.store.session_store import SessionStore
-
-    store = SessionStore(db_path=tmp_path / "axon.db")
-    await store.init()
-    repo = await store._graph()
-    assert isinstance(repo, SqliteGraphRepository)
-    await store.close()

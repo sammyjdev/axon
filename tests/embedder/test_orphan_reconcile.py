@@ -7,38 +7,33 @@ Edit the file so it produces a DIFFERENT set of chunks. Re-index. Assert:
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import aiosqlite
 import pytest
 
-from axon.store.file_cache import SqliteFileCache
+pytest.importorskip("testcontainers.postgres")
+from testcontainers.postgres import PostgresContainer  # noqa: E402
+
+from axon.store.pg_file_cache import PostgresFileCache  # noqa: E402
 
 
-async def _make_real_cache(db_path: str) -> SqliteFileCache:
-    conn = await aiosqlite.connect(db_path)
-    await conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS file_index (
-            file_path TEXT NOT NULL,
-            ctx TEXT NOT NULL,
-            sha1 TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'done',
-            chunk_count INTEGER NOT NULL DEFAULT 0,
-            indexed_at TEXT NOT NULL,
-            PRIMARY KEY (file_path, ctx)
-        )
-        """
-    )
-    await conn.commit()
-    lock = asyncio.Lock()
-    return SqliteFileCache(conn, lock), conn
+@pytest.fixture(scope="module")
+def pg_dsn():
+    with PostgresContainer(
+        "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+    ) as pg:
+        yield pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
+
+
+async def _make_real_cache(dsn: str):
+    cache = PostgresFileCache(dsn=dsn)
+    await cache.ensure_schema()
+    return cache, cache
 
 
 @pytest.mark.asyncio
-async def test_no_point_accumulation_on_reindex(tmp_path: Path) -> None:
+async def test_no_point_accumulation_on_reindex(tmp_path: Path, pg_dsn) -> None:
     """Re-indexing a changed file must NOT accumulate old + new points in Qdrant."""
     from axon.embedder.chunker import Chunk
     from axon.embedder.pipeline import index_path
@@ -46,8 +41,7 @@ async def test_no_point_accumulation_on_reindex(tmp_path: Path) -> None:
     py_file = tmp_path / "module.py"
     py_file.write_text("def alpha(): pass\n", encoding="utf-8")
 
-    db_path = str(tmp_path / "test_cache.db")
-    file_cache, conn = await _make_real_cache(db_path)
+    file_cache, closer = await _make_real_cache(pg_dsn)
 
     try:
         # First content: 1 chunk
@@ -136,4 +130,4 @@ async def test_no_point_accumulation_on_reindex(tmp_path: Path) -> None:
         )
 
     finally:
-        await conn.close()
+        await closer.close()

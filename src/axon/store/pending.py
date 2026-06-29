@@ -47,6 +47,25 @@ class DrainResult:
     errors: list[str] = field(default_factory=list)
 
 
+def _pending_paths() -> PendingPaths:
+    """Resolve the pending/quarantine layout under the AXON data root."""
+    from axon.config.data_root import data_root
+
+    root = data_root()
+    return PendingPaths(
+        pending_dir=root / "pending",
+        quarantine_dir=root / "pending-quarantine",
+        quarantine_log=root / "quarantine.jsonl",
+    )
+
+
+def _warnings_log() -> Path:
+    """Return the path to the capture-warnings log."""
+    from axon.config.data_root import data_root
+
+    return data_root() / "capture-warnings.jsonl"
+
+
 async def write_pending(
     *,
     payload: dict,
