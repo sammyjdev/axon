@@ -1,5 +1,7 @@
 import os
-from datetime import UTC, datetime
+from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 from axon.context.staleness import assess_staleness, detect_stale_replacements
 from axon.embedder.engine import default_embedding_dimension
@@ -8,6 +10,20 @@ from axon.embedder.engine import default_embedding_dimension
 # platform-selected embedder model so collections always match embedding output.
 VECTOR_SIZE = int(os.environ.get("AXON_VECTOR_SIZE", default_embedding_dimension()))
 _STALE_RANKING_PENALTY = 0.2
+
+
+class Chunk(BaseModel):
+    id: str
+    vector: list[float]
+    file_path: str
+    language: str
+    chunk_type: str  # method | class | file
+    symbol: str
+    project: str
+    ctx: str  # personal | career | knowledge | saas | work
+    content: str
+    git_commit: str = ""
+    modified_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 def _rank_and_limit(
@@ -79,7 +95,3 @@ def _staleness_record(result: dict) -> dict[str, object]:
     payload = dict(result.get("payload") or {})
     payload["id"] = str(result.get("id", ""))
     return payload
-
-
-def _utcnow() -> datetime:
-    return datetime.now(UTC)

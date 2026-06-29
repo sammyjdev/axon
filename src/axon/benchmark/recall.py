@@ -249,7 +249,7 @@ async def index_corpus_pg(
 
     The embeddings table is truncated before indexing to ensure a fresh run.
     """
-    from axon.store.vector_store import Chunk
+    from axon.store.vector_common import Chunk
 
     all_chunks = _gather_chunks(src_root, repo_root)
     if not all_chunks:
@@ -361,7 +361,7 @@ async def index_corpus_pg_smoke(dsn: str) -> str:
     the query (cosine similarity 1.0); the 'far' chunk is orthogonal (similarity 0.0).
     """
     from axon.store.pg_vector_store import PgVectorStore
-    from axon.store.vector_store import VECTOR_SIZE, Chunk
+    from axon.store.vector_common import VECTOR_SIZE, Chunk
 
     store = PgVectorStore(dsn=dsn, table=RECALL_TABLE)
     try:

@@ -1337,7 +1337,6 @@ def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
         return 2, 7
 
     fake_store_instance = FakeStore(url="fake://")
-    monkeypatch.setattr("axon.store.vector_store.VectorStore", FakeStore)
     monkeypatch.setattr(
         "axon.store.vector_store_factory.make_vector_store",
         lambda *a, **k: fake_store_instance,
@@ -1393,7 +1392,6 @@ def test_watch_reindexes_changed_files(monkeypatch, tmp_path) -> None:
     watch_target = tmp_path / "knowledge"
     watch_target.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr("axon.store.vector_store.VectorStore", FakeStore)
     monkeypatch.setattr(
         "axon.store.vector_store_factory.make_vector_store",
         lambda *a, **k: FakeStore(url="fake://"),

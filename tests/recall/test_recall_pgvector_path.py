@@ -31,7 +31,7 @@ async def test_run_recall_guard_pg_scores_expected(pg_dsn) -> None:
 
     from axon.benchmark.recall import run_recall_guard_pg
     from axon.store.pg_vector_store import PgVectorStore
-    from axon.store.vector_store import VECTOR_SIZE, Chunk
+    from axon.store.vector_common import VECTOR_SIZE, Chunk
 
     store = PgVectorStore(dsn=pg_dsn)
     try:

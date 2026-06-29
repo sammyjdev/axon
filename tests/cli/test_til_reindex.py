@@ -43,7 +43,6 @@ def test_promote_today_reindexes_each_howto(monkeypatch, tmp_path):
 
     monkeypatch.setattr("axon.vault.til_promoter.run", fake_run)
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", _FakeEmbedder)
-    monkeypatch.setattr("axon.store.vector_store.VectorStore", _FakeVectorStore)
     monkeypatch.setattr(
         "axon.store.vector_store_factory.make_vector_store",
         lambda *a, **k: _FakeVectorStore(),
@@ -86,7 +85,6 @@ def test_promote_today_survives_reindex_failure(monkeypatch, tmp_path):
 
     monkeypatch.setattr("axon.vault.til_promoter.run", fake_run)
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", _FakeEmbedder)
-    monkeypatch.setattr("axon.store.vector_store.VectorStore", _FakeVectorStore)
     monkeypatch.setattr(
         "axon.store.vector_store_factory.make_vector_store",
         lambda *a, **k: _FakeVectorStore(),
