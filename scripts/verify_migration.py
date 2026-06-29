@@ -25,8 +25,6 @@ import argparse
 import os
 from pathlib import Path
 
-from qdrant_client import QdrantClient
-
 QDRANT_URL = "http://localhost:6333"
 PG_DSN = os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5433/axon")
 
@@ -110,6 +108,8 @@ def _known_qdrant_ctxs(client: QdrantClient) -> list[str]:
 
 def main(ctx: str, parity: bool = False) -> None:
     if parity:
+        from qdrant_client import QdrantClient  # noqa: PLC0415
+
         client = QdrantClient(QDRANT_URL)
         ctxs = _known_qdrant_ctxs(client)
         if not ctxs:
@@ -127,6 +127,8 @@ def main(ctx: str, parity: bool = False) -> None:
         return
 
     # Default: single-backend Qdrant orphan check
+    from qdrant_client import QdrantClient  # noqa: PLC0415
+
     client = QdrantClient(QDRANT_URL)
     points = scroll_all(client, ctx)
     print(f"Total points in '{ctx}': {len(points)}")

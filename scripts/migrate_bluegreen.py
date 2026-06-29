@@ -21,9 +21,6 @@ from __future__ import annotations
 
 import argparse
 
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
-
 QDRANT_URL = "http://localhost:6333"
 # Contexts with data to migrate. Phase 0 (benchmarks/phase0_baseline.json)
 # confirmed only 'personal' holds data; widen this list if that changes.
@@ -32,6 +29,9 @@ VECTOR_SIZE = 768  # bge-base-en-v1.5; update if the embedding model changes.
 
 
 def create_new_collections(dry_run: bool = False) -> None:
+    from qdrant_client import QdrantClient  # noqa: PLC0415
+    from qdrant_client.models import Distance, VectorParams  # noqa: PLC0415
+
     client = QdrantClient(QDRANT_URL)
     existing = {c.name for c in client.get_collections().collections}
     print(f"Existing collections: {sorted(existing)}")
