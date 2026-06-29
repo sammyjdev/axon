@@ -1452,24 +1452,3 @@ def test_index_dev_rejects_invalid_manifest(tmp_path) -> None:
 
     assert result.exit_code == 1
     assert "Manifesto inválido:" in result.output
-
-
-def test_memory_smoke_uses_mem0_helpers(monkeypatch) -> None:
-    async def fake_add_memory(content: str, ctx: str = "personal", user_id: str = "sammy") -> str:
-        _ = (content, ctx, user_id)
-        await asyncio.sleep(0)
-        return "mem-1"
-
-    async def fake_get_memory(query: str, ctx: str = "personal", user_id: str = "sammy"):
-        _ = (query, ctx, user_id)
-        await asyncio.sleep(0)
-        return [{"id": "mem-1"}]
-
-    monkeypatch.setattr("axon.memory.mem0_tool.add_memory", fake_add_memory)
-    monkeypatch.setattr("axon.memory.mem0_tool.get_memory", fake_get_memory)
-
-    result = runner.invoke(pb.app, ["memory", "smoke", "--ctx", "knowledge", "--text", "hello"])
-
-    assert result.exit_code == 0
-    assert "Memória gravada: mem-1" in result.stdout
-    assert "Memórias recuperadas: 1" in result.stdout

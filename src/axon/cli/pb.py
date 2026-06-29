@@ -29,7 +29,6 @@ cost_app = typer.Typer(help="Exibe custo de uso de LLMs")
 til_app = typer.Typer(help="TIL e HOW-TO — knowledge automation")
 deep_app = typer.Typer(help="Sugestões de aprofundamento técnico")
 expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
-memory_app = typer.Typer(help="Memória Mem0 (Qdrant)")
 graph_app = typer.Typer(help="Grafo estrutural de código (SQLite)")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
 portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
@@ -44,7 +43,6 @@ app.add_typer(cost_app, name="cost")
 app.add_typer(til_app, name="til")
 app.add_typer(deep_app, name="deep")
 app.add_typer(expand_app, name="expand")
-app.add_typer(memory_app, name="memory")
 app.add_typer(graph_app, name="graph")
 app.add_typer(profile_app, name="profile")
 app.add_typer(portability_app, name="portability")
@@ -2734,36 +2732,6 @@ def portability_import(
     manifest = import_portability_bundle(Path(source), Path(engine_root))
     typer.echo(f"Bundle importado em: {Path(engine_root)}")
     typer.echo(f"Artefatos importados: {len(manifest.artifacts)}")
-
-
-# ---------------------------------------------------------------------------
-# pb memory
-# ---------------------------------------------------------------------------
-
-
-@memory_app.command("smoke")
-def memory_smoke(
-    ctx: Annotated[str, typer.Option("--ctx", help="Contexto da memória")] = "knowledge",
-    text: Annotated[
-        str,
-        typer.Option("--text", help="Texto curto para gravar e recuperar"),
-    ] = "AXON Mem0 (Qdrant) smoke test",
-) -> None:
-    """Valida conexão Mem0 (Qdrant) mantendo a barreira work."""
-
-    async def _smoke() -> None:
-        from axon.memory.mem0_tool import add_memory, get_memory
-
-        memory_id = await add_memory(text, ctx=ctx)
-        results = await get_memory(text, ctx=ctx)
-        typer.echo(f"Memória gravada: {memory_id or '<sem id retornado>'}")
-        typer.echo(f"Memórias recuperadas: {len(results)}")
-
-    try:
-        asyncio.run(_smoke())
-    except PermissionError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(1)
 
 
 @app.command()

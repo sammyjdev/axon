@@ -997,7 +997,7 @@ async def axon_validation_stats(
 async def axon_health() -> str:
     """Report the health of each AXON subsystem.
 
-    Covers SQLite, Redis, Qdrant, mem0, the Obsidian vault and git.
+    Covers SQLite, Redis, Qdrant, the Obsidian vault and git.
 
     Each external probe is time-bounded so an unreachable backend cannot hang
     the whole report — important when AXON is configured against a host that
@@ -1036,13 +1036,6 @@ async def axon_health() -> str:
         lines.append("- qdrant: down (timeout)")
     except Exception as exc:
         lines.append(f"- qdrant: down ({exc})")
-
-    try:
-        import mem0  # noqa: F401
-
-        lines.append("- mem0: installed")
-    except Exception:
-        lines.append("- mem0: not installed")
 
     vault = discover_vault()
     lines.append(f"- vault: {vault}" if vault else "- vault: not found")
