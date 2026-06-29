@@ -34,7 +34,6 @@ profile_app = typer.Typer(help="Perfis de instalação e uso")
 portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
 pending_app = typer.Typer(help="Gerencia o backlog .axon/pending/ (dec-112)")
 hooks_app = typer.Typer(help="Instala hooks AXON (dec-113, opt-in com --apply)")
-migrate_app = typer.Typer(help="One-off data migrations (dec-121).")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -48,7 +47,6 @@ app.add_typer(profile_app, name="profile")
 app.add_typer(portability_app, name="portability")
 app.add_typer(pending_app, name="pending")
 app.add_typer(hooks_app, name="hooks")
-app.add_typer(migrate_app, name="migrate")
 
 _MAX_CHUNK_INPUT_CHARS = 4_000
 _RUNTIME = load_runtime_config()
@@ -2856,41 +2854,6 @@ def setup() -> None:
         vault_root=_RUNTIME.vault_root,
         packs_root=_RUNTIME.engine_root / "domain-packs",
     )
-
-
-# ---------------------------------------------------------------------------
-# pb migrate
-# ---------------------------------------------------------------------------
-
-
-@migrate_app.command("decisions-sqlite-to-pg")
-def migrate_decisions_sqlite_to_pg(
-    dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Print the plan; write nothing.")
-    ] = False,
-    sqlite: Annotated[
-        str | None,
-        typer.Option("--sqlite", help="Legacy SQLite db path (default: runtime db_path).")
-    ] = None,
-) -> None:
-    """Backfill legacy SQLite decisions + ADRs into the active Postgres store."""
-    from axon.store import decision_backfill
-
-    sqlite_path = sqlite or str(_RUNTIME.db_path)
-    pg_dsn = _RUNTIME.pg_url
-    if not pg_dsn:
-        typer.echo("AXON_PG_URL / runtime pg_url is not set; nothing to migrate into.", err=True)
-        raise typer.Exit(1)
-
-    report = asyncio.run(decision_backfill.run_backfill(sqlite_path, pg_dsn, dry_run=dry_run))
-
-    prefix = "[dry-run] " if report.dry_run else ""
-    typer.echo(f"{prefix}decisions to copy: {report.copied_decisions}")
-    typer.echo(f"{prefix}ADRs to copy: {report.copied_adrs}")
-    for old_id, new_id in report.renumbered:
-        typer.echo(f"{prefix}renumber {old_id} -> {new_id}")
-    for dup in report.skipped_dup:
-        typer.echo(f"{prefix}skip duplicate {dup}")
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # dec-121 — Unify persistence on PostgreSQL (pgvector + JSONB); keep GLYPH as the graph retrieval layer
 
-- Status: proposed
+- Status: accepted (2026-06-29 — all three slices landed: vector, Redis, SQLite)
 - Date: 2026-06-20
 - Supersedes: dec-101 (storage stack: SQLite + Redis + Qdrant + mem0)
 - Relates to: dec-116 / dec-117 (GLYPH owns graph retrieval), dec-119
@@ -206,3 +206,18 @@ config + the generated `REDIS_URL` are removed; the rate limiter / circuit break
 now in-memory only (AXON runs as a single MCP server, so cross-process coordination was
 unused). `tests/test_no_redis.py` guards against regressions, mirroring the qdrant guard.
 Graph retrieval stays GLYPH/NetworkX (dec-116/117 unaffected).
+
+**SQLite slice — ACCEPTED (2026-06-29).** Phase 3 landed (commits `d7c9bba` onward):
+the six callsites that bypassed the repository abstraction now route through it
+(`latest_decision_ts`/`validation_stats`/`all_projects` on the decision repo, and the
+`make_file_cache` factory); `FailureStore`/`OutcomeStore` are Postgres-backed (per-call
+connect, since the expansion service drives them through independent `asyncio.run`
+calls); the SQLite repositories (`Sqlite{Session,Decision,Graph}Repository`,
+`SqliteFileCache`, `sqlite_helpers`, the SQL migrations) plus `SessionStore`'s aiosqlite
+connection/lock/migration-runner are deleted — `SessionStore` is now a thin facade over
+the Postgres repositories. The SQLite-lock pending fallback (dec-112) is removed (no
+db-locked failure mode under PG); the pending **drain** path stays for any leftover
+files. The one-shot `decision_backfill` tool + `pb migrate` command are dropped (the
+backfill already ran: 110 decisions + ADRs verified in PG). `aiosqlite` is removed from
+`pyproject`; `tests/test_no_sqlite.py` guards against regressions. Postgres is now the
+single relational + vector backend; Qdrant, Redis, and SQLite are all retired.

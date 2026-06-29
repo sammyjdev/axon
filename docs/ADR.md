@@ -87,6 +87,9 @@ project.
   Ollama, with CPU/GPU profiles. (Neo4j was evaluated and dropped per dec-101.)
 - Rationale: provide a reproducible local environment across laptops and
   desktops.
+- **Superseded by dec-121 (accepted 2026-06-29):** persistence is consolidated on
+  a single PostgreSQL instance. Qdrant, Redis, and SQLite are all retired (dec-101
+  is now fully superseded); only Postgres (+ optional Ollama) remains.
 
 ## ADR-009: Knowledge split
 
