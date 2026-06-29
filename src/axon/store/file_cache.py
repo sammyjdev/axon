@@ -35,7 +35,7 @@ class FileCache(Protocol):
         status: str = "done",
     ) -> None:
         """Insert or update a file_index row. Use status='pending' before
-        Qdrant mutation; status='done' only after _flush_batch() succeeds.
+        vector-store mutation; status='done' only after _flush_batch() succeeds.
         """
         ...
 

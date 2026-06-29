@@ -193,10 +193,9 @@ async def run_recall_guard_pg(
         t0 = time.perf_counter()
         query_vec = engine.embed_one(query_text)
         # Disable the token-budget / max_nodes truncation so the harness compares
-        # raw cosine top_k, matching the Qdrant harness path (which queries the
-        # client directly, bypassing _rank_and_limit). Without this the pgvector
-        # path could drop in-top_k hits purely on the 1200-token budget and report
-        # a false regression vs the Qdrant baseline.
+        # raw cosine top_k without the _rank_and_limit filter. Without this the
+        # pgvector path could drop in-top_k hits purely on the 1200-token budget
+        # and report a false regression vs the historical baseline.
         hits = await store.search(
             list(query_vec),
             collections=[ctx],

@@ -1,5 +1,5 @@
 """
-Barreira de acesso às collections Qdrant por contexto.
+Barreira de acesso às collections de vetor por contexto.
 work só é acessível com ctx='work' explícito — protege IP da Avangrid.
 """
 

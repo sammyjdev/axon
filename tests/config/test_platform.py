@@ -33,7 +33,7 @@ def test_to_dotenv_uses_remote_infra_when_host_is_defined(monkeypatch) -> None:
     payload = _to_dotenv(config)
 
     assert "AXON_INFRA_HOST=desktop.local" in payload
-    assert "QDRANT_URL=http://desktop.local:6333" in payload
+    assert "QDRANT_URL=http://" not in payload
     assert "REDIS_URL=redis://desktop.local:6379" in payload
     # dec-101: Neo4j was dropped; no NEO4J_URI is emitted to .env any more.
     assert "NEO4J_URI" not in payload
