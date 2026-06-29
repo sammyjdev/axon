@@ -48,7 +48,6 @@ CONTEXT_BUDGETS: dict[str, int] = {
 _RUNTIME = load_runtime_config()
 _POLICY = PolicyRegistry(_RUNTIME)
 _DB_PATH = _RUNTIME.db_path
-_QDRANT_URL = _RUNTIME.qdrant_url
 _REDIS_URL = _RUNTIME.redis_url
 _RTK_MAX_TOKENS = _RUNTIME.rtk_max_tokens
 _COMPRESSION_TELEMETRY = CompressionTelemetryStore(_RUNTIME)
