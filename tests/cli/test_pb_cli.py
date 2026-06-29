@@ -1319,11 +1319,11 @@ def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
     class FakeEngine:
         pass
 
-    class FakeGraphStore:
-        def __init__(self, url: str) -> None:
-            self.url = url
+    class FakePostgresSymbolDeps:
+        def __init__(self, dsn: str) -> None:
+            self.dsn = dsn
 
-        async def connect(self) -> None:
+        async def ensure_schema(self) -> None:
             await asyncio.sleep(0)
             calls["graph"] = True
 
@@ -1340,7 +1340,7 @@ def test_index_reports_processed_counts(monkeypatch, tmp_path) -> None:
         "axon.store.vector_store_factory.make_vector_store",
         lambda *a, **k: fake_store_instance,
     )
-    monkeypatch.setattr("axon.store.graph_store.GraphStore", FakeGraphStore)
+    monkeypatch.setattr("axon.store.pg_symbol_deps.PostgresSymbolDeps", FakePostgresSymbolDeps)
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", FakeEngine)
     monkeypatch.setattr("axon.embedder.pipeline.index_path", fake_index_path)
 
