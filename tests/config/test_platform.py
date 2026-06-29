@@ -34,7 +34,8 @@ def test_to_dotenv_uses_remote_infra_when_host_is_defined(monkeypatch) -> None:
 
     assert "AXON_INFRA_HOST=desktop.local" in payload
     assert "QDRANT_URL=http://" not in payload
-    assert "REDIS_URL=redis://desktop.local:6379" in payload
+    # dec-121 Phase 2: Redis is retired; no REDIS_URL is emitted to .env any more.
+    assert "REDIS_URL" not in payload
     # dec-101: Neo4j was dropped; no NEO4J_URI is emitted to .env any more.
     assert "NEO4J_URI" not in payload
     assert "LANGFUSE_HOST=http://desktop.local:3000" in payload
@@ -312,7 +313,6 @@ def _runtime(
         vault_root=vault_root,
         db_path=engine_root / "data" / "axon.db",
         pg_url="postgresql://axon:axon@localhost:5433/axon",
-        redis_url="redis://localhost:6379",
         rtk_max_tokens=450,
         caveman_num_ctx=4096,
         ollama_remote_host=ollama_remote_host,

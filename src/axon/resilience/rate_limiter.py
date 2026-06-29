@@ -5,11 +5,6 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 
-try:
-    import redis
-except Exception:  # pragma: no cover
-    redis = None
-
 
 @dataclass(frozen=True)
 class RateLimitSpec:
@@ -42,21 +37,15 @@ def spec_from_env(provider: str) -> RateLimitSpec:
 
 
 class RateLimiter:
-    """Fixed-window por minuto e por dia via Redis INCR+TTL (memoria como fallback).
+    """Fixed-window por minuto e por dia, in-memory.
 
     Simples, suficiente pra gates de free tier. Aceita burst-at-boundary;
     margem nos defaults compensa (ex: GROQ default 25 abaixo dos 30 reais).
     """
 
-    def __init__(self, redis_url: str | None = None) -> None:
+    def __init__(self) -> None:
         self._memory: dict[str, int] = defaultdict(int)
         self._memory_expiry: dict[str, float] = {}
-        self._redis = None
-        if redis is not None and redis_url:
-            try:
-                self._redis = redis.Redis.from_url(redis_url, decode_responses=True)
-            except Exception:
-                self._redis = None
 
     def allow_call(self, provider: str, spec: RateLimitSpec) -> bool:
         if not spec.enforced:
@@ -94,12 +83,6 @@ class RateLimiter:
         return f"rl:{provider}:d:{bucket}"
 
     def _get(self, key: str, now: float) -> int:
-        if self._redis is not None:
-            try:
-                value = self._redis.get(key)
-                return int(value) if value else 0
-            except Exception:
-                pass
         expiry = self._memory_expiry.get(key)
         if expiry is not None and now > expiry:
             self._memory.pop(key, None)
@@ -108,14 +91,5 @@ class RateLimiter:
         return self._memory.get(key, 0)
 
     def _incr(self, key: str, ttl: int, now: float) -> None:
-        if self._redis is not None:
-            try:
-                pipe = self._redis.pipeline()
-                pipe.incr(key, 1)
-                pipe.expire(key, ttl)
-                pipe.execute()
-                return
-            except Exception:
-                pass
         self._memory[key] += 1
         self._memory_expiry[key] = now + ttl

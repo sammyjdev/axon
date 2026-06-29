@@ -40,7 +40,7 @@ def test_spec_from_env_ignores_invalid_values(monkeypatch) -> None:
 
 
 def test_allow_call_passes_when_no_caps() -> None:
-    limiter = RateLimiter(redis_url=None)
+    limiter = RateLimiter()
     spec = RateLimitSpec(per_minute=None, per_day=None)
 
     for _ in range(100):
@@ -48,7 +48,7 @@ def test_allow_call_passes_when_no_caps() -> None:
 
 
 def test_allow_call_blocks_after_minute_cap() -> None:
-    limiter = RateLimiter(redis_url=None)
+    limiter = RateLimiter()
     spec = RateLimitSpec(per_minute=3, per_day=None)
 
     assert limiter.allow_call("groq", spec) is True
@@ -58,7 +58,7 @@ def test_allow_call_blocks_after_minute_cap() -> None:
 
 
 def test_allow_call_blocks_after_daily_cap() -> None:
-    limiter = RateLimiter(redis_url=None)
+    limiter = RateLimiter()
     spec = RateLimitSpec(per_minute=None, per_day=2)
 
     assert limiter.allow_call("nvidia_nim", spec) is True
@@ -67,7 +67,7 @@ def test_allow_call_blocks_after_daily_cap() -> None:
 
 
 def test_usage_reports_current_counts() -> None:
-    limiter = RateLimiter(redis_url=None)
+    limiter = RateLimiter()
     spec = RateLimitSpec(per_minute=10, per_day=10)
 
     limiter.allow_call("groq", spec)
@@ -79,7 +79,7 @@ def test_usage_reports_current_counts() -> None:
 
 
 def test_providers_are_isolated() -> None:
-    limiter = RateLimiter(redis_url=None)
+    limiter = RateLimiter()
     spec = RateLimitSpec(per_minute=1, per_day=None)
 
     assert limiter.allow_call("groq", spec) is True
@@ -89,7 +89,7 @@ def test_providers_are_isolated() -> None:
 
 
 def test_minute_bucket_resets_after_window(monkeypatch) -> None:
-    limiter = RateLimiter(redis_url=None)
+    limiter = RateLimiter()
     spec = RateLimitSpec(per_minute=2, per_day=None)
 
     base = time.time()
