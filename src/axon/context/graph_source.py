@@ -26,6 +26,8 @@ code analogue, so they collapse to ``REFERENCES``; unknown types do too.
 
 from __future__ import annotations
 
+import os
+import time
 from collections.abc import Sequence
 
 from glyph.integration import GraphContextSource as GlyphGraphContextSource
@@ -37,6 +39,28 @@ from glyph.store.networkx_store import NetworkXStore
 
 from axon.context.contracts import ContextPack, RetrievalStrategy
 from axon.store.session_store import SessionStore
+
+# Module-level in-memory cache shared across GraphContextSource instances.
+# Key: db_path; value: (mtime_snapshot, NetworkXStore, node_list).
+# Avoids full SQLite table scans on every MCP get_graph_context call.
+_GRAPH_CACHE: dict[str, tuple[float, "NetworkXStore", list["GlyphNode"]]] = {}
+_cache_stats: dict[str, float] = {"hits": 0.0, "misses": 0.0, "last_build_ms": 0.0}
+
+
+def _db_mtime(db_path: str) -> float:
+    """Latest mtime across the SQLite db and its WAL file (WAL mode is active)."""
+    mtime = 0.0
+    for suffix in ("", "-wal"):
+        try:
+            mtime = max(mtime, os.path.getmtime(db_path + suffix))
+        except OSError:
+            pass
+    return mtime
+
+
+def get_cache_stats() -> dict[str, float]:
+    """Return a snapshot of cache hit/miss counters and last build latency (ms)."""
+    return dict(_cache_stats)
 
 _NODE_TYPE_MAP: dict[str, GlyphNodeType] = {
     "symbol": GlyphNodeType.FUNCTION,
@@ -135,7 +159,21 @@ class GraphContextSource:
         self._anchors = anchors
 
     async def _build_glyph_graph(self) -> tuple[NetworkXStore, list[GlyphNode]]:
-        """Read the consolidated SQLite graph and materialize a GLYPH graph."""
+        """Read the consolidated SQLite graph and materialize a GLYPH graph.
+
+        Results are cached by (db_path, mtime). A write to the db (including WAL
+        flushes) invalidates the entry so the next call rebuilds from scratch.
+        """
+        db_path = self._store._path
+        mtime = _db_mtime(db_path)
+        cached = _GRAPH_CACHE.get(db_path)
+        if cached is not None and cached[0] == mtime:
+            _cache_stats["hits"] += 1
+            return cached[1], cached[2]
+
+        _cache_stats["misses"] += 1
+        t0 = time.monotonic()
+
         node_rows = await self._store.all_nodes()
         edges = await self._store.all_edges()
 
@@ -168,6 +206,9 @@ class GraphContextSource:
         nodes = list(nodes_by_id.values())
         store.upsert_nodes(nodes)
         store.upsert_edges(glyph_edges)
+
+        _cache_stats["last_build_ms"] = (time.monotonic() - t0) * 1000
+        _GRAPH_CACHE[db_path] = (mtime, store, nodes)
         return store, nodes
 
     async def context(self, query: str, token_budget: int = 1000) -> ContextPack:

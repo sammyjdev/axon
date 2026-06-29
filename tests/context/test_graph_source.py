@@ -11,6 +11,7 @@ from axon.context.contracts import ContextPack
 from axon.context.graph_source import (
     GlyphEmbedderAdapter,
     GraphContextSource,
+    get_cache_stats,
     map_edge_type,
     map_node_type,
 )
@@ -113,3 +114,44 @@ async def test_context_empty_graph_returns_empty_pack(store: SessionStore) -> No
     assert isinstance(pack, ContextPack)
     assert pack.mode == "graph"
     assert pack.segments == ()
+
+
+async def test_cache_hit_on_second_call(store: SessionStore) -> None:
+    await store.add_node("X", "symbol", label="X")
+    source = GraphContextSource(store, FakeEmbedder())
+
+    before = get_cache_stats()
+    await source.context("X")
+    after_first = get_cache_stats()
+    await source.context("X")
+    after_second = get_cache_stats()
+
+    assert after_first["misses"] == before["misses"] + 1, "first call must be a miss"
+    assert after_second["hits"] == after_first["hits"] + 1, "second call must be a hit"
+
+
+async def test_cache_invalidates_after_write(store: SessionStore) -> None:
+    await store.add_node("A", "symbol", label="A")
+    source = GraphContextSource(store, FakeEmbedder())
+
+    before = get_cache_stats()
+    await source.context("A")
+    after_first = get_cache_stats()
+    assert after_first["misses"] == before["misses"] + 1
+
+    # Write to the store — should invalidate the mtime-based cache
+    import asyncio
+    await asyncio.sleep(0.01)  # ensure OS mtime advances (1-centisecond resolution)
+    await store.add_node("B", "symbol", label="B")
+
+    await source.context("A")
+    after_second = get_cache_stats()
+    assert after_second["misses"] == after_first["misses"] + 1, "write must trigger a cache miss"
+
+
+def test_get_cache_stats_returns_dict() -> None:
+    stats = get_cache_stats()
+    assert isinstance(stats, dict)
+    assert "hits" in stats
+    assert "misses" in stats
+    assert "last_build_ms" in stats

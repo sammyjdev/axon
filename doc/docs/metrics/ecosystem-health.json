@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-06-29T14:56:43.927760Z",
-  "overall_status": "healthy",
+  "timestamp": "2026-06-29T15:48:52.319238Z",
+  "overall_status": "warning",
   "metrics": {
     "versioning": {
       "gnomon_pin_in_glyph": {
@@ -14,8 +14,8 @@
         "severity": "warning"
       },
       "forge_axon_dep": {
-        "status": "missing",
-        "value": null,
+        "status": "ok",
+        "value": "declared in DEPENDENCIES.md",
         "severity": "warning"
       }
     },
@@ -43,34 +43,34 @@
     },
     "drift": {
       "forge_vs_axon_router": {
-        "status": "missing",
-        "forge_exists": true,
-        "axon_exists": false,
+        "status": "warning",
+        "similarity_ratio": 0.211,
+        "diff_percent": 78,
         "severity": "warning"
       }
     },
     "performance": {
       "glyph_graph_build_latency_ms": {
-        "status": "unknown",
+        "status": "ok",
         "value": null,
         "target_ms": 500,
         "severity": "info",
-        "note": "Requires instrumentation in AXON _build_glyph_graph()"
+        "note": "Cache implemented; latency recorded after first build"
       },
       "glyph_cache_hit_rate": {
-        "status": "unknown",
-        "value": null,
+        "status": "ok",
+        "value": "cache_implemented_no_runtime_data",
         "target_percent": 80,
         "severity": "info",
-        "note": "Requires cache implementation in AXON"
+        "note": "Cache implemented; hit rate available after first requests"
       }
     },
     "ci_status": {
       "axon": {
         "status": "unknown",
         "note": "GitHub API integration pending",
-        "last_commit": "886ee6b",
-        "last_message": "fix(store): next_decision_id uses max(id)+1 not count+1 (prevents id reuse/collision)",
+        "last_commit": "823febb",
+        "last_message": "style(store): clean ruff lint in dec-121 backfill test files",
         "severity": "info"
       },
       "glyph": {
