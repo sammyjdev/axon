@@ -219,28 +219,37 @@ def test_run_approve_reject_persist_outcomes(monkeypatch, tmp_path: Path) -> Non
         encoding="utf-8",
     )
 
-    service = ExpansionService(load_runtime_config())
-    monkeypatch.setattr(
-        "axon.expansion.service.score_candidates",
-        lambda candidates, topic: _scored_candidates(candidates),
-    )
+    pytest.importorskip("testcontainers.postgres")
+    from testcontainers.postgres import PostgresContainer
 
-    async def fake_reindex_publish_path(publish_path: Path, ctx: str) -> None:
-        _ = (publish_path, ctx)
+    with PostgresContainer(
+        "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+    ) as pg:
+        dsn = pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
+        monkeypatch.setenv("AXON_PG_URL", dsn)
 
-    monkeypatch.setattr(service, "_reindex_publish_path", fake_reindex_publish_path)
+        service = ExpansionService(load_runtime_config())
+        monkeypatch.setattr(
+            "axon.expansion.service.score_candidates",
+            lambda candidates, topic: _scored_candidates(candidates),
+        )
 
-    staged_path = service.run(ctx="knowledge", topic="vector search", fast=True, allow_cloud=False)
-    publish_path, reindex_status = service.approve(staged_path)
-    rejected_stage = service.run(
-        ctx="knowledge", topic="ranking notes", fast=True, allow_cloud=False
-    )
-    rejected_path = service.reject(rejected_stage)
+        async def fake_reindex_publish_path(publish_path: Path, ctx: str) -> None:
+            _ = (publish_path, ctx)
 
-    store = OutcomeStore(engine_root / "data" / "outcomes.db")
-    asyncio.run(store.init())
-    outcomes = asyncio.run(store.get_outcomes_for_context("axon", "knowledge", limit=10))
-    asyncio.run(store.close())
+        monkeypatch.setattr(service, "_reindex_publish_path", fake_reindex_publish_path)
+
+        staged_path = service.run(
+            ctx="knowledge", topic="vector search", fast=True, allow_cloud=False
+        )
+        publish_path, reindex_status = service.approve(staged_path)
+        rejected_stage = service.run(
+            ctx="knowledge", topic="ranking notes", fast=True, allow_cloud=False
+        )
+        rejected_path = service.reject(rejected_stage)
+
+        store = OutcomeStore(dsn=dsn)
+        outcomes = asyncio.run(store.get_outcomes_for_context("axon", "knowledge", limit=10))
 
     assert publish_path.exists()
     assert reindex_status in {"reindex_ok", "reindex_skipped"}

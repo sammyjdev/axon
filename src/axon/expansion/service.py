@@ -67,7 +67,7 @@ class ExpansionService:
             transport=collector_transport,
         )
         self.failure_store = failure_store or FailureStore(dsn=self.runtime.pg_url)
-        self.outcome_store = outcome_store or OutcomeStore(self.runtime.data_root / "outcomes.db")
+        self.outcome_store = outcome_store or OutcomeStore(dsn=self.runtime.pg_url)
         self._stores_ready = False
 
     def run(self, *, ctx: str, topic: str, fast: bool, allow_cloud: bool) -> Path:

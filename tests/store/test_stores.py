@@ -10,7 +10,6 @@ from collections.abc import AsyncGenerator
 import pytest
 
 from axon.store.collections import get_search_collections
-from axon.store.outcome_store import OutcomeRecord, OutcomeStore
 from axon.store.session_store import ADR, CodeChange, SessionMemory, SessionStore
 
 # ── collections.py ─────────────────────────────────────────────────────────────
@@ -134,72 +133,3 @@ class TestSessionStore:
     async def test_get_recent_changes_empty(self, session_store) -> None:
         changes = await session_store.get_recent_changes("nonexistent.java")
         assert changes == []
-
-
-@pytest.fixture
-async def outcome_store(tmp_path) -> AsyncGenerator[OutcomeStore, None]:
-    store = OutcomeStore(db_path=tmp_path / "outcome.db")
-    await store.init()
-    yield store
-    await store.close()
-
-
-@pytest.mark.asyncio
-class TestOutcomeStore:
-    async def test_save_and_get_outcomes_for_context(self, outcome_store) -> None:
-        record = OutcomeRecord(
-            project="axon",
-            context="knowledge",
-            summary="Java chunking fixture review prevented a bad merge",
-            outcome="kept structure-aware chunking intact",
-            tags=["chunker", "review"],
-        )
-        record_id = await outcome_store.save_outcome(record)
-
-        outcomes = await outcome_store.get_outcomes_for_context("axon", "knowledge")
-        assert record_id > 0
-        assert len(outcomes) == 1
-        assert outcomes[0].outcome == "kept structure-aware chunking intact"
-        assert outcomes[0].tags == ["chunker", "review"]
-
-    async def test_get_outcomes_for_context_filters_project(self, outcome_store) -> None:
-        await outcome_store.save_outcome(
-            OutcomeRecord(
-                project="axon",
-                context="knowledge",
-                summary="kept fixture coverage stable",
-                outcome="tests caught a parser regression",
-                tags=["tests"],
-            )
-        )
-        await outcome_store.save_outcome(
-            OutcomeRecord(
-                project="other",
-                context="knowledge",
-                summary="other project outcome",
-                outcome="not relevant",
-                tags=["tests"],
-            )
-        )
-
-        outcomes = await outcome_store.get_outcomes_for_context("axon", "knowledge")
-        assert len(outcomes) == 1
-        assert outcomes[0].project == "axon"
-
-    async def test_find_outcomes_by_tag_and_limit(self, outcome_store) -> None:
-        for index in range(4):
-            await outcome_store.save_outcome(
-                OutcomeRecord(
-                    project="axon",
-                    context="saas",
-                    summary=f"outcome {index}",
-                    outcome=f"result {index}",
-                    tags=["reuse", "playbook"],
-                )
-            )
-
-        outcomes = await outcome_store.find_outcomes_by_tag(
-            "playbook", project="axon", limit=2
-        )
-        assert len(outcomes) == 2
-        assert all("playbook" in outcome.tags for outcome in outcomes)

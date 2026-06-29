@@ -1,21 +1,26 @@
-import asyncio
+"""Postgres-backed OutcomeStore (dec-121 Phase 3 — retires data/outcomes.db).
+
+Records expansion outcomes for context-aware recall. Same method surface as the
+former aiosqlite store; only the backend changed. Like FailureStore it opens a
+fresh connection per call because the expansion service drives it through
+independent ``asyncio.run`` calls (an asyncpg pool is loop-bound).
+"""
 import json
 from datetime import UTC, datetime
-from pathlib import Path
 
-import aiosqlite
+import asyncpg
 from pydantic import BaseModel, Field
 
-DDL = """
+_DDL = """
 CREATE TABLE IF NOT EXISTS outcome_record (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    project     TEXT    NOT NULL,
-    context     TEXT    NOT NULL,
-    summary     TEXT    NOT NULL,
-    outcome     TEXT    NOT NULL,
-    tags_json   TEXT    NOT NULL,
-    created_at  TEXT    NOT NULL
-);
+    id          bigserial PRIMARY KEY,
+    project     text NOT NULL,
+    context     text NOT NULL,
+    summary     text NOT NULL,
+    outcome     text NOT NULL,
+    tags_json   text NOT NULL,
+    created_at  text NOT NULL
+)
 """
 
 
@@ -30,97 +35,70 @@ class OutcomeRecord(BaseModel):
 
 
 class OutcomeStore:
-    def __init__(self, db_path: str | Path = "./data/outcomes.db") -> None:
-        self._path = str(db_path)
-        self._conn: aiosqlite.Connection | None = None
-        self._lock = asyncio.Lock()
-
-    async def _connection(self) -> aiosqlite.Connection:
-        if self._conn is None:
-            self._conn = await aiosqlite.connect(self._path)
-        return self._conn
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
 
     async def init(self) -> None:
-        Path(self._path).parent.mkdir(parents=True, exist_ok=True)
-        async with self._lock:
-            db = await self._connection()
-            await db.executescript(DDL)
-            await db.commit()
+        con = await asyncpg.connect(self._dsn)
+        try:
+            await con.execute(_DDL)
+        finally:
+            await con.close()
 
     async def save_outcome(self, outcome: OutcomeRecord) -> int:
-        async with self._lock:
-            db = await self._connection()
-            cursor = await db.execute(
+        con = await asyncpg.connect(self._dsn)
+        try:
+            return await con.fetchval(
                 "INSERT INTO outcome_record"
                 " (project, context, summary, outcome, tags_json, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    outcome.project,
-                    outcome.context,
-                    outcome.summary,
-                    outcome.outcome,
-                    json.dumps(outcome.tags),
-                    outcome.created_at.isoformat(),
-                ),
+                " VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+                outcome.project, outcome.context, outcome.summary, outcome.outcome,
+                json.dumps(outcome.tags), outcome.created_at.isoformat(),
             )
-            await db.commit()
-            return cursor.lastrowid  # type: ignore[return-value]
+        finally:
+            await con.close()
 
     async def get_outcomes_for_context(
-        self,
-        project: str,
-        context: str,
-        limit: int = 10,
+        self, project: str, context: str, limit: int = 10
     ) -> list[OutcomeRecord]:
-        rows = await self._fetch_outcomes(
-            "SELECT * FROM outcome_record WHERE project = ? AND context = ?"
-            " ORDER BY created_at DESC LIMIT ?",
-            (project, context, limit),
+        rows = await self._fetch(
+            "SELECT * FROM outcome_record WHERE project = $1 AND context = $2"
+            " ORDER BY created_at DESC LIMIT $3",
+            project, context, limit,
         )
         return [self._row_to_outcome(row) for row in rows]
 
     async def find_outcomes_by_tag(
-        self,
-        tag: str,
-        *,
-        project: str | None = None,
-        context: str | None = None,
-        limit: int = 10,
+        self, tag: str, *, project: str | None = None,
+        context: str | None = None, limit: int = 10,
     ) -> list[OutcomeRecord]:
         conditions: list[str] = []
-        params: list[str | int] = []
-
+        params: list[object] = []
         if project is not None:
-            conditions.append("project = ?")
             params.append(project)
+            conditions.append(f"project = ${len(params)}")
         if context is not None:
-            conditions.append("context = ?")
             params.append(context)
-
-        conditions.append("tags_json LIKE ?")
+            conditions.append(f"context = ${len(params)}")
         params.append(self._tag_pattern(tag))
+        conditions.append(f"tags_json LIKE ${len(params)}")
         params.append(limit)
-
         where_clause = " AND ".join(conditions)
-        rows = await self._fetch_outcomes(
+        rows = await self._fetch(
             f"SELECT * FROM outcome_record WHERE {where_clause}"
-            " ORDER BY created_at DESC LIMIT ?",
-            tuple(params),
+            f" ORDER BY created_at DESC LIMIT ${len(params)}",
+            *params,
         )
         return [self._row_to_outcome(row) for row in rows]
 
-    async def _fetch_outcomes(
-        self,
-        query: str,
-        params: tuple[str | int, ...],
-    ) -> list[aiosqlite.Row]:
-        async with self._lock:
-            db = await self._connection()
-            db.row_factory = aiosqlite.Row
-            rows = await db.execute_fetchall(query, params)
-        return rows
+    async def _fetch(self, query: str, *params: object) -> list[asyncpg.Record]:
+        con = await asyncpg.connect(self._dsn)
+        try:
+            return await con.fetch(query, *params)
+        finally:
+            await con.close()
 
-    def _row_to_outcome(self, row: aiosqlite.Row) -> OutcomeRecord:
+    def _row_to_outcome(self, row: asyncpg.Record) -> OutcomeRecord:
         return OutcomeRecord(
             id=row["id"],
             project=row["project"],
@@ -135,7 +113,4 @@ class OutcomeStore:
         return f'%"{tag}"%'
 
     async def close(self) -> None:
-        async with self._lock:
-            if self._conn is not None:
-                await self._conn.close()
-                self._conn = None
+        """No-op: connections are opened and closed per call."""
