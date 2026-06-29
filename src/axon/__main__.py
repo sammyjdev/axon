@@ -335,17 +335,8 @@ def doctor(
         store = SessionStore(_get_db_path())
         await store.init()
         try:
-            import aiosqlite
-
-            async with store._lock:  # noqa: SLF001
-                db = await store._connection()  # noqa: SLF001
-                db.row_factory = aiosqlite.Row
-                rows = await db.execute_fetchall(
-                    "SELECT created_at FROM decisions ORDER BY created_at DESC LIMIT 1"
-                )
-            if not rows:
-                return None
-            return datetime.fromisoformat(rows[0]["created_at"])
+            ts = await store.latest_decision_ts()
+            return datetime.fromisoformat(ts) if ts is not None else None
         finally:
             await store.close()
 

@@ -23,7 +23,6 @@ import asyncio
 import json
 import math
 import re
-import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field
@@ -176,28 +175,28 @@ def _get_runtime() -> RuntimeConfig:
     return load_runtime_config()
 
 
-def fetch_adr_data(runtime: RuntimeConfig | None = None) -> tuple[int, list[Moment]]:
-    """Return (total_adr_count, last_4_adr_moments) from the SQLite graph."""
+async def fetch_adr_data(runtime: RuntimeConfig | None = None) -> tuple[int, list[Moment]]:
+    """Return (total_adr_count, last_4_adr_moments) via the repository abstraction."""
+    from axon.store.session_store import SessionStore
+
     rt = runtime or _get_runtime()
-    db_path = rt.data_root / "axon.db"
-    if not db_path.exists():
-        return (0, [])
     try:
-        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        cur = con.cursor()
-        total = cur.execute("SELECT count(*) FROM adr").fetchone()[0]
-        rows = cur.execute(
-            "SELECT created_at, project, title FROM adr "
-            "ORDER BY created_at DESC LIMIT 4"
-        ).fetchall()
-        con.close()
+        store = SessionStore(rt.db_path)
+        await store.init()
+        try:
+            adrs = []
+            for project in await store.all_projects():
+                adrs.extend(await store.get_adrs(project, limit=1000))
+        finally:
+            await store.close()
     except Exception:
         return (0, [])
+    adrs.sort(key=lambda a: a.created_at, reverse=True)
     moments = []
-    for created_at, _project, title in rows:
-        text = title if len(title) <= 26 else title[:24] + "…"
-        moments.append(Moment(ts=created_at, kind="adr", text=text))
-    return (total, moments)
+    for adr in adrs[:4]:
+        text = adr.title if len(adr.title) <= 26 else adr.title[:24] + "…"
+        moments.append(Moment(ts=adr.created_at.isoformat(), kind="adr", text=text))
+    return (len(adrs), moments)
 
 
 def fetch_compression_data(
@@ -403,7 +402,7 @@ async def main(
     sys.stdout.flush()
 
     # Initial data fetch
-    adr_total, adr_moments = fetch_adr_data(rt)
+    adr_total, adr_moments = await fetch_adr_data(rt)
     tokens_saved, save_moments = fetch_compression_data(rt)
 
     from axon.observability.trace_store import TraceStore
@@ -452,7 +451,7 @@ async def main(
             # Refresh ADR + compression data every 10 s
             if now - last_data_refresh > 10.0:
                 last_data_refresh = now
-                adr_total, adr_moments = fetch_adr_data(rt)
+                adr_total, adr_moments = await fetch_adr_data(rt)
                 tokens_saved, save_moments = fetch_compression_data(rt)
                 if adr_total > last_adr_total:
                     happy_until = now + 5.0

@@ -13,7 +13,10 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from axon.config.runtime import RuntimeConfig
 
 
 class FileCache(Protocol):
@@ -131,3 +134,31 @@ def sha1_of_source(source: str) -> str:
     Does not pass usedforsecurity kwarg to match pipeline.py exactly.
     """
     return hashlib.sha1(source.encode("utf-8")).hexdigest()
+
+
+async def make_file_cache(runtime: RuntimeConfig) -> tuple[FileCache, object]:
+    """Build the file-hash cache for the active ``fileindex_backend``.
+
+    Returns ``(cache, closer)``; await ``closer.close()`` when finished (for the
+    Postgres backend ``closer`` is the cache itself, which closes its pool).
+    Honours the backend switch so callers never hard-wire SQLite.
+    """
+    if runtime.fileindex_backend == "postgres":
+        from axon.store.pg_file_cache import PostgresFileCache
+
+        cache = PostgresFileCache(dsn=runtime.pg_url)
+        await cache.ensure_schema()
+        return cache, cache
+
+    import asyncio
+
+    import aiosqlite
+
+    from axon.store.session_store import _apply_migrations
+
+    db_path = runtime.db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_conn = await aiosqlite.connect(str(db_path))
+    # Ensure the file_index table (003 migration) exists before first query.
+    await _apply_migrations(db_conn)
+    return SqliteFileCache(db_conn, asyncio.Lock()), db_conn

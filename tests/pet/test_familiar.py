@@ -199,12 +199,52 @@ class TestNoHardCodedPaths:
         tokens, _ = fetch_compression_data(rt)  # type: ignore[arg-type]
         assert tokens == 42
 
-    def test_fetch_adr_data_uses_runtime_path(self, tmp_path: Path) -> None:
+    async def test_fetch_adr_data_empty_when_no_adrs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         rt = _make_runtime(tmp_path)
-        # No DB → returns (0, []) without error; no hard-coded path consulted
-        total, moments = fetch_adr_data(rt)  # type: ignore[arg-type]
+        rt.db_path = tmp_path / "axon.db"
+
+        class _EmptyStore:
+            def __init__(self, *a, **k) -> None: ...
+            async def init(self) -> None: ...
+            async def all_projects(self): return []
+            async def get_adrs(self, project, limit=10): return []
+            async def close(self) -> None: ...
+
+        monkeypatch.setattr("axon.store.session_store.SessionStore", _EmptyStore)
+        total, moments = await fetch_adr_data(rt)  # type: ignore[arg-type]
         assert total == 0
         assert moments == []
+
+    async def test_fetch_adr_data_aggregates_recent_adrs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import UTC, datetime
+
+        from axon.store.session_store import ADR
+
+        rt = _make_runtime(tmp_path)
+        rt.db_path = tmp_path / "axon.db"
+        adrs = [
+            ADR(project="axon", title=f"title-{i}", context="c", decision="d",
+                rationale="r", created_at=datetime(2026, 1, i + 1, tzinfo=UTC))
+            for i in range(6)
+        ]
+
+        class _Store:
+            def __init__(self, *a, **k) -> None: ...
+            async def init(self) -> None: ...
+            async def all_projects(self): return ["axon"]
+            async def get_adrs(self, project, limit=10): return adrs
+            async def close(self) -> None: ...
+
+        monkeypatch.setattr("axon.store.session_store.SessionStore", _Store)
+        total, moments = await fetch_adr_data(rt)  # type: ignore[arg-type]
+        assert total == 6
+        assert len(moments) == 4  # most-recent 4
+        assert moments[0].kind == "adr"
+        assert moments[0].text == "title-5"  # latest by created_at
 
     def test_activity_poller_path_is_configurable(self, tmp_path: Path) -> None:
         custom_file = tmp_path / "custom_records.jsonl"

@@ -328,6 +328,18 @@ class SessionStore:
         decision_repo = await self._decisions()
         return await decision_repo.find_decisions_by_repo(repo, limit)
 
+    async def latest_decision_ts(self) -> str | None:
+        decision_repo = await self._decisions()
+        return await decision_repo.latest_decision_ts()
+
+    async def validation_stats(self, *, repo: str | None = None, threshold: float) -> dict:
+        decision_repo = await self._decisions()
+        return await decision_repo.validation_stats(repo=repo, threshold=threshold)
+
+    async def all_projects(self) -> list[str]:
+        decision_repo = await self._decisions()
+        return await decision_repo.all_projects()
+
     async def save_session(
         self, session_id: str, agent: str, repo: str, *, context_payload: str = ""
     ) -> None:

@@ -76,29 +76,9 @@ async def _open_file_cache() -> tuple[object, object]:
 
     Returns (FileCache, close-handle) - caller must await handle.close().
     """
-    if _RUNTIME.fileindex_backend == "postgres":
-        from axon.store.pg_file_cache import PostgresFileCache
+    from axon.store.file_cache import make_file_cache
 
-        cache = PostgresFileCache(dsn=_RUNTIME.pg_url)
-        await cache.ensure_schema()
-        return cache, cache  # cache.close() closes the pool
-
-    import asyncio as _asyncio
-
-    import aiosqlite
-
-    from axon.store.file_cache import SqliteFileCache
-    from axon.store.session_store import _apply_migrations
-
-    db_path = _get_db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    db_conn = await aiosqlite.connect(str(db_path))
-    # Ensure the file_index table (003 migration) exists before the cache
-    # issues SELECT/INSERT against it - otherwise a fresh install crashes
-    # with "no such table: file_index". _apply_migrations is idempotent.
-    await _apply_migrations(db_conn)
-    db_lock = _asyncio.Lock()
-    return SqliteFileCache(db_conn, db_lock), db_conn
+    return await make_file_cache(_RUNTIME)
 
 
 @asynccontextmanager
@@ -1528,10 +1508,7 @@ def adr_sync(
         if project:
             projects_to_sync = [project]
         else:
-            import aiosqlite
-            async with aiosqlite.connect(str(db)) as conn:
-                rows = await conn.execute_fetchall("SELECT DISTINCT project FROM adr")
-            projects_to_sync = [r[0] for r in rows]
+            projects_to_sync = await store.all_projects()
 
         if not projects_to_sync:
             typer.echo("Nenhum ADR encontrado.")
