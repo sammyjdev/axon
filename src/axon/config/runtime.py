@@ -87,7 +87,6 @@ class RuntimeConfig:
     vault_root: Path
     db_path: Path
     pg_url: str
-    qdrant_url: str
     redis_url: str
     rtk_max_tokens: int
     caveman_num_ctx: int
@@ -106,7 +105,7 @@ class RuntimeConfig:
     openrouter_compliance_required: bool
     expansion: ExpansionConfig
     active_profile: str | None = None
-    vector_backend: str = "qdrant"
+    vector_backend: str = "pgvector"
     fileindex_backend: str = "sqlite"
     graph_backend: str = "sqlite"
     decisions_backend: str = "sqlite"
@@ -140,7 +139,7 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-_VALID_VECTOR_BACKENDS = ("qdrant", "pgvector")
+_VALID_VECTOR_BACKENDS = ("pgvector",)
 
 
 def _resolve_concern_backend(concern: str, overrides: dict) -> str:
@@ -675,7 +674,6 @@ def load_runtime_config() -> RuntimeConfig:
         vault_root=vault_root,
         db_path=engine_root / "data" / "axon.db",
         pg_url=os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5433/axon"),
-        qdrant_url=os.environ.get("QDRANT_URL", "http://localhost:6333"),
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379"),
         rtk_max_tokens=int(os.environ.get("AXON_RTK_MAX_TOKENS", "450")),
         caveman_num_ctx=int(os.environ.get("AXON_CAVEMAN_NUM_CTX", "4096")),

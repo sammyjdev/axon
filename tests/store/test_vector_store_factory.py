@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 
 def test_default_is_pgvector(monkeypatch) -> None:
     monkeypatch.delenv("AXON_VECTOR_BACKEND", raising=False)
@@ -27,3 +29,15 @@ def test_backend_from_runtime_vector_backend(monkeypatch) -> None:
 
     rt_pg = dataclasses.replace(rt, vector_backend="pgvector")
     assert isinstance(make_vector_store(rt_pg), PgVectorStore)
+
+
+def test_factory_always_returns_pgvector():
+    from axon.store.pg_vector_store import PgVectorStore
+    from axon.store.vector_store_factory import make_vector_store
+
+    rt = SimpleNamespace(
+        pg_url="postgresql://axon:axon@localhost:5434/axon",
+        vector_backend="pgvector",
+    )
+    store = make_vector_store(rt)
+    assert isinstance(store, PgVectorStore)
