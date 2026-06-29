@@ -41,9 +41,11 @@ from axon.context.contracts import ContextPack, RetrievalStrategy
 from axon.store.session_store import SessionStore
 
 # Module-level in-memory cache shared across GraphContextSource instances.
-# Key: db_path; value: (mtime_snapshot, NetworkXStore, node_list).
-# Avoids full SQLite table scans on every MCP get_graph_context call.
-_GRAPH_CACHE: dict[str, tuple[float, "NetworkXStore", list["GlyphNode"]]] = {}
+# Key: db_path; value: (signal_snapshot, NetworkXStore, node_list). The signal is
+# the SQLite WAL mtime for the sqlite backend, or a Postgres graph fingerprint
+# (see _graph_signature) for the postgres backend.
+# Avoids full graph table scans on every MCP get_graph_context call.
+_GRAPH_CACHE: dict[str, tuple[object, NetworkXStore, list[GlyphNode]]] = {}
 _cache_stats: dict[str, float] = {"hits": 0.0, "misses": 0.0, "last_build_ms": 0.0}
 
 
@@ -158,16 +160,29 @@ class GraphContextSource:
         self._hops = hops
         self._anchors = anchors
 
-    async def _build_glyph_graph(self) -> tuple[NetworkXStore, list[GlyphNode]]:
-        """Read the consolidated SQLite graph and materialize a GLYPH graph.
+    async def _graph_signature(self) -> object:
+        """Backend-correct cache-invalidation signal.
 
-        Results are cached by (db_path, mtime). A write to the db (including WAL
-        flushes) invalidates the entry so the next call rebuilds from scratch.
+        Postgres graph repos expose ``graph_signature()`` (counts + max
+        timestamps); the SQLite repo does not, so fall back to the WAL mtime.
+        """
+        repo = await self._store._graph()
+        signature = getattr(repo, "graph_signature", None)
+        if signature is not None:
+            return await signature()
+        return _db_mtime(self._store._path)
+
+    async def _build_glyph_graph(self) -> tuple[NetworkXStore, list[GlyphNode]]:
+        """Read the consolidated code graph and materialize a GLYPH graph.
+
+        Results are cached by (db_path, signal). A write to the graph changes the
+        signal (SQLite WAL mtime, or the Postgres fingerprint) so the next call
+        rebuilds from scratch.
         """
         db_path = self._store._path
-        mtime = _db_mtime(db_path)
+        signal = await self._graph_signature()
         cached = _GRAPH_CACHE.get(db_path)
-        if cached is not None and cached[0] == mtime:
+        if cached is not None and cached[0] == signal:
             _cache_stats["hits"] += 1
             return cached[1], cached[2]
 
@@ -208,7 +223,7 @@ class GraphContextSource:
         store.upsert_edges(glyph_edges)
 
         _cache_stats["last_build_ms"] = (time.monotonic() - t0) * 1000
-        _GRAPH_CACHE[db_path] = (mtime, store, nodes)
+        _GRAPH_CACHE[db_path] = (signal, store, nodes)
         return store, nodes
 
     async def context(self, query: str, token_budget: int = 1000) -> ContextPack:
