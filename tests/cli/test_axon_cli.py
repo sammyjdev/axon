@@ -183,7 +183,7 @@ def test_export_aborts_without_vault(monkeypatch):
     monkeypatch.setattr("axon.obsidian.discovery.discover_vault", lambda **kw: None)
     result = runner.invoke(app, ["export", "adr"])
     assert result.exit_code == 1
-    assert "vault not found" in result.stderr
+    assert "vault not found" in result.output
 
 
 def test_export_rejects_unknown_doc_type(monkeypatch, tmp_path):
@@ -191,7 +191,7 @@ def test_export_rejects_unknown_doc_type(monkeypatch, tmp_path):
     _export_store(monkeypatch, [object()])
     result = runner.invoke(app, ["export", "bogus", "--repo", "AXON"])
     assert result.exit_code == 1
-    assert "Unknown doc type" in result.stderr
+    assert "Unknown doc type" in result.output
 
 
 def _registered_command_names():
@@ -233,7 +233,7 @@ def test_install_hooks_aborts_on_non_git_path(monkeypatch):
     monkeypatch.setattr("axon.hooks.git_installer.install_hooks", boom)
     result = runner.invoke(app, ["install-hooks", "--path", "/tmp/not-a-repo"])
     assert result.exit_code == 1
-    assert "Not a git repository" in result.stderr
+    assert "Not a git repository" in result.output
 
 
 def test_init_aborts_on_non_git_path(monkeypatch, tmp_path):
@@ -245,7 +245,7 @@ def test_init_aborts_on_non_git_path(monkeypatch, tmp_path):
     monkeypatch.setattr("axon.hooks.git_installer.install_hooks", boom)
     result = runner.invoke(app, ["init", str(tmp_path)])
     assert result.exit_code == 1
-    assert "Not a git repository" in result.stderr
+    assert "Not a git repository" in result.output
 
 
 def test_export_adr(monkeypatch, tmp_path):
