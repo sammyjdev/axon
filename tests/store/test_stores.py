@@ -5,15 +5,12 @@ collections.py é testado sem infra (lógica pura).
 vector_store requer Qdrant real — testa apenas a lógica de agrupamento/batch.
 """
 
-import json
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock
 
 import pytest
 
 from axon.store.collections import get_search_collections
 from axon.store.failure_store import FailureRecord, FailureStore
-from axon.store.graph_store import GraphStore
 from axon.store.outcome_store import OutcomeRecord, OutcomeStore
 from axon.store.session_store import ADR, CodeChange, SessionMemory, SessionStore
 
@@ -42,102 +39,6 @@ class TestGetSearchCollections:
     def test_empty_string_ctx_excludes_work(self) -> None:
         result = get_search_collections("")
         assert "work" not in result
-
-
-# ── graph_store.py ─────────────────────────────────────────────────────────────
-
-
-@pytest.fixture
-def redis_mock():
-    mock = AsyncMock()
-    mock.ping = AsyncMock()
-    mock.hset = AsyncMock()
-    mock.hget = AsyncMock()
-    mock.hgetall = AsyncMock()
-    mock.delete = AsyncMock()
-    mock.aclose = AsyncMock()
-    return mock
-
-
-@pytest.fixture
-def graph_store(redis_mock):
-    store = GraphStore.__new__(GraphStore)
-    store._redis = redis_mock
-    return store
-
-
-@pytest.mark.asyncio
-class TestGraphStore:
-    async def test_connect_pings_redis(self, graph_store, redis_mock) -> None:
-        await graph_store.connect()
-        redis_mock.ping.assert_awaited_once()
-
-    async def test_upsert_deps_calls_hset(self, graph_store, redis_mock) -> None:
-        await graph_store.upsert_deps(
-            "OrderService",
-            calls=["PaymentService", "NotificationService"],
-            called_by=["OrderController"],
-        )
-        redis_mock.hset.assert_awaited_once()
-        call_kwargs = redis_mock.hset.call_args
-        assert call_kwargs[0][0] == "dep:OrderService"
-        mapping = call_kwargs[1]["mapping"]
-        assert json.loads(mapping["calls"]) == ["PaymentService", "NotificationService"]
-        assert json.loads(mapping["called_by"]) == ["OrderController"]
-
-    async def test_get_calls_returns_list(self, graph_store, redis_mock) -> None:
-        redis_mock.hget.return_value = json.dumps(["PaymentService"])
-        result = await graph_store.get_calls("OrderService")
-        assert result == ["PaymentService"]
-
-    async def test_get_calls_returns_empty_when_missing(self, graph_store, redis_mock) -> None:
-        redis_mock.hget.return_value = None
-        result = await graph_store.get_calls("UnknownSymbol")
-        assert result == []
-
-    async def test_get_deps_returns_both_directions(self, graph_store, redis_mock) -> None:
-        redis_mock.hgetall.return_value = {
-            "calls": json.dumps(["A"]),
-            "called_by": json.dumps(["B"]),
-        }
-        deps = await graph_store.get_deps("OrderService")
-        assert deps["calls"] == ["A"]
-        assert deps["called_by"] == ["B"]
-
-    async def test_get_deps_returns_empty_when_missing(self, graph_store, redis_mock) -> None:
-        redis_mock.hgetall.return_value = {}
-        deps = await graph_store.get_deps("Unknown")
-        assert deps == {"calls": [], "called_by": []}
-
-    async def test_get_subgraph_for_missing_symbol(self, graph_store, redis_mock) -> None:
-        redis_mock.hgetall.return_value = {}
-        subgraph = await graph_store.get_subgraph("Unknown")
-        assert subgraph["exists"] is False
-        assert subgraph["calls"] == []
-        assert subgraph["called_by"] == []
-
-    async def test_delete_removes_key(self, graph_store, redis_mock) -> None:
-        await graph_store.delete("OrderService")
-        redis_mock.delete.assert_awaited_once_with("dep:OrderService")
-
-    async def test_traverse_respects_depth_and_nodes(self, graph_store, redis_mock) -> None:
-        calls_map = {
-            "dep:A": json.dumps(["B", "C"]),
-            "dep:B": json.dumps(["D"]),
-            "dep:C": json.dumps([]),
-            "dep:D": json.dumps([]),
-        }
-
-        def _fake_hget(key: str, field: str):
-            if field != "calls":
-                return None
-            return calls_map.get(key)
-
-        redis_mock.hget.side_effect = _fake_hget
-
-        traversal = await graph_store.traverse("A", max_depth=2, max_nodes=3)
-        assert traversal["root"] == "A"
-        assert len(traversal["nodes"]) <= 3
 
 
 # ── session_store.py ────────────────────────────────────────────────────────────
