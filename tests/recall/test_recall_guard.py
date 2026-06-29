@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -79,40 +78,6 @@ def test_recall_guard_harness_infrastructure() -> None:
     mixed_summary = BenchmarkRunSummary(results=(worst_result, perfect_result))
     assert mixed_summary.score == 0.5
 
-    # Verify mock engine + client integration shape (no real GPU/Qdrant)
-    mock_engine = MagicMock()
-    mock_engine.embed_one.return_value = [0.0] * 768
-
-    mock_hit = MagicMock()
-    mock_hit.score = 0.95
-    mock_hit.payload = {
-        "file_path": "src/axon/embedder/chunker.py",
-        "symbol": "_walk_python",
-        "chunk_type": "function",
-    }
-
-    mock_points_result = MagicMock()
-    mock_points_result.points = [mock_hit]
-
-    mock_client = MagicMock()
-    mock_client.query_points.return_value = mock_points_result
-
-    from axon.benchmark.recall import run_recall_guard
-
-    golden_subset = [
-        {
-            "id": "q01",
-            "query": "chunk python source tree-sitter walk function definition",
-            "expected_file": "src/axon/embedder/chunker.py",
-            "expected_symbol": "_walk_python",
-            "min_score": 0.70,
-        }
-    ]
-    summary, metrics = run_recall_guard(golden_subset, mock_engine, mock_client)
-    assert summary.score == 1.0
-    assert metrics["recall_top1"] == 1.0
-    assert metrics["recall_top3"] == 1.0
-
 
 @pytest.mark.skipif(
     os.environ.get("AXON_RUN_RECALL") != "1",
@@ -126,15 +91,12 @@ def test_recall_guard_no_regression() -> None:
     worse: no aggregate Top-3 drop and no per-query rank regression vs baseline.
     The absolute 0.90 target from the draft plan was an unvalidated guess and is
     intentionally NOT enforced here (see ledger / decision).
-
-    Dispatches to the Qdrant or pgvector backend based on AXON_VECTOR_BACKEND
-    (default: qdrant).
     """
     import asyncio
-    import json
-    from pathlib import Path
 
+    from axon.benchmark.recall import RECALL_TABLE, index_corpus_pg, run_recall_guard_pg
     from axon.embedder.engine import EmbedderEngine
+    from axon.store.pg_vector_store import PgVectorStore
 
     repo_root = Path(__file__).resolve().parent.parent.parent
     src_root = repo_root / "src" / "axon"
@@ -143,37 +105,17 @@ def test_recall_guard_no_regression() -> None:
 
     engine = EmbedderEngine()
 
-    backend = os.environ.get("AXON_VECTOR_BACKEND", "qdrant").strip().lower()
+    pg_url = os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5434/axon")
 
-    if backend == "pgvector":
-        from axon.benchmark.recall import RECALL_TABLE, index_corpus_pg, run_recall_guard_pg
-        from axon.store.pg_vector_store import PgVectorStore
-
-        pg_url = os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5433/axon")
-
-        async def _run_pg():
-            store = PgVectorStore(dsn=pg_url, table=RECALL_TABLE)
-            try:
-                await index_corpus_pg(store, engine, src_root=src_root, repo_root=repo_root)
-                return await run_recall_guard_pg(golden_set, engine, store)
-            finally:
-                await store.close()
-
-        _summary, metrics = asyncio.run(_run_pg())
-    else:
-        from qdrant_client import QdrantClient
-
-        from axon.benchmark.recall import TEMP_COLLECTION, index_corpus, run_recall_guard
-
-        client = QdrantClient(url="http://localhost:6333")
+    async def _run_pg():
+        store = PgVectorStore(dsn=pg_url, table=RECALL_TABLE)
         try:
-            index_corpus(client, engine, src_root=src_root, repo_root=repo_root)
-            _summary, metrics = run_recall_guard(golden_set, engine, client)
+            await index_corpus_pg(store, engine, src_root=src_root, repo_root=repo_root)
+            return await run_recall_guard_pg(golden_set, engine, store)
         finally:
-            try:
-                client.delete_collection(collection_name=TEMP_COLLECTION)
-            except Exception:  # noqa: BLE001
-                pass
+            await store.close()
+
+    _summary, metrics = asyncio.run(_run_pg())
 
     # No aggregate Top-3 regression vs the measured baseline.
     recall_top3 = metrics["recall_top3"]
