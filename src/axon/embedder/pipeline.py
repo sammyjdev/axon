@@ -193,7 +193,7 @@ async def index_path(
     file_cache is REQUIRED - no None fallback. Pass a SqliteFileCache for
     production, or a mock/stub for tests.
 
-    Crash-safety (D2): writes status='pending' before any Qdrant mutation;
+    Crash-safety (D2): writes status='pending' before any vector-store mutation;
     sets status='done' only after _flush_batch() succeeds. A crash between
     these two points leaves status='pending', which is treated as a hash miss
     on the next run (triggering full re-index of that file).
@@ -255,7 +255,7 @@ async def index_path(
         if sha1_maps[file_ctx].get(fp_posix) == current_sha1:
             continue  # file unchanged - skip
 
-        # D2: write crash sentinel BEFORE any Qdrant mutation.
+        # D2: write crash sentinel BEFORE any vector-store mutation.
         await file_cache.set_entry(fp_posix, file_ctx, current_sha1, 0, status="pending")
 
         # D4: delete stale points for this file before re-adding.

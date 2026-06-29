@@ -88,7 +88,7 @@ async def _index_note_vectors(
     vector_store: object,
     embedder: object | None,
 ) -> int:
-    """Embed note chunks and upsert them into the ``ctx`` Qdrant collection.
+    """Embed note chunks and upsert them into the ``ctx`` vector store collection.
 
     This is what makes ingested notes reachable by the primary retrieval path
     (``_retrieve_context`` → vector search), not only by direct graph queries.
@@ -150,7 +150,7 @@ async def ingest_vault(
 
     Notes are written to TWO stores so both retrieval paths see them:
     the SQLite graph (entities/relations, via ``GraphContextSource``) AND the
-    Qdrant ``ctx`` collection (note text, via the primary vector retrieval used
+    vector store ``ctx`` collection (note text, via the primary vector retrieval used
     by ``ask`` / ``search_code`` / the HTTP endpoint).
 
     Parameters
@@ -168,7 +168,7 @@ async def ingest_vault(
         Useful in tests — passing a fake bypasses all network calls.
     index_vectors:
         When True (default), also embed and upsert note chunks into the vector
-        store.  Failures (e.g. Qdrant down) are logged and skipped — the graph
+        store.  Failures (e.g. vector store down) are logged and skipped — the graph
         ingestion still succeeds.
     ctx:
         Target context/collection for the note vectors (default ``"personal"``).

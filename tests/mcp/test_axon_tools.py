@@ -112,7 +112,7 @@ async def test_axon_export_now_denied_without_consent_env(
 async def test_axon_health_reports_subsystems(store: SessionStore) -> None:
     report = await server.axon_health()
     assert report.startswith("# AXON health")
-    for subsystem in ("sqlite", "redis", "qdrant", "mem0", "vault", "git"):
+    for subsystem in ("sqlite", "redis", "pgvector", "vault", "git"):
         assert subsystem in report
 
 
@@ -145,8 +145,8 @@ async def test_axon_health_does_not_hang_when_backends_unreachable(
 ) -> None:
     """Regression: axon_health must time-bound each external probe.
 
-    When Qdrant/Redis are unreachable (e.g. wrong host, offline VPN), the
-    probes used to block indefinitely. Each probe must now fail fast with a
+    When the vector store/Redis are unreachable (e.g. wrong host, offline VPN),
+    the probes used to block indefinitely. Each probe must now fail fast with a
     timeout marker so `axon health` always returns within a few seconds.
     """
     import asyncio
@@ -168,7 +168,7 @@ async def test_axon_health_does_not_hang_when_backends_unreachable(
 
     assert elapsed < 5.0, f"axon_health took {elapsed:.1f}s — must be time-bounded"
     assert "redis: down (timeout)" in report
-    assert "qdrant: down (timeout)" in report
+    assert "pgvector: down (timeout)" in report
 
 
 def test_detect_agent_prefers_explicit_then_env(

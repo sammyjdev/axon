@@ -250,7 +250,6 @@ def _to_dotenv(config: PlatformConfig) -> str:
     if remote_host:
         env_text += (
             f"AXON_INFRA_HOST={remote_host}\n"
-            f"QDRANT_URL=http://{remote_host}:6333\n"
             f"REDIS_URL=redis://{remote_host}:6379\n"
             f"LANGFUSE_HOST=http://{remote_host}:3000\n"
             f"AXON_OLLAMA_LOCAL_HOST=http://{remote_host}:11434\n"

@@ -524,7 +524,7 @@ def ingest_vault_cmd(
 
     Walks every ``.md`` file in the vault, extracts entities and relations
     with GLYPH's notes schema (via the configured LLM), and writes them into
-    BOTH the SQLite graph (entities/relations) AND the Qdrant ``--ctx``
+    BOTH the SQLite graph (entities/relations) AND the vector ``--ctx``
     collection (note text) so ``ask`` / ``search_code`` / the HTTP endpoint
     retrieve the notes via the primary vector path.
 

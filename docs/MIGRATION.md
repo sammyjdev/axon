@@ -1,3 +1,8 @@
+> **dec-121 Phase 1 complete:** The Qdrant-to-pgvector migration finished.
+> `scripts/migrate_bluegreen.py`, `scripts/verify_migration.py`, and
+> `tests/scripts/test_verify_migration_parity.py` were removed (obsolete).
+> The sections below are kept as a historical record.
+
 # Blue/Green Reindex Migration Runbook
 
 One-shot migration to reindex existing Qdrant data with the Plan C code

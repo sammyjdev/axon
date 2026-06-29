@@ -119,7 +119,7 @@ class PgVectorStore:
         max_nodes: int = 25,
         max_tokens: int = 1200,
     ) -> list[dict]:
-        _ = max_depth  # accepted for parity, unused (matches the Qdrant backend)
+        _ = max_depth  # accepted for parity, unused (matches the vector backend interface)
         pool = await self._ensure_pool()
         clauses = ["ctx = ANY($2)"]
         params: list = [query_vector, list(collections)]
