@@ -47,6 +47,12 @@ class DecisionRepository(Protocol):
 
     async def all_decisions(self) -> list[Decision]: ...
 
+    async def latest_decision_ts(self) -> str | None: ...
+
+    async def validation_stats(self, *, repo: str | None = None, threshold: float) -> dict: ...
+
+    async def all_projects(self) -> list[str]: ...
+
 
 class SqliteDecisionRepository:
     """The original SessionStore decision/ADR SQL, sharing the session's conn+lock."""
@@ -209,3 +215,42 @@ class SqliteDecisionRepository:
                 "SELECT frontmatter FROM decisions ORDER BY created_at"
             )
         return [Decision(**json.loads(r["frontmatter"])) for r in rows]
+
+    async def latest_decision_ts(self) -> str | None:
+        async with self._session._lock:
+            db = await self._session._connection()
+            rows = await db.execute_fetchall("SELECT MAX(created_at) FROM decisions")
+        return rows[0][0] if rows and rows[0][0] is not None else None
+
+    async def validation_stats(self, *, repo: str | None = None, threshold: float) -> dict:
+        async with self._session._lock:
+            db = await self._session._connection()
+            where = ""
+            tail: tuple = ()
+            if repo is not None:
+                where = " WHERE json_extract(frontmatter, '$.repo') = ?"
+                tail = (repo,)
+            rows = await db.execute_fetchall(
+                "SELECT COUNT(*) AS n_total,"
+                " SUM(CASE WHEN json_extract(frontmatter, '$.judged') = 1"
+                "          THEN 1 ELSE 0 END) AS n_scored,"
+                " SUM(CASE WHEN json_extract(frontmatter, '$.judged') = 1"
+                "           AND json_extract(frontmatter, '$.validation_score') >= ?"
+                "          THEN 1 ELSE 0 END) AS n_passed"
+                f" FROM decisions{where}",
+                (threshold, *tail),
+            )
+        row = rows[0]
+        return {
+            "n_total": int(row[0] or 0),
+            "n_scored": int(row[1] or 0),
+            "n_passed": int(row[2] or 0),
+        }
+
+    async def all_projects(self) -> list[str]:
+        async with self._session._lock:
+            db = await self._session._connection()
+            rows = await db.execute_fetchall(
+                "SELECT DISTINCT project FROM adr ORDER BY project"
+            )
+        return [r[0] for r in rows]
