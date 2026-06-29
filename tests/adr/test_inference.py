@@ -159,4 +159,14 @@ class TestSaveADR:
                 project="t", repo_root=fake_repo, db_path=db_path
             )
         assert result.status is InferenceStatus.SAVED_ADR, result.error
-        assert db_path.exists()
+        # Postgres-only (dec-121 Phase 3): verify the ADR actually persisted by
+        # reading it back, not by checking for a SQLite file on disk.
+        from axon.store.session_store import SessionStore
+
+        store = SessionStore(db_path=db_path)
+        await store.init()
+        try:
+            adrs = await store.get_adrs("t")
+        finally:
+            await store.close()
+        assert len(adrs) >= 1
