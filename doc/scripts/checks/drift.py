@@ -16,7 +16,7 @@ class DriftCheck:
     def check_forge_vs_axon_router(self) -> Dict[str, Any]:
         """Compare FORGE oneshot_backend.py with AXON llm_backend.py."""
         forge_file = self.forge_path / "scripts" / "oneshot_backend.py"
-        axon_file = self.axon_path / "axon" / "router" / "llm_backend.py"
+        axon_file = self.axon_path / "src" / "axon" / "router" / "llm_backend.py"
 
         if not forge_file.exists() or not axon_file.exists():
             return {
