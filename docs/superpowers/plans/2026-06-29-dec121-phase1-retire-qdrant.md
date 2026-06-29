@@ -287,9 +287,50 @@ git add -A && git commit -m "feat: drop orphaned Mem0 integration + mem0ai depen
 
 ---
 
-### Task 5: Recall-guard acceptance gate on real data + Qdrant teardown (operational)
+### Task 5: Remove the residual Qdrant arm and drop `qdrant-client`
 
-**Files:** None (operational validation + the dec-121 acceptance gate). This task has no code deliverable; it is the gate that promotes dec-121 from `proposed` to `accepted`.
+**Discovered during execution:** deleting the Qdrant `VectorStore` (Task 3) did not remove all Qdrant code. `src/axon/benchmark/recall.py` still has a SYNC Qdrant arm (`from qdrant_client import QdrantClient`, `TEMP_COLLECTION`, `index_corpus`, `run_recall_guard`) alongside the pgvector arm (`index_corpus_pg`, `run_recall_guard_pg`, `RECALL_TABLE`), and `tests/recall/test_recall_guard.py` imports `QdrantClient` and dispatches on `AXON_VECTOR_BACKEND` (default `qdrant`). Until that arm is gone, `qdrant-client` cannot be removed. This task removes the Qdrant arm and the dependency, leaving the pgvector arm as the only recall path.
+
+**Files:**
+- Modify: `src/axon/benchmark/recall.py` (remove the `qdrant_client` imports, `TEMP_COLLECTION`, `index_corpus`, `run_recall_guard`; KEEP `index_corpus_pg`, `run_recall_guard_pg`, `RECALL_TABLE`; update the module docstring that says "Supports both Qdrant and pgvector")
+- Modify: `tests/recall/test_recall_guard.py` (remove the `QdrantClient` import + the Qdrant dispatch branch; make pgvector the only path — default `AXON_VECTOR_BACKEND` to `pgvector` and drop the qdrant `if` branch; remove or migrate the `test_recall_guard_shape` test that exercises the sync `run_recall_guard` Qdrant arm)
+- Modify: `pyproject.toml` (remove `"qdrant-client>=1.9.0"`; change `testcontainers[qdrant,redis,postgres]` → `testcontainers[redis,postgres]` — keep `redis`, Phase 2 still needs it)
+- Note: `tests/embedder/fixtures/python/vector_store.py` is FIXTURE TEXT (a sample file the chunker parses), NOT importable code — leave it; its `qdrant_client` lines do not import anything at runtime.
+
+- [ ] **Step 1: Prove pgvector is the only live recall arm needed, then remove the Qdrant arm**
+
+Read `src/axon/benchmark/recall.py` and `tests/recall/test_recall_guard.py`. Remove the Qdrant sync arm from both (imports, `TEMP_COLLECTION`, `index_corpus`, `run_recall_guard`, the `QdrantClient` dispatch branch, the Qdrant-only shape test). Keep the pgvector arm intact.
+
+- [ ] **Step 2: Prove no runtime `qdrant_client` import remains**
+
+Run: `rtk proxy grep -rn "qdrant_client\|AsyncQdrantClient\|from qdrant" src/ tests/ | grep -v "fixtures/"`
+Expected: ZERO hits (the only allowed remaining mention is the chunker FIXTURE under `tests/embedder/fixtures/`). If any real import remains, remove it before touching `pyproject.toml`.
+
+- [ ] **Step 3: Drop the dependency**
+
+In `pyproject.toml`, delete `"qdrant-client>=1.9.0"` and change `testcontainers[qdrant,redis,postgres]>=4.0.0` to `testcontainers[redis,postgres]>=4.0.0`.
+
+- [ ] **Step 4: Verify imports + recall tests collect and pass**
+
+Run: `rtk python3 -m compileall src/axon/benchmark` then
+`rtk pytest tests/recall/ -q` (the mock-engine pgvector path runs without `AXON_RUN_RECALL`).
+Expected: PASS, no `ModuleNotFoundError: qdrant_client`.
+
+- [ ] **Step 5: Lint + commit (explicit paths, NEVER `git add -A`)**
+
+```bash
+rtk ruff check src/axon/benchmark/recall.py tests/recall/test_recall_guard.py
+git add src/axon/benchmark/recall.py tests/recall/test_recall_guard.py pyproject.toml
+git commit -m "feat(recall): remove residual Qdrant recall arm + drop qdrant-client dependency"
+```
+
+---
+
+### Task 6: Recall-guard acceptance gate on real data + Qdrant teardown (operational)
+
+**Files:** None (operational validation + the dec-121 acceptance gate). This task has no code deliverable; it is the gate that promotes dec-121's vector slice from `proposed` to `accepted`.
+
+**Note:** the bare suite has two PRE-EXISTING environmental failures (`test_index_reports_processed_counts`, `test_watch_reindexes_changed_files`) that need `AXON_PG_URL` pointed at the real PG (port 5434) — without it the loader defaults to 5433 (lume-db) and PG auth fails. These are NOT Phase-1 regressions; export `AXON_PG_URL` for the suite run.
 
 - [ ] **Step 1: Full suite green without Qdrant/Mem0**
 
