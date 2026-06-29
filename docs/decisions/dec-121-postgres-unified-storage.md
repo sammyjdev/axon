@@ -192,5 +192,17 @@ real data (`AXON_RUN_RECALL=1`): `recall_top3=0.80` at parity with a regenerated
 (deleted here); the 3 stale golden queries were repointed to the `pg_vector_store`
 equivalents and the baseline regenerated on the current corpus. ef_search tuning was
 ruled out by experiment (the q05/q13 misses are true cosine rank-4, not HNSW
-approximation). The overall ADR stays `proposed` until Phases 2 (Redis) and 3
-(SQLite) also land.
+approximation). The overall ADR stays `proposed` until Phase 3 (SQLite) also
+lands.
+
+**Redis slice — ACCEPTED (2026-06-29).** Phase 2 landed (commits `196607e..659a505`):
+the live `dep:*` call-graph is ported to a Postgres `symbol_deps` table (the indexer
+writer, the 4 CLI sites, and the `get_dependencies` MCP reader all repoint to
+`PostgresSymbolDeps`); the dead `subgraph:*` cache + `traverse` + batch helpers are
+deleted with the Redis `GraphStore`; `graph_source.py`'s in-memory GLYPH cache now
+invalidates on a Postgres fingerprint (node/edge counts + max timestamps) instead of
+the SQLite WAL mtime (a no-op under PG). The `redis` dependency + `redis_url` runtime
+config + the generated `REDIS_URL` are removed; the rate limiter / circuit breaker are
+now in-memory only (AXON runs as a single MCP server, so cross-process coordination was
+unused). `tests/test_no_redis.py` guards against regressions, mirroring the qdrant guard.
+Graph retrieval stays GLYPH/NetworkX (dec-116/117 unaffected).

@@ -63,7 +63,8 @@ Default profiles (FREE/PAID) never route to Ollama; enable it explicitly for
 ### D4: Split graph backends (revised by dec-101, being superseded by dec-121)
 
 - SQLite is the source-of-truth for the code graph and decisions.
-- Redis caches structural subgraphs for low-latency reads.
+- Redis is retired (dec-121 Phase 2): the `dep:*` call-graph now lives in the
+  Postgres `symbol_deps` table; the rate limiter / circuit breaker are in-memory.
 - Mem0 runs vector-only over Qdrant. Neo4j was evaluated and dropped — see
   `docs/decisions/dec-101-revoke-d4-drop-neo4j.md`.
 
@@ -73,9 +74,11 @@ Default profiles (FREE/PAID) never route to Ollama; enable it explicitly for
 > off SQLite, the Redis `dep:*` call-graph ports to a `symbol_deps` PG table
 > (its dead `subgraph:*` cache + Mem0 are dropped). GLYPH keeps graph
 > **retrieval** (dec-116/117 stand). Rollout is phased (vector → graph/Redis →
-> relational); see `docs/decisions/dec-121-postgres-unified-storage.md` and
-> `docs/superpowers/plans/2026-06-29-dec121-phase1-retire-qdrant.md`. Until each
-> phase lands, the statements above remain true for the parts not yet migrated.
+> relational); Phase 1 (vector/Qdrant) and Phase 2 (graph/Redis) have landed, so
+> only the relational SQLite source-of-truth (Phase 3) is still pending. See
+> `docs/decisions/dec-121-postgres-unified-storage.md` and the phase plans under
+> `docs/superpowers/plans/`. Until Phase 3 lands, the SQLite statement above
+> remains true for the relational data not yet migrated.
 
 ### D5: Chunker quality is a release gate
 
