@@ -132,6 +132,37 @@ class PostgresDecisionRepository:
             rows = await con.fetch("SELECT frontmatter FROM decisions ORDER BY created_at")
         return [Decision(**r["frontmatter"]) for r in rows]
 
+    async def latest_decision_ts(self) -> str | None:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            return await con.fetchval("SELECT MAX(created_at) FROM decisions")
+
+    async def validation_stats(self, *, repo: str | None = None, threshold: float) -> dict:
+        pool = await self._ensure_pool()
+        where = ""
+        params: list[object] = [threshold]
+        if repo is not None:
+            params.append(repo)
+            where = " WHERE frontmatter->>'repo' = $2"
+        async with pool.acquire() as con:
+            row = await con.fetchrow(
+                "SELECT"
+                " COUNT(*) AS n_total,"
+                " COUNT(*) FILTER (WHERE frontmatter->>'judged' = 'true') AS n_scored,"
+                " COUNT(*) FILTER (WHERE frontmatter->>'judged' = 'true'"
+                "   AND (frontmatter->>'validation_score')::float >= $1) AS n_passed"
+                f" FROM decisions{where}",
+                *params,
+            )
+        return {"n_total": row["n_total"], "n_scored": row["n_scored"], "n_passed": row["n_passed"]}
+
+    async def all_projects(self) -> list[str]:
+        """Distinct projects that have at least one ADR (for `pb adr sync`)."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch("SELECT DISTINCT project FROM adr ORDER BY project")
+        return [r["project"] for r in rows]
+
     async def next_decision_id(self) -> str:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
