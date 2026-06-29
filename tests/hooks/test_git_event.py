@@ -82,16 +82,6 @@ async def test_on_commit_rejects_unknown_agent(
     assert found[0].agent == "manual"  # unknown agent falls back to manual
 
 
-class _FakeGraph:
-    """Records invalidate() calls; stands in for GraphStore without Redis."""
-
-    def __init__(self) -> None:
-        self.invalidated: list[str] = []
-
-    async def invalidate(self, node_id: str) -> None:
-        self.invalidated.append(node_id)
-
-
 async def test_on_commit_links_touched_symbols(
     store: SessionStore, tmp_path: Path
 ) -> None:
@@ -104,8 +94,7 @@ async def test_on_commit_links_touched_symbols(
     _git(["add", "."], repo)
     _git(["commit", "-m", "feat: add alpha"], repo)
 
-    graph = _FakeGraph()
-    decision_id = await on_commit(store=store, cwd=repo, graph_store=graph)
+    decision_id = await on_commit(store=store, cwd=repo)
     assert decision_id is not None
 
     subgraph = await store.query_subgraph(decision_id, depth=1)
@@ -113,7 +102,6 @@ async def test_on_commit_links_touched_symbols(
     assert {"source": decision_id, "target": "alpha", "type": "touches"} in subgraph[
         "edges"
     ]
-    assert "alpha" in graph.invalidated
     node = await store.get_node("alpha")
     assert node is not None and node["type"] == "symbol"
 
@@ -174,12 +162,11 @@ async def test_on_commit_idempotent_skip_does_not_duplicate_edges(
     _git(["add", "."], repo)
     _git(["commit", "-m", "feat: add gamma"], repo)
 
-    graph = _FakeGraph()
-    decision_id = await on_commit(store=store, cwd=repo, graph_store=graph)
+    decision_id = await on_commit(store=store, cwd=repo)
     assert decision_id is not None
 
     # second invocation re-runs the linker on the existing decision
-    await on_commit(store=store, cwd=repo, graph_store=graph)
+    await on_commit(store=store, cwd=repo)
 
     subgraph = await store.query_subgraph(decision_id, depth=1)
     touch_edges = [
@@ -206,21 +193,20 @@ async def test_on_commit_relinks_symbols_after_partial_failure(
     _git_event_mod = __import__("axon.hooks.git_event", fromlist=["_link_touched_symbols"])
     original = _git_event_mod._link_touched_symbols
 
-    async def flaky_link(store, decision_id, root, commit_hash, graph_store):
+    async def flaky_link(store, decision_id, root, commit_hash):
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("graph unavailable")
-        return await original(store, decision_id, root, commit_hash, graph_store)
+        return await original(store, decision_id, root, commit_hash)
 
     monkeypatch.setattr("axon.hooks.git_event._link_touched_symbols", flaky_link)
 
-    graph = _FakeGraph()
     with pytest.raises(RuntimeError):
-        await on_commit(store=store, cwd=repo, graph_store=graph)
+        await on_commit(store=store, cwd=repo)
 
     # second run with same SHA must NOT duplicate the Decision and must
     # complete the linking step that previously failed.
-    decision_id = await on_commit(store=store, cwd=repo, graph_store=graph)
+    decision_id = await on_commit(store=store, cwd=repo)
     assert decision_id is not None
 
     found = await store.find_decisions_by_repo("resumerepo")

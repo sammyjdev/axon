@@ -27,7 +27,6 @@ from axon.hooks.file_bridge import update_context_file
 from axon.observability.trace_store import TraceStore
 from axon.obsidian.discovery import discover_vault
 from axon.obsidian.exporter import export_adr, export_architecture_doc
-from axon.store.graph_store import GraphStore
 from axon.store.session_store import SessionStore
 from axon.triggers.scope_detector import detect_scope_end
 from axon.validation.judge import score_decision
@@ -63,9 +62,8 @@ async def _link_touched_symbols(
     decision_id: str,
     root: Path,
     commit_hash: str,
-    graph_store: GraphStore | None,
 ) -> None:
-    """Link a Decision to the symbols its commit touched; refresh Redis cache."""
+    """Link a Decision to the symbols its commit touched."""
     try:
         touched = symbols_touched_by_commit(root, commit_hash)
     except Exception as exc:  # symbol linking is best-effort, never fatal
@@ -73,29 +71,22 @@ async def _link_touched_symbols(
         return
     if not touched:
         return
-    graph = graph_store or GraphStore()
-    try:
-        for symbol in touched:
-            await store.add_node(
-                symbol.id,
-                "symbol",
-                label=symbol.id,
-                payload=symbol.model_dump(mode="json"),
-            )
-            await store.add_edge(
-                Edge(source_id=decision_id, target_id=symbol.id, type="touches")
-            )
-            await graph.invalidate(symbol.id)
-    finally:
-        if graph_store is None:
-            await graph.close()
+    for symbol in touched:
+        await store.add_node(
+            symbol.id,
+            "symbol",
+            label=symbol.id,
+            payload=symbol.model_dump(mode="json"),
+        )
+        await store.add_edge(
+            Edge(source_id=decision_id, target_id=symbol.id, type="touches")
+        )
 
 
 async def on_commit(
     *,
     store: SessionStore | None = None,
     cwd: Path | None = None,
-    graph_store: GraphStore | None = None,
 ) -> str | None:
     """Capture a draft Decision from the most recent commit.
 
@@ -114,9 +105,7 @@ async def on_commit(
                 refreshed = existing.model_copy(update={"agent": current_agent})
                 await store.save_decision(refreshed)
                 existing = refreshed
-            await _link_touched_symbols(
-                store, existing.id, root, commit_hash, graph_store
-            )
+            await _link_touched_symbols(store, existing.id, root, commit_hash)
             try:
                 await update_context_file(root, store=store)
             except Exception as exc:
@@ -143,7 +132,7 @@ async def on_commit(
             status="draft",
         )
         await store.save_decision(decision)
-        await _link_touched_symbols(store, decision.id, root, commit_hash, graph_store)
+        await _link_touched_symbols(store, decision.id, root, commit_hash)
         try:
             await update_context_file(root, store=store)
         except Exception as exc:  # the .md mirror is a convenience, never fatal
