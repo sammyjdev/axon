@@ -11,7 +11,7 @@ from axon.embedder.engine import EmbedderEngine
 from axon.embedder.graph_extractor import build_dependency_records
 from axon.embedder.tokens import estimate_tokens as _estimate_tokens
 from axon.store.file_cache import FileCache, sha1_of_source
-from axon.store.graph_store import GraphStore
+from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.pg_vector_store import PgVectorStore
 from axon.store.vector_common import Chunk as VectorChunk
 
@@ -185,7 +185,7 @@ async def index_path(
     vault_root: Path,
     file_cache: FileCache,
     forced_ctx: str | None = None,
-    graph_store: GraphStore | None = None,
+    graph_store: PostgresSymbolDeps | None = None,
     languages: set[str] | None = None,
 ) -> tuple[int, int]:
     """Index all supported files under target.
