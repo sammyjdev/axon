@@ -66,7 +66,7 @@ class ExpansionService:
             registry=self.source_registry,
             transport=collector_transport,
         )
-        self.failure_store = failure_store or FailureStore(self.runtime.data_root / "failures.db")
+        self.failure_store = failure_store or FailureStore(dsn=self.runtime.pg_url)
         self.outcome_store = outcome_store or OutcomeStore(self.runtime.data_root / "outcomes.db")
         self._stores_ready = False
 
