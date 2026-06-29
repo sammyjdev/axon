@@ -20,6 +20,22 @@ if TYPE_CHECKING:
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
+
+
+def _strip_frontmatter(source: str) -> tuple[str, int]:
+    """Strip a leading YAML frontmatter block.
+
+    Returns ``(body, line_offset)`` where ``line_offset`` is the number of
+    lines the frontmatter block (including its fences) consumed, so chunk line
+    numbers can be shifted back onto the original source. A document with no
+    frontmatter, or an unterminated ``---`` block, returns ``(source, 0)``.
+    """
+    match = _FRONTMATTER_RE.match(source)
+    if not match:
+        return source, 0
+    line_offset = source[: match.end()].count("\n")
+    return source[match.end() :], line_offset
 
 
 @dataclass(frozen=True)
@@ -202,7 +218,8 @@ def chunk_markdown(source: str, file_path: str) -> list[Chunk]:
     from axon.embedder.chunker import Chunk  # local import avoids cycle
 
     stem = Path(file_path).stem
-    sections = parse_sections(source)
+    body_source, line_offset = _strip_frontmatter(source)
+    sections = parse_sections(body_source)
     if not sections:
         return [
             Chunk(symbol=stem, chunk_type="section", start_line=1, end_line=1,
@@ -214,8 +231,8 @@ def chunk_markdown(source: str, file_path: str) -> list[Chunk]:
         first = group[0]
         crumb = _breadcrumb(stem, _group_heading_path(group))
         body = "\n".join(ln for sec in group for ln in sec.lines)
-        start = first.start_line
-        end = group[-1].start_line + len(group[-1].lines) - 1
+        start = first.start_line + line_offset
+        end = group[-1].start_line + len(group[-1].lines) - 1 + line_offset
         crumb_tokens = estimate_tokens(f"{crumb}\n\n")
         # Subtract 1 extra token to absorb floor-truncation: int(a)+int(b) can be
         # 1 less than int(a+b) when fractional parts sum to >= 1.
