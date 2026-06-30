@@ -295,3 +295,37 @@ wrong side.
 `.claude/loop.yaml`, the ~8 lint-debt files.
 
 **Test plan.** `pytest -q` green; `ruff check .` green; CI runs both on PR.
+
+---
+
+## LR-1 - Live operational verification of the dec-122 hosted local-roles backend
+
+- Priority: P2 | Size: S | Status: ready | Depends-on: none
+- Decision: dec-122 (accepted; wired on master, `USE_HOSTED_LOCAL_ROLES=True`)
+
+**Problem.** dec-122's production wiring is implemented and is the default
+(scoring -> `groq/openai/gpt-oss-120b`, compressor -> `cerebras/gpt-oss-120b`, via
+`axon.router.llm_backend`), but it was never smoke-tested end-to-end against the
+real hosted providers. The eval harness (`benchmark/model_eval`) scored the models
+in isolation; the live production path - real Groq/Cerebras keys, the per-handle
+fallback chain (provider A -> B -> anthropic), and the `ctx=work` block - has no
+runtime confirmation. This is the one open gap left after dec-121/dec-122.
+
+**Acceptance criteria.**
+- [ ] Real scoring role against Groq `gpt-oss-120b` on a gold case returns a valid
+      JSON verdict at acceptable latency, using the live key.
+- [ ] Real caveman compressor against Cerebras `gpt-oss-120b` preserves required
+      symbols and compresses, using the live key.
+- [ ] The per-handle fallback chain actually fires when the primary errors / rate
+      limits (simulate a failure) and lands on the next free quota before spend.
+- [ ] `ctx=work` / `is_corporate_context` never reaches a hosted provider (the
+      compressor falls back to the original text; scoring respects the D3 gate).
+- [ ] Measured latency + any free-tier limit hit recorded in the PR/notes.
+
+**Files.** `src/axon/router/llm_backend.py`, `src/axon/expansion/scoring.py`,
+`src/axon/router/compressor.py` (read-only verification; fix only if a gap is
+found). Optionally a live smoke test under `tests/` skipped without the keys.
+
+**Test plan.** A live smoke test gated on `GROQ_API_KEY` / `CEREBRAS_API_KEY`
+presence (skip otherwise), exercising both roles + the fallback + the `ctx=work`
+block. Kept out of the default CI run (needs network + keys) via a marker.
