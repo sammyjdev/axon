@@ -21,6 +21,74 @@ if TYPE_CHECKING:
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
+_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+
+_RELATION_FIELDS = frozenset({"relates_to", "requires", "supersedes", "implements", "extends", "replaces"})
+
+
+def _frontmatter_content(source: str) -> str:
+    """Return the raw YAML body between the --- fences, or empty string."""
+    m = _FRONTMATTER_RE.match(source)
+    return m.group(1) if m else ""
+
+
+def _frontmatter_relations(fm_body: str) -> list[tuple[str, str]]:
+    """Extract (field, target) pairs from known relation fields in YAML frontmatter.
+
+    Handles inline lists ``field: [a, b]``, block lists ``- item``, and scalars.
+    """
+    relations: list[tuple[str, str]] = []
+    current_field: str | None = None
+
+    for line in fm_body.splitlines():
+        if current_field and line.strip().startswith("- "):
+            target = line.strip()[2:].strip().strip("'\"")
+            if target:
+                relations.append((current_field, target))
+            continue
+        current_field = None
+        if ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        key = key.strip().lower()
+        if key not in _RELATION_FIELDS:
+            continue
+        val = val.strip()
+        if not val:
+            current_field = key
+        else:
+            items = [v.strip().strip("'\"") for v in val.strip("[]").split(",")]
+            for item in items:
+                if item:
+                    relations.append((key, item))
+
+    return relations
+
+
+def _body_references(body: str) -> list[str]:
+    """Extract local file stems from markdown links, preserving first-seen order."""
+    seen: set[str] = set()
+    refs: list[str] = []
+    for href in _LINK_RE.findall(body):
+        if href.startswith(("http://", "https://", "#", "mailto:")):
+            continue
+        clean = href.split("#")[0].split("?")[0]
+        stem = Path(clean).stem
+        if stem and stem not in seen:
+            seen.add(stem)
+            refs.append(stem)
+    return refs
+
+
+def _relation_context_block(relations: list[tuple[str, str]], references: list[str]) -> str:
+    """Build the plain-text relation block to prepend to the first chunk."""
+    by_field: dict[str, list[str]] = {}
+    for field, target in relations:
+        by_field.setdefault(field, []).append(target)
+    lines = [f"{field}: {', '.join(targets)}" for field, targets in by_field.items()]
+    if references:
+        lines.append(f"references: {', '.join(references)}")
+    return "\n".join(lines)
 
 
 def _strip_frontmatter(source: str) -> tuple[str, int]:
@@ -218,32 +286,42 @@ def chunk_markdown(source: str, file_path: str) -> list[Chunk]:
     from axon.embedder.chunker import Chunk  # local import avoids cycle
 
     stem = Path(file_path).stem
+    fm_body = _frontmatter_content(source)
     body_source, line_offset = _strip_frontmatter(source)
+
+    relations = _frontmatter_relations(fm_body)
+    references = _body_references(body_source)
+    ctx_block = _relation_context_block(relations, references) if (relations or references) else ""
+
     sections = parse_sections(body_source)
     if not sections:
         return [
             Chunk(symbol=stem, chunk_type="section", start_line=1, end_line=1,
-                  content="", file_path=file_path, language="markdown")
+                  content=ctx_block, file_path=file_path, language="markdown")
         ]
 
     chunks: list[Chunk] = []
-    for group in pack_sections(sections):
+    for gi, group in enumerate(pack_sections(sections)):
         first = group[0]
         crumb = _breadcrumb(stem, _group_heading_path(group))
         body = "\n".join(ln for sec in group for ln in sec.lines)
         start = first.start_line + line_offset
         end = group[-1].start_line + len(group[-1].lines) - 1 + line_offset
         crumb_tokens = estimate_tokens(f"{crumb}\n\n")
+        # ctx_block only goes into the first window of the first group
+        ctx = ctx_block if gi == 0 else ""
+        ctx_tokens = estimate_tokens(f"{ctx}\n\n") if ctx else 0
         # Subtract 1 extra token to absorb floor-truncation: int(a)+int(b) can be
         # 1 less than int(a+b) when fractional parts sum to >= 1.
-        body_budget = max(MIN_TOKENS, MAX_TOKENS - crumb_tokens - 1)
+        body_budget = max(MIN_TOKENS, MAX_TOKENS - crumb_tokens - ctx_tokens - 1)
         windows = split_text(body, body_budget)
         for i, win in enumerate(windows):
             symbol = crumb if len(windows) == 1 else f"{crumb}[{i}]"
+            prefix = f"{ctx}\n\n" if (i == 0 and ctx) else ""
             chunks.append(
                 Chunk(symbol=symbol, chunk_type="section",
                       start_line=start, end_line=end,
-                      content=f"{crumb}\n\n{win}", file_path=file_path,
+                      content=f"{prefix}{crumb}\n\n{win}", file_path=file_path,
                       language="markdown")
             )
     return chunks
