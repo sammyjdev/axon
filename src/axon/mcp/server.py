@@ -378,9 +378,19 @@ def _self_correct_enabled() -> bool:
     return os.getenv("AXON_SELF_CORRECT", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
+def _self_correct_model() -> str:
+    """Model for the self-correction judge/reformulation. Defaults to the active
+    profile's trivial tier; override via AXON_SELF_CORRECT_MODEL — e.g. an
+    ``openrouter/...`` id for reliable, aggregated capacity off the free tier, or
+    an ``ollama/...`` id to point the offline calibration run at local hardware."""
+    return os.getenv("AXON_SELF_CORRECT_MODEL") or _bottom_tier_model()
+
+
 def _cheap_llm_json(system: str, user: str) -> dict:
-    """One cheap FREE-profile completion returning parsed JSON, or {} on failure."""
-    model = _bottom_tier_model()
+    """One cheap completion returning parsed JSON, or {} on failure.
+
+    Model is the trivial tier by default, overridable via AXON_SELF_CORRECT_MODEL."""
+    model = _self_correct_model()
     kwargs = litellm_kwargs(model, ollama_host=_RUNTIME.ollama_local_host,
                             num_ctx=_RUNTIME.scoring_num_ctx)
     try:

@@ -76,6 +76,19 @@ retrieve_fn, judge_fn) -> CorrectionResult` in a new module
 and compression. Env kill-switch `AXON_SELF_CORRECT` (default on) disables the loop
 without redeploy for incident response.
 
+The judge/reformulation model is `AXON_SELF_CORRECT_MODEL` (default: the active
+profile's trivial tier). The free tier rate-limits fast under the judge's bursty
+gray-zone traffic, so the two workloads split by env, no code branch:
+
+- **Online (`ask()`)** → set `AXON_SELF_CORRECT_MODEL` to a small OpenRouter id
+  (`openrouter/meta-llama/llama-3.1-8b-instruct`): aggregated capacity off the free
+  tier, always up, fractions of a cent per call (the judge is a binary verdict, the
+  rewrite one line).
+- **Offline (calibration sweep)** → run the script with
+  `AXON_SELF_CORRECT_MODEL=ollama/<model>` pointed at local hardware (e.g. a
+  4070-class GPU over the LAN): zero marginal cost, no rate limit, ideal for the
+  many-call golden-set sweep.
+
 `correct_retrieval` requires `self_correct.py`. `ask()` requires `correct_retrieval`.
 
 ### D-E: New retrieval benchmark
