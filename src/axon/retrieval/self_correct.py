@@ -7,7 +7,8 @@ See docs/superpowers/specs/2026-07-01-agentic-retrieval-design.md.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 # Calibrated against the golden set (see retrieval_eval). Below LOW: retry
 # without asking the judge. At/above HIGH: trust the retrieval. Gray zone in
@@ -56,3 +57,63 @@ def grade(
         return True, "high_score"
     verdict = judge_fn(query, code_context)
     return (verdict, "judge_sufficient" if verdict else "judge_insufficient")
+
+
+_GIVE_UP_HEADER = "⚠ contexto recuperado pode ser insuficiente para esta query"
+
+
+@dataclass(frozen=True)
+class CorrectionResult:
+    code_context: str
+    pack: object
+    hits: list[dict]
+    meta: dict
+
+
+async def correct_retrieval(
+    query: str,
+    ctx: str | None,
+    code_context: str,
+    pack: object,
+    hits: list[dict],
+    *,
+    retrieve_fn: Callable[[str], Awaitable[tuple[str, object, list[dict]]]],
+    judge_fn: Callable[[str, str], bool],
+    reformulate_fn: Callable[[str], str],
+    graph_fn: Callable[[list[dict]], Awaitable[str]],
+    enabled: bool = True,
+) -> CorrectionResult:
+    """Grade the retrieval; on insufficiency run exactly one recovery step
+    (graph fallback for structural queries, else query reformulation); if still
+    insufficient, return the original context with an honest give-up header."""
+    if not enabled:
+        return CorrectionResult(code_context, pack, hits,
+                                {"verdict": "disabled", "strategy_used": None,
+                                 "retried": False, "gave_up": False})
+
+    sufficient, verdict = grade(hits, query, code_context, judge_fn)
+    if sufficient:
+        return CorrectionResult(code_context, pack, hits,
+                                {"verdict": verdict, "strategy_used": None,
+                                 "retried": False, "gave_up": False})
+
+    if is_structural(query):
+        strategy = "graph"
+        graph_ctx = await graph_fn(hits)
+        if graph_ctx:
+            return CorrectionResult(f"{code_context}\n\n{graph_ctx}", pack, hits,
+                                    {"verdict": verdict, "strategy_used": "graph",
+                                     "retried": True, "gave_up": False})
+    else:
+        strategy = "reformulate"
+        new_query = reformulate_fn(query)
+        code_context2, pack2, hits2 = await retrieve_fn(new_query)
+        sufficient2, verdict2 = grade(hits2, new_query, code_context2, judge_fn)
+        if sufficient2:
+            return CorrectionResult(code_context2, pack2, hits2,
+                                    {"verdict": verdict2, "strategy_used": "reformulate",
+                                     "retried": True, "gave_up": False})
+
+    return CorrectionResult(f"{_GIVE_UP_HEADER}\n\n{code_context}", pack, hits,
+                            {"verdict": verdict, "strategy_used": strategy,
+                             "retried": True, "gave_up": True})
