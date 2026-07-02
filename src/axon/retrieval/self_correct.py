@@ -10,13 +10,20 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-# Seed defaults, not yet calibrated: run scripts/calibrate_retrieval_bands.py
-# against a real (expanded) golden set with live pgvector + FREE-profile LLM to
-# calibrate. Below LOW: retry without asking the judge. At/above HIGH: trust
-# the retrieval. Gray zone in between: ask the judge. Similarity is a weak
-# relevance proxy, so the gray zone is deliberately wide.
-LOW: float = 0.35
-HIGH: float = 0.65
+# Below LOW: retry without asking the judge. At/above HIGH: trust the retrieval.
+# Gray zone in between: ask the judge.
+#
+# Calibrated 2026-07-02 against a 24-case grounded golden set (live pgvector +
+# openrouter/meta-llama/llama-3.1-8b-instruct judge). Finding: best-hit cosine
+# does NOT separate good from bad retrieval on this docs+code corpus — hits and
+# misses both land in ~0.72-0.85 (the "confident and wrong" case). So the gray
+# zone is deliberately WIDE: LOW only catches empty/near-empty retrievals, HIGH
+# only trusts the rare very-high match, and everything in between defers to the
+# judge, which sees the actual context. Narrow the band later from production
+# telemetry (judge verdict vs. outcome). See docs/superpowers/specs/
+# 2026-07-01-agentic-retrieval-design.md "Calibration findings".
+LOW: float = 0.30
+HIGH: float = 0.85
 
 _STRUCTURAL_PHRASES = (
     "depende", "dependencia", "quem usa", "quem chama", "quem importa",

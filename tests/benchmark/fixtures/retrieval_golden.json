@@ -1,5 +1,28 @@
 [
-  {"query": "como o ask roteia contexto por projeto", "ctx": "personal", "expected_symbols": ["ContextDetector", "ask"]},
-  {"query": "quem usa PolicyRegistry", "ctx": "personal", "expected_symbols": ["PolicyRegistry"]},
-  {"query": "onde a supersessao penaliza rank", "ctx": "personal", "expected_symbols": ["has_revision_verb"]}
+  {"_note": "personal prose/easy", "query": "como uma sessao de trabalho e persistida em disco", "ctx": "personal", "expected_symbols": ["session_save"]},
+  {"_note": "personal prose/easy", "query": "onde um arquivo e dividido em pedacos e gravado no banco de vetores", "ctx": "personal", "expected_symbols": ["ingest_file"]},
+  {"_note": "personal prose/medium", "query": "como eu mudo qual perfil de modelo fica ativo", "ctx": "personal", "expected_symbols": ["profile_use"]},
+  {"_note": "personal prose/hard", "query": "de onde a ferramenta descobre a versao mais recente publicada pra baixar", "ctx": "personal", "expected_symbols": ["resolve_latest_tag"]},
+  {"_note": "personal prose/medium", "query": "como um post do linkedin e formatado antes de publicar", "ctx": "personal", "expected_symbols": ["format_linkedin_post"]},
+  {"_note": "personal prose/medium", "query": "remocao dos vetores associados a um caminho de arquivo", "ctx": "personal", "expected_symbols": ["delete_by_file"]},
+  {"_note": "personal structural", "query": "quem usa delete_by_file", "ctx": "personal", "expected_symbols": ["delete_by_file"]},
+  {"_note": "personal structural", "query": "o que depende de ingest_file no grafo de codigo", "ctx": "personal", "expected_symbols": ["ingest_file"]},
+
+  {"_note": "knowledge prose/easy", "query": "como o prompt de sistema do mestre do jogo e construido", "ctx": "knowledge", "expected_symbols": ["build_gm_system_prompt"]},
+  {"_note": "knowledge prose/medium", "query": "resgatar um convite e receber um token de acesso", "ctx": "knowledge", "expected_symbols": ["redeem_invite"]},
+  {"_note": "knowledge prose/medium", "query": "onde os itens iniciais de inventario de um jogador sao criados", "ctx": "knowledge", "expected_symbols": ["seed_inventory_items"]},
+  {"_note": "knowledge prose/easy", "query": "como o texto e gerado pelo modelo de linguagem a partir de dois prompts", "ctx": "knowledge", "expected_symbols": ["generate_text"]},
+  {"_note": "knowledge prose/medium", "query": "buscar um pedido de rolagem de dados pelo identificador", "ctx": "knowledge", "expected_symbols": ["get_dice_roll_request"]},
+  {"_note": "knowledge prose/hard", "query": "como as anotacoes sao tiradas de um texto bruto e viram estrutura", "ctx": "knowledge", "expected_symbols": ["extract"]},
+  {"_note": "knowledge structural", "query": "quem chama generate_text", "ctx": "knowledge", "expected_symbols": ["generate_text"]},
+  {"_note": "knowledge structural", "query": "o que depende de redeem_invite", "ctx": "knowledge", "expected_symbols": ["redeem_invite"]},
+
+  {"_note": "saas prose/easy", "query": "como um documento de orcamento e montado", "ctx": "saas", "expected_symbols": ["build_quote_document"]},
+  {"_note": "saas prose/medium", "query": "verificacao de permissao por papel do usuario numa rota", "ctx": "saas", "expected_symbols": ["require_role"]},
+  {"_note": "saas prose/easy", "query": "como um novo usuario e criado no sistema", "ctx": "saas", "expected_symbols": ["create_user"]},
+  {"_note": "saas prose/medium", "query": "renovar o token de acesso a partir de um refresh", "ctx": "saas", "expected_symbols": ["refresh"]},
+  {"_note": "saas prose/easy", "query": "listar os atendimentos disponiveis", "ctx": "saas", "expected_symbols": ["list_available_attendances"]},
+  {"_note": "saas prose/medium", "query": "transformar o valor de status num rotulo legivel", "ctx": "saas", "expected_symbols": ["status_label"]},
+  {"_note": "saas structural", "query": "quem usa require_role", "ctx": "saas", "expected_symbols": ["require_role"]},
+  {"_note": "saas structural", "query": "o que depende de build_quote_document", "ctx": "saas", "expected_symbols": ["build_quote_document"]}
 ]
