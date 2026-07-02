@@ -54,7 +54,7 @@ as extra redundancy — all serve the exact model, so vectors stay interchangeab
 
 | Provider | Model id | Price / 1M in | API | Notes |
 |----------|----------|---------------|-----|-------|
-| DeepInfra | `BAAI/bge-m3` | $0.010 | OpenAI-compat `/v1/openai/embeddings` | 200 concurrent, $5 free credit, no minimum — recommended paid primary |
+| DeepInfra | `BAAI/bge-m3` | $0.010 | OpenAI-compat `/v1/openai/embeddings` | 200 concurrent, $5 free credit, no minimum — recommended paid primary. Use the **plain `BAAI/bge-m3`** (dense 1024-dim), NOT `BAAI/bge-m3-multi` (multi-vector/sparse "multi-functionality" — different representation, not interchangeable). The cos≥0.999 onboarding check confirms the id before trusting it. |
 | Novita | `baai/bge-m3` | $0.010 | custom REST | tiered RPM/TPM by recent top-up |
 | OVHcloud AI Endpoints | `bge-m3` | 0.01 € | OpenAI-compat `/v1/embeddings` | limits via support |
 | Cloudflare Workers AI | `bge-m3` | $0.012 | OpenAI-compat `/v1/embeddings` | 60K context |
