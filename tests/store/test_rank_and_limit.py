@@ -33,3 +33,17 @@ def test_rank_and_limit_respects_token_budget() -> None:
         now=datetime(2025, 1, 2, tzinfo=UTC),
     )
     assert len(out) == 1
+
+
+def test_rank_and_limit_keeps_top_hit_when_it_alone_exceeds_budget() -> None:
+    """A valid query with one plausible hit must never return empty just because
+    that top hit's content alone is larger than the token budget (regression for
+    the drop-everything bug in EMB-4)."""
+    from axon.store.vector_common import _rank_and_limit
+    # content ~400 chars -> ~100 estimated tokens; budget 10 is smaller than any hit
+    results = [_r(0, "x" * 400)]
+    out = _rank_and_limit(
+        results, top_k=5, max_nodes=25, max_tokens=10,
+        now=datetime(2025, 1, 2, tzinfo=UTC),
+    )
+    assert len(out) == 1
