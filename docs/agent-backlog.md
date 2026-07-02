@@ -329,3 +329,166 @@ found). Optionally a live smoke test under `tests/` skipped without the keys.
 **Test plan.** A live smoke test gated on `GROQ_API_KEY` / `CEREBRAS_API_KEY`
 presence (skip otherwise), exercising both roles + the fallback + the `ctx=work`
 block. Kept out of the default CI run (needs network + keys) via a marker.
+
+---
+
+Epic: **bge-m3 embedder + local→cloud fallback** -
+[`docs/superpowers/specs/2026-07-02-embedder-bge-m3-fallback-design.md`](superpowers/specs/2026-07-02-embedder-bge-m3-fallback-design.md)
+(issue #45). Root cause: code chunks embed raw source via `bge-small-en` and lose
+NL queries to doc chunks; fix = swap to `bge-m3` (dim 1024) served by a configurable
+Ollama→NIM→DeepInfra chain (all the exact same model, verified vector-identical).
+Recommended order: **EMB-4** (independent quick win) → **EMB-1** → **EMB-2** →
+**EMB-3**; EMB-5 is operational (not FORGE).
+
+---
+
+## EMB-1 - Widen the loop gate to cover the embedder + a retrieval-eval smoke
+
+- Priority: P2 | Size: S | Status: ready | Depends-on: none
+- Spec: bge-m3-fallback design, "Gate"
+
+**Problem.** `.claude/loop.yaml` `gate_cmd` runs only `router/resilience/store/scripts`.
+It does NOT run `tests/embedder` or `tests/benchmark`, so a FORGE slice that changes
+the embedder would pass the gate WITHOUT running its own tests. The embedder epic
+must not land through a gate that can't see it.
+
+**Acceptance criteria.**
+- [ ] `gate_cmd` in `.claude/loop.yaml` additionally runs `tests/embedder` and a fast
+      `retrieval_eval` unit smoke (the injected-fakes test, `tests/benchmark/test_retrieval_eval.py`),
+      NOT the live-DB sweep.
+- [ ] The added suites are green on `master` before widening (if any are red from
+      pre-existing debt, fix or explicitly scope them out in a comment — do not
+      widen onto red).
+- [ ] Comment updated to state what the gate now covers and why.
+
+**Files.** `.claude/loop.yaml`.
+
+**Test plan.** Run the new `gate_cmd` locally against `master`; confirm green and that
+it actually executes the embedder + eval tests (non-zero collected count).
+
+---
+
+## EMB-2 - bge-m3 embedder with configurable Ollama→NIM→DeepInfra provider chain
+
+- Priority: P1 | Size: M | Status: blocked | Depends-on: EMB-1
+- Spec: bge-m3-fallback design, "Components" + "provider chain"
+
+**Problem.** `EmbedderEngine` (`src/axon/embedder/engine.py`) is fastembed/onnx
+in-process (`bge-small-en`, dim 384). We need it to embed via **bge-m3** through an
+ordered, configurable chain of providers that all serve the exact `BAAI/bge-m3`
+model, so query and chunk vectors stay numerically interchangeable and the embedder
+survives a local Ollama outage.
+
+**Acceptance criteria.**
+- [ ] `EmbedderEngine.embed()` / `embed_one()` keep their signatures; all existing
+      callers compile unchanged.
+- [ ] Providers tried in order: Ollama (`AXON_OLLAMA_LOCAL_HOST` `/api/embed`,
+      model `bge-m3`) → NIM (`/v1/embeddings`, `baai/bge-m3`, `NVIDIA_NIM_API_KEY`) →
+      DeepInfra (OpenAI-compatible `/v1/openai/embeddings`, `BAAI/bge-m3`,
+      `DEEPINFRA_API_KEY`). Order + membership come from config, not hardcoded.
+- [ ] On a provider error/timeout, fall through to the next; if all fail, raise a
+      clear error (never return a wrong-dim/empty vector silently).
+- [ ] Returned vectors are L2-normalized; `vector_dim()` returns 1024 for bge-m3.
+- [ ] Provider onboarding check helper: embed a fixed sample via the local provider
+      and a candidate, assert cosine ≥ 0.999 (guards the normalization/float caveat).
+- [ ] Prefer `litellm.embedding()` for the OpenAI-compatible providers + Ollama if it
+      supports them cleanly; otherwise thin HTTP adapters behind one interface. Record
+      which was used and why.
+- [ ] TDD with fakes: fake providers (no network) prove ordering, fallthrough, the
+      all-fail error, and normalization. No live calls in unit tests.
+
+**Files.** `src/axon/embedder/engine.py` (+ a new provider module if adapters are
+hand-rolled), `src/axon/config/runtime.py` (config for the chain), `tests/embedder/`.
+
+**Test plan.** Unit: injected fake providers for order/fallthrough/all-fail/normalize.
+Optional gated integration test (skipped without keys) hitting Ollama+NIM asserting
+cosine ≥ 0.999 between them.
+
+---
+
+## EMB-3 - Migrate vector dim 384->1024 and make bge-m3 the default
+
+- Priority: P1 | Size: M | Status: blocked | Depends-on: EMB-2
+- Spec: bge-m3-fallback design, "table migration"
+
+**Problem.** bge-m3 is dim 1024 vs the current 384. The `embeddings.vector` and
+`recall_embeddings.vector` columns and the dim config must move to 1024; dims cannot
+be mixed, so this is a hard cutover (the actual data re-index is the operational
+EMB-5, but the schema + default + guards land here).
+
+**Acceptance criteria.**
+- [ ] Vector columns declared/created at dim 1024 (`pg_vector_store` schema +
+      `FASTEMBED_MODEL_DIMS`/`vector_dim()` updated for bge-m3).
+- [ ] The default embedder model is bge-m3 via the EMB-2 chain (no code path still
+      defaults to `bge-small-en`).
+- [ ] A guard/migration ensures a 384-dim legacy table is detected and refuses mixed
+      dims with a clear message pointing at the re-index (EMB-5).
+- [ ] `retrieval_eval` over the grounded golden set shows code recall@k strictly
+      higher than the bge-small-en baseline on a re-embedded sample (the gate for this
+      change). Record the before/after numbers in the PR.
+
+**Files.** `src/axon/store/pg_vector_store.py`, `src/axon/embedder/engine.py`,
+`src/axon/benchmark/retrieval_eval.py` (if a before/after harness helper is needed),
+`tests/embedder/`, `tests/store/`.
+
+**Test plan.** Unit: dim config = 1024; mixed-dim guard raises. Gated: re-embed the
+golden symbols + queries with bge-m3 and assert recall@k improves vs the recorded
+bge-small-en baseline.
+
+---
+
+## EMB-4 - Fix empty retrieval for valid queries (query-side filter)
+
+- Priority: P1 | Size: S | Status: ready | Depends-on: none
+- Spec: bge-m3-fallback design, "secondary bug"
+
+**Problem.** Two golden queries return an EMPTY retrieval from `_retrieve_context`
+despite the expected symbol existing in the index at cosine ~0.51:
+`"onde um arquivo e dividido em pedacos e gravado no banco de vetores"` (`ingest_file`,
+ctx=personal) and `"de onde a ferramenta descobre a versao mais recente publicada pra
+baixar"` (`resolve_latest_tag`, ctx=personal). A query-side filter (strategy /
+collections / language / a score threshold) is dropping all results. Independent of
+the embedder swap.
+
+**Acceptance criteria.**
+- [ ] Root cause of the empty result identified (which filter/branch in the
+      `_retrieve_context` → `_select_retrieval_strategy` → `pg_vector_store.search`
+      path zeroes the hits) and stated in the PR.
+- [ ] The two repro queries return non-empty hits containing plausible symbols.
+- [ ] Regression test at the correct seam reproduces "valid query -> empty" before the
+      fix and passes after. If no correct seam exists, that is the finding — document it.
+- [ ] No broadening of scope: fix only the drop-everything path, not ranking.
+
+**Files.** `src/axon/mcp/server.py` (`_retrieve_context` / strategy select),
+`src/axon/store/pg_vector_store.py` (if a threshold/filter lives there), `tests/`.
+
+**Test plan.** Reproduce via a gated live-DB test with the two queries, or a unit test
+at the filter seam with a fixture that mimics the offending strategy/collection config.
+
+---
+
+## EMB-5 - Operational: re-index the corpus with bge-m3 (dim 1024)
+
+- Priority: P1 | Size: M | Status: blocked | Depends-on: EMB-3
+- Spec: bge-m3-fallback design | **Operational - NOT a FORGE code slice**
+
+**Problem.** After EMB-3 lands the 1024-dim schema + bge-m3 default, the existing
+384-dim corpus (code AND docs, all ctx) must be re-embedded. This needs live pgvector
+(`AXON_PG_URL`) + a live embedding provider (Ollama/NIM/DeepInfra) and is run by the
+operator, like the dec-121 backfill - not by FORGE.
+
+**Acceptance criteria (operator runbook).**
+- [ ] Re-index every ctx (personal/knowledge/saas; career is ~empty) via the standard
+      index path with the bge-m3 chain active.
+- [ ] Post-re-index, all vectors are dim 1024 and row counts are within expected range
+      of the prior corpus (no silent drops).
+- [ ] Run the `retrieval_eval` live sweep over the golden set; record code recall@k
+      before (bge-small-en) vs after (bge-m3) as the acceptance evidence.
+- [ ] Re-calibrate `LOW`/`HIGH` for the self-correction loop against the new corpus
+      (PR #44's wide 0.30/0.85 was set on the old, docs-dominated bge-small-en index).
+
+**Files.** operational (index path invocation + `scripts/calibrate_retrieval_bands.py`);
+no source change expected beyond recorded constants.
+
+**Test plan.** The live `retrieval_eval` sweep IS the test: code recall@k must rise
+materially vs the recorded bge-small-en baseline.
