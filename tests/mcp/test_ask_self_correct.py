@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import dataclasses
+
 import axon.mcp.server as server
+from axon.context.contracts import DEFAULT_RETRIEVAL_STRATEGIES, ContextPack
 
 
 def test_self_correct_enabled_default_on(monkeypatch):
@@ -41,3 +44,20 @@ def test_judge_sufficiency_false_on_malformed(monkeypatch):
     # Malformed judge output must not crash ask(); default to insufficient
     # (conservative: prefer a retry over trusting an unparseable verdict).
     assert server._judge_sufficiency("q", "ctx") is False
+
+
+def test_augment_pack_fn_appends_graph_segment_without_mutating_original():
+    strategy = DEFAULT_RETRIEVAL_STRATEGIES["balanced"]
+    pack = ContextPack(
+        strategy=strategy,
+        task_type="CODE_ANALYSIS",
+        profile="solo-dev",
+        mode="hybrid-local",
+        contexts=("knowledge",),
+        segments=("a",),
+    )
+
+    new_pack = dataclasses.replace(pack, segments=pack.segments + ("graph",))
+
+    assert "graph" in new_pack.text
+    assert "graph" not in pack.text

@@ -21,12 +21,17 @@ async def _graph_empty(hits):
     return ""
 
 
+def _augment_identity(pack, graph_text):
+    return pack
+
+
 @pytest.mark.asyncio
 async def test_disabled_returns_input_untouched():
     r = await correct_retrieval(
         "q", "personal", "CTX", PACK, [{"score": 0.05}],
         retrieve_fn=_retrieve_still_bad, judge_fn=lambda q, c: False,
         reformulate_fn=lambda q: q, graph_fn=_graph_empty, enabled=False,
+        augment_pack_fn=_augment_identity,
     )
     assert r.code_context == "CTX"
     assert r.meta["retried"] is False and r.meta["gave_up"] is False
@@ -38,6 +43,7 @@ async def test_sufficient_first_pass_no_retry():
         "como funciona X", "personal", "CTX", PACK, [{"score": 0.90}],
         retrieve_fn=_retrieve_still_bad, judge_fn=lambda q, c: False,
         reformulate_fn=lambda q: "SHOULD NOT BE CALLED", graph_fn=_graph_empty,
+        augment_pack_fn=_augment_identity,
     )
     assert r.meta == {
         "verdict": "high_score", "strategy_used": None, "retried": False, "gave_up": False,
@@ -51,6 +57,7 @@ async def test_reformulate_path_recovers():
         "como funciona a compressao", "personal", "BAD", PACK, [{"score": 0.05}],
         retrieve_fn=_retrieve_ok, judge_fn=lambda q, c: False,
         reformulate_fn=lambda q: q + " detalhado", graph_fn=_graph_empty,
+        augment_pack_fn=_augment_identity,
     )
     assert r.code_context == "REFORMULATED CONTEXT"
     assert r.meta["strategy_used"] == "reformulate"
@@ -64,10 +71,12 @@ async def test_structural_query_uses_graph():
         [{"score": 0.05, "payload": {"symbol": "AuthService"}}],
         retrieve_fn=_retrieve_ok, judge_fn=lambda q, c: False,
         reformulate_fn=lambda q: "SHOULD NOT BE CALLED", graph_fn=_graph_hit,
+        augment_pack_fn=lambda pack, txt: ("AUGMENTED", txt),
     )
     assert "A -> B" in r.code_context and "BAD" in r.code_context
     assert r.meta["strategy_used"] == "graph"
     assert r.meta["gave_up"] is False
+    assert r.pack == ("AUGMENTED", "## Dependencias\nA -> B")
 
 
 @pytest.mark.asyncio
@@ -76,6 +85,7 @@ async def test_reformulate_fails_gives_up_with_header():
         "como funciona a compressao", "personal", "BAD", PACK, [{"score": 0.05}],
         retrieve_fn=_retrieve_still_bad, judge_fn=lambda q, c: False,
         reformulate_fn=lambda q: q, graph_fn=_graph_empty,
+        augment_pack_fn=_augment_identity,
     )
     assert r.code_context.startswith("⚠ contexto recuperado pode ser insuficiente")
     assert r.meta["gave_up"] is True and r.meta["strategy_used"] == "reformulate"
@@ -83,11 +93,16 @@ async def test_reformulate_fails_gives_up_with_header():
 
 @pytest.mark.asyncio
 async def test_structural_empty_graph_gives_up():
+    def _augment_should_not_be_called(pack, txt):
+        raise AssertionError("augment_pack_fn must not be called on give-up path")
+
     r = await correct_retrieval(
         "quem usa AuthService", "personal", "BAD", PACK,
         [{"score": 0.05, "payload": {"symbol": "AuthService"}}],
         retrieve_fn=_retrieve_ok, judge_fn=lambda q, c: False,
         reformulate_fn=lambda q: q, graph_fn=_graph_empty,
+        augment_pack_fn=_augment_should_not_be_called,
     )
     assert r.code_context.startswith("⚠ contexto recuperado")
     assert r.meta["gave_up"] is True and r.meta["strategy_used"] == "graph"
+    assert r.pack is PACK

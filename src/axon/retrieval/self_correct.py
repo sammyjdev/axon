@@ -81,6 +81,7 @@ async def correct_retrieval(
     judge_fn: Callable[[str, str], bool],
     reformulate_fn: Callable[[str], str],
     graph_fn: Callable[[list[dict]], Awaitable[str]],
+    augment_pack_fn: Callable[[object, str], object],
     enabled: bool = True,
 ) -> CorrectionResult:
     """Grade the retrieval; on insufficiency run exactly one recovery step
@@ -101,7 +102,8 @@ async def correct_retrieval(
         strategy = "graph"
         graph_ctx = await graph_fn(hits)
         if graph_ctx:
-            return CorrectionResult(f"{code_context}\n\n{graph_ctx}", pack, hits,
+            new_pack = augment_pack_fn(pack, graph_ctx)
+            return CorrectionResult(f"{code_context}\n\n{graph_ctx}", new_pack, hits,
                                     {"verdict": verdict, "strategy_used": "graph",
                                      "retried": True, "gave_up": False})
     else:

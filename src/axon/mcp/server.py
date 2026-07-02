@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import os
 import uuid
@@ -677,6 +678,9 @@ async def ask(
         query, effective_ctx, code_context, pack, hits,
         retrieve_fn=_retry, judge_fn=_judge_sufficiency,
         reformulate_fn=_reformulate_query, graph_fn=_graph_fallback,
+        augment_pack_fn=lambda pack, graph_text: dataclasses.replace(
+            pack, segments=pack.segments + (graph_text,)
+        ),
         enabled=_self_correct_enabled(),
     )
     code_context, pack, hits = correction.code_context, correction.pack, correction.hits
