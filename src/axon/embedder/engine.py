@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Model name that routes embed()/embed_one() to the bge-m3 provider chain
 # (Ollama -> NIM -> DeepInfra) instead of the in-process fastembed/onnx path.
-# Not yet the default -- EMB-3 flips the default model + vector dim.
+# This is the DEFAULT model as of EMB-3 (dim 1024).
 _CHAIN_MODEL_NAME = "bge-m3"
 
 # Call preload_dlls at import time so pip-installed nvidia-cudnn-cu12 /
@@ -28,12 +28,6 @@ if hasattr(_ort, "preload_dlls"):
     except Exception as _exc:  # noqa: BLE001
         logger.warning("onnxruntime.preload_dlls() failed: %s", _exc)
 
-# Platform-aware model selection:
-# - Apple Silicon: BAAI/bge-small-en-v1.5 (MPS-friendly, ~33MB)
-# - GPU/CPU: BAAI/bge-base-en-v1.5 (~110MB, better quality)
-_DEFAULT_MODEL_APPLE = "BAAI/bge-small-en-v1.5"
-_DEFAULT_MODEL_OTHER = "BAAI/bge-base-en-v1.5"
-
 # Static dimension map - avoids loading any model just to learn its output size.
 # Add entries here when new models are introduced.
 FASTEMBED_MODEL_DIMS: dict[str, int] = {
@@ -44,9 +38,13 @@ FASTEMBED_MODEL_DIMS: dict[str, int] = {
 
 
 def _default_model() -> str:
-    if platform.system() == "Darwin" and platform.machine() == "arm64":
-        return _DEFAULT_MODEL_APPLE
-    return _DEFAULT_MODEL_OTHER
+    """The bge-m3 chain is the default on every platform (EMB-3).
+
+    The former platform-conditional fastembed defaults (bge-small-en-v1.5 on
+    Apple Silicon, bge-base-en-v1.5 elsewhere) are still selectable explicitly
+    via EmbedderEngine(model_name=...); they are just no longer the default.
+    """
+    return _CHAIN_MODEL_NAME
 
 
 def default_embedding_dimension() -> int:

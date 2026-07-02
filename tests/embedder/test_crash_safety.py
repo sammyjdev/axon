@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from axon.embedder.engine import default_embedding_dimension
+
 
 class _SentinelTrackingCache:
     """Tracks set_entry calls to verify pending/done ordering."""
@@ -40,7 +42,7 @@ async def test_pending_written_before_flush(tmp_path: Path) -> None:
 
     cache = _SentinelTrackingCache()
     engine = MagicMock()
-    engine.embed = MagicMock(return_value=[[0.1] * 768])
+    engine.embed = MagicMock(return_value=[[0.1] * default_embedding_dimension()])
     store = AsyncMock()
     store.upsert_batch = AsyncMock()
     store.delete_by_file = AsyncMock()

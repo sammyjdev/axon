@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from axon.embedder.engine import default_embedding_dimension
+
 
 class _DeletionTrackingCache:
     def __init__(self, preloaded_paths: list[str]) -> None:
@@ -41,7 +43,7 @@ async def test_deleted_file_cleaned_from_qdrant(tmp_path: Path) -> None:
     cache = _DeletionTrackingCache([py_file.as_posix(), deleted_posix])
 
     engine = MagicMock()
-    engine.embed = MagicMock(return_value=[[0.1] * 768])
+    engine.embed = MagicMock(return_value=[[0.1] * default_embedding_dimension()])
     store = AsyncMock()
     store.upsert_batch = AsyncMock()
     store.delete_by_file = AsyncMock()
