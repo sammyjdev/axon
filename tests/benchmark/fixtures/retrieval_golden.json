@@ -1,0 +1,5 @@
+[
+  {"query": "como o ask roteia contexto por projeto", "ctx": "personal", "expected_symbols": ["ContextDetector", "ask"]},
+  {"query": "quem usa PolicyRegistry", "ctx": "personal", "expected_symbols": ["PolicyRegistry"]},
+  {"query": "onde a supersessao penaliza rank", "ctx": "personal", "expected_symbols": ["has_revision_verb"]}
+]
