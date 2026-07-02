@@ -10,10 +10,11 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-# Calibrated against the golden set (see retrieval_eval). Below LOW: retry
-# without asking the judge. At/above HIGH: trust the retrieval. Gray zone in
-# between: ask the judge. Similarity is a weak relevance proxy, so the gray zone
-# is deliberately wide.
+# Seed defaults, not yet calibrated: run scripts/calibrate_retrieval_bands.py
+# against a real (expanded) golden set with live pgvector + FREE-profile LLM to
+# calibrate. Below LOW: retry without asking the judge. At/above HIGH: trust
+# the retrieval. Gray zone in between: ask the judge. Similarity is a weak
+# relevance proxy, so the gray zone is deliberately wide.
 LOW: float = 0.35
 HIGH: float = 0.65
 
