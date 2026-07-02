@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Literal
@@ -81,6 +81,29 @@ class ExpansionConfig:
 
 
 @dataclass(frozen=True)
+class EmbedderProviderConfig:
+    """One provider in the bge-m3 embedding chain (EMB-2)."""
+
+    name: str
+    endpoint: str
+    model: str
+    api_key_env: str | None = None
+
+
+@dataclass(frozen=True)
+class EmbedderChainConfig:
+    """Ordered bge-m3 provider chain (default: Ollama -> NIM -> DeepInfra).
+
+    Order and membership are configurable via AXON_EMBEDDER_CHAIN (comma-separated
+    provider names); each listed provider's endpoint/model id is fixed per the
+    verified bge-m3 interchangeability design (see docs/decisions).
+    """
+
+    model_name: str
+    providers: tuple[EmbedderProviderConfig, ...]
+
+
+@dataclass(frozen=True)
 class RuntimeConfig:
     mode: RuntimeMode
     engine_root: Path
@@ -103,6 +126,9 @@ class RuntimeConfig:
     provider_profile: str
     openrouter_compliance_required: bool
     expansion: ExpansionConfig
+    embedder_chain: EmbedderChainConfig = field(
+        default_factory=lambda: load_embedder_chain_config()
+    )
     active_profile: str | None = None
     vector_backend: str = "pgvector"
     fileindex_backend: str = "sqlite"
@@ -656,6 +682,46 @@ def _load_expansion_config(engine_root: Path) -> ExpansionConfig:
     )
 
 
+_EMBEDDER_CHAIN_MODEL = "bge-m3"
+_DEFAULT_EMBEDDER_CHAIN_ORDER = ("ollama", "nim", "deepinfra")
+
+
+def _embedder_provider_specs(ollama_local_host: str) -> dict[str, EmbedderProviderConfig]:
+    return {
+        "ollama": EmbedderProviderConfig(
+            name="ollama",
+            endpoint=f"{ollama_local_host.rstrip('/')}/api/embed",
+            model="bge-m3",
+        ),
+        "nim": EmbedderProviderConfig(
+            name="nim",
+            endpoint="https://integrate.api.nvidia.com/v1/embeddings",
+            model="baai/bge-m3",
+            api_key_env="NVIDIA_NIM_API_KEY",
+        ),
+        "deepinfra": EmbedderProviderConfig(
+            name="deepinfra",
+            endpoint="https://api.deepinfra.com/v1/openai/embeddings",
+            model="BAAI/bge-m3",
+            api_key_env="DEEPINFRA_API_KEY",
+        ),
+    }
+
+
+def load_embedder_chain_config() -> EmbedderChainConfig:
+    """Load the bge-m3 provider chain.
+
+    Order/membership: AXON_EMBEDDER_CHAIN env (comma-separated provider names,
+    default "ollama,nim,deepinfra"). Each provider's endpoint/model id is fixed.
+    """
+    ollama_local_host = os.environ.get("AXON_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434")
+    raw_order = os.environ.get("AXON_EMBEDDER_CHAIN", ",".join(_DEFAULT_EMBEDDER_CHAIN_ORDER))
+    specs = _embedder_provider_specs(ollama_local_host)
+    order = [name.strip().lower() for name in raw_order.split(",") if name.strip()]
+    providers = tuple(specs[name] for name in order if name in specs)
+    return EmbedderChainConfig(model_name=_EMBEDDER_CHAIN_MODEL, providers=providers)
+
+
 def load_runtime_config() -> RuntimeConfig:
     overrides = _load_toml_runtime_overrides()
     engine_root = _env_path(
@@ -694,6 +760,7 @@ def load_runtime_config() -> RuntimeConfig:
         provider_profile=_resolve_provider_profile(),
         openrouter_compliance_required=_env_bool("AXON_OPENROUTER_COMPLIANCE", False),
         expansion=_load_expansion_config(engine_root),
+        embedder_chain=load_embedder_chain_config(),
         vector_backend=_resolve_vector_backend(overrides),
         fileindex_backend=_resolve_fileindex_backend(overrides),
         graph_backend=_resolve_graph_backend(overrides),
