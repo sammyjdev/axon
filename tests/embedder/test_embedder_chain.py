@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
+from axon.config.runtime import load_embedder_chain_config
 from axon.embedder.engine import EmbedderEngine
 from axon.embedder.providers import (
     AllProvidersFailedError,
@@ -61,6 +62,41 @@ def test_all_providers_fail_raises_clear_error() -> None:
 
     with pytest.raises(AllProvidersFailedError):
         embed_via_chain(["hello"], providers=[broken_a, broken_b])
+
+    assert call_log == ["ollama", "nim"]
+
+
+def _short_provider(name: str, call_log: list[str], vectors: list[list[float]]):
+    """Fake provider that returns HTTP-200-shaped success but fewer vectors than texts."""
+
+    def _fn(texts: list[str]) -> list[list[float]]:
+        call_log.append(name)
+        return vectors
+
+    return _fn
+
+
+def test_falls_through_when_provider_returns_fewer_vectors_than_texts() -> None:
+    """A malformed 200 response (short/empty vector list) must not be accepted as success --
+    it must fall through to the next provider instead of silently dropping chunks."""
+    call_log: list[str] = []
+    malformed = _short_provider("ollama", call_log, [[1.0, 0.0]])  # 1 vector, 2 texts
+    healthy = _fake_provider("nim", call_log, [0.0, 1.0])
+
+    result = embed_via_chain(["hello", "world"], providers=[malformed, healthy])
+
+    assert call_log == ["ollama", "nim"]
+    assert result == [[0.0, 1.0], [0.0, 1.0]]
+
+
+def test_all_providers_short_raises_clear_error() -> None:
+    """When every provider returns a malformed (short) vector list, raise -- never return it."""
+    call_log: list[str] = []
+    short_a = _short_provider("ollama", call_log, [])
+    short_b = _short_provider("nim", call_log, [[1.0, 0.0]])
+
+    with pytest.raises(AllProvidersFailedError):
+        embed_via_chain(["hello", "world"], providers=[short_a, short_b])
 
     assert call_log == ["ollama", "nim"]
 
@@ -119,3 +155,13 @@ def test_engine_default_model_does_not_use_chain() -> None:
             mock_ensure.return_value.embed.return_value = []
             engine.embed(["hello"])
     mock_chain.assert_not_called()
+
+
+def test_chain_order_and_membership_are_sourced_from_config(monkeypatch) -> None:
+    """A non-default AXON_EMBEDDER_CHAIN order must be reflected exactly -- proves order
+    is genuinely read from config, not hardcoded."""
+    monkeypatch.setenv("AXON_EMBEDDER_CHAIN", "deepinfra,ollama")
+
+    config = load_embedder_chain_config()
+
+    assert [p.name for p in config.providers] == ["deepinfra", "ollama"]

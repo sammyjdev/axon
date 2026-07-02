@@ -107,11 +107,18 @@ def embed_via_chain(
     for fn in providers:
         try:
             vectors = fn(texts)
+            if len(vectors) != len(texts):
+                raise ValueError(
+                    f"provider returned {len(vectors)} vectors for {len(texts)} texts"
+                )
+            normalized = _l2_normalize(vectors)
         except Exception as exc:  # noqa: BLE001 - any provider failure must fall through
             errors.append(str(exc))
-            logger.warning("bge-m3 embedding provider failed, falling through: %s", exc)
+            logger.warning(
+                "bge-m3 embedding provider failed, falling through: %s", exc, exc_info=True
+            )
             continue
-        return _l2_normalize(vectors)
+        return normalized
     raise AllProvidersFailedError(
         f"All bge-m3 embedding providers failed: {'; '.join(errors) or 'no providers configured'}"
     )
@@ -125,10 +132,13 @@ def check_provider_interchangeable(
 ) -> bool:
     """Onboarding check: embed a fixed sample via the local and a candidate provider,
     assert pairwise cosine similarity >= threshold (guards normalization/float drift).
+
+    Cosine similarity is scale-invariant, so the raw provider vectors are compared
+    directly -- no pre-normalization needed here (embed_via_chain owns L2-norm).
     """
     sample = sample_texts or ["axon bge-m3 onboarding sample text"]
-    local_vecs = _l2_normalize(local_provider(sample))
-    candidate_vecs = _l2_normalize(candidate_provider(sample))
+    local_vecs = local_provider(sample)
+    candidate_vecs = candidate_provider(sample)
     return all(
         cosine_similarity(lv, cv) >= threshold
         for lv, cv in zip(local_vecs, candidate_vecs, strict=True)
