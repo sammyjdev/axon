@@ -33,8 +33,8 @@ Rejected alternatives:
 Requirement (user): the embedder must keep working when the local Ollama is
 unavailable. Constraint: query and chunk vectors must be numerically comparable, so
 every provider in the chain must serve **the exact `BAAI/bge-m3` model** (not an
-"equivalent"). Verified interchangeable — Ollama bge-m3 and NIM bge-m3 produce
-**identical** vectors (cosine = 1.0000 on sample texts).
+"equivalent"). Verified interchangeable (2026-07-02) — Ollama, NIM, and DeepInfra
+bge-m3 all produce **identical** vectors (pairwise cosine = 1.0000 on sample texts).
 
 Ordered, **configurable** chain (adding a provider is config, not code):
 
@@ -54,7 +54,7 @@ as extra redundancy — all serve the exact model, so vectors stay interchangeab
 
 | Provider | Model id | Price / 1M in | API | Notes |
 |----------|----------|---------------|-----|-------|
-| DeepInfra | `BAAI/bge-m3` | $0.010 | OpenAI-compat `/v1/openai/embeddings` | 200 concurrent, $5 free credit, no minimum — recommended paid primary. Use the **plain `BAAI/bge-m3`** (dense 1024-dim), NOT `BAAI/bge-m3-multi` (multi-vector/sparse "multi-functionality" — different representation, not interchangeable). The cos≥0.999 onboarding check confirms the id before trusting it. |
+| DeepInfra | `BAAI/bge-m3` | $0.010 | OpenAI-compat `/v1/openai/embeddings` | 200 concurrent, $5 free credit, no minimum — recommended paid primary. Standardize on the **plain `BAAI/bge-m3`** for id consistency with Ollama/NIM. Verified 2026-07-02: DeepInfra `BAAI/bge-m3` returns dense 1024-dim, **cos = 1.0000 vs Ollama bge-m3**; `BAAI/bge-m3-multi` also returns the identical dense vector on this endpoint (cos = 1.0000) — the "multi" functionality only surfaces on a non-embeddings API, so it is not a landmine, just avoided for clarity. |
 | Novita | `baai/bge-m3` | $0.010 | custom REST | tiered RPM/TPM by recent top-up |
 | OVHcloud AI Endpoints | `bge-m3` | 0.01 € | OpenAI-compat `/v1/embeddings` | limits via support |
 | Cloudflare Workers AI | `bge-m3` | $0.012 | OpenAI-compat `/v1/embeddings` | 60K context |
