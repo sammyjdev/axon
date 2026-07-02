@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import json
 import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+import litellm
 from mcp.server.fastmcp import FastMCP
 
 from axon.config.runtime import load_runtime_config
@@ -30,7 +33,10 @@ from axon.obsidian.discovery import discover_vault
 from axon.obsidian.exporter import export_adr, export_architecture_doc
 from axon.policy.core import PolicyRegistry
 from axon.recall import recall_context
+from axon.retrieval.self_correct import correct_retrieval
 from axon.router.compressor import caveman_compress_guarded
+from axon.router.engine import _bottom_tier_model
+from axon.router.llm_backend import litellm_kwargs
 from axon.store.collections import get_search_collections
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.session_store import ADR, SessionNote, SessionStore
@@ -368,6 +374,71 @@ async def _retrieve_context(
     return "\n\n".join(lines), pack, results
 
 
+def _self_correct_enabled() -> bool:
+    return os.getenv("AXON_SELF_CORRECT", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def _self_correct_model() -> str:
+    """Model for the self-correction judge/reformulation. Defaults to the active
+    profile's trivial tier; override via AXON_SELF_CORRECT_MODEL — e.g. an
+    ``openrouter/...`` id for reliable, aggregated capacity off the free tier, or
+    an ``ollama/...`` id to point the offline calibration run at local hardware."""
+    return os.getenv("AXON_SELF_CORRECT_MODEL") or _bottom_tier_model()
+
+
+def _cheap_llm_json(system: str, user: str) -> dict:
+    """One cheap completion returning parsed JSON, or {} on failure.
+
+    Model is the trivial tier by default, overridable via AXON_SELF_CORRECT_MODEL."""
+    model = _self_correct_model()
+    kwargs = litellm_kwargs(model, ollama_host=_RUNTIME.ollama_local_host,
+                            num_ctx=_RUNTIME.scoring_num_ctx)
+    try:
+        response = litellm.completion(
+            **kwargs, temperature=0, response_format={"type": "json_object"},
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": user}],
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception:
+        return {}
+
+
+def _judge_sufficiency(query: str, context: str) -> bool:
+    payload = _cheap_llm_json(
+        "Voce julga se o CONTEXTO responde a PERGUNTA. Responda JSON "
+        '{"sufficient": true|false}. true so se o contexto claramente basta.',
+        f"PERGUNTA:\n{query}\n\nCONTEXTO:\n{context}",
+    )
+    return bool(payload.get("sufficient", False))
+
+
+def _reformulate_query(query: str) -> str:
+    payload = _cheap_llm_json(
+        "Reescreva a busca para melhorar recuperacao (sinonimos, termos mais "
+        'especificos). Responda JSON {"query": "..."}.',
+        query,
+    )
+    rewritten = str(payload.get("query", "")).strip()
+    return rewritten or query
+
+
+async def _graph_fallback(hits: list[dict]) -> str:
+    if not hits:
+        return ""
+    symbol = (hits[0].get("payload") or {}).get("symbol")
+    if not symbol:
+        return ""
+    store = _get_session_store()
+    await store.init()
+    subgraph = await store.query_subgraph(symbol, depth=2)
+    edges = subgraph.get("edges") or []
+    if not edges:
+        return ""
+    lines = "\n".join(f"{e['source']} -> {e['target']}" for e in edges[:10])
+    return f"## Dependencias relacionadas (grafo)\nRoot: {symbol}\n{lines}"
+
+
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
@@ -602,6 +673,29 @@ async def ask(
                 "hit_count": len(hits),
             },
         )
+
+    async def _retry(q: str):
+        return await _retrieve_context(
+            query=q,
+            ctx=effective_ctx,
+            language=None,
+            max_depth=2,
+            max_nodes=25,
+            max_tokens=rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS,
+        )
+
+    correction = await correct_retrieval(
+        query, effective_ctx, code_context, pack, hits,
+        retrieve_fn=_retry, judge_fn=_judge_sufficiency,
+        reformulate_fn=_reformulate_query, graph_fn=_graph_fallback,
+        augment_pack_fn=lambda pack, graph_text: dataclasses.replace(
+            pack, segments=pack.segments + (graph_text,)
+        ),
+        enabled=_self_correct_enabled(),
+    )
+    code_context, pack, hits = correction.code_context, correction.pack, correction.hits
+    if trace is not None:
+        trace.append_stage("self_correct", payload=correction.meta)
 
     if pack.strategy.enable_compression:
         max_tokens = rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS
