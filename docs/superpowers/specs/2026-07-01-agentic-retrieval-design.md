@@ -167,6 +167,41 @@ This design is a cost-optimized instance of the established pattern.
 - Relates to: dec-115 (soft supersession — orthogonal ranking concern).
 - Requires: `_retrieve_context`, `_POLICY` gateway, `ContextDetector` (existing).
 
+## Calibration findings (2026-07-02)
+
+First real sweep of `scripts/calibrate_retrieval_bands.py` over a 24-case grounded
+golden set (`tests/benchmark/fixtures/retrieval_golden.json`), judge =
+`openrouter/meta-llama/llama-3.1-8b-instruct`, live pgvector. Infra ran end to end;
+the judge works. Two findings:
+
+1. **Best-hit cosine does not separate good from bad retrieval on this corpus.**
+   Cases that retrieved the labelled symbol and cases that did not both cluster at
+   ~0.72–0.85. Score is a weak sufficiency proxy here — the "confident and wrong"
+   case CRAG names, confirmed empirically. Consequence: the score-band shortcut is
+   set WIDE (`LOW=0.30`, `HIGH=0.85`) so the judge, not the score, decides the
+   ambiguous middle. `LOW` only catches empty/near-empty retrievals; `HIGH` only
+   trusts the rare very-high match.
+
+2. **The index is docs-dominated; natural-language queries retrieve Markdown, not
+   code.** Per ctx, `embeddings` is mostly vault notes / ADRs / plans / specs, so a
+   natural-language query matches a doc chunk before the code symbol it is "about".
+   This confounds D-E's recall metric (labels are code symbols, hits are docs), not
+   the loop itself — in production the judge grades the actual context returned. The
+   recall delta is therefore not meaningful on this golden set, and calibration of
+   the bands leans on the score distribution + judge behaviour, not the delta.
+
+Follow-ups (separate scope, do not block this feature):
+
+- Docs drowning code in `ask()` / `search_code` is the larger issue behind finding
+  2 — a `chunk_type`-aware retrieval or a code/doc intent split is worth its own
+  investigation.
+- A code-oriented golden set (queries + retrieval that surface code) would give a
+  clean recall delta, but only if it mirrors a retrieval config that actually runs
+  in production — a code-filtered calibration over an unfiltered production `ask()`
+  would be non-representative.
+- Narrow `LOW`/`HIGH` from production telemetry (judge verdict vs. observed outcome)
+  once the loop has run for real.
+
 ## Open items for planning
 
 1. Verify `hits` carry an aggregatable similarity score (D-A assumption).
