@@ -344,8 +344,9 @@ Recommended order: **EMB-4** (independent quick win) → **EMB-1** → **EMB-2**
 
 ## EMB-1 - Widen the loop gate to cover the embedder + a retrieval-eval smoke
 
-- Priority: P2 | Size: S | Status: ready | Depends-on: none
+- Priority: P2 | Size: S | Status: deferred | Depends-on: none
 - Spec: bge-m3-fallback design, "Gate"
+- Note: deferred — SDD validated the epic directly; this is a FORGE prerequisite for later.
 
 **Problem.** `.claude/loop.yaml` `gate_cmd` runs only `router/resilience/store/scripts`.
 It does NOT run `tests/embedder` or `tests/benchmark`, so a FORGE slice that changes
@@ -370,7 +371,7 @@ it actually executes the embedder + eval tests (non-zero collected count).
 
 ## EMB-2 - bge-m3 embedder with configurable Ollama→NIM→DeepInfra provider chain
 
-- Priority: P1 | Size: M | Status: blocked | Depends-on: EMB-1
+- Priority: P1 | Size: M | Status: done (PR #47) | Depends-on: EMB-1
 - Spec: bge-m3-fallback design, "Components" + "provider chain"
 
 **Problem.** `EmbedderEngine` (`src/axon/embedder/engine.py`) is fastembed/onnx
@@ -408,7 +409,7 @@ cosine ≥ 0.999 between them.
 
 ## EMB-3 - Migrate vector dim 384->1024 and make bge-m3 the default
 
-- Priority: P1 | Size: M | Status: blocked | Depends-on: EMB-2
+- Priority: P1 | Size: M | Status: done (PR #47) | Depends-on: EMB-2
 - Spec: bge-m3-fallback design, "table migration"
 
 **Problem.** bge-m3 is dim 1024 vs the current 384. The `embeddings.vector` and
@@ -439,7 +440,7 @@ bge-small-en baseline.
 
 ## EMB-4 - Fix empty retrieval for valid queries (query-side filter)
 
-- Priority: P1 | Size: S | Status: ready | Depends-on: none
+- Priority: P1 | Size: S | Status: done (PR #47) | Depends-on: none
 - Spec: bge-m3-fallback design, "secondary bug"
 
 **Problem.** Two golden queries return an EMPTY retrieval from `_retrieve_context`
@@ -469,8 +470,10 @@ at the filter seam with a fixture that mimics the offending strategy/collection 
 
 ## EMB-5 - Operational: re-index the corpus with bge-m3 (dim 1024)
 
-- Priority: P1 | Size: M | Status: blocked | Depends-on: EMB-3
+- Priority: P1 | Size: M | Status: done (applied 2026-07-02) | Depends-on: EMB-3
 - Spec: bge-m3-fallback design | **Operational - NOT a FORGE code slice**
+- Result: prod re-indexed to dim 1024 (12189 chunks); code recall@10 0.333 → 0.875 on the
+  golden set; self-correction bands validated unchanged (LOW=0.30/HIGH=0.85).
 
 **Problem.** After EMB-3 lands the 1024-dim schema + bge-m3 default, the existing
 384-dim corpus (code AND docs, all ctx) must be re-embedded. This needs live pgvector
