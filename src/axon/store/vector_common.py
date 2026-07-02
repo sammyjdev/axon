@@ -44,7 +44,10 @@ def _rank_and_limit(
         estimated = max(1, len(content) // 4)
         if len(limited) >= max_nodes:
             break
-        if token_budget - estimated < 0:
+        # ponytail: always keep the top hit even if it alone exceeds the token
+        # budget; the budget cap only prunes the tail, it must never turn a real
+        # hit into an empty result (EMB-4 regression).
+        if limited and token_budget - estimated < 0:
             break
         token_budget -= estimated
         limited.append(item)
