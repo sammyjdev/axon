@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -14,6 +15,8 @@ from axon.router.llm_backend import (
     default_scoring_model,
     resolve_litellm_model,
 )
+
+logger = logging.getLogger(__name__)
 
 # Carrega .env.local sobre .env, sem sobrescrever vars já exportadas pelo shell
 load_dotenv(Path(__file__).parents[3] / ".env", override=False)
@@ -718,6 +721,13 @@ def load_embedder_chain_config() -> EmbedderChainConfig:
     raw_order = os.environ.get("AXON_EMBEDDER_CHAIN", ",".join(_DEFAULT_EMBEDDER_CHAIN_ORDER))
     specs = _embedder_provider_specs(ollama_local_host)
     order = [name.strip().lower() for name in raw_order.split(",") if name.strip()]
+    unknown = [name for name in order if name not in specs]
+    for name in unknown:
+        logger.warning(
+            "AXON_EMBEDDER_CHAIN: unknown provider %r skipped (known: %s)",
+            name,
+            ", ".join(sorted(specs)),
+        )
     providers = tuple(specs[name] for name in order if name in specs)
     return EmbedderChainConfig(model_name=_EMBEDDER_CHAIN_MODEL, providers=providers)
 
