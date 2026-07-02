@@ -8,7 +8,14 @@ from pathlib import Path
 import onnxruntime as _ort
 from fastembed import TextEmbedding
 
+from axon.embedder.providers import embed_via_chain
+
 logger = logging.getLogger(__name__)
+
+# Model name that routes embed()/embed_one() to the bge-m3 provider chain
+# (Ollama -> NIM -> DeepInfra) instead of the in-process fastembed/onnx path.
+# Not yet the default -- EMB-3 flips the default model + vector dim.
+_CHAIN_MODEL_NAME = "bge-m3"
 
 # Call preload_dlls at import time so pip-installed nvidia-cudnn-cu12 /
 # nvidia-cublas-cu12 / nvidia-cuda-runtime-cu12 DLLs are on the DLL search
@@ -32,6 +39,7 @@ _DEFAULT_MODEL_OTHER = "BAAI/bge-base-en-v1.5"
 FASTEMBED_MODEL_DIMS: dict[str, int] = {
     "BAAI/bge-small-en-v1.5": 384,
     "BAAI/bge-base-en-v1.5": 768,
+    _CHAIN_MODEL_NAME: 1024,
 }
 
 
@@ -114,7 +122,13 @@ class EmbedderEngine:
         return self._model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embeds a list of texts. Returns one vector per text."""
+        """Embeds a list of texts. Returns one vector per text.
+
+        When model_name is "bge-m3", routes through the configured provider
+        chain (Ollama -> NIM -> DeepInfra); otherwise uses fastembed unchanged.
+        """
+        if self.model_name == _CHAIN_MODEL_NAME:
+            return embed_via_chain(texts)
         model = self._ensure_model()
         return [vec.tolist() for vec in model.embed(texts)]
 
