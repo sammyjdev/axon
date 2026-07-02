@@ -40,12 +40,36 @@ class PgVectorStore:
             bootstrap = await asyncpg.connect(self._dsn)
             try:
                 await bootstrap.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                await self._check_dimension_guard(bootstrap)
             finally:
                 await bootstrap.close()
             self._pool = await asyncpg.create_pool(
                 self._dsn, init=_init_conn, min_size=1, max_size=5
             )
         return self._pool
+
+    async def _check_dimension_guard(self, con: asyncpg.Connection) -> None:
+        """Refuse to touch an existing table whose ``vector`` column dim
+        doesn't match the current VECTOR_SIZE. Mixed dims are not allowed
+        (EMB-3): pgvector stores the declared dimension directly in
+        ``atttypmod`` (no VARHDRSZ-style offset), so it's read as-is.
+
+        A fresh/absent table is a no-op here -- ``ensure_collections`` will
+        create it at VECTOR_SIZE.
+        """
+        existing_dim = await con.fetchval(
+            """
+            SELECT atttypmod FROM pg_attribute
+            WHERE attrelid = to_regclass($1) AND attname = 'vector' AND NOT attisdropped
+            """,
+            self._table,
+        )
+        if existing_dim is not None and existing_dim != VECTOR_SIZE:
+            raise ValueError(
+                f"{self._table}.vector is dim {existing_dim} but the embedder now "
+                f"produces {VECTOR_SIZE}; run the bge-m3 re-index (EMB-5) -- mixed "
+                f"dims are not allowed."
+            )
 
     async def ensure_collections(self) -> None:
         pool = await self._ensure_pool()

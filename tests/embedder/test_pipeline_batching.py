@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from axon.embedder.chunker import Chunk
+from axon.embedder.engine import default_embedding_dimension
 
 
 class _NullCache:
@@ -47,7 +48,7 @@ async def test_index_path_uses_bounded_batching() -> None:
 
     def tracking_embed(texts: list[str]) -> list[list[float]]:
         call_log.append(texts)
-        return [[0.0] * 768 for _ in texts]
+        return [[0.0] * default_embedding_dimension() for _ in texts]
 
     mock_engine = MagicMock()
     mock_engine.embed.side_effect = tracking_embed
@@ -87,7 +88,7 @@ async def test_index_path_embeds_all_chunks_across_batches() -> None:
 
     def tracking_embed(texts: list[str]) -> list[list[float]]:
         embedded_texts.extend(texts)
-        return [[float(j) for j in range(768)] for _ in texts]
+        return [[float(j) for j in range(default_embedding_dimension())] for _ in texts]
 
     mock_engine = MagicMock()
     mock_engine.embed.side_effect = tracking_embed
@@ -128,7 +129,7 @@ async def test_index_path_embed_called_multiple_times_when_batched() -> None:
     def counting_embed(texts: list[str]) -> list[list[float]]:
         nonlocal call_count
         call_count += 1
-        return [[0.0] * 768 for _ in texts]
+        return [[0.0] * default_embedding_dimension() for _ in texts]
 
     mock_engine = MagicMock()
     mock_engine.embed.side_effect = counting_embed
@@ -172,7 +173,7 @@ async def test_ingest_file_uses_bounded_batching() -> None:
     def counting_embed(texts: list[str]) -> list[list[float]]:
         nonlocal call_count
         call_count += 1
-        return [[0.0] * 768 for _ in texts]
+        return [[0.0] * default_embedding_dimension() for _ in texts]
 
     mock_engine = MagicMock()
     mock_engine.embed.side_effect = counting_embed

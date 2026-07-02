@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from axon.embedder.engine import default_embedding_dimension
+
 
 class _MockFileCache:
     """Simulates a cache that already has every file as done with the correct sha1."""
@@ -72,7 +74,7 @@ async def test_changed_file_reindexed(tmp_path: Path) -> None:
     cache = _MockFileCache({py_file.as_posix(): "stale_sha1_that_differs"})
 
     engine = MagicMock()
-    engine.embed = MagicMock(return_value=[[0.1] * 768])
+    engine.embed = MagicMock(return_value=[[0.1] * default_embedding_dimension()])
 
     store = AsyncMock()
     store.upsert_batch = AsyncMock()

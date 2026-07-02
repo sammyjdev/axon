@@ -15,6 +15,7 @@ import pytest
 pytest.importorskip("testcontainers.postgres")
 from testcontainers.postgres import PostgresContainer  # noqa: E402
 
+from axon.embedder.engine import default_embedding_dimension  # noqa: E402
 from axon.store.pg_file_cache import PostgresFileCache  # noqa: E402
 
 
@@ -81,7 +82,9 @@ async def test_no_point_accumulation_on_reindex(tmp_path: Path, pg_dsn) -> None:
 
         engine = MagicMock()
         # Returns 1 vector per chunk
-        engine.embed = MagicMock(side_effect=lambda texts: [[0.1] * 768 for _ in texts])
+        engine.embed = MagicMock(
+            side_effect=lambda texts: [[0.1] * default_embedding_dimension() for _ in texts]
+        )
 
         fp_posix = py_file.as_posix()
 
