@@ -57,6 +57,7 @@ the per-request retrieval budget.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -133,14 +134,18 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
 
     # --- retrieval -------------------------------------------------------
     if request.include_context:
+        retrieval_kwargs: dict[str, Any] = {}
+        if request.forward_history and os.environ.get("AXON_DELTA_RECALL") == "1":
+            retrieval_kwargs["dedup_against"] = [m.content for m in request.messages[:-1]]
         try:
-            _raw_context, pack, _hits = await _retrieve_context(
+            _raw_context, pack, hits = await _retrieve_context(
                 query=query,
                 ctx=None,
                 language=None,
                 max_depth=2,
                 max_nodes=25,
                 max_tokens=request.recall_max_tokens or 4000,
+                **retrieval_kwargs,
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Retrieval error: {exc}") from exc
@@ -150,9 +155,15 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
         context_block = (
             "\n\n".join(context_segments) if context_segments else "(no context retrieved)"
         )
-        augmented_query = (
-            f"Context retrieved from AXON:\n{context_block}\n\nQuestion: {query}"
+        all_context_dropped = bool(
+            retrieval_kwargs.get("dedup_against") and not context_segments and hits
         )
+        if all_context_dropped:
+            augmented_query = query
+        else:
+            augmented_query = (
+                f"Context retrieved from AXON:\n{context_block}\n\nQuestion: {query}"
+            )
     else:
         # Recall disabled (A/B baseline): raw query, no retrieval cost.
         context_segments = []

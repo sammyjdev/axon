@@ -43,6 +43,7 @@ from axon.router.llm_backend import litellm_kwargs
 from axon.store.collections import get_search_collections
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.session_store import ADR, SessionNote, SessionStore
+from axon.store.vector_common import DELTA_RECALL_CUTOFF, shingles_cover, transcript_shingle_set
 from axon.store.vector_store_factory import make_vector_store
 
 logger = logging.getLogger(__name__)
@@ -144,6 +145,7 @@ def _record_chunk_recall(
             chunks.append(
                 {
                     "hash": _sha256_16(content),
+                    "dedup": str(hit.get("dedup", "off")),
                     "score": float(hit.get("score", 0.0)),
                     "ranking_score": hit.get("ranking_score"),
                     "token_estimate": _estimate_tokens(content),
@@ -371,6 +373,7 @@ async def _retrieve_context(
     max_depth: int,
     max_nodes: int,
     max_tokens: int,
+    dedup_against: list[str] | None = None,
 ) -> tuple[str, ContextPack, list[dict]]:
     strategy, task_type, profile, mode = _select_retrieval_strategy(query, ctx)
     collections = get_search_collections(ctx) if ctx else list(strategy.contexts)
@@ -385,11 +388,31 @@ async def _retrieve_context(
         max_nodes=max_nodes,
         max_tokens=min(max_tokens, max(1, strategy.max_chars // 4)),
     )
+
+    telemetry_hits = results
+    pack_hits = results
+    if dedup_against:
+        telemetry_hits = []
+        pack_hits = []
+        known_shingles = transcript_shingle_set(dedup_against)
+        for hit in results:
+            payload = hit.get("payload") or {}
+            content = str(payload.get("content", ""))
+            dedup = (
+                "dropped"
+                if shingles_cover(content, known_shingles, cutoff=DELTA_RECALL_CUTOFF)
+                else "kept"
+            )
+            marked = {**hit, "dedup": dedup}
+            telemetry_hits.append(marked)
+            if dedup == "kept":
+                pack_hits.append(marked)
+
     _record_chunk_recall(
         query=query,
         strategy_name=strategy.name,
         requested_max_tokens=max_tokens,
-        hits=results,
+        hits=telemetry_hits,
     )
 
     pack = _build_context_pack(
@@ -398,13 +421,13 @@ async def _retrieve_context(
         profile=profile,
         mode=mode,
         effective_ctx=ctx,
-        hits=results,
+        hits=pack_hits,
     )
-    if not results:
+    if not pack_hits:
         return "Nenhum resultado encontrado.", pack, results
 
     lines: list[str] = list(pack.segments)
-    top_symbol = (results[0].get("payload") or {}).get("symbol") if results else None
+    top_symbol = (pack_hits[0].get("payload") or {}).get("symbol") if pack_hits else None
     if top_symbol:
         # Structural "related deps" enrichment over the SQLite source-of-truth
         # (dec-101), not the Redis traverse cache (dec-116 #4). Redis stays as the
@@ -419,7 +442,7 @@ async def _retrieve_context(
             lines.append(f"Nodes: {', '.join(related[:10])}")
 
     lines.append(_format_context_pack(pack))
-    stale_notes = _staleness_notes(results)
+    stale_notes = _staleness_notes(pack_hits)
     if stale_notes:
         lines.append("## Staleness")
         lines.extend(stale_notes)
