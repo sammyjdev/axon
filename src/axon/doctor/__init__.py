@@ -39,7 +39,9 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_quarantine_size,
         check_warnings_log,
     )
+    from axon.doctor.checks.install_branch import check_install_branch
     from axon.doctor.checks.index_composition import check_index_composition
+    from axon.doctor.checks.recall_savings import check_recall_savings
     from axon.doctor.checks.toolchain import check_commitlint_compat
 
     return [
@@ -48,6 +50,8 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_warnings_log(data_root=data_root),
         check_stale_pending(data_root=data_root),
         check_index_composition(),
+        check_recall_savings(data_root=data_root),
+        check_install_branch(),
         check_commitlint_compat(),
     ]
 
