@@ -52,8 +52,12 @@ receives the raw query — the recall-off baseline arm for A/B evals.
 
 from __future__ import annotations
 
+import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     from fastapi import FastAPI, HTTPException
@@ -174,6 +178,27 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
         completion_tokens = _estimate_tokens(answer)
         total_tokens = prompt_tokens + completion_tokens
         model_used = request.model
+
+    # --- telemetry ---------------------------------------------------------
+    from axon.observability.recall_telemetry import (  # noqa: PLC0415
+        RecallRecord,
+        RecallTelemetryStore,
+    )
+
+    record = RecallRecord(
+        ts=datetime.now(UTC).isoformat(),
+        caller="http",
+        include_context=request.include_context,
+        model=model_used,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        usage_source=usage_source,
+    )
+    try:
+        RecallTelemetryStore().append(record)
+    except OSError:
+        logger.warning("recall telemetry append failed", exc_info=True)
 
     response_id = f"axon-{uuid.uuid4().hex[:12]}"
     body: dict[str, Any] = {
