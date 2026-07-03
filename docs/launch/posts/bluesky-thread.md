@@ -1,3 +1,10 @@
+> **STALE DRAFT (2026-07-04): do not publish as-is.** This draft cites the
+> retired 52.3% projection (a deterministic model, never a measurement). The
+> measured claims - session cost parity with crossover at turn 6-9, recall
+> faithfulness uplift 0.40-0.52 -> 0.72-0.76, 90.7% real-usage savings vs
+> full-file reads - live in `docs/METRICS.md` and gnomon-eval ADR-0011.
+> Rewrite against those numbers before publishing.
+
 # platform: Bluesky
 # post_type: Thread (5–8 posts)
 # notes: Each numbered post is one Bluesky post. Keep each under ~300 chars.
