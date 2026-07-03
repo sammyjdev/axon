@@ -244,8 +244,11 @@ async def complete_with_usage(
     layered_messages = [
         {"role": "system", "content": static_layer},
         {"role": "system", "content": semi_static},
-        {"role": "user", "content": dynamic},
+        # Prior conversation (if any) precedes the current turn so the
+        # provider sees the transcript in natural order (gnomon ADR-0010
+        # baseline arm). Wave 1 callers pass [] - behavior unchanged.
         *messages,
+        {"role": "user", "content": dynamic},
     ]
 
     provider = provider_for_model(result.model)

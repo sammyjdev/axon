@@ -90,6 +90,39 @@ async def test_complete_with_usage_none_when_provider_omits_usage(monkeypatch) -
 
 
 @pytest.mark.asyncio
+async def test_history_precedes_the_current_turn_in_composed_messages(monkeypatch) -> None:
+    # Multi-turn baseline arm (gnomon ADR-0010): the provider must see the
+    # conversation in natural order - system layers, prior transcript, then
+    # the current question LAST. Question-before-history scrambles the
+    # conversation and degrades the baseline arm's answers.
+    sent: dict = {}
+
+    async def fake_acompletion(**kwargs):
+        sent.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+            usage=SimpleNamespace(
+                prompt_tokens=1, completion_tokens=1, total_tokens=2
+            ),
+        )
+
+    _patch_pipeline(monkeypatch, fake_acompletion)
+
+    history = [
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+    ]
+    await complete_with_usage(
+        TaskRequest(content="second question", ctx="knowledge"), messages=history
+    )
+
+    composed = sent["messages"]
+    assert [m["role"] for m in composed[:2]] == ["system", "system"]
+    assert composed[2:4] == history
+    assert composed[-1] == {"role": "user", "content": "second question"}
+
+
+@pytest.mark.asyncio
 async def test_complete_still_returns_plain_string(monkeypatch) -> None:
     async def fake_acompletion(**_kwargs):
         return SimpleNamespace(

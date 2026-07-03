@@ -64,6 +64,21 @@ class TestCIMode:
         payload = json.loads(result.stdout)
         assert payload["summary"]["fail"] >= 1
 
+    def test_ci_reports_index_composition_skipped_when_db_unreachable(
+        self, _isolate: Path
+    ) -> None:
+        with patch(
+            "axon.doctor.checks.index_composition.asyncpg.connect",
+            side_effect=OSError("connection refused"),
+        ):
+            result = runner.invoke(app, ["doctor", "--ci"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        check = next(c for c in payload["checks"] if c["name"] == "index.composition")
+        assert check["status"] == "warn"
+        assert check["detail"] == "skipped: db unreachable"
+
 
 class TestApplyMode:
     def test_apply_without_tty_refuses(self, _isolate: Path) -> None:

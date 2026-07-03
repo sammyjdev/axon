@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import hashlib
 import json
+import logging
 import os
 import uuid
 from datetime import UTC, datetime
@@ -27,6 +29,7 @@ from axon.observability.compression_telemetry import (
     CompressionRecord,
     CompressionTelemetryStore,
 )
+from axon.observability.recall_telemetry import ChunkEntry, ChunkRecord, RecallTelemetryStore
 from axon.observability.trace_store import TraceStore
 from axon.observability.traced_tool import current_trace_recorder, traced_tool
 from axon.obsidian.discovery import discover_vault
@@ -40,7 +43,15 @@ from axon.router.llm_backend import litellm_kwargs
 from axon.store.collections import get_search_collections
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.session_store import ADR, SessionNote, SessionStore
+from axon.store.vector_common import (
+    DELTA_RECALL_CUTOFF,
+    _trim_to_budget,
+    shingles_cover,
+    transcript_shingle_set,
+)
 from axon.store.vector_store_factory import make_vector_store
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuração
@@ -57,6 +68,9 @@ _DB_PATH = _RUNTIME.db_path
 _RTK_MAX_TOKENS = _RUNTIME.rtk_max_tokens
 _COMPRESSION_TELEMETRY = CompressionTelemetryStore(_RUNTIME)
 _TRACE_STORE = TraceStore(_RUNTIME)
+_RERANK_CANDIDATES = 24
+_RERANK_TEXT_CHARS = 1200
+_RERANK_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
 
 mcp = FastMCP("axon-context-engine")
 
@@ -65,6 +79,7 @@ _vector_store: object | None = None
 _graph_store: PostgresSymbolDeps | None = None
 _session_store: SessionStore | None = None
 _embedder: EmbedderEngine | None = None
+_reranker: object | None = None
 
 
 def _get_embedder() -> EmbedderEngine:
@@ -72,6 +87,20 @@ def _get_embedder() -> EmbedderEngine:
     if _embedder is None:
         _embedder = EmbedderEngine()
     return _embedder
+
+
+def _get_reranker() -> object:
+    """Load the cross-encoder lazily; first call can take about 32 seconds."""
+    global _reranker
+    if _reranker is None:
+        model_name = os.environ.get("AXON_RERANK_MODEL") or _RERANK_MODEL
+        try:
+            from fastembed import TextCrossEncoder
+        except ImportError:
+            from fastembed.rerank.cross_encoder import TextCrossEncoder
+
+        _reranker = TextCrossEncoder(model_name)
+    return _reranker
 
 
 def _get_graph_embedder() -> object:
@@ -117,6 +146,50 @@ def _truncate(text: str, budget: int) -> str:
 
 def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
+
+
+def _sha256_16(text: str) -> str:
+    normalized = text.strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def _record_chunk_recall(
+    *,
+    query: str,
+    strategy_name: str,
+    requested_max_tokens: int,
+    hits: list[dict],
+) -> None:
+    try:
+        chunks: list[ChunkEntry] = []
+        for hit in hits:
+            payload = hit.get("payload") or {}
+            content = str(payload.get("content", ""))
+            chunk = {
+                "hash": _sha256_16(content),
+                "dedup": str(hit.get("dedup", "off")),
+                "score": float(hit.get("score", 0.0)),
+                "ranking_score": hit.get("ranking_score"),
+                "token_estimate": _estimate_tokens(content),
+                "file_path": str(payload.get("file_path", "")),
+            }
+            if "rerank_score" in hit:
+                chunk["rerank_score"] = hit.get("rerank_score")
+            chunks.append(chunk)
+
+        record = ChunkRecord(
+            ts=datetime.now(UTC).isoformat(),
+            query_hash=_sha256_16(query),
+            strategy=strategy_name,
+            requested_max_tokens=requested_max_tokens,
+            chunks=chunks,
+        )
+        RecallTelemetryStore().append_chunks(record)
+    # Broader than RecallRecord's OSError-only catch on purpose: record
+    # construction (float(), pydantic) can raise non-OSError, and telemetry
+    # must never break retrieval.
+    except Exception:
+        logger.warning("recall chunk telemetry append failed", exc_info=True)
 
 
 def _record_mcp_tool_call(
@@ -212,19 +285,14 @@ def _load_retrieval_profile() -> tuple[str | None, str, tuple[str, ...]]:
 
 
 def _select_retrieval_strategy(query: str, ctx: str | None) -> tuple[object, str, str | None, str]:
-    from axon.router.classifier import TaskType, classify_task_with_source
+    from axon.router.classifier import TaskType
 
+    # Strategy selection is deterministic and completion-model-independent:
+    # http and MCP paths must resolve identically for the same query, and
+    # picking a retrieval budget must never cost an LLM call (the classifier
+    # routes through litellm/cloud). Fixed CODE_ANALYSIS baseline; variation
+    # comes from profile/mode overrides only.
     task_type = TaskType.CODE_ANALYSIS
-    # When the completion model is pinned local (AXON_COMPLETION_MODEL), keep the
-    # whole request offline: skip the task classifier, which otherwise routes to a
-    # cloud provider under the FREE profile and would send the query off-box. The
-    # default strategy (CODE_ANALYSIS) is the same one the except-branch falls back
-    # to, so retrieval behaviour is unchanged — only the cloud call is dropped.
-    if not os.environ.get("AXON_COMPLETION_MODEL", "").strip():
-        try:
-            task_type, _source = classify_task_with_source(query, ctx=ctx)
-        except Exception:
-            pass
 
     profile, mode, capabilities = _load_retrieval_profile()
     strategy = select_default_retrieval_strategy(
@@ -317,6 +385,35 @@ def _staleness_notes(hits: list[dict]) -> list[str]:
     return notes
 
 
+def _rerank_enabled() -> bool:
+    return os.environ.get("AXON_RERANK") == "1"
+
+
+def _rerank_hits(query: str, hits: list[dict]) -> list[dict]:
+    if not hits:
+        return hits
+    try:
+        docs = [
+            str((hit.get("payload") or {}).get("content", ""))[:_RERANK_TEXT_CHARS]
+            for hit in hits
+        ]
+        pairs = [(query, doc) for doc in docs]
+        reranker = _get_reranker()
+        # fastembed's TextCrossEncoder API: rerank_pairs(pairs). The pinned
+        # version (0.8.0) always exposes it; a broken fallback is worse than
+        # a clean AttributeError caught by the except below.
+        scores = list(reranker.rerank_pairs(pairs))
+        scored = [
+            (index, float(score), {**hit, "rerank_score": float(score)})
+            for index, (hit, score) in enumerate(zip(hits, scores, strict=True))
+        ]
+        scored.sort(key=lambda item: (-item[1], item[0]))
+        return [hit for _, _, hit in scored]
+    except Exception:
+        logger.warning("cross-encoder rerank failed; using original order", exc_info=True)
+        return hits
+
+
 async def _retrieve_context(
     *,
     query: str,
@@ -325,19 +422,57 @@ async def _retrieve_context(
     max_depth: int,
     max_nodes: int,
     max_tokens: int,
+    dedup_against: list[str] | None = None,
 ) -> tuple[str, ContextPack, list[dict]]:
     strategy, task_type, profile, mode = _select_retrieval_strategy(query, ctx)
     collections = get_search_collections(ctx) if ctx else list(strategy.contexts)
     store = _get_vector_store()
     query_vector = _get_embedder().embed_one(query)
+    rerank = _rerank_enabled()
     results = await store.search(
         query_vector=query_vector,
+        query=query,
         collections=collections,
         language=language,
-        top_k=strategy.max_segments,
+        top_k=_RERANK_CANDIDATES if rerank else strategy.max_segments,
         max_depth=max_depth,
-        max_nodes=max_nodes,
-        max_tokens=min(max_tokens, max(1, strategy.max_chars // 4)),
+        max_nodes=_RERANK_CANDIDATES if rerank else max_nodes,
+        max_tokens=(
+            max_tokens * 4 if rerank else min(max_tokens, max(1, strategy.max_chars // 4))
+        ),
+    )
+    if rerank:
+        # Reorders whatever candidate list the store returns, hybrid search or not.
+        results = _trim_to_budget(
+            _rerank_hits(query, results),
+            max_nodes=max_nodes,
+            max_tokens=max_tokens,
+        )
+
+    telemetry_hits = results
+    pack_hits = results
+    if dedup_against:
+        telemetry_hits = []
+        pack_hits = []
+        known_shingles = transcript_shingle_set(dedup_against)
+        for hit in results:
+            payload = hit.get("payload") or {}
+            content = str(payload.get("content", ""))
+            dedup = (
+                "dropped"
+                if shingles_cover(content, known_shingles, cutoff=DELTA_RECALL_CUTOFF)
+                else "kept"
+            )
+            marked = {**hit, "dedup": dedup}
+            telemetry_hits.append(marked)
+            if dedup == "kept":
+                pack_hits.append(marked)
+
+    _record_chunk_recall(
+        query=query,
+        strategy_name=strategy.name,
+        requested_max_tokens=max_tokens,
+        hits=telemetry_hits,
     )
 
     pack = _build_context_pack(
@@ -346,13 +481,13 @@ async def _retrieve_context(
         profile=profile,
         mode=mode,
         effective_ctx=ctx,
-        hits=results,
+        hits=pack_hits,
     )
-    if not results:
+    if not pack_hits:
         return "Nenhum resultado encontrado.", pack, results
 
     lines: list[str] = list(pack.segments)
-    top_symbol = (results[0].get("payload") or {}).get("symbol") if results else None
+    top_symbol = (pack_hits[0].get("payload") or {}).get("symbol") if pack_hits else None
     if top_symbol:
         # Structural "related deps" enrichment over the SQLite source-of-truth
         # (dec-101), not the Redis traverse cache (dec-116 #4). Redis stays as the
@@ -367,7 +502,7 @@ async def _retrieve_context(
             lines.append(f"Nodes: {', '.join(related[:10])}")
 
     lines.append(_format_context_pack(pack))
-    stale_notes = _staleness_notes(results)
+    stale_notes = _staleness_notes(pack_hits)
     if stale_notes:
         lines.append("## Staleness")
         lines.extend(stale_notes)

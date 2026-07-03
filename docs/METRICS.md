@@ -11,7 +11,7 @@ telemetry (measured over representative context windows) are reported separately
 
 | metric | value | source_file | method/filter | n | date_computed |
 |---|---|---|---|---|---|
-| Token reduction (deterministic benchmark) | 52.3% | benchmarks/model.py | deterministic cost model: baseline 87000 vs AXON 41500 input tokens | 20 turns | 2026-06-08 |
+| Token reduction (deterministic benchmark) | 52.3% (RETIRED: deterministic projection; superseded by the measured session harness, gnomon-eval ADR-0010) | benchmarks/model.py | deterministic cost model: baseline 87000 vs AXON 41500 input tokens | 20 turns | 2026-06-08 |
 | Baseline input tokens (benchmark) | 87000 | benchmarks/model.py | session_total mode=baseline | 20 turns | 2026-06-08 |
 | AXON input tokens (benchmark) | 41500 | benchmarks/model.py | session_total mode=axon | 20 turns | 2026-06-08 |
 | Compression p50 (measured telemetry) | 85.5% | data/compression/stats.jsonl | reduction_pct > 0 (compression fired) | 69 of 69 | 2026-06-16 |

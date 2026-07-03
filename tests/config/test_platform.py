@@ -348,3 +348,15 @@ def _runtime(
         openrouter_compliance_required=False,
         active_profile=active_profile,
     )
+
+
+def test_mac_memory_probe_failure_degrades_to_zero(monkeypatch):
+    import subprocess
+
+    def _boom(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(1, "sysctl")
+
+    monkeypatch.setattr(subprocess, "run", _boom)
+    from axon.config.platform import _get_mac_memory
+
+    assert _get_mac_memory() == 0

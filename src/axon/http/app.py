@@ -48,11 +48,16 @@ gnomon-eval and will always be present.
 Request field ``include_context`` (bool, default ``true``) toggles retrieval:
 when ``false``, no retrieval call is made, ``contexts`` is empty, and the LLM
 receives the raw query — the recall-off baseline arm for A/B evals.
+Request field ``forward_history`` (bool, default ``false``) forwards prior
+messages to the router for multi-turn eval baseline arms.
+Request field ``recall_max_tokens`` (int | null, default ``null``) overrides
+the per-request retrieval budget.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -83,6 +88,8 @@ class ChatCompletionRequest(BaseModel):
     model: str = "axon"
     messages: list[_Message]
     include_context: bool = True
+    forward_history: bool = False
+    recall_max_tokens: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -127,14 +134,18 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
 
     # --- retrieval -------------------------------------------------------
     if request.include_context:
+        retrieval_kwargs: dict[str, Any] = {}
+        if request.forward_history and os.environ.get("AXON_DELTA_RECALL") == "1":
+            retrieval_kwargs["dedup_against"] = [m.content for m in request.messages[:-1]]
         try:
-            _raw_context, pack, _hits = await _retrieve_context(
+            _raw_context, pack, hits = await _retrieve_context(
                 query=query,
                 ctx=None,
                 language=None,
                 max_depth=2,
                 max_nodes=25,
-                max_tokens=4000,
+                max_tokens=request.recall_max_tokens or 4000,
+                **retrieval_kwargs,
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Retrieval error: {exc}") from exc
@@ -144,9 +155,15 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
         context_block = (
             "\n\n".join(context_segments) if context_segments else "(no context retrieved)"
         )
-        augmented_query = (
-            f"Context retrieved from AXON:\n{context_block}\n\nQuestion: {query}"
+        all_context_dropped = bool(
+            retrieval_kwargs.get("dedup_against") and not context_segments and hits
         )
+        if all_context_dropped:
+            augmented_query = query
+        else:
+            augmented_query = (
+                f"Context retrieved from AXON:\n{context_block}\n\nQuestion: {query}"
+            )
     else:
         # Recall disabled (A/B baseline): raw query, no retrieval cost.
         context_segments = []
@@ -154,9 +171,14 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
         augmented_query = query
 
     # --- LLM completion --------------------------------------------------
+    # Conversation history for the baseline arm of multi-turn evals
+    # (ADR-009 in gnomon-eval). Default [] preserves Wave 1 behavior.
+    history: list[dict] = (
+        [m.model_dump() for m in request.messages[:-1]] if request.forward_history else []
+    )
     task = TaskRequest(content=augmented_query)
     try:
-        answer, usage = await complete_with_usage(task, messages=[])
+        answer, usage = await complete_with_usage(task, messages=history)
     except Exception as exc:
         # Surface retrieval context even when the LLM call fails so the
         # evaluator can still score recall from ``contexts``.
