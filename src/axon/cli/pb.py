@@ -393,6 +393,7 @@ async def _semantic_search_hits(
         query_vector = engine.embed_one(query)
         hits = await store.search(
             query_vector=query_vector,
+            query=query,
             collections=collections,
             language=language,
             top_k=top_k,
