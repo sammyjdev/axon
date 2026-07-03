@@ -27,14 +27,6 @@ class _FakeVectorStore:
         return self._results
 
 
-def _stub_strategy_deps(monkeypatch) -> None:
-    """Isolate _select_retrieval_strategy from config/strategy I/O."""
-    monkeypatch.setattr(server, "_load_retrieval_profile", lambda: ("free", "auto", ()))
-    monkeypatch.setattr(
-        server, "select_default_retrieval_strategy", lambda **kw: SimpleNamespace(**kw)
-    )
-
-
 def _sha16(text: str) -> str:
     return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:16]
 
@@ -51,40 +43,60 @@ def _stub_retrieve_deps(monkeypatch, store, *, nodes: list[str] | None = None) -
     monkeypatch.setattr(server, "_get_session_store", lambda: _FakeSessionStore(nodes=nodes))
 
 
-def test_retrieval_strategy_skips_cloud_classifier_when_model_pinned(monkeypatch) -> None:
-    """A pinned local completion model must keep retrieval offline: the cloud
-    classifier is never invoked (it would route to Groq under the FREE profile)."""
-    _stub_strategy_deps(monkeypatch)
-    calls: list[str] = []
+@pytest.mark.parametrize("completion_model", ["", "ollama/qwen2.5:7b"])
+def test_retrieval_strategy_is_completion_model_independent(
+    monkeypatch, completion_model: str
+) -> None:
+    monkeypatch.setattr(server, "_load_retrieval_profile", lambda: ("free", "auto", ()))
+    if completion_model:
+        monkeypatch.setenv("AXON_COMPLETION_MODEL", completion_model)
+    else:
+        monkeypatch.delenv("AXON_COMPLETION_MODEL", raising=False)
 
-    def _spy(content, ctx=None):
-        calls.append(content)
-        return (TaskType.DEEP_REASONING, "cloud")
+    strategy, task_type, profile, mode = server._select_retrieval_strategy(
+        "compare retrieval strategy", "knowledge"
+    )
 
-    monkeypatch.setattr("axon.router.classifier.classify_task_with_source", _spy)
-    monkeypatch.setenv("AXON_COMPLETION_MODEL", "ollama/qwen2.5:7b")
+    assert strategy.name == "balanced"
+    assert task_type == TaskType.CODE_ANALYSIS.value
+    assert profile == "free"
+    assert mode == "auto"
 
-    _strategy, task_type, _profile, _mode = server._select_retrieval_strategy("q", "knowledge")
 
-    assert calls == [], "classifier must not be called when the model is pinned"
+def test_retrieval_strategy_never_calls_the_llm_classifier(monkeypatch) -> None:
+    # Picking a retrieval budget must never cost an LLM call: the classifier
+    # routes through litellm/cloud (the reason the old env-var skip existed).
+    monkeypatch.setattr(server, "_load_retrieval_profile", lambda: ("free", "auto", ()))
+
+    def _boom(content, ctx=None):
+        raise AssertionError("classifier must not be called for strategy selection")
+
+    monkeypatch.setattr("axon.router.classifier.classify_task_with_source", _boom)
+
+    strategy, task_type, _profile, _mode = server._select_retrieval_strategy(
+        "Compare the trade-offs of three architecture options", "knowledge"
+    )
+
+    assert strategy.name == "balanced"
     assert task_type == TaskType.CODE_ANALYSIS.value
 
 
-def test_retrieval_strategy_uses_classifier_when_model_not_pinned(monkeypatch) -> None:
-    _stub_strategy_deps(monkeypatch)
-    calls: list[str] = []
+def test_pb_retrieval_strategy_never_calls_the_llm_classifier(monkeypatch) -> None:
+    from axon.cli import pb
 
-    def _spy(content, ctx=None):
-        calls.append(content)
-        return (TaskType.DEEP_REASONING, "local")
+    monkeypatch.setattr(server, "_load_retrieval_profile", lambda: ("free", "auto", ()))
 
-    monkeypatch.setattr("axon.router.classifier.classify_task_with_source", _spy)
-    monkeypatch.delenv("AXON_COMPLETION_MODEL", raising=False)
+    def _boom(content, ctx=None):
+        raise AssertionError("classifier must not be called for strategy selection")
 
-    _strategy, task_type, _profile, _mode = server._select_retrieval_strategy("q", "knowledge")
+    monkeypatch.setattr("axon.router.classifier.classify_task_with_source", _boom)
 
-    assert calls == ["q"], "classifier should run when no model is pinned"
-    assert task_type == TaskType.DEEP_REASONING.value
+    strategy, task_type, _profile, _mode = pb._select_retrieval_strategy(
+        "Compare the trade-offs of three architecture options", "knowledge"
+    )
+
+    assert strategy.name == "balanced"
+    assert task_type == TaskType.CODE_ANALYSIS.value
 
 
 @pytest.mark.asyncio
@@ -178,9 +190,13 @@ async def test_ask_surfaces_context_pack_and_skips_compression_for_minimal_strat
     monkeypatch.setattr(
         server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
     )
+    from axon.context.contracts import DEFAULT_RETRIEVAL_STRATEGIES
+
+    minimal = DEFAULT_RETRIEVAL_STRATEGIES["minimal"]
     monkeypatch.setattr(
-        "axon.router.classifier.classify_task_with_source",
-        lambda content, ctx=None: (TaskType.TRIVIAL_COMPLETION, "local"),
+        server,
+        "_select_retrieval_strategy",
+        lambda query, ctx: (minimal, TaskType.TRIVIAL_COMPLETION.value, "free", "auto"),
     )
     monkeypatch.setattr(server, "caveman_compress_guarded", fail_caveman)
 

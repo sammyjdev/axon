@@ -296,44 +296,10 @@ def _build_planner_executor_prompts(
     return planner, executor, local_knowledge
 
 
-def _load_retrieval_profile() -> tuple[str | None, str, tuple[str, ...]]:
-    from axon.config.runtime import get_active_profile, get_profile, select_capabilities
-
-    active_profile = _RUNTIME.active_profile or get_active_profile()
-    mode = _RUNTIME.mode
-    capabilities: tuple[str, ...] = ()
-
-    if active_profile:
-        try:
-            profile = get_profile(active_profile)
-            profile_mode = str(profile.get("mode") or "").strip()
-            if profile_mode:
-                mode = profile_mode
-            capabilities = tuple(select_capabilities(profile=profile).enabled_features)
-        except ValueError:
-            pass
-
-    return active_profile, mode, capabilities
-
-
 def _select_retrieval_strategy(query: str, ctx: str | None) -> tuple[object, str, str | None, str]:
-    from axon.context.contracts import select_default_retrieval_strategy
-    from axon.router.classifier import TaskType, classify_task_with_source
+    from axon.mcp.server import _select_retrieval_strategy as select_retrieval_strategy
 
-    task_type = TaskType.CODE_ANALYSIS
-    try:
-        task_type, _source = classify_task_with_source(query, ctx=ctx)
-    except Exception:
-        pass
-
-    profile, mode, capabilities = _load_retrieval_profile()
-    strategy = select_default_retrieval_strategy(
-        task_type=task_type,
-        profile=profile,
-        mode=mode,
-        capabilities=capabilities,
-    )
-    return strategy, str(task_type.value), profile, mode
+    return select_retrieval_strategy(query, ctx)
 
 
 def _build_context_pack(
