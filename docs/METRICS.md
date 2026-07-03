@@ -6,12 +6,18 @@ Source of truth: code and committed data files. Every figure below was recompute
 from the live repo and traces to a command output or a committed file. No figure
 is invented, estimated, or marketing rounded. Benchmark (deterministic model) and
 telemetry (measured over representative context windows) are reported separately and never blended.
+Savings claims name their counterfactual per gnomon-eval ADR-0011.
 
 ## Manifest
 
 | metric | value | source_file | method/filter | n | date_computed |
 |---|---|---|---|---|---|
 | Token reduction (deterministic benchmark) | 52.3% (RETIRED: deterministic projection; superseded by the measured session harness, gnomon-eval ADR-0010) | benchmarks/model.py | deterministic cost model: baseline 87000 vs AXON 41500 input tokens | 20 turns | 2026-06-08 |
+| Faithfulness uplift (recall A/B) | 0.40-0.52 -> 0.72-0.76 (95% CI per run) | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | GNOMON A/B, judge llama3.1:8b x8, seed 42, 3x on + 2x off replicates | 17 cases | 2026-07-02 |
+| Recall input cost | +2,151 prompt tokens/turn | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | paired on/off telemetry, usage_source=provider | 17 cases | 2026-07-02 |
+| Faithfulness, current stack (on-arm) | 0.775 [0.735, 0.814] | gnomon-eval results/wave3/rung3c-hybrid.json | post retrieval ladder: index hygiene + skeleton suppression + hybrid lexical (AXON_HYBRID_SEARCH=1); single run | 17 cases | 2026-07-04 |
+| Session cost vs transcript (10 turns) | parity: pooled +4.0% savings, crossover turn 6-9 | gnomon-eval results/wave3/t12-session-3c-budget500.json + t12-b500-replicate{1,2}.json | dual-arm session harness, recall budget 500, 3 runs mutually within CIs, quality gate pass, 1200/1200 provider records | 10 sessions x 10 turns | 2026-07-04 |
+| Real-usage savings vs full-file reads | 90.7% (32,298 vs 346,081 tokens) | axon scripts/recall_savings_report.py | per-chunk telemetry counterfactual: unique source files read in full | 100 requests | 2026-07-04 |
 | Baseline input tokens (benchmark) | 87000 | benchmarks/model.py | session_total mode=baseline | 20 turns | 2026-06-08 |
 | AXON input tokens (benchmark) | 41500 | benchmarks/model.py | session_total mode=axon | 20 turns | 2026-06-08 |
 | Compression p50 (measured telemetry) | 85.5% | data/compression/stats.jsonl | reduction_pct > 0 (compression fired) | 69 of 69 | 2026-06-16 |
