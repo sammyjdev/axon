@@ -5,7 +5,7 @@ can measure recall quality over a standard chat-completions interface.
 
 This module is intentionally additive — the MCP stdio path is unchanged.
 The endpoint reuses the same retrieval pipeline (``_retrieve_context`` from
-``axon.mcp.server``) and the same router/LLM call (``complete`` from
+``axon.mcp.server``) and the same router/LLM call (``complete_with_usage`` from
 ``axon.router.engine``) to guarantee consistent behaviour across both transports.
 
 Usage
@@ -34,17 +34,30 @@ chat-completions response:
             }
         ],
         "contexts": ["<segment text>", ...],
-        "usage": {"total_tokens": <int>}
+        "usage": {
+            "prompt_tokens": <int>,
+            "completion_tokens": <int>,
+            "total_tokens": <int>,
+            "source": "provider" | "estimate"
+        }
     }
 
 The ``contexts`` list (top-level) and ``usage.total_tokens`` are *required* by
 gnomon-eval and will always be present.
+
+Request field ``include_context`` (bool, default ``true``) toggles retrieval:
+when ``false``, no retrieval call is made, ``contexts`` is empty, and the LLM
+receives the raw query — the recall-off baseline arm for A/B evals.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     from fastapi import FastAPI, HTTPException
@@ -69,6 +82,7 @@ class _Message(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str = "axon"
     messages: list[_Message]
+    include_context: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -105,45 +119,86 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
     # Import lazily so the module can be imported even before the stores are
     # initialised (important for unit tests that monkeypatch these callables).
     from axon.mcp.server import _retrieve_context  # noqa: PLC0415
-    from axon.router.engine import TaskRequest, complete  # noqa: PLC0415
+    from axon.router.engine import TaskRequest, complete_with_usage  # noqa: PLC0415
 
     query = _last_user_message(request.messages)
     if not query:
         raise HTTPException(status_code=422, detail="No user message found in messages list.")
 
     # --- retrieval -------------------------------------------------------
-    try:
-        _raw_context, pack, _hits = await _retrieve_context(
-            query=query,
-            ctx=None,
-            language=None,
-            max_depth=2,
-            max_nodes=25,
-            max_tokens=4000,
+    if request.include_context:
+        try:
+            _raw_context, pack, _hits = await _retrieve_context(
+                query=query,
+                ctx=None,
+                language=None,
+                max_depth=2,
+                max_nodes=25,
+                max_tokens=4000,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Retrieval error: {exc}") from exc
+
+        # Surface individual segment strings (not the combined formatted text).
+        context_segments: list[str] = list(pack.segments)
+        context_block = (
+            "\n\n".join(context_segments) if context_segments else "(no context retrieved)"
         )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Retrieval error: {exc}") from exc
-
-    # Surface individual segment strings (not the combined formatted text).
-    context_segments: list[str] = list(pack.segments)
-
-    # Build a context-enriched user prompt for the LLM.
-    context_block = "\n\n".join(context_segments) if context_segments else "(no context retrieved)"
-    augmented_query = (
-        f"Context retrieved from AXON:\n{context_block}\n\nQuestion: {query}"
-    )
+        augmented_query = (
+            f"Context retrieved from AXON:\n{context_block}\n\nQuestion: {query}"
+        )
+    else:
+        # Recall disabled (A/B baseline): raw query, no retrieval cost.
+        context_segments = []
+        context_block = "(recall disabled)"
+        augmented_query = query
 
     # --- LLM completion --------------------------------------------------
     task = TaskRequest(content=augmented_query)
     try:
-        answer = await complete(task, messages=[])
+        answer, usage = await complete_with_usage(task, messages=[])
     except Exception as exc:
         # Surface retrieval context even when the LLM call fails so the
         # evaluator can still score recall from ``contexts``.
         answer = f"[LLM unavailable: {exc}]\n\nContext:\n{context_block}"
+        usage = None
 
-    # --- usage accounting ------------------------------------------------
-    total_tokens = _estimate_tokens(augmented_query) + _estimate_tokens(answer)
+    # --- usage accounting -------------------------------------------------
+    # Provider-reported numbers when available; a labeled estimate otherwise.
+    # An eval run is only honest if every request reports source="provider".
+    if usage is not None:
+        usage_source = "provider"
+        prompt_tokens = usage.prompt_tokens
+        completion_tokens = usage.completion_tokens
+        total_tokens = usage.total_tokens
+        model_used = usage.model
+    else:
+        usage_source = "estimate"
+        prompt_tokens = _estimate_tokens(augmented_query)
+        completion_tokens = _estimate_tokens(answer)
+        total_tokens = prompt_tokens + completion_tokens
+        model_used = request.model
+
+    # --- telemetry ---------------------------------------------------------
+    from axon.observability.recall_telemetry import (  # noqa: PLC0415
+        RecallRecord,
+        RecallTelemetryStore,
+    )
+
+    record = RecallRecord(
+        ts=datetime.now(UTC).isoformat(),
+        caller="http",
+        include_context=request.include_context,
+        model=model_used,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        usage_source=usage_source,
+    )
+    try:
+        RecallTelemetryStore().append(record)
+    except OSError:
+        logger.warning("recall telemetry append failed", exc_info=True)
 
     response_id = f"axon-{uuid.uuid4().hex[:12]}"
     body: dict[str, Any] = {
@@ -157,7 +212,12 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
             }
         ],
         "contexts": context_segments,
-        "usage": {"total_tokens": total_tokens},
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "source": usage_source,
+        },
     }
     return JSONResponse(content=body)
 

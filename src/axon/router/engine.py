@@ -53,6 +53,16 @@ def _bottom_tier_model() -> str:
     return _MODEL_MAP[TaskType.TRIVIAL_COMPLETION]
 
 
+@dataclass(frozen=True)
+class CompletionUsage:
+    """Real token usage reported by the provider for one completion."""
+
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
 @dataclass
 class TaskRequest:
     content: str
@@ -224,8 +234,10 @@ def _context_layers(task: TaskRequest) -> tuple[str, str, str]:
     return static_layer, semi_static, dynamic
 
 
-async def complete(task: TaskRequest, messages: list[dict]) -> str:
-    """Roteia e executa a completion."""
+async def complete_with_usage(
+    task: TaskRequest, messages: list[dict]
+) -> tuple[str, CompletionUsage | None]:
+    """Roteia e executa a completion, retornando o usage real do provider."""
     result = route(task)
 
     static_layer, semi_static, dynamic = _context_layers(task)
@@ -289,4 +301,20 @@ async def complete(task: TaskRequest, messages: list[dict]) -> str:
     except Exception:
         _BREAKER.record_failure(breaker_key)
         raise
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    raw_usage = getattr(response, "usage", None)
+    usage: CompletionUsage | None = None
+    if raw_usage is not None:
+        usage = CompletionUsage(
+            model=result.model,
+            prompt_tokens=int(getattr(raw_usage, "prompt_tokens", 0) or 0),
+            completion_tokens=int(getattr(raw_usage, "completion_tokens", 0) or 0),
+            total_tokens=int(getattr(raw_usage, "total_tokens", 0) or 0),
+        )
+    return content, usage
+
+
+async def complete(task: TaskRequest, messages: list[dict]) -> str:
+    """Roteia e executa a completion (compat wrapper, discards usage)."""
+    content, _usage = await complete_with_usage(task, messages)
+    return content
