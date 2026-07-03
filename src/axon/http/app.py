@@ -34,7 +34,12 @@ chat-completions response:
             }
         ],
         "contexts": ["<segment text>", ...],
-        "usage": {"total_tokens": <int>}
+        "usage": {
+            "prompt_tokens": <int>,
+            "completion_tokens": <int>,
+            "total_tokens": <int>,
+            "source": "provider" | "estimate"
+        }
     }
 
 The ``contexts`` list (top-level) and ``usage.total_tokens`` are *required* by
@@ -105,7 +110,7 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
     # Import lazily so the module can be imported even before the stores are
     # initialised (important for unit tests that monkeypatch these callables).
     from axon.mcp.server import _retrieve_context  # noqa: PLC0415
-    from axon.router.engine import TaskRequest, complete  # noqa: PLC0415
+    from axon.router.engine import TaskRequest, complete_with_usage  # noqa: PLC0415
 
     query = _last_user_message(request.messages)
     if not query:
@@ -136,14 +141,28 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
     # --- LLM completion --------------------------------------------------
     task = TaskRequest(content=augmented_query)
     try:
-        answer = await complete(task, messages=[])
+        answer, usage = await complete_with_usage(task, messages=[])
     except Exception as exc:
         # Surface retrieval context even when the LLM call fails so the
         # evaluator can still score recall from ``contexts``.
         answer = f"[LLM unavailable: {exc}]\n\nContext:\n{context_block}"
+        usage = None
 
-    # --- usage accounting ------------------------------------------------
-    total_tokens = _estimate_tokens(augmented_query) + _estimate_tokens(answer)
+    # --- usage accounting -------------------------------------------------
+    # Provider-reported numbers when available; a labeled estimate otherwise.
+    # An eval run is only honest if every request reports source="provider".
+    if usage is not None:
+        usage_source = "provider"
+        prompt_tokens = usage.prompt_tokens
+        completion_tokens = usage.completion_tokens
+        total_tokens = usage.total_tokens
+        model_used = usage.model
+    else:
+        usage_source = "estimate"
+        prompt_tokens = _estimate_tokens(augmented_query)
+        completion_tokens = _estimate_tokens(answer)
+        total_tokens = prompt_tokens + completion_tokens
+        model_used = request.model
 
     response_id = f"axon-{uuid.uuid4().hex[:12]}"
     body: dict[str, Any] = {
@@ -157,7 +176,12 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
             }
         ],
         "contexts": context_segments,
-        "usage": {"total_tokens": total_tokens},
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "source": usage_source,
+        },
     }
     return JSONResponse(content=body)
 
