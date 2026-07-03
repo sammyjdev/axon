@@ -5,7 +5,7 @@ can measure recall quality over a standard chat-completions interface.
 
 This module is intentionally additive — the MCP stdio path is unchanged.
 The endpoint reuses the same retrieval pipeline (``_retrieve_context`` from
-``axon.mcp.server``) and the same router/LLM call (``complete`` from
+``axon.mcp.server``) and the same router/LLM call (``complete_with_usage`` from
 ``axon.router.engine``) to guarantee consistent behaviour across both transports.
 
 Usage

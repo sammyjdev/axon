@@ -371,3 +371,23 @@ def test_request_appends_recall_telemetry_record() -> None:
     assert record.total_tokens == _FAKE_USAGE.total_tokens
     assert record.usage_source == "provider"
     assert record.caller == "http"
+
+
+def test_telemetry_failure_never_breaks_the_request() -> None:
+    with (
+        patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+        patch(
+            "axon.observability.recall_telemetry.RecallTelemetryStore.append",
+            side_effect=OSError("disk full"),
+        ),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "explain recall"}]},
+            )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["contexts"] == list(_FAKE_SEGMENTS)
+    assert body["usage"]["total_tokens"] > 0
