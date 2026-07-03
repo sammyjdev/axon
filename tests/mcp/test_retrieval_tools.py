@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from types import SimpleNamespace
 
 import pytest
 
 from axon.mcp import server
+from axon.observability.recall_telemetry import RecallTelemetryStore
 from axon.router.classifier import TaskType
+
+
+@pytest.fixture(autouse=True)
+def _isolate_chunk_telemetry(monkeypatch, tmp_path) -> None:
+    telemetry_store = RecallTelemetryStore(runtime=SimpleNamespace(data_root=tmp_path))
+    monkeypatch.setattr(server, "RecallTelemetryStore", lambda: telemetry_store)
 
 
 class _FakeVectorStore:
@@ -24,6 +33,10 @@ def _stub_strategy_deps(monkeypatch) -> None:
     monkeypatch.setattr(
         server, "select_default_retrieval_strategy", lambda **kw: SimpleNamespace(**kw)
     )
+
+
+def _sha16(text: str) -> str:
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:16]
 
 
 def test_retrieval_strategy_skips_cloud_classifier_when_model_pinned(monkeypatch) -> None:
@@ -212,6 +225,134 @@ async def test_search_code_surfaces_staleness_notes(monkeypatch) -> None:
 
     assert "## Staleness" in response
     assert "- upsert stale -> replacement=fresh-hit (newer_record_in_family)" in response
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_emits_chunk_telemetry_without_raw_content(
+    monkeypatch, tmp_path
+) -> None:
+    captured: dict[str, object] = {}
+    query = "How does recall work?"
+    content_a = "private vault content alpha"
+    content_b = "private vault content beta"
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.612,
+                "ranking_score": 0.598,
+                "payload": {
+                    "symbol": "alpha",
+                    "language": "python",
+                    "file_path": "/tmp/a.py",
+                    "content": content_a,
+                },
+            },
+            {
+                "score": 0.5,
+                "payload": {
+                    "symbol": "beta",
+                    "language": "python",
+                    "file_path": "/tmp/b.py",
+                    "content": content_b,
+                },
+            },
+        ],
+        captured,
+    )
+    telemetry_store = RecallTelemetryStore(
+        runtime=SimpleNamespace(data_root=tmp_path)
+    )
+
+    monkeypatch.setattr(server, "_get_vector_store", lambda: store)
+    monkeypatch.setattr(
+        server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
+    )
+    monkeypatch.setattr(
+        "axon.router.classifier.classify_task_with_source",
+        lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
+    )
+    monkeypatch.setattr(server, "_get_session_store", lambda: _FakeSessionStore())
+    monkeypatch.setattr(server, "RecallTelemetryStore", lambda: telemetry_store)
+
+    response, pack, results = await server._retrieve_context(
+        query=query,
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=2000,
+    )
+
+    assert "### alpha (python)" in response
+    assert len(pack.segments) == 2
+    assert results is store._results
+    line = (tmp_path / "recall" / "chunks.jsonl").read_text(encoding="utf-8")
+    assert content_a not in line
+    assert content_b not in line
+    parsed = json.loads(line)
+    assert parsed["query_hash"] == _sha16(query)
+    assert parsed["strategy"] == "balanced"
+    assert parsed["requested_max_tokens"] == 2000
+    assert parsed["chunks"] == [
+        {
+            "hash": _sha16(content_a),
+            "ranking_score": 0.598,
+            "score": 0.612,
+            "token_estimate": len(content_a) // 4,
+        },
+        {
+            "hash": _sha16(content_b),
+            "ranking_score": None,
+            "score": 0.5,
+            "token_estimate": len(content_b) // 4,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_ignores_chunk_telemetry_failure(monkeypatch) -> None:
+    class FailingTelemetryStore:
+        def append_chunks(self, _record):
+            raise OSError("disk full")
+
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.91,
+                "payload": {
+                    "symbol": "upsert",
+                    "language": "python",
+                    "file_path": "/tmp/vector_store.py",
+                    "content": "async def upsert(self, chunk): ...",
+                },
+            }
+        ],
+        {},
+    )
+
+    monkeypatch.setattr(server, "_get_vector_store", lambda: store)
+    monkeypatch.setattr(
+        server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
+    )
+    monkeypatch.setattr(
+        "axon.router.classifier.classify_task_with_source",
+        lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
+    )
+    monkeypatch.setattr(server, "_get_session_store", lambda: _FakeSessionStore())
+    monkeypatch.setattr(server, "RecallTelemetryStore", FailingTelemetryStore)
+
+    response, pack, results = await server._retrieve_context(
+        query="upsert vector",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=2000,
+    )
+
+    assert "### upsert (python)" in response
+    assert len(pack.segments) == 1
+    assert len(results) == 1
 
 
 class _FakeSessionStore:
