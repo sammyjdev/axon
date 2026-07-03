@@ -39,6 +39,18 @@ def _sha16(text: str) -> str:
     return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:16]
 
 
+def _stub_retrieve_deps(monkeypatch, store, *, nodes: list[str] | None = None) -> None:
+    monkeypatch.setattr(server, "_get_vector_store", lambda: store)
+    monkeypatch.setattr(
+        server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
+    )
+    monkeypatch.setattr(
+        "axon.router.classifier.classify_task_with_source",
+        lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
+    )
+    monkeypatch.setattr(server, "_get_session_store", lambda: _FakeSessionStore(nodes=nodes))
+
+
 def test_retrieval_strategy_skips_cloud_classifier_when_model_pinned(monkeypatch) -> None:
     """A pinned local completion model must keep retrieval offline: the cloud
     classifier is never invoked (it would route to Groq under the FREE profile)."""
@@ -209,15 +221,7 @@ async def test_search_code_surfaces_staleness_notes(monkeypatch) -> None:
         captured,
     )
 
-    monkeypatch.setattr(server, "_get_vector_store", lambda: store)
-    monkeypatch.setattr(
-        server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
-    )
-    monkeypatch.setattr(
-        "axon.router.classifier.classify_task_with_source",
-        lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
-    )
-    monkeypatch.setattr(server, "_get_session_store", lambda: _FakeSessionStore())
+    _stub_retrieve_deps(monkeypatch, store)
 
     response = await server.search_code(
         query="upsert vector", ctx="knowledge", caller="claude-code"
@@ -263,15 +267,7 @@ async def test_retrieve_context_emits_chunk_telemetry_without_raw_content(
         runtime=SimpleNamespace(data_root=tmp_path)
     )
 
-    monkeypatch.setattr(server, "_get_vector_store", lambda: store)
-    monkeypatch.setattr(
-        server, "_get_embedder", lambda: SimpleNamespace(embed_one=lambda query: [0.1])
-    )
-    monkeypatch.setattr(
-        "axon.router.classifier.classify_task_with_source",
-        lambda content, ctx=None: (TaskType.CODE_ANALYSIS, "local"),
-    )
-    monkeypatch.setattr(server, "_get_session_store", lambda: _FakeSessionStore())
+    _stub_retrieve_deps(monkeypatch, store)
     monkeypatch.setattr(server, "RecallTelemetryStore", lambda: telemetry_store)
 
     response, pack, results = await server._retrieve_context(
@@ -296,17 +292,196 @@ async def test_retrieve_context_emits_chunk_telemetry_without_raw_content(
     assert parsed["chunks"] == [
         {
             "hash": _sha16(content_a),
+            "dedup": "off",
             "ranking_score": 0.598,
             "score": 0.612,
             "token_estimate": len(content_a) // 4,
         },
         {
             "hash": _sha16(content_b),
+            "dedup": "off",
             "ranking_score": None,
             "score": 0.5,
             "token_estimate": len(content_b) // 4,
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_drops_hits_already_covered_by_transcript(
+    monkeypatch,
+) -> None:
+    content_a = "covered transcript chunk"
+    content_b = "novel retrieved chunk"
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.9,
+                "payload": {
+                    "symbol": "covered",
+                    "language": "python",
+                    "file_path": "/tmp/covered.py",
+                    "content": content_a,
+                },
+            },
+            {
+                "score": 0.8,
+                "payload": {
+                    "symbol": "novel",
+                    "language": "python",
+                    "file_path": "/tmp/novel.py",
+                    "content": content_b,
+                },
+            },
+        ],
+        {},
+    )
+
+    _stub_retrieve_deps(monkeypatch, store)
+
+    response, pack, _results = await server._retrieve_context(
+        query="what changed?",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=2000,
+        dedup_against=[content_a],
+    )
+
+    assert "covered transcript chunk" not in response
+    assert "novel retrieved chunk" in response
+    assert len(pack.segments) == 1
+    assert "novel" in pack.segments[0]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_with_dedup_none_keeps_pre_change_pack(
+    monkeypatch,
+) -> None:
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.9,
+                "payload": {
+                    "symbol": "alpha",
+                    "language": "python",
+                    "file_path": "/tmp/a.py",
+                    "content": "alpha content",
+                },
+            },
+            {
+                "score": 0.8,
+                "payload": {
+                    "symbol": "beta",
+                    "language": "python",
+                    "file_path": "/tmp/b.py",
+                    "content": "beta content",
+                },
+            },
+        ],
+        {},
+    )
+
+    _stub_retrieve_deps(monkeypatch, store)
+
+    response, pack, results = await server._retrieve_context(
+        query="what changed?",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=2000,
+        dedup_against=None,
+    )
+
+    assert results is store._results
+    assert len(pack.segments) == 2
+    assert "alpha content" in response
+    assert "beta content" in response
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_dedup_telemetry_marks_kept_and_dropped(
+    monkeypatch, tmp_path
+) -> None:
+    content_a = "covered transcript chunk"
+    content_b = "novel retrieved chunk"
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.9,
+                "payload": {
+                    "symbol": "covered",
+                    "language": "python",
+                    "file_path": "/tmp/covered.py",
+                    "content": content_a,
+                },
+            },
+            {
+                "score": 0.8,
+                "payload": {
+                    "symbol": "novel",
+                    "language": "python",
+                    "file_path": "/tmp/novel.py",
+                    "content": content_b,
+                },
+            },
+        ],
+        {},
+    )
+    telemetry_store = RecallTelemetryStore(runtime=SimpleNamespace(data_root=tmp_path))
+
+    _stub_retrieve_deps(monkeypatch, store)
+    monkeypatch.setattr(server, "RecallTelemetryStore", lambda: telemetry_store)
+
+    await server._retrieve_context(
+        query="what changed?",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=2000,
+        dedup_against=[content_a],
+    )
+
+    parsed = json.loads((tmp_path / "recall" / "chunks.jsonl").read_text(encoding="utf-8"))
+    assert [chunk["dedup"] for chunk in parsed["chunks"]] == ["dropped", "kept"]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_all_covered_hits_pack_empty(monkeypatch) -> None:
+    content = "covered transcript chunk"
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.9,
+                "payload": {
+                    "symbol": "covered",
+                    "language": "python",
+                    "file_path": "/tmp/covered.py",
+                    "content": content,
+                },
+            }
+        ],
+        {},
+    )
+
+    _stub_retrieve_deps(monkeypatch, store, nodes=["leak"])
+
+    response, pack, _results = await server._retrieve_context(
+        query="what changed?",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=2000,
+        dedup_against=[content],
+    )
+
+    assert pack.segments == ()
+    assert "covered transcript chunk" not in response
+    assert "leak" not in response
 
 
 @pytest.mark.asyncio
