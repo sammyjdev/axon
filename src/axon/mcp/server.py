@@ -376,6 +376,7 @@ async def _retrieve_context(
     query_vector = _get_embedder().embed_one(query)
     results = await store.search(
         query_vector=query_vector,
+        query=query,
         collections=collections,
         language=language,
         top_k=strategy.max_segments,
