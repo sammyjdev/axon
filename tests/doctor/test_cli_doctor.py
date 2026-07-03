@@ -79,6 +79,15 @@ class TestCIMode:
         assert check["status"] == "warn"
         assert check["detail"] == "skipped: db unreachable"
 
+    def test_ci_includes_continuous_accounting_checks(self, _isolate: Path) -> None:
+        result = runner.invoke(app, ["doctor", "--ci"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        names = {c["name"] for c in payload["checks"]}
+        assert "recall.savings" in names
+        assert "install.branch" in names
+
 
 class TestApplyMode:
     def test_apply_without_tty_refuses(self, _isolate: Path) -> None:
