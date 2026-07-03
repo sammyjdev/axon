@@ -344,3 +344,30 @@ def test_include_context_defaults_to_true(client: TestClient) -> None:
         json={"messages": [{"role": "user", "content": "explain recall"}]},
     )
     assert resp.json()["contexts"] == list(_FAKE_SEGMENTS)
+
+
+# ---------------------------------------------------------------------------
+# Tests — recall telemetry (per-request JSONL record)
+# ---------------------------------------------------------------------------
+
+
+def test_request_appends_recall_telemetry_record() -> None:
+    with (
+        patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+        patch(
+            "axon.observability.recall_telemetry.RecallTelemetryStore.append"
+        ) as mock_append,
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "explain recall"}]},
+            )
+    mock_append.assert_called_once()
+    record = mock_append.call_args.args[0]
+    assert record.include_context is True
+    assert record.prompt_tokens == _FAKE_USAGE.prompt_tokens
+    assert record.total_tokens == _FAKE_USAGE.total_tokens
+    assert record.usage_source == "provider"
+    assert record.caller == "http"
