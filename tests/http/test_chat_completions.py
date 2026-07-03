@@ -308,3 +308,39 @@ def test_health_endpoint() -> None:
         resp = c.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Tests — include_context toggle (recall on/off for A/B evals)
+# ---------------------------------------------------------------------------
+
+
+def test_include_context_false_skips_retrieval() -> None:
+    mock_retrieve = _make_retrieve_mock()
+    mock_complete = _make_complete_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=mock_complete),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/v1/chat/completions",
+                json={
+                    "include_context": False,
+                    "messages": [{"role": "user", "content": "explain recall"}],
+                },
+            )
+    assert resp.status_code == 200
+    mock_retrieve.assert_not_called()
+    assert resp.json()["contexts"] == []
+    # The LLM must receive the raw query, not an augmented prompt.
+    task_sent = mock_complete.call_args.args[0]
+    assert task_sent.content == "explain recall"
+
+
+def test_include_context_defaults_to_true(client: TestClient) -> None:
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"messages": [{"role": "user", "content": "explain recall"}]},
+    )
+    assert resp.json()["contexts"] == list(_FAKE_SEGMENTS)

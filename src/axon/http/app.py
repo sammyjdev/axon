@@ -44,6 +44,10 @@ chat-completions response:
 
 The ``contexts`` list (top-level) and ``usage.total_tokens`` are *required* by
 gnomon-eval and will always be present.
+
+Request field ``include_context`` (bool, default ``true``) toggles retrieval:
+when ``false``, no retrieval call is made, ``contexts`` is empty, and the LLM
+receives the raw query — the recall-off baseline arm for A/B evals.
 """
 
 from __future__ import annotations
@@ -74,6 +78,7 @@ class _Message(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str = "axon"
     messages: list[_Message]
+    include_context: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -117,26 +122,32 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
         raise HTTPException(status_code=422, detail="No user message found in messages list.")
 
     # --- retrieval -------------------------------------------------------
-    try:
-        _raw_context, pack, _hits = await _retrieve_context(
-            query=query,
-            ctx=None,
-            language=None,
-            max_depth=2,
-            max_nodes=25,
-            max_tokens=4000,
+    if request.include_context:
+        try:
+            _raw_context, pack, _hits = await _retrieve_context(
+                query=query,
+                ctx=None,
+                language=None,
+                max_depth=2,
+                max_nodes=25,
+                max_tokens=4000,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Retrieval error: {exc}") from exc
+
+        # Surface individual segment strings (not the combined formatted text).
+        context_segments: list[str] = list(pack.segments)
+        context_block = (
+            "\n\n".join(context_segments) if context_segments else "(no context retrieved)"
         )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Retrieval error: {exc}") from exc
-
-    # Surface individual segment strings (not the combined formatted text).
-    context_segments: list[str] = list(pack.segments)
-
-    # Build a context-enriched user prompt for the LLM.
-    context_block = "\n\n".join(context_segments) if context_segments else "(no context retrieved)"
-    augmented_query = (
-        f"Context retrieved from AXON:\n{context_block}\n\nQuestion: {query}"
-    )
+        augmented_query = (
+            f"Context retrieved from AXON:\n{context_block}\n\nQuestion: {query}"
+        )
+    else:
+        # Recall disabled (A/B baseline): raw query, no retrieval cost.
+        context_segments = []
+        context_block = "(recall disabled)"
+        augmented_query = query
 
     # --- LLM completion --------------------------------------------------
     task = TaskRequest(content=augmented_query)
