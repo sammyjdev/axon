@@ -67,12 +67,14 @@ def test_append_chunk_record_roundtrip(tmp_path: Path) -> None:
                 "score": 0.612,
                 "ranking_score": 0.598,
                 "token_estimate": 312,
+                "file_path": "/tmp/a.py",
             },
             {
                 "hash": "bada55",
                 "score": 0.5,
                 "ranking_score": None,
                 "token_estimate": 1,
+                "file_path": "/tmp/b.py",
             },
         ],
     )
@@ -83,3 +85,25 @@ def test_append_chunk_record_roundtrip(tmp_path: Path) -> None:
     assert len(lines) == 1
     parsed = json.loads(lines[0])
     assert parsed == record.model_dump()
+
+
+def test_chunk_record_old_line_without_file_path_still_parses() -> None:
+    parsed = ChunkRecord.model_validate(
+        {
+            "ts": "2026-07-02T00:00:00+00:00",
+            "query_hash": "f00d",
+            "strategy": "balanced",
+            "requested_max_tokens": 2000,
+            "chunks": [
+                {
+                    "hash": "c0ffee",
+                    "score": 0.612,
+                    "ranking_score": 0.598,
+                    "token_estimate": 312,
+                }
+            ],
+        }
+    )
+
+    assert parsed.chunks[0]["hash"] == "c0ffee"
+    assert parsed.chunks[0].get("file_path") is None

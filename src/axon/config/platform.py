@@ -68,13 +68,16 @@ def detect_platform() -> PlatformConfig:
 
 
 def _get_mac_memory() -> int:
-    result = subprocess.run(
-        ["sysctl", "hw.memsize"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return int(result.stdout.split(":")[1].strip()) // (1024**3)
+    try:
+        result = subprocess.run(
+            ["sysctl", "hw.memsize"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return int(result.stdout.split(":")[1].strip()) // (1024**3)
+    except (IndexError, OSError, ValueError, subprocess.CalledProcessError):
+        return 0
 
 
 def _get_nvidia_vram() -> int:

@@ -39,6 +39,7 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_quarantine_size,
         check_warnings_log,
     )
+    from axon.doctor.checks.index_composition import check_index_composition
     from axon.doctor.checks.toolchain import check_commitlint_compat
 
     return [
@@ -46,6 +47,7 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_quarantine_size(data_root=data_root),
         check_warnings_log(data_root=data_root),
         check_stale_pending(data_root=data_root),
+        check_index_composition(),
         check_commitlint_compat(),
     ]
 
