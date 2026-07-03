@@ -22,8 +22,20 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
 _LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+# Bold key/value is metadata only when it looks like a structured field
+# (short label, short scalar value): "**Status:** draft" is metadata,
+# "**Warning:** always validate user input..." is prose with a bold lead-in.
+_BOLD_KV_RE = re.compile(r"^\*\*([^*]+):\*\*\s*(\S.*)$")
+_BOLD_KV_MAX_LABEL_WORDS = 3
+_BOLD_KV_MAX_VALUE_CHARS = 48
+_CODE_REF_RE = re.compile(r"^`?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+`?(?::\d+)?$")
+_DATE_HASH_RE = re.compile(r"^(?:\d{4}-\d{2}-\d{2}(?:[T ][0-9:+-]+)?|[0-9a-f]{7,40})$")
+_EXPORTED_RE = re.compile(r"^_Exported\s+\d{4}-\d{2}-\d{2}[T ][0-9:+-]+_$")
+_PLACEHOLDER_RE = re.compile(r"^_?none_?$", re.IGNORECASE)
 
-_RELATION_FIELDS = frozenset({"relates_to", "requires", "supersedes", "implements", "extends", "replaces"})
+_RELATION_FIELDS = frozenset(
+    {"relates_to", "requires", "supersedes", "implements", "extends", "replaces"}
+)
 
 
 def _frontmatter_content(source: str) -> str:
@@ -152,10 +164,111 @@ def parse_sections(source: str) -> list[Section]:
 MIN_TOKENS = 128
 TARGET_TOKENS = 480
 MAX_TOKENS = 512
+# Below this, metadata-only sections should not stand alone as retrieval chunks.
+MIN_PROSE_RATIO = 0.25
+
+
+def _is_neutral_line(line: str) -> bool:
+    # The " > " test targets re-ingested breadcrumb lines ("doc > section"),
+    # which are navigation, not content, and must not skew prose_ratio.
+    stripped = line.strip()
+    return bool(
+        _HEADING_RE.match(stripped)
+        or (" > " in stripped and not stripped.startswith(("-", "*", "+")))
+    )
+
+
+def _list_content(line: str) -> str:
+    stripped = line.strip()
+    return re.sub(r"^(?:[-*+]|\d+[.)])\s+", "", stripped)
+
+
+def _is_bold_kv_metadata(content: str) -> bool:
+    match = _BOLD_KV_RE.match(content)
+    if not match:
+        return False
+    label, value = match.group(1).strip(), match.group(2).strip()
+    return (
+        len(label.split()) <= _BOLD_KV_MAX_LABEL_WORDS
+        and len(value) <= _BOLD_KV_MAX_VALUE_CHARS
+        and not value.endswith((".", "!", "?"))
+    )
+
+
+def _is_metadata_line(line: str) -> bool:
+    content = _list_content(line).strip()
+    return bool(
+        _is_bold_kv_metadata(content)
+        or _CODE_REF_RE.match(content)
+        or _DATE_HASH_RE.match(content)
+        or _EXPORTED_RE.match(content)
+        or _PLACEHOLDER_RE.match(content)
+    )
+
+
+def prose_ratio(text: str) -> float:
+    prose = 0
+    total = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or _is_neutral_line(stripped):
+            continue
+        total += 1
+        if not _is_metadata_line(stripped):
+            prose += 1
+    return prose / total if total else 0.0
 
 
 def _section_text(sec: Section) -> str:
     return "\n".join(sec.lines)
+
+
+def _section_body(sec: Section) -> str:
+    lines = list(sec.lines)
+    if lines and _HEADING_RE.match(lines[0].strip()):
+        lines = lines[1:]
+    return "\n".join(lines)
+
+
+def _is_skeleton_section(sec: Section) -> bool:
+    body = _section_body(sec)
+    body_lines = [
+        line.strip()
+        for line in body.splitlines()
+        if line.strip() and not _is_neutral_line(line.strip())
+    ]
+    return (
+        bool(body_lines)
+        and prose_ratio(body) < MIN_PROSE_RATIO
+        and all(_is_metadata_line(line) for line in body_lines)
+    )
+
+
+def _merge_skeleton_sections(sections: list[Section]) -> list[Section]:
+    skeleton = [_is_skeleton_section(sec) for sec in sections]
+    if not any(skeleton) or all(skeleton):
+        # All-skeleton documents fall through untouched: a file must never be
+        # dropped entirely, and packing still groups same-top-heading sections.
+        return sections
+
+    merged: list[Section] = []
+    pending: list[Section] = []
+    for sec, is_skeleton in zip(sections, skeleton):
+        if is_skeleton:
+            pending.append(sec)
+            continue
+        if pending:
+            lines = tuple(line for pending_sec in pending for line in pending_sec.lines) + sec.lines
+            sec = Section(sec.heading_path, pending[0].start_line, lines)
+            pending = []
+        merged.append(sec)
+
+    if pending and merged:
+        prev = merged[-1]
+        lines = prev.lines + tuple(line for pending_sec in pending for line in pending_sec.lines)
+        merged[-1] = Section(prev.heading_path, prev.start_line, lines)
+
+    return merged
 
 
 def _top(sec: Section) -> str | None:
@@ -163,6 +276,7 @@ def _top(sec: Section) -> str | None:
 
 
 def pack_sections(sections: list[Section]) -> list[list[Section]]:
+    sections = _merge_skeleton_sections(sections)
     groups: list[list[Section]] = []
     buf: list[Section] = []
     buf_tokens = 0
@@ -296,8 +410,15 @@ def chunk_markdown(source: str, file_path: str) -> list[Chunk]:
     sections = parse_sections(body_source)
     if not sections:
         return [
-            Chunk(symbol=stem, chunk_type="section", start_line=1, end_line=1,
-                  content=ctx_block, file_path=file_path, language="markdown")
+            Chunk(
+                symbol=stem,
+                chunk_type="section",
+                start_line=1,
+                end_line=1,
+                content=ctx_block,
+                file_path=file_path,
+                language="markdown",
+            )
         ]
 
     chunks: list[Chunk] = []
@@ -319,9 +440,14 @@ def chunk_markdown(source: str, file_path: str) -> list[Chunk]:
             symbol = crumb if len(windows) == 1 else f"{crumb}[{i}]"
             prefix = f"{ctx}\n\n" if (i == 0 and ctx) else ""
             chunks.append(
-                Chunk(symbol=symbol, chunk_type="section",
-                      start_line=start, end_line=end,
-                      content=f"{prefix}{crumb}\n\n{win}", file_path=file_path,
-                      language="markdown")
+                Chunk(
+                    symbol=symbol,
+                    chunk_type="section",
+                    start_line=start,
+                    end_line=end,
+                    content=f"{prefix}{crumb}\n\n{win}",
+                    file_path=file_path,
+                    language="markdown",
+                )
             )
     return chunks
