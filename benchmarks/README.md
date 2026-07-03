@@ -26,7 +26,12 @@ All runs use the same parameters (defined in `benchmarks/model.py`):
 Savings:   52.3%
 ```
 
-AXON reduces token consumption by **52.3%** in this modeled session.
+This modeled session projects **52.3%** savings - RETIRED as a claim
+(2026-07-04): it is a deterministic projection against an assumed 87,000-token
+baseline, never a measurement. The measured numbers (session cost parity with
+crossover at turn 6-9, real-usage savings of 90.7% vs full-file reads) live in
+[`docs/METRICS.md`](../docs/METRICS.md) and gnomon-eval ADR-0011. This model is
+kept for the projection-vs-measurement provenance story only.
 
 ## How It Works
 
