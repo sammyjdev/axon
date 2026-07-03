@@ -32,6 +32,10 @@ _BATCH_SIZE = 400
 # EXCLUDED_DIR_NAMES; docs/superpowers/plans is the repository-local exclusion.
 _EXCLUDED_PATH_PATTERNS: tuple[str, ...] = (
     "**/docs/superpowers/plans/**",
+    # Eval artifacts quote the eval questions and their grounding evidence -
+    # indexing them leaks answers into the measurement instrument.
+    "**/datasets/sessions/**",
+    "**/datasets/second_brain/**",
     "**/node_modules/**",
     "**/.venv/**",
 )
