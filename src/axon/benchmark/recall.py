@@ -198,6 +198,7 @@ async def run_recall_guard_pg(
         # and report a false regression vs the historical baseline.
         hits = await store.search(
             list(query_vec),
+            query=query_text,
             collections=[ctx],
             top_k=top_k,
             max_nodes=10**9,

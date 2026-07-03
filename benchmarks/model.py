@@ -1,4 +1,10 @@
-"""Deterministic token-cost model for an AXON benchmark session.
+"""RETIRED (2026-07-02): this deterministic projection (the "52.3%" figure) is
+superseded by the measured multi-turn harness in gnomon-eval
+(`gnomon session -c config/axon-session.toml`; see gnomon-eval ADR-0010).
+Kept for provenance: the projection-vs-measurement delta is part of the
+published story. Do not cite this model's output as a measurement.
+
+Deterministic token-cost model for an AXON benchmark session.
 
 This is an explicit MODEL, not an instrumented capture. A session is `turns`
 turns long. `baseline` mode re-supplies the whole (growing) project context

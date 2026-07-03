@@ -8,11 +8,14 @@ from testcontainers.postgres import PostgresContainer  # noqa: E402
 
 @pytest.fixture(scope="module")
 def pg_dsn():
-    with PostgresContainer(
-        "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
-    ) as pg:
-        # asyncpg DSN form
-        yield pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
+    try:
+        with PostgresContainer(
+            "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+        ) as pg:
+            # asyncpg DSN form
+            yield pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
+    except Exception as exc:
+        pytest.skip(f"Postgres testcontainer unavailable: {exc}")
 
 
 async def test_ensure_collections_idempotent(pg_dsn) -> None:
@@ -164,5 +167,40 @@ async def test_delete_by_file_removes_only_that_file(pg_dsn) -> None:
         async with store._pool.acquire() as con:
             remaining = await con.fetch("SELECT id FROM embeddings ORDER BY id")
         assert [r["id"] for r in remaining] == ["b1"]
+    finally:
+        await store.close()
+
+
+async def test_hybrid_search_exact_term_can_outrank_dense(pg_dsn, monkeypatch) -> None:
+    from axon.store.pg_vector_store import PgVectorStore
+    from axon.store.vector_common import VECTOR_SIZE
+
+    store = PgVectorStore(dsn=pg_dsn)
+    try:
+        await store.ensure_collections()
+        async with store._pool.acquire() as con:
+            await con.execute("TRUNCATE embeddings")
+
+        exact = _chunk("exact", file_path="docs/dec-040-density.md")
+        exact.vector = [0.0, 1.0] + [0.0] * (VECTOR_SIZE - 2)
+        exact.content = "density gate dec-040 AXON_MAX_PRE_SEND_TOKENS"
+        dense = _chunk("dense", file_path="docs/unrelated.md")
+        dense.vector = [1.0] + [0.0] * (VECTOR_SIZE - 1)
+        dense.content = "unrelated semantic neighbor"
+        await store.upsert_batch([exact, dense])
+
+        query_vector = [1.0] + [0.0] * (VECTOR_SIZE - 1)
+        monkeypatch.delenv("AXON_HYBRID_SEARCH", raising=False)
+        dense_hits = await store.search(query_vector, collections=["knowledge"], top_k=2)
+        monkeypatch.setenv("AXON_HYBRID_SEARCH", "1")
+        hybrid_hits = await store.search(
+            query_vector,
+            query="density gate dec-040",
+            collections=["knowledge"],
+            top_k=2,
+        )
+
+        assert dense_hits[0]["id"] == "dense"
+        assert hybrid_hits[0]["id"] == "exact"
     finally:
         await store.close()

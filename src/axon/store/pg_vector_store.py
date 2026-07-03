@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from datetime import UTC, datetime
 
@@ -9,6 +10,25 @@ from pgvector.asyncpg import register_vector
 from axon.store.vector_common import VECTOR_SIZE, _rank_and_limit
 
 _TABLE_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+def _append_filter_clauses(params: list, *, language: str | None, project: str | None) -> str:
+    """Shared WHERE builder for the dense and lexical arms.
+
+    Both arms MUST filter identically (ctx isolation is a security boundary);
+    a single builder makes divergence impossible.
+    """
+    clauses = ["ctx = ANY($2)"]
+    if language:
+        params.append(language)
+        clauses.append(f"language = ${len(params)}")
+    if project:
+        params.append(project)
+        clauses.append(f"project = ${len(params)}")
+    return " AND ".join(clauses)
+
+
+_RRF_K = 60  # Standard RRF dampening constant; keeps both rank arms comparable.
 
 
 async def _init_conn(conn: asyncpg.Connection) -> None:
@@ -25,9 +45,7 @@ class PgVectorStore:
 
     def __init__(self, dsn: str, table: str = "embeddings") -> None:
         if not _TABLE_RE.fullmatch(table):
-            raise ValueError(
-                f"invalid table name {table!r}: must match ^[a-z_][a-z0-9_]*$"
-            )
+            raise ValueError(f"invalid table name {table!r}: must match ^[a-z_][a-z0-9_]*$")
         self._dsn = dsn
         self._table = table
         self._pool: asyncpg.Pool | None = None
@@ -88,10 +106,21 @@ class PgVectorStore:
                     symbol      text,
                     project     text,
                     content     text,
+                    content_tsv tsvector GENERATED ALWAYS AS (
+                        to_tsvector('simple', content)
+                    ) STORED,
                     git_commit  text DEFAULT '',
                     modified_at timestamptz NOT NULL DEFAULT now()
                 )
                 """
+            )
+            # First run against an existing populated table takes an ACCESS
+            # EXCLUSIVE lock and rewrites every row (generated STORED column).
+            # Run ensure_collections out-of-band after deploy on large tables
+            # rather than letting a latency-sensitive path trigger it.
+            await con.execute(
+                f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS content_tsv "
+                "tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED"
             )
             await con.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{t}_hnsw "
@@ -99,6 +128,9 @@ class PgVectorStore:
             )
             await con.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{t}_ctx_file ON {t} (ctx, file_path)"
+            )
+            await con.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{t}_content_tsv ON {t} USING GIN (content_tsv)"
             )
 
     async def upsert(self, chunk) -> None:  # chunk: Chunk
@@ -110,8 +142,17 @@ class PgVectorStore:
         pool = await self._ensure_pool()
         rows = [
             (
-                c.id, c.vector, c.ctx, c.file_path, c.language, c.chunk_type,
-                c.symbol, c.project, c.content, c.git_commit, c.modified_at,
+                c.id,
+                c.vector,
+                c.ctx,
+                c.file_path,
+                c.language,
+                c.chunk_type,
+                c.symbol,
+                c.project,
+                c.content,
+                c.git_commit,
+                c.modified_at,
             )
             for c in chunks
         ]
@@ -136,6 +177,7 @@ class PgVectorStore:
         self,
         query_vector,
         collections,
+        query: str | None = None,
         language=None,
         project=None,
         top_k: int = 5,
@@ -145,15 +187,8 @@ class PgVectorStore:
     ) -> list[dict]:
         _ = max_depth  # accepted for parity, unused (matches the vector backend interface)
         pool = await self._ensure_pool()
-        clauses = ["ctx = ANY($2)"]
         params: list = [query_vector, list(collections)]
-        if language:
-            params.append(language)
-            clauses.append(f"language = ${len(params)}")
-        if project:
-            params.append(project)
-            clauses.append(f"project = ${len(params)}")
-        where = " AND ".join(clauses)
+        where = _append_filter_clauses(params, language=language, project=project)
         sql = f"""
             SELECT id, file_path, language, chunk_type, symbol, project, content,
                    git_commit, modified_at, 1 - (vector <=> $1) AS score
@@ -164,22 +199,27 @@ class PgVectorStore:
         """
         async with pool.acquire() as con:
             records = await con.fetch(sql, *params)
-        results = [
-            {
-                "score": float(r["score"]),
-                "id": r["id"],
-                "payload": {
-                    "file_path": r["file_path"], "language": r["language"],
-                    "chunk_type": r["chunk_type"], "symbol": r["symbol"],
-                    "project": r["project"], "content": r["content"],
-                    "git_commit": r["git_commit"],
-                    "modified_at": r["modified_at"].isoformat(),
-                },
-            }
-            for r in records
-        ]
+            lexical_records = []
+            if os.environ.get("AXON_HYBRID_SEARCH") == "1" and query:
+                lex_params: list = [query, list(collections)]
+                lex_where = _append_filter_clauses(lex_params, language=language, project=project)
+                lex_sql = f"""
+                    SELECT id, file_path, language, chunk_type, symbol, project, content,
+                           git_commit, modified_at, ts_rank(content_tsv, q.query) AS score
+                    FROM {self._table}, websearch_to_tsquery('simple', $1) AS q(query)
+                    WHERE content_tsv @@ q.query AND {lex_where}
+                    ORDER BY ts_rank(content_tsv, q.query) DESC
+                    LIMIT {int(top_k)}
+                """
+                lexical_records = await con.fetch(lex_sql, *lex_params)
+        results = [_record_to_result(r) for r in records]
+        if lexical_records:
+            results = _merge_rrf_arms(results, [_record_to_result(r) for r in lexical_records])
         return _rank_and_limit(
-            results, top_k=top_k, max_nodes=max_nodes, max_tokens=max_tokens,
+            results,
+            top_k=top_k,
+            max_nodes=max_nodes,
+            max_tokens=max_tokens,
             now=datetime.now(UTC),
         )
 
@@ -194,3 +234,41 @@ class PgVectorStore:
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
+
+
+def _record_to_result(r) -> dict:
+    return {
+        "score": float(r["score"]),
+        "id": r["id"],
+        "payload": {
+            "file_path": r["file_path"],
+            "language": r["language"],
+            "chunk_type": r["chunk_type"],
+            "symbol": r["symbol"],
+            "project": r["project"],
+            "content": r["content"],
+            "git_commit": r["git_commit"],
+            "modified_at": r["modified_at"].isoformat(),
+        },
+    }
+
+
+def _merge_rrf_arms(dense: list[dict], lexical: list[dict]) -> list[dict]:
+    merged: dict[str, dict] = {}
+    scores: dict[str, float] = {}
+
+    for rank, item in enumerate(dense, start=1):
+        item_id = str(item["id"])
+        payload = dict(item.get("payload") or {})
+        payload["dense_score"] = float(item["score"])
+        merged[item_id] = {**item, "payload": payload}
+        scores[item_id] = scores.get(item_id, 0.0) + (1 / (_RRF_K + rank))
+
+    for rank, item in enumerate(lexical, start=1):
+        item_id = str(item["id"])
+        merged.setdefault(item_id, {**item, "payload": dict(item.get("payload") or {})})
+        scores[item_id] = scores.get(item_id, 0.0) + (1 / (_RRF_K + rank))
+
+    results = [{**item, "score": scores[item_id]} for item_id, item in merged.items()]
+    results.sort(key=lambda item: (-float(item["score"]), str(item.get("id", ""))))
+    return results

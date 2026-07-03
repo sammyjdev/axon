@@ -391,3 +391,194 @@ def test_telemetry_failure_never_breaks_the_request() -> None:
     body = resp.json()
     assert body["contexts"] == list(_FAKE_SEGMENTS)
     assert body["usage"]["total_tokens"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Tests — forward_history + recall_max_tokens (Wave 2 session harness)
+# ---------------------------------------------------------------------------
+
+
+def test_forward_history_passes_prior_messages_to_router() -> None:
+    mock_complete = _make_complete_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
+        patch(_PATCH_COMPLETE, new=mock_complete),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={
+                    "forward_history": True,
+                    "include_context": False,
+                    "messages": [
+                        {"role": "user", "content": "first question"},
+                        {"role": "assistant", "content": "first answer"},
+                        {"role": "user", "content": "second question"},
+                    ],
+                },
+            )
+    history = mock_complete.call_args.kwargs["messages"]
+    assert history == [
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+    ]
+    # The current turn goes through the TaskRequest, not the history.
+    assert mock_complete.call_args.args[0].content == "second question"
+
+
+def test_history_not_forwarded_by_default() -> None:
+    mock_complete = _make_complete_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
+        patch(_PATCH_COMPLETE, new=mock_complete),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={
+                    "messages": [
+                        {"role": "user", "content": "first"},
+                        {"role": "assistant", "content": "answer"},
+                        {"role": "user", "content": "second"},
+                    ]
+                },
+            )
+    assert mock_complete.call_args.kwargs["messages"] == []
+
+
+def test_recall_max_tokens_overrides_retrieval_budget() -> None:
+    mock_retrieve = _make_retrieve_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={
+                    "recall_max_tokens": 2000,
+                    "messages": [{"role": "user", "content": "q"}],
+                },
+            )
+    assert mock_retrieve.call_args.kwargs["max_tokens"] == 2000
+
+
+def test_recall_budget_defaults_to_4000() -> None:
+    mock_retrieve = _make_retrieve_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "q"}]},
+            )
+    assert mock_retrieve.call_args.kwargs["max_tokens"] == 4000
+
+
+def test_delta_recall_forwards_prior_message_contents_to_retrieval(monkeypatch) -> None:
+    monkeypatch.setenv("AXON_DELTA_RECALL", "1")
+    mock_retrieve = _make_retrieve_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={
+                    "forward_history": True,
+                    "messages": [
+                        {"role": "user", "content": "first question"},
+                        {"role": "assistant", "content": "first answer"},
+                        {"role": "user", "content": "second question"},
+                    ],
+                },
+            )
+
+    assert mock_retrieve.call_args.kwargs["dedup_against"] == [
+        "first question",
+        "first answer",
+    ]
+
+
+def test_delta_recall_without_forward_history_does_not_pass_dedup_against(monkeypatch) -> None:
+    monkeypatch.setenv("AXON_DELTA_RECALL", "1")
+    mock_retrieve = _make_retrieve_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={
+                    "messages": [
+                        {"role": "user", "content": "first question"},
+                        {"role": "assistant", "content": "first answer"},
+                        {"role": "user", "content": "second question"},
+                    ]
+                },
+            )
+
+    assert "dedup_against" not in mock_retrieve.call_args.kwargs
+
+
+def test_delta_recall_flag_unset_does_not_pass_dedup_against(monkeypatch) -> None:
+    monkeypatch.delenv("AXON_DELTA_RECALL", raising=False)
+    mock_retrieve = _make_retrieve_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={
+                    "forward_history": True,
+                    "messages": [
+                        {"role": "user", "content": "first question"},
+                        {"role": "assistant", "content": "first answer"},
+                        {"role": "user", "content": "second question"},
+                    ],
+                },
+            )
+
+    assert mock_retrieve.call_args.kwargs.get("dedup_against") is None
+
+
+def test_all_covered_delta_recall_request_succeeds_with_empty_contexts(monkeypatch) -> None:
+    monkeypatch.setenv("AXON_DELTA_RECALL", "1")
+    empty_pack = ContextPack(
+        strategy=_FAKE_STRATEGY,
+        task_type="CODE_ANALYSIS",
+        profile="free",
+        mode="hybrid-local",
+        contexts=DEFAULT_SEARCH_CONTEXTS,
+        segments=(),
+        metadata=(("ctx", "auto"), ("hits", "0")),
+    )
+    mock_retrieve = AsyncMock(
+        return_value=("", empty_pack, [{"payload": {"content": "covered answer"}}])
+    )
+    mock_complete = _make_complete_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=mock_complete),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/v1/chat/completions",
+                json={
+                    "forward_history": True,
+                    "messages": [
+                        {"role": "user", "content": "covered answer"},
+                        {"role": "user", "content": "follow up"},
+                    ],
+                },
+            )
+
+    assert resp.status_code == 200
+    assert resp.json()["contexts"] == []
+    assert mock_complete.call_args.args[0].content == "follow up"

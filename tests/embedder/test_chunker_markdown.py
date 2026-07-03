@@ -84,7 +84,9 @@ class TestMarkdownChunker:
             # Strip the breadcrumb prefix to check just the window body stays in budget.
             # The breadcrumb is everything before the first "\n\n".
             body_part = c.content.split("\n\n", 1)[1] if "\n\n" in c.content else c.content
-            assert estimate_tokens(body_part) <= MAX_TOKENS, f"{c.symbol}: {estimate_tokens(body_part)} tokens"
+            assert estimate_tokens(body_part) <= MAX_TOKENS, (
+                f"{c.symbol}: {estimate_tokens(body_part)} tokens"
+            )
 
     def test_no_headers_splits_on_token_cap(self) -> None:
         # The new chunker splits by token budget (MAX_TOKENS=512), not line count.
@@ -93,7 +95,9 @@ class TestMarkdownChunker:
         chunks = chunk_source(md, "markdown", "plain.md")
         assert len(chunks) >= 2  # too much text to fit in one token window
         for c in chunks:
-            assert estimate_tokens(c.content) <= MAX_TOKENS, f"{c.symbol}: {estimate_tokens(c.content)} tokens"
+            assert estimate_tokens(c.content) <= MAX_TOKENS, (
+                f"{c.symbol}: {estimate_tokens(c.content)} tokens"
+            )
         # sub-chunks are named with [idx] suffix since there are multiple windows
         assert chunks[0].symbol == "plain[0]"
         assert chunks[-1].symbol == f"plain[{len(chunks) - 1}]"
@@ -119,14 +123,17 @@ class TestBreadcrumbBudget:
         # Bug: split_text sized windows to MAX_TOKENS ignoring breadcrumb overhead,
         # so full content = crumb + "\n\n" + window exceeded MAX_TOKENS.
         long_body = "\n\n".join(
-            f"This is a prose paragraph number {i} with enough words to contribute to the token budget."
+            f"This is a prose paragraph number {i} with enough words to "
+            "contribute to the token budget."
             for i in range(60)
         )
         md = f"# Level1\n## Level2\n### Level3\n#### Level4\n{long_body}\n"
         chunks = chunk_source(md, "markdown", "deep.md")
         over_cap = [
             c for c in chunks
-            if not _is_table_block(c.content.split("\n\n", 1)[-1] if "\n\n" in c.content else c.content)
+            if not _is_table_block(
+                c.content.split("\n\n", 1)[-1] if "\n\n" in c.content else c.content
+            )
             and estimate_tokens(c.content) > MAX_TOKENS
         ]
         assert over_cap == [], (
@@ -146,12 +153,18 @@ class TestBreadcrumbBudget:
         )
         table = f"{wide_row}\n{sep_row}\n{data_rows}"
         assert _is_table_block(table), "Precondition: block must be a table"
-        assert estimate_tokens(table) > MAX_TOKENS, "Precondition: table must exceed MAX_TOKENS"
+        assert estimate_tokens(table) > MAX_TOKENS, (
+            "Precondition: table must exceed MAX_TOKENS"
+        )
         # Even with a very tight budget, the table stays as a single window
         windows = split_text(table, max_tokens=MIN_TOKENS)
-        assert len(windows) == 1, f"Table was split into {len(windows)} windows; must stay atomic"
+        assert len(windows) == 1, (
+            f"Table was split into {len(windows)} windows; must stay atomic"
+        )
         assert _is_table_block(windows[0]), "Window must still be a table"
-        assert estimate_tokens(windows[0]) > MAX_TOKENS, "Table window may exceed cap (atomic exception)"
+        assert estimate_tokens(windows[0]) > MAX_TOKENS, (
+            "Table window may exceed cap (atomic exception)"
+        )
 
 
 class TestTextCatchall:
@@ -194,6 +207,86 @@ class TestMarkdownChunkerBreadcrumb:
         chunks = chunk_source("just prose, no headings", "markdown", "/x/note.md")
         assert len(chunks) == 1
         assert chunks[0].symbol == "note"
+
+    def test_decision_skeleton_sections_merge_into_rationale_chunk(self) -> None:
+        files = "\n".join(f"- `src/axon/module_{i}.py`" for i in range(40))
+        md = f"""# dec-039 - arch: relax density gate for rich commit bodies
+
+_Exported 2026-06-12T12:57:34+00:00_
+
+- **Status:** draft
+- **Repo:** axon
+- **Agent:** manual
+- **Timestamp:** 2026-05-28T01:43:50+00:00
+- **Validation score:** 4.5
+- **Git hash:** 8bf275d8
+- **Linked decisions:** _none_
+
+## Files
+
+{files}
+
+## Symbols
+
+_none_
+
+## Rationale
+
+This rationale is the retrieval-worthy prose.
+"""
+        chunks = chunk_source(md, "markdown", "/vault/dec-039.md")
+
+        assert all("## Rationale" in c.content for c in chunks)
+        assert any("- **Status:** draft" in c.content for c in chunks)
+        assert any("`src/axon/module_0.py`" in c.content for c in chunks)
+
+    def test_metadata_only_document_still_emits_chunk(self) -> None:
+        md = """# dec-040
+
+- **Status:** draft
+- **Repo:** axon
+
+## Files
+
+- `src/axon/embedder/md_chunker.py`
+
+## Symbols
+
+_none_
+"""
+        chunks = chunk_source(md, "markdown", "/vault/dec-040.md")
+
+        assert len(chunks) >= 1
+        assert "- **Status:** draft" in "\n".join(c.content for c in chunks)
+
+    def test_normal_multisection_prose_chunks_exactly_as_before(self) -> None:
+        md = """# Guide
+Introductory prose explains what this guide covers.
+
+## Install
+Install the package with the documented command.
+
+## Usage
+Run the command and inspect the result.
+"""
+        chunks = chunk_source(md, "markdown", "/docs/guide.md")
+
+        assert [(c.symbol, c.start_line, c.end_line, c.content) for c in chunks] == [
+            (
+                "guide > Guide",
+                1,
+                8,
+                "guide > Guide\n\n"
+                "# Guide\n"
+                "Introductory prose explains what this guide covers.\n"
+                "\n"
+                "## Install\n"
+                "Install the package with the documented command.\n"
+                "\n"
+                "## Usage\n"
+                "Run the command and inspect the result.",
+            )
+        ]
 
 
 class TestSiblingBreadcrumb:

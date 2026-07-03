@@ -1,3 +1,9 @@
+"""Common vector-store helpers.
+
+Delta recall uses a structural cutoff: a chunk 60%+ covered by the
+conversation transcript is considered already known.
+"""
+
 import os
 from datetime import datetime
 
@@ -9,7 +15,44 @@ from axon.embedder.engine import default_embedding_dimension
 # AXON_VECTOR_SIZE overrides the default; the default is derived from the
 # platform-selected embedder model so collections always match embedding output.
 VECTOR_SIZE = int(os.environ.get("AXON_VECTOR_SIZE", default_embedding_dimension()))
+# Read at process start (house convention for tuning knobs, like VECTOR_SIZE);
+# the on/off flag AXON_DELTA_RECALL is read per-request in http/app.py.
+DELTA_RECALL_CUTOFF = float(os.environ.get("AXON_DELTA_RECALL_CUTOFF", "0.6"))
 _STALE_RANKING_PENALTY = 0.2
+
+
+def transcript_shingle_set(transcript: list[str]) -> set[str]:
+    """Union of shingles over all transcript entries - compute ONCE per request."""
+    shingles: set[str] = set()
+    for entry in transcript:
+        shingles.update(_char_shingles(_normalize_ws(entry)))
+    return shingles
+
+
+def shingles_cover(chunk_text: str, transcript_shingles: set[str], *, cutoff: float = 0.6) -> bool:
+    chunk_shingles = _char_shingles(_normalize_ws(chunk_text))
+    if not chunk_shingles or not transcript_shingles:
+        return False
+    covered = len(chunk_shingles & transcript_shingles)
+    return covered / len(chunk_shingles) >= cutoff
+
+
+def transcript_covers(chunk_text: str, transcript: list[str], *, cutoff: float = 0.6) -> bool:
+    if not transcript:
+        return False
+    return shingles_cover(chunk_text, transcript_shingle_set(transcript), cutoff=cutoff)
+
+
+def _normalize_ws(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _char_shingles(text: str, *, k: int = 40, step: int = 20) -> set[str]:
+    if not text:
+        return set()
+    if len(text) <= k:
+        return {text}
+    return {text[start : start + k] for start in range(0, len(text) - k + 1, step)}
 
 
 class Chunk(BaseModel):
@@ -52,6 +95,30 @@ def _rank_and_limit(
         token_budget -= estimated
         limited.append(item)
     return limited[:top_k]
+
+
+def _trim_to_budget(
+    items: list[dict],
+    *,
+    max_nodes: int,
+    max_tokens: int,
+) -> list[dict]:
+    """Truncate hits without changing their order."""
+    limited: list[dict] = []
+    token_budget = max_tokens
+    for item in items:
+        payload = item.get("payload") or {}
+        content = str(payload.get("content", ""))
+        estimated = max(1, len(content) // 4)
+        if len(limited) >= max_nodes:
+            break
+        # ponytail: always keep the top hit even if it alone exceeds the token
+        # budget; same tail-pruning semantics as _rank_and_limit.
+        if limited and token_budget - estimated < 0:
+            break
+        token_budget -= estimated
+        limited.append(item)
+    return limited
 
 
 def _apply_staleness_ranking(results: list[dict], *, now: datetime) -> list[dict]:

@@ -1,0 +1,42 @@
+[
+  {
+    "query": "density gate dec-040",
+    "expected_file_substring": "test_chunker_markdown.py"
+  },
+  {
+    "query": "dec-039",
+    "expected_file_substring": "test_chunker_markdown.py"
+  },
+  {
+    "query": "AXON_MAX_PRE_SEND_TOKENS",
+    "expected_file_substring": "router/engine.py"
+  },
+  {
+    "query": "DENY_RATE_LIMIT",
+    "expected_file_substring": "policy/core.py"
+  },
+  {
+    "query": "bge-m3",
+    "expected_file_substring": "bge-m3"
+  },
+  {
+    "query": "pgvector 5434",
+    "expected_file_substring": "PROJECT_OVERVIEW.md"
+  },
+  {
+    "query": "GLYPH Louvain",
+    "expected_file_substring": "glyph"
+  },
+  {
+    "query": "recall_max_tokens",
+    "expected_file_substring": "http/app.py"
+  },
+  {
+    "query": "dec-110 commit signal",
+    "expected_file_substring": "dec-110"
+  },
+  {
+    "query": "forward_history",
+    "expected_file_substring": "http/app.py"
+  }
+]
