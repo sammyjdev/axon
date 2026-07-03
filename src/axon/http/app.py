@@ -48,6 +48,10 @@ gnomon-eval and will always be present.
 Request field ``include_context`` (bool, default ``true``) toggles retrieval:
 when ``false``, no retrieval call is made, ``contexts`` is empty, and the LLM
 receives the raw query — the recall-off baseline arm for A/B evals.
+Request field ``forward_history`` (bool, default ``false``) forwards prior
+messages to the router for multi-turn eval baseline arms.
+Request field ``recall_max_tokens`` (int | null, default ``null``) overrides
+the per-request retrieval budget.
 """
 
 from __future__ import annotations
@@ -83,6 +87,8 @@ class ChatCompletionRequest(BaseModel):
     model: str = "axon"
     messages: list[_Message]
     include_context: bool = True
+    forward_history: bool = False
+    recall_max_tokens: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +140,7 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
                 language=None,
                 max_depth=2,
                 max_nodes=25,
-                max_tokens=4000,
+                max_tokens=request.recall_max_tokens or 4000,
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Retrieval error: {exc}") from exc
@@ -154,9 +160,14 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
         augmented_query = query
 
     # --- LLM completion --------------------------------------------------
+    # Conversation history for the baseline arm of multi-turn evals
+    # (ADR-009 in gnomon-eval). Default [] preserves Wave 1 behavior.
+    history: list[dict] = (
+        [m.model_dump() for m in request.messages[:-1]] if request.forward_history else []
+    )
     task = TaskRequest(content=augmented_query)
     try:
-        answer, usage = await complete_with_usage(task, messages=[])
+        answer, usage = await complete_with_usage(task, messages=history)
     except Exception as exc:
         # Surface retrieval context even when the LLM call fails so the
         # evaluator can still score recall from ``contexts``.

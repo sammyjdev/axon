@@ -391,3 +391,87 @@ def test_telemetry_failure_never_breaks_the_request() -> None:
     body = resp.json()
     assert body["contexts"] == list(_FAKE_SEGMENTS)
     assert body["usage"]["total_tokens"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Tests — forward_history + recall_max_tokens (Wave 2 session harness)
+# ---------------------------------------------------------------------------
+
+
+def test_forward_history_passes_prior_messages_to_router() -> None:
+    mock_complete = _make_complete_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
+        patch(_PATCH_COMPLETE, new=mock_complete),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={
+                    "forward_history": True,
+                    "include_context": False,
+                    "messages": [
+                        {"role": "user", "content": "first question"},
+                        {"role": "assistant", "content": "first answer"},
+                        {"role": "user", "content": "second question"},
+                    ],
+                },
+            )
+    history = mock_complete.call_args.kwargs["messages"]
+    assert history == [
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+    ]
+    # The current turn goes through the TaskRequest, not the history.
+    assert mock_complete.call_args.args[0].content == "second question"
+
+
+def test_history_not_forwarded_by_default() -> None:
+    mock_complete = _make_complete_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
+        patch(_PATCH_COMPLETE, new=mock_complete),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={
+                    "messages": [
+                        {"role": "user", "content": "first"},
+                        {"role": "assistant", "content": "answer"},
+                        {"role": "user", "content": "second"},
+                    ]
+                },
+            )
+    assert mock_complete.call_args.kwargs["messages"] == []
+
+
+def test_recall_max_tokens_overrides_retrieval_budget() -> None:
+    mock_retrieve = _make_retrieve_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={
+                    "recall_max_tokens": 2000,
+                    "messages": [{"role": "user", "content": "q"}],
+                },
+            )
+    assert mock_retrieve.call_args.kwargs["max_tokens"] == 2000
+
+
+def test_recall_budget_defaults_to_4000() -> None:
+    mock_retrieve = _make_retrieve_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "q"}]},
+            )
+    assert mock_retrieve.call_args.kwargs["max_tokens"] == 4000
