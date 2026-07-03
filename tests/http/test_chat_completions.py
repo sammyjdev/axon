@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 from axon.context.contracts import ContextPack, RetrievalStrategy
 from axon.context.registry import DEFAULT_SEARCH_CONTEXTS
 from axon.http.app import app
+from axon.router.engine import CompletionUsage
 
 # ---------------------------------------------------------------------------
 # Helpers / constants
@@ -61,10 +62,13 @@ _FAKE_PACK = ContextPack(
 
 _FAKE_RAW_CONTEXT = "\n\n".join(_FAKE_SEGMENTS)
 _FAKE_ANSWER = "AXON uses exponential-decay recency scoring for recall ranking."
+_FAKE_USAGE = CompletionUsage(
+    model="ollama/qwen2.5:7b", prompt_tokens=512, completion_tokens=64, total_tokens=576
+)
 
 # Patch targets: the handler imports these lazily from their source modules.
 _PATCH_RETRIEVE = "axon.mcp.server._retrieve_context"
-_PATCH_COMPLETE = "axon.router.engine.complete"
+_PATCH_COMPLETE = "axon.router.engine.complete_with_usage"
 
 
 def _make_retrieve_mock() -> AsyncMock:
@@ -73,8 +77,8 @@ def _make_retrieve_mock() -> AsyncMock:
 
 
 def _make_complete_mock() -> AsyncMock:
-    """Return an AsyncMock for complete that returns _FAKE_ANSWER."""
-    return AsyncMock(return_value=_FAKE_ANSWER)
+    """Return an AsyncMock for complete_with_usage: (answer, usage)."""
+    return AsyncMock(return_value=(_FAKE_ANSWER, _FAKE_USAGE))
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +167,34 @@ def test_chat_completions_usage_total_tokens_present(client: TestClient) -> None
     assert "total_tokens" in body["usage"], "'usage.total_tokens' is required by gnomon-eval"
     assert isinstance(body["usage"]["total_tokens"], int)
     assert body["usage"]["total_tokens"] > 0
+
+
+def test_usage_matches_provider_usage(client: TestClient) -> None:
+    """usage must be the provider's real numbers, not a char estimate."""
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"messages": [{"role": "user", "content": "explain recall"}]},
+    )
+    usage = resp.json()["usage"]
+    assert usage["prompt_tokens"] == _FAKE_USAGE.prompt_tokens
+    assert usage["completion_tokens"] == _FAKE_USAGE.completion_tokens
+    assert usage["total_tokens"] == _FAKE_USAGE.total_tokens
+    assert usage["source"] == "provider"
+
+
+def test_usage_falls_back_to_estimate_when_provider_omits_usage() -> None:
+    with (
+        patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
+        patch(_PATCH_COMPLETE, new=AsyncMock(return_value=(_FAKE_ANSWER, None))),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "x"}]},
+            )
+    usage = resp.json()["usage"]
+    assert usage["source"] == "estimate"
+    assert usage["total_tokens"] > 0
 
 
 def test_chat_completions_id_present(client: TestClient) -> None:
@@ -263,6 +295,7 @@ def test_llm_error_still_returns_contexts() -> None:
     assert "LLM unavailable" in body["choices"][0]["message"]["content"]
     # usage must still be present
     assert body["usage"]["total_tokens"] > 0
+    assert body["usage"]["source"] == "estimate"
 
 
 # ---------------------------------------------------------------------------
@@ -275,3 +308,86 @@ def test_health_endpoint() -> None:
         resp = c.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Tests — include_context toggle (recall on/off for A/B evals)
+# ---------------------------------------------------------------------------
+
+
+def test_include_context_false_skips_retrieval() -> None:
+    mock_retrieve = _make_retrieve_mock()
+    mock_complete = _make_complete_mock()
+    with (
+        patch(_PATCH_RETRIEVE, new=mock_retrieve),
+        patch(_PATCH_COMPLETE, new=mock_complete),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/v1/chat/completions",
+                json={
+                    "include_context": False,
+                    "messages": [{"role": "user", "content": "explain recall"}],
+                },
+            )
+    assert resp.status_code == 200
+    mock_retrieve.assert_not_called()
+    assert resp.json()["contexts"] == []
+    # The LLM must receive the raw query, not an augmented prompt.
+    task_sent = mock_complete.call_args.args[0]
+    assert task_sent.content == "explain recall"
+
+
+def test_include_context_defaults_to_true(client: TestClient) -> None:
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"messages": [{"role": "user", "content": "explain recall"}]},
+    )
+    assert resp.json()["contexts"] == list(_FAKE_SEGMENTS)
+
+
+# ---------------------------------------------------------------------------
+# Tests — recall telemetry (per-request JSONL record)
+# ---------------------------------------------------------------------------
+
+
+def test_request_appends_recall_telemetry_record() -> None:
+    with (
+        patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+        patch(
+            "axon.observability.recall_telemetry.RecallTelemetryStore.append"
+        ) as mock_append,
+    ):
+        with TestClient(app) as c:
+            c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "explain recall"}]},
+            )
+    mock_append.assert_called_once()
+    record = mock_append.call_args.args[0]
+    assert record.include_context is True
+    assert record.prompt_tokens == _FAKE_USAGE.prompt_tokens
+    assert record.total_tokens == _FAKE_USAGE.total_tokens
+    assert record.usage_source == "provider"
+    assert record.caller == "http"
+
+
+def test_telemetry_failure_never_breaks_the_request() -> None:
+    with (
+        patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
+        patch(_PATCH_COMPLETE, new=_make_complete_mock()),
+        patch(
+            "axon.observability.recall_telemetry.RecallTelemetryStore.append",
+            side_effect=OSError("disk full"),
+        ),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "explain recall"}]},
+            )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["contexts"] == list(_FAKE_SEGMENTS)
+    assert body["usage"]["total_tokens"] > 0
