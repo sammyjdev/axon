@@ -233,12 +233,28 @@ survive across agents and months, auditably, that is AXON.
 
 ## Token savings
 
-A modelled 20-turn coding session shows that AXON's selective context recall
-reduces input token consumption by **52.3%** compared to a baseline that
-re-supplies the full project context on every turn (87,000 tokens baseline vs.
-41,500 tokens with AXON). This is a deterministic cost model — see
-[`benchmarks/README.md`](benchmarks/README.md) for the assumptions, caveats,
-and how to run it yourself.
+AXON's numbers are measured by [GNOMON](https://github.com/sammyjdev/gnomon-eval)
+with 95% confidence intervals, and every claim names its counterfactual
+(gnomon-eval ADR-0011):
+
+- **Quality uplift from recall** (vs no memory at all - A/B, N=17, judge x8,
+  2026-07-02): faithfulness rises from 0.40-0.52 (no recall) to 0.72-0.76
+  (recall on) at +2,151 input tokens per turn. After the retrieval ladder of
+  2026-07-04 (index hygiene, skeleton-chunk suppression, hybrid lexical
+  search), the recall arm reaches faithfulness 0.775 [0.735, 0.814] on the
+  same cases.
+- **Session cost** (vs re-sending the conversation - 10-turn sessions, 3
+  stable runs, 2026-07-04): cost parity (pooled +4%), crossing to net savings
+  at turn 6-9, with final-turn faithfulness at parity or better.
+- **Real-usage savings** (vs reading each source file in full): 90.7% - 32,298
+  tokens returned where the Read workflow would have cost 346,081 (100
+  instrumented requests).
+
+Retired: an earlier version of this section cited **52.3%** token savings.
+That figure was a deterministic projection against an assumed 87,000-token
+baseline - a model, never a measurement. It is kept in
+[`benchmarks/model.py`](benchmarks/model.py) for provenance; the
+projection-vs-measurement story is documented in gnomon-eval ADR-0011.
 
 Measured compression telemetry from running the real pipeline (`phi3:mini`
 via Ollama, caveman + RTK) over 69 representative technical context windows
