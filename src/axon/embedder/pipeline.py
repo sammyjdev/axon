@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from axon.context.registry import VALID_CONTEXTS
 from axon.embedder.chunker import Chunk, chunk_source
@@ -28,6 +28,13 @@ _LANGUAGE_MAP = {
 
 _CTX_ROOTS = set(VALID_CONTEXTS)
 _BATCH_SIZE = 400
+# Defense-in-depth for dependency dirs already skipped by gitignore walking and
+# EXCLUDED_DIR_NAMES; docs/superpowers/plans is the repository-local exclusion.
+_EXCLUDED_PATH_PATTERNS: tuple[str, ...] = (
+    "**/docs/superpowers/plans/**",
+    "**/node_modules/**",
+    "**/.venv/**",
+)
 _MAX_BATCH_TOKENS: int = int(os.environ.get("AXON_MAX_BATCH_TOKENS", "8192"))
 # 0.35 chars/token is a deliberate OVERESTIMATE for input memory safety.
 # vector_store.py:153 uses len//4 (=0.25) for output budget where underestimate
@@ -106,11 +113,42 @@ def _language_for_suffix(suffix: str) -> str | None:
     return _LANGUAGE_MAP.get(suffix)
 
 
+def excluded_path_patterns() -> tuple[str, ...]:
+    override = os.environ.get("AXON_INDEX_EXCLUDE")
+    if override is None:
+        return _EXCLUDED_PATH_PATTERNS
+    patterns = tuple(p.strip() for p in override.split(",") if p.strip())
+    return patterns or _EXCLUDED_PATH_PATTERNS
+
+
+def _excluded_path_patterns() -> tuple[str, ...]:
+    return excluded_path_patterns()
+
+
+def _is_excluded_path(path: Path) -> bool:
+    """Match exclusion globs against path and parents.
+
+    Parent checks make directory globs exclude arbitrarily deep descendants.
+    """
+    pure = PurePath(path)
+    paths = (pure, *pure.parents)
+    return any(
+        candidate.match(pattern) for pattern in excluded_path_patterns() for candidate in paths
+    )
+
+
+def is_ctx_indexable(ctx: str, forced_ctx: str | None) -> bool:
+    return ctx != "work" or forced_ctx == "work"
+
+
 def iter_supported_files(
     target: Path,
     *,
     languages: set[str] | None = None,
 ) -> Iterable[Path]:
+    if _is_excluded_path(target):
+        return
+
     if target.is_file():
         language = _language_for_suffix(target.suffix)
         if language and (languages is None or language in languages):
@@ -122,7 +160,9 @@ def iter_supported_files(
         s for s, lang in _LANGUAGE_MAP.items()
         if languages is None or lang in languages
     }
-    yield from iter_git_files(target, suffixes=suffixes)
+    for path in iter_git_files(target, suffixes=suffixes):
+        if not _is_excluded_path(path):
+            yield path
 
 
 def infer_ctx_from_path(path: Path, vault_root: Path) -> str:
@@ -142,6 +182,9 @@ async def ingest_file(path: Path, engine: EmbedderEngine, store: PgVectorStore) 
 
     Returns the number of chunks upserted.
     """
+    if _is_excluded_path(path):
+        return 0
+
     language = _LANGUAGE_MAP.get(path.suffix)
     if language is None:
         return 0
@@ -231,8 +274,11 @@ async def index_path(
         return batch_size
 
     for file_path in files:
+        if _is_excluded_path(file_path):
+            continue
+
         file_ctx = forced_ctx or infer_ctx_from_path(file_path, vault_root)
-        if file_ctx == "work" and forced_ctx != "work":
+        if not is_ctx_indexable(file_ctx, forced_ctx):
             continue
 
         language = _LANGUAGE_MAP.get(file_path.suffix)
