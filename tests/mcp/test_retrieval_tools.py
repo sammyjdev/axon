@@ -310,6 +310,7 @@ async def test_retrieve_context_emits_chunk_telemetry_without_raw_content(
         {
             "hash": _sha16(content_a),
             "dedup": "off",
+            "file_path": "/tmp/a.py",
             "ranking_score": 0.598,
             "score": 0.612,
             "token_estimate": len(content_a) // 4,
@@ -317,6 +318,7 @@ async def test_retrieve_context_emits_chunk_telemetry_without_raw_content(
         {
             "hash": _sha16(content_b),
             "dedup": "off",
+            "file_path": "/tmp/b.py",
             "ranking_score": None,
             "score": 0.5,
             "token_estimate": len(content_b) // 4,

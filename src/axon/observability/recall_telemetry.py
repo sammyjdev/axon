@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+from typing_extensions import TypedDict
 
 from axon.config.runtime import RuntimeConfig, load_runtime_config
 
@@ -32,6 +33,16 @@ class RecallRecord(BaseModel):
     usage_source: Literal["provider", "estimate"]
 
 
+class ChunkEntry(TypedDict, total=False):
+    hash: str
+    dedup: str
+    score: float
+    ranking_score: float | None
+    token_estimate: int
+    file_path: str
+    rerank_score: float
+
+
 class ChunkRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -39,7 +50,7 @@ class ChunkRecord(BaseModel):
     query_hash: str
     strategy: str
     requested_max_tokens: int
-    chunks: list[dict[str, Any]]
+    chunks: list[ChunkEntry]
 
 
 class RecallTelemetryStore:

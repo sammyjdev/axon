@@ -29,7 +29,7 @@ from axon.observability.compression_telemetry import (
     CompressionRecord,
     CompressionTelemetryStore,
 )
-from axon.observability.recall_telemetry import ChunkRecord, RecallTelemetryStore
+from axon.observability.recall_telemetry import ChunkEntry, ChunkRecord, RecallTelemetryStore
 from axon.observability.trace_store import TraceStore
 from axon.observability.traced_tool import current_trace_recorder, traced_tool
 from axon.obsidian.discovery import discover_vault
@@ -161,7 +161,7 @@ def _record_chunk_recall(
     hits: list[dict],
 ) -> None:
     try:
-        chunks: list[dict[str, object]] = []
+        chunks: list[ChunkEntry] = []
         for hit in hits:
             payload = hit.get("payload") or {}
             content = str(payload.get("content", ""))
@@ -171,6 +171,7 @@ def _record_chunk_recall(
                 "score": float(hit.get("score", 0.0)),
                 "ranking_score": hit.get("ranking_score"),
                 "token_estimate": _estimate_tokens(content),
+                "file_path": str(payload.get("file_path", "")),
             }
             if "rerank_score" in hit:
                 chunk["rerank_score"] = hit.get("rerank_score")
