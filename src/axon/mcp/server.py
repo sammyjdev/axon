@@ -43,7 +43,12 @@ from axon.router.llm_backend import litellm_kwargs
 from axon.store.collections import get_search_collections
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.session_store import ADR, SessionNote, SessionStore
-from axon.store.vector_common import DELTA_RECALL_CUTOFF, shingles_cover, transcript_shingle_set
+from axon.store.vector_common import (
+    DELTA_RECALL_CUTOFF,
+    _trim_to_budget,
+    shingles_cover,
+    transcript_shingle_set,
+)
 from axon.store.vector_store_factory import make_vector_store
 
 logger = logging.getLogger(__name__)
@@ -63,6 +68,9 @@ _DB_PATH = _RUNTIME.db_path
 _RTK_MAX_TOKENS = _RUNTIME.rtk_max_tokens
 _COMPRESSION_TELEMETRY = CompressionTelemetryStore(_RUNTIME)
 _TRACE_STORE = TraceStore(_RUNTIME)
+_RERANK_CANDIDATES = 24
+_RERANK_TEXT_CHARS = 1200
+_RERANK_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
 
 mcp = FastMCP("axon-context-engine")
 
@@ -71,6 +79,7 @@ _vector_store: object | None = None
 _graph_store: PostgresSymbolDeps | None = None
 _session_store: SessionStore | None = None
 _embedder: EmbedderEngine | None = None
+_reranker: object | None = None
 
 
 def _get_embedder() -> EmbedderEngine:
@@ -78,6 +87,20 @@ def _get_embedder() -> EmbedderEngine:
     if _embedder is None:
         _embedder = EmbedderEngine()
     return _embedder
+
+
+def _get_reranker() -> object:
+    """Load the cross-encoder lazily; first call can take about 32 seconds."""
+    global _reranker
+    if _reranker is None:
+        model_name = os.environ.get("AXON_RERANK_MODEL") or _RERANK_MODEL
+        try:
+            from fastembed import TextCrossEncoder
+        except ImportError:
+            from fastembed.rerank.cross_encoder import TextCrossEncoder
+
+        _reranker = TextCrossEncoder(model_name)
+    return _reranker
 
 
 def _get_graph_embedder() -> object:
@@ -142,15 +165,16 @@ def _record_chunk_recall(
         for hit in hits:
             payload = hit.get("payload") or {}
             content = str(payload.get("content", ""))
-            chunks.append(
-                {
-                    "hash": _sha256_16(content),
-                    "dedup": str(hit.get("dedup", "off")),
-                    "score": float(hit.get("score", 0.0)),
-                    "ranking_score": hit.get("ranking_score"),
-                    "token_estimate": _estimate_tokens(content),
-                }
-            )
+            chunk = {
+                "hash": _sha256_16(content),
+                "dedup": str(hit.get("dedup", "off")),
+                "score": float(hit.get("score", 0.0)),
+                "ranking_score": hit.get("ranking_score"),
+                "token_estimate": _estimate_tokens(content),
+            }
+            if "rerank_score" in hit:
+                chunk["rerank_score"] = hit.get("rerank_score")
+            chunks.append(chunk)
 
         record = ChunkRecord(
             ts=datetime.now(UTC).isoformat(),
@@ -360,6 +384,35 @@ def _staleness_notes(hits: list[dict]) -> list[str]:
     return notes
 
 
+def _rerank_enabled() -> bool:
+    return os.environ.get("AXON_RERANK") == "1"
+
+
+def _rerank_hits(query: str, hits: list[dict]) -> list[dict]:
+    if not hits:
+        return hits
+    try:
+        docs = [
+            str((hit.get("payload") or {}).get("content", ""))[:_RERANK_TEXT_CHARS]
+            for hit in hits
+        ]
+        pairs = [(query, doc) for doc in docs]
+        reranker = _get_reranker()
+        # fastembed's TextCrossEncoder API: rerank_pairs(pairs). The pinned
+        # version (0.8.0) always exposes it; a broken fallback is worse than
+        # a clean AttributeError caught by the except below.
+        scores = list(reranker.rerank_pairs(pairs))
+        scored = [
+            (index, float(score), {**hit, "rerank_score": float(score)})
+            for index, (hit, score) in enumerate(zip(hits, scores, strict=True))
+        ]
+        scored.sort(key=lambda item: (-item[1], item[0]))
+        return [hit for _, _, hit in scored]
+    except Exception:
+        logger.warning("cross-encoder rerank failed; using original order", exc_info=True)
+        return hits
+
+
 async def _retrieve_context(
     *,
     query: str,
@@ -374,16 +427,26 @@ async def _retrieve_context(
     collections = get_search_collections(ctx) if ctx else list(strategy.contexts)
     store = _get_vector_store()
     query_vector = _get_embedder().embed_one(query)
+    rerank = _rerank_enabled()
     results = await store.search(
         query_vector=query_vector,
         query=query,
         collections=collections,
         language=language,
-        top_k=strategy.max_segments,
+        top_k=_RERANK_CANDIDATES if rerank else strategy.max_segments,
         max_depth=max_depth,
-        max_nodes=max_nodes,
-        max_tokens=min(max_tokens, max(1, strategy.max_chars // 4)),
+        max_nodes=_RERANK_CANDIDATES if rerank else max_nodes,
+        max_tokens=(
+            max_tokens * 4 if rerank else min(max_tokens, max(1, strategy.max_chars // 4))
+        ),
     )
+    if rerank:
+        # Reorders whatever candidate list the store returns, hybrid search or not.
+        results = _trim_to_budget(
+            _rerank_hits(query, results),
+            max_nodes=max_nodes,
+            max_tokens=max_tokens,
+        )
 
     telemetry_hits = results
     pack_hits = results

@@ -47,3 +47,27 @@ def test_rank_and_limit_keeps_top_hit_when_it_alone_exceeds_budget() -> None:
         now=datetime(2025, 1, 2, tzinfo=UTC),
     )
     assert len(out) == 1
+
+
+def test_trim_to_budget_preserves_input_order_and_limits_tail() -> None:
+    from axon.store.vector_common import _trim_to_budget
+
+    results = [
+        {"id": "b", "payload": {"content": "b" * 200}},
+        {"id": "a", "payload": {"content": "a" * 200}},
+        {"id": "c", "payload": {"content": "c" * 400}},
+    ]
+
+    out = _trim_to_budget(results, max_nodes=2, max_tokens=150)
+
+    assert [item["id"] for item in out] == ["b", "a"]
+
+
+def test_trim_to_budget_keeps_top_hit_when_it_alone_exceeds_budget() -> None:
+    from axon.store.vector_common import _trim_to_budget
+
+    results = [{"id": "b", "payload": {"content": "b" * 400}}]
+
+    out = _trim_to_budget(results, max_nodes=2, max_tokens=10)
+
+    assert [item["id"] for item in out] == ["b"]

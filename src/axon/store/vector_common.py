@@ -97,6 +97,30 @@ def _rank_and_limit(
     return limited[:top_k]
 
 
+def _trim_to_budget(
+    items: list[dict],
+    *,
+    max_nodes: int,
+    max_tokens: int,
+) -> list[dict]:
+    """Truncate hits without changing their order."""
+    limited: list[dict] = []
+    token_budget = max_tokens
+    for item in items:
+        payload = item.get("payload") or {}
+        content = str(payload.get("content", ""))
+        estimated = max(1, len(content) // 4)
+        if len(limited) >= max_nodes:
+            break
+        # ponytail: always keep the top hit even if it alone exceeds the token
+        # budget; same tail-pruning semantics as _rank_and_limit.
+        if limited and token_budget - estimated < 0:
+            break
+        token_budget -= estimated
+        limited.append(item)
+    return limited
+
+
 def _apply_staleness_ranking(results: list[dict], *, now: datetime) -> list[dict]:
     records = [_staleness_record(result) for result in results]
     replacements = {

@@ -13,6 +13,7 @@ from axon.router.classifier import TaskType
 
 @pytest.fixture(autouse=True)
 def _isolate_chunk_telemetry(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("AXON_RERANK", raising=False)
     telemetry_store = RecallTelemetryStore(runtime=SimpleNamespace(data_root=tmp_path))
     monkeypatch.setattr(server, "RecallTelemetryStore", lambda: telemetry_store)
 
@@ -321,6 +322,301 @@ async def test_retrieve_context_emits_chunk_telemetry_without_raw_content(
             "token_estimate": len(content_b) // 4,
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_rerank_flag_off_keeps_search_shape_and_skips_model(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.9,
+                "payload": {
+                    "symbol": "alpha",
+                    "language": "python",
+                    "file_path": "/tmp/a.py",
+                    "content": "alpha content",
+                },
+            }
+        ],
+        captured,
+    )
+
+    _stub_retrieve_deps(monkeypatch, store)
+
+    def _boom():
+        raise AssertionError("reranker must not load when AXON_RERANK is off")
+
+    monkeypatch.setattr(server, "_get_reranker", _boom, raising=False)
+
+    response, pack, results = await server._retrieve_context(
+        query="what changed?",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=2000,
+    )
+
+    assert "alpha content" in response
+    assert len(pack.segments) == 1
+    assert results is store._results
+    assert captured["top_k"] == 8
+    assert captured["max_nodes"] == 25
+    assert captured["max_tokens"] == 2000
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_reranks_wide_candidates(monkeypatch) -> None:
+    class FakeReranker:
+        def rerank_pairs(self, pairs):
+            assert [pair[1] for pair in pairs] == [
+                "alpha content",
+                "beta content",
+                "gamma content",
+            ]
+            return [0.1, 0.9, 0.2]
+
+    captured: dict[str, object] = {}
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.6,
+                "payload": {
+                    "symbol": "alpha",
+                    "language": "python",
+                    "file_path": "/tmp/a.py",
+                    "content": "alpha content",
+                },
+            },
+            {
+                "score": 0.61,
+                "payload": {
+                    "symbol": "beta",
+                    "language": "python",
+                    "file_path": "/tmp/b.py",
+                    "content": "beta content",
+                },
+            },
+            {
+                "score": 0.62,
+                "payload": {
+                    "symbol": "gamma",
+                    "language": "python",
+                    "file_path": "/tmp/c.py",
+                    "content": "gamma content",
+                },
+            },
+        ],
+        captured,
+    )
+
+    _stub_retrieve_deps(monkeypatch, store)
+    monkeypatch.setenv("AXON_RERANK", "1")
+    monkeypatch.setattr(server, "_get_reranker", lambda: FakeReranker(), raising=False)
+
+    response, pack, results = await server._retrieve_context(
+        query="what changed?",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=100,
+    )
+
+    assert captured["top_k"] == 24
+    assert captured["max_nodes"] == 24
+    assert captured["max_tokens"] == 400
+    assert [hit["payload"]["symbol"] for hit in results] == ["beta", "gamma", "alpha"]
+    assert [hit["rerank_score"] for hit in results] == [0.9, 0.2, 0.1]
+    assert pack.segments[0].startswith("### beta")
+    assert response.index("beta content") < response.index("gamma content")
+
+
+@pytest.mark.asyncio
+async def test_rerank_ties_keep_prior_staleness_order(monkeypatch) -> None:
+    class TiedReranker:
+        def rerank_pairs(self, pairs):
+            return [0.5 for _ in pairs]
+
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.6,
+                "payload": {
+                    "symbol": "first",
+                    "language": "python",
+                    "file_path": "/tmp/a.py",
+                    "content": "first content",
+                },
+            },
+            {
+                "score": 0.5,
+                "payload": {
+                    "symbol": "second",
+                    "language": "python",
+                    "file_path": "/tmp/b.py",
+                    "content": "second content",
+                },
+            },
+        ],
+        {},
+    )
+    _stub_retrieve_deps(monkeypatch, store)
+    monkeypatch.setenv("AXON_RERANK", "1")
+    monkeypatch.setattr(server, "_get_reranker", lambda: TiedReranker(), raising=False)
+
+    _raw, _pack, hits = await server._retrieve_context(
+        query="tie", ctx="knowledge", language=None, max_depth=1, max_nodes=25, max_tokens=1200
+    )
+
+    # Equal rerank scores: prior (staleness) order preserved.
+    assert [h["payload"]["symbol"] for h in hits] == ["first", "second"]
+
+
+async def test_retrieve_context_reranker_failure_uses_original_order(monkeypatch) -> None:
+    class FailingReranker:
+        def rerank_pairs(self, _pairs):
+            raise RuntimeError("rerank failed")
+
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.6,
+                "payload": {
+                    "symbol": "alpha",
+                    "language": "python",
+                    "file_path": "/tmp/a.py",
+                    "content": "alpha content",
+                },
+            },
+            {
+                "score": 0.61,
+                "payload": {
+                    "symbol": "beta",
+                    "language": "python",
+                    "file_path": "/tmp/b.py",
+                    "content": "beta content",
+                },
+            },
+        ],
+        {},
+    )
+
+    _stub_retrieve_deps(monkeypatch, store)
+    monkeypatch.setenv("AXON_RERANK", "1")
+    monkeypatch.setattr(server, "_get_reranker", lambda: FailingReranker(), raising=False)
+
+    response, pack, results = await server._retrieve_context(
+        query="what changed?",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=100,
+    )
+
+    assert [hit["payload"]["symbol"] for hit in results] == ["alpha", "beta"]
+    assert pack.segments[0].startswith("### alpha")
+    assert response.index("alpha content") < response.index("beta content")
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_chunk_telemetry_includes_rerank_score(
+    monkeypatch, tmp_path
+) -> None:
+    class FakeReranker:
+        def rerank_pairs(self, _pairs):
+            return [0.1, 0.9]
+
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.6,
+                "payload": {
+                    "symbol": "alpha",
+                    "language": "python",
+                    "file_path": "/tmp/a.py",
+                    "content": "alpha content",
+                },
+            },
+            {
+                "score": 0.61,
+                "payload": {
+                    "symbol": "beta",
+                    "language": "python",
+                    "file_path": "/tmp/b.py",
+                    "content": "beta content",
+                },
+            },
+        ],
+        {},
+    )
+    telemetry_store = RecallTelemetryStore(runtime=SimpleNamespace(data_root=tmp_path))
+
+    _stub_retrieve_deps(monkeypatch, store)
+    monkeypatch.setattr(server, "RecallTelemetryStore", lambda: telemetry_store)
+    monkeypatch.setenv("AXON_RERANK", "1")
+    monkeypatch.setattr(server, "_get_reranker", lambda: FakeReranker(), raising=False)
+
+    await server._retrieve_context(
+        query="what changed?",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=100,
+    )
+
+    parsed = json.loads((tmp_path / "recall" / "chunks.jsonl").read_text(encoding="utf-8"))
+    assert [chunk["hash"] for chunk in parsed["chunks"]] == [
+        _sha16("beta content"),
+        _sha16("alpha content"),
+    ]
+    assert [chunk["rerank_score"] for chunk in parsed["chunks"]] == [0.9, 0.1]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_truncates_reranker_documents(monkeypatch) -> None:
+    captured_pairs = []
+
+    class FakeReranker:
+        def rerank_pairs(self, pairs):
+            captured_pairs.extend(pairs)
+            return [1.0]
+
+    store = _FakeVectorStore(
+        [
+            {
+                "score": 0.6,
+                "payload": {
+                    "symbol": "alpha",
+                    "language": "python",
+                    "file_path": "/tmp/a.py",
+                    "content": "x" * 1300,
+                },
+            }
+        ],
+        {},
+    )
+
+    _stub_retrieve_deps(monkeypatch, store)
+    monkeypatch.setenv("AXON_RERANK", "1")
+    monkeypatch.setattr(server, "_get_reranker", lambda: FakeReranker(), raising=False)
+
+    await server._retrieve_context(
+        query="what changed?",
+        ctx="knowledge",
+        language=None,
+        max_depth=2,
+        max_nodes=25,
+        max_tokens=100,
+    )
+
+    assert len(captured_pairs) == 1
+    assert len(captured_pairs[0][1]) == 1200
 
 
 @pytest.mark.asyncio
