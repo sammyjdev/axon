@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import hashlib
 import json
+import logging
 import os
 import uuid
 from datetime import UTC, datetime
@@ -27,6 +29,7 @@ from axon.observability.compression_telemetry import (
     CompressionRecord,
     CompressionTelemetryStore,
 )
+from axon.observability.recall_telemetry import ChunkRecord, RecallTelemetryStore
 from axon.observability.trace_store import TraceStore
 from axon.observability.traced_tool import current_trace_recorder, traced_tool
 from axon.obsidian.discovery import discover_vault
@@ -41,6 +44,8 @@ from axon.store.collections import get_search_collections
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.session_store import ADR, SessionNote, SessionStore
 from axon.store.vector_store_factory import make_vector_store
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuração
@@ -117,6 +122,47 @@ def _truncate(text: str, budget: int) -> str:
 
 def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
+
+
+def _sha256_16(text: str) -> str:
+    normalized = text.strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def _record_chunk_recall(
+    *,
+    query: str,
+    strategy_name: str,
+    requested_max_tokens: int,
+    hits: list[dict],
+) -> None:
+    try:
+        chunks: list[dict[str, object]] = []
+        for hit in hits:
+            payload = hit.get("payload") or {}
+            content = str(payload.get("content", ""))
+            chunks.append(
+                {
+                    "hash": _sha256_16(content),
+                    "score": float(hit.get("score", 0.0)),
+                    "ranking_score": hit.get("ranking_score"),
+                    "token_estimate": _estimate_tokens(content),
+                }
+            )
+
+        record = ChunkRecord(
+            ts=datetime.now(UTC).isoformat(),
+            query_hash=_sha256_16(query),
+            strategy=strategy_name,
+            requested_max_tokens=requested_max_tokens,
+            chunks=chunks,
+        )
+        RecallTelemetryStore().append_chunks(record)
+    # Broader than RecallRecord's OSError-only catch on purpose: record
+    # construction (float(), pydantic) can raise non-OSError, and telemetry
+    # must never break retrieval.
+    except Exception:
+        logger.warning("recall chunk telemetry append failed", exc_info=True)
 
 
 def _record_mcp_tool_call(
@@ -338,6 +384,12 @@ async def _retrieve_context(
         max_depth=max_depth,
         max_nodes=max_nodes,
         max_tokens=min(max_tokens, max(1, strategy.max_chars // 4)),
+    )
+    _record_chunk_recall(
+        query=query,
+        strategy_name=strategy.name,
+        requested_max_tokens=max_tokens,
+        hits=results,
     )
 
     pack = _build_context_pack(

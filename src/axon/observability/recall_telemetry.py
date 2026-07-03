@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -32,18 +32,38 @@ class RecallRecord(BaseModel):
     usage_source: Literal["provider", "estimate"]
 
 
+class ChunkRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    ts: str
+    query_hash: str
+    strategy: str
+    requested_max_tokens: int
+    chunks: list[dict[str, Any]]
+
+
 class RecallTelemetryStore:
     def __init__(self, runtime: RuntimeConfig | None = None) -> None:
         self._runtime = runtime or load_runtime_config()
         self._file = self._runtime.data_root / "recall" / "requests.jsonl"
+        self._chunks_file = self._runtime.data_root / "recall" / "chunks.jsonl"
 
     @property
     def stats_file(self) -> Path:
         return self._file
 
+    @property
+    def chunks_file(self) -> Path:
+        return self._chunks_file
+
     def append(self, record: RecallRecord) -> None:
         self._file.parent.mkdir(parents=True, exist_ok=True)
         with self._file.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record.model_dump(), sort_keys=True) + "\n")
+
+    def append_chunks(self, record: ChunkRecord) -> None:
+        self._chunks_file.parent.mkdir(parents=True, exist_ok=True)
+        with self._chunks_file.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record.model_dump(), sort_keys=True) + "\n")
 
     def load_all(self) -> list[RecallRecord]:
