@@ -1,9 +1,27 @@
-from axon.embedder.md_chunker import MAX_TOKENS, TARGET_TOKENS, Section, pack_sections
+from axon.embedder.md_chunker import MAX_TOKENS, TARGET_TOKENS, Section, pack_sections, prose_ratio
 from axon.embedder.tokens import estimate_tokens
 
 
 def _sec(path, body):
     return Section(tuple(path), 1, tuple(body.splitlines()))
+
+
+def test_prose_ratio_classifies_metadata_and_prose():
+    metadata = "\n".join(
+        [
+            "- **Status:** draft",
+            "- **Timestamp:** 2026-05-28T01:43:50+00:00",
+            "- **Git hash:** 8bf275d8",
+            "- `src/axon/embedder/md_chunker.py`",
+            "_none_",
+        ]
+    )
+    mixed = metadata + "\nThis section explains why the density gate was relaxed."
+
+    assert prose_ratio("") == 0.0
+    assert prose_ratio(metadata) == 0.0
+    assert prose_ratio("This is ordinary prose.\nIt has two useful lines.") == 1.0
+    assert prose_ratio(mixed) == 1 / 6
 
 
 def test_small_siblings_merge_into_one_group():
@@ -54,3 +72,18 @@ def test_siblings_between_target_and_max_do_not_merge():
         f"Expected 2 groups (no merge above TARGET={TARGET_TOKENS}), "
         f"got {len(groups)}; combined tokens={combined}"
     )
+
+
+def test_bold_label_prose_bullets_are_not_metadata():
+    # Real notes use bold lead-in callouts; these are prose, not skeleton.
+    body = (
+        "- **Warning:** Always validate user input before processing to avoid injection attacks.\n"
+        "- **Tip:** Use the shortcut key to speed up your workflow significantly.\n"
+        "- **Note:** This behavior was changed in the last release, check the changelog.\n"
+    )
+    assert prose_ratio(body) == 1.0
+
+
+def test_short_scalar_bold_kv_is_still_metadata():
+    body = "- **Status:** draft\n- **Repo:** axon\n- **Validation score:** 4.5\n"
+    assert prose_ratio(body) == 0.0
