@@ -84,3 +84,13 @@ promotes them into a section above after curation.
 - **DB-constraint behavior must be tested against a real engine, not a fake.**
   A Python fake that simulates ON CONFLICT proves the loop, not the constraint;
   use testcontainers Postgres for dedup/uniqueness assertions. (FORGE #27)
+- **A CLI command registered as an alias/import of another function needs a
+  behavioral assertion, not just a name-registration check.** `app.command(name)(func)`
+  (or `app.add_typer(sub_app, name=...)`) can be silently miswired to the wrong
+  underlying function/object, and a test that only checks the command NAME
+  appears in the registered set (e.g. `assert name in _registered_command_names()`)
+  will not catch it — a mutation swapping which function backs the name stays
+  green. Check: at least one test per registered alias/sub-app that invokes it
+  (e.g. `--help`) and asserts on output unique to the correct underlying
+  function (a distinctive option flag or docstring phrase), not merely that the
+  name exists. (FORGE #60)

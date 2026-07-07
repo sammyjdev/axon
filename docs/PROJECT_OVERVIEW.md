@@ -31,7 +31,7 @@ MIT-licensed, installed from source (not on PyPI).
 | `adr` | ADR lifecycle: draft pool, rejection audit, commit-signal extraction (dec-110). |
 | `recall` | Unified recall: merge + rank (recency × relevance × validation score) + token-budget truncation; soft supersession (dec-115). |
 | `mcp` | MCP stdio server (`server.py`); every tool wrapped by `@traced_tool` risk gate. |
-| `cli` | `pb` (full vault/dev CLI, `cli/pb.py`) + `axon` (`__main__.py`, focused public surface). |
+| `cli` | `axon` (`__main__.py`), the single CLI entry point (dec-125); re-registers the surviving commands from `cli/pb.py`, which is no longer its own entry point. |
 | `code` | Repo indexer (`index_repo`), diff-symbols, resolver. |
 | `context` | Context auto-detection, retrieval strategies, GLYPH adapter (`graph_source.py`), rtkx bootstrap. |
 | `memory` | mem0/Qdrant semantic memory; session transcript compression. |
@@ -53,14 +53,14 @@ MIT-licensed, installed from source (not on PyPI).
 
 ## CLI surface
 
-**`axon`** (public): `init`, `serve`, `serve-http`, `install-hooks`, `familiar`,
-`health`, `doctor`, `status`, `gain`, `export`, `ingest-vault`.
-
-**`pb`** (full): `ask`, `search`, `init`, `configure`, `doctor [--apply|--ci]`,
-`index`, `index-dev`, `watch`, `scan`, `setup`, `note`, `session-save`, `rtk*`,
-`run`, `git`. Sub-apps: `pb adr {list,add,sync,hook,infer-commit,review,audit,validate-drafts}`,
-`pb session {note,save}`, `pb profile {list,use,show,create,export}`,
-`pb portability {export,import}`, `pb memory smoke`.
+**`axon`** (single CLI, dec-125): `init`, `serve`, `serve-http`, `install-hooks`,
+`familiar`, `health`, `doctor [--apply|--ci]`, `status`, `gain`, `export`,
+`ingest-vault`, `bootstrap` (env/config scaffold, formerly `pb init`), `setup`,
+`configure`, `index-dev`, `note`, `session-save`, `scan`, `search`, `rtk*`,
+`run`, `git`. Sub-apps: `axon adr {list,add,sync,hook,infer-commit,review,audit,validate-drafts}`,
+`axon graph {index,neighbors,path}`, `axon hooks {install,status}`,
+`axon pending {drain,recover}`, `axon session {note,save}`,
+`axon profile {list,use,show,create,export}`, `axon portability {export,import}`.
 
 ## MCP tools (`src/axon/mcp/server.py`)
 
@@ -185,16 +185,16 @@ root cause behind #35's PEP695 breakage.
    rtk ruff check
    rtk python3 -m compileall src
    ```
-3. **`pb doctor`** (dec-114): read-only by default; `--apply` to fix; `--ci` JSON.
+3. **`axon doctor`** (dec-114): read-only by default; `--apply` to fix; `--ci` JSON.
 4. **Hooks (dec-113):** AXON never mutates `.git/hooks/` or `core.hooksPath` by
-   default; installed explicitly via `pb hooks install --apply`. Points:
+   default; installed explicitly via `axon hooks install --apply`. Points:
    post-commit (signal + L1/L2/L3 gates), pre-push, post-checkout.
 5. **ADR capture (dec-110):** inference fires only on commits carrying a signal —
    `arch:`/`decision:` subject prefix or `ADR-Decision: <title>` trailer. No
    signal → `CodeChange` captured, LLM inference skipped.
 6. **ADR validation gates (dec-111, SLA < 100ms):** L1 structural/presence →
    L2 lexical rationale-overlap → L3 polarity. Pass → SessionStore; fail →
-   `.axon/adr-draft/` (review via `pb adr review`).
+   `.axon/adr-draft/` (review via `axon adr review`).
 
 ## Key invariants (do not break)
 
