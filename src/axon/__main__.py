@@ -433,9 +433,11 @@ def ingest_vault_cmd(
 # ---------------------------------------------------------------------------
 from axon.cli.pb import (  # noqa: E402
     adr_app,
+    configure,
     doctor,
     git_proxy,
     graph_app,
+    index_dev,
     profile_app,
     rtk,
     rtk_init,
@@ -446,6 +448,7 @@ from axon.cli.pb import (  # noqa: E402
     scan,
     search,
     session_app,
+    setup,
 )
 from axon.cli.pb import init as pb_bootstrap  # noqa: E402
 
@@ -465,6 +468,9 @@ app.command("run")(run_proxy)
 app.command("git")(git_proxy)
 app.command("doctor")(doctor)
 app.command("bootstrap")(pb_bootstrap)
+app.command("setup")(setup)
+app.command("configure")(configure)
+app.command("index-dev")(index_dev)
 
 if __name__ == "__main__":
     app()
