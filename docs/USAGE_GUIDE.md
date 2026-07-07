@@ -13,7 +13,7 @@ set -a
 source .env.local
 set +a
 
-pb --help
+axon --help
 docker compose ps
 ```
 
@@ -55,11 +55,11 @@ What it does:
 
 ### Search directly
 
-Use `pb search` when you want raw hits instead of the full prompt pipeline.
+Use `axon search` when you want raw hits instead of the full prompt pipeline.
 
 ```bash
-pb search "uuid5 qdrant" --ctx knowledge
-pb search "service layer" --ctx personal --lang python --top 10
+axon search "uuid5 qdrant" --ctx knowledge
+axon search "service layer" --ctx personal --lang python --top 10
 ```
 
 ### Index a path
@@ -75,8 +75,8 @@ Redis.
 ### Index development repositories from a manifest
 
 ```bash
-pb index-dev --dry-run
-pb index-dev --project axon
+axon index-dev --dry-run
+axon index-dev --project axon
 ```
 
 Use `--dry-run` first when validating a manifest-driven setup.
@@ -119,8 +119,8 @@ pb til howto --from knowledge/daily/2026-05-05/til-example.md
 ## ADR Workflow
 
 ```bash
-pb adr add --project axon --title "Use UUID5 for deterministic Qdrant ids"
-pb adr list --project axon
+axon adr add --project axon --title "Use UUID5 for deterministic Qdrant ids"
+axon adr list --project axon
 ```
 
 Use ADRs for decisions that should remain queryable later.
@@ -168,10 +168,10 @@ AXON includes helper commands around the external RTK binary when it is
 installed:
 
 ```bash
-pb rtk-status
-pb rtk-init --agent codex
-pb rtk-proxy "git status"
-pb rtk "git diff"
+axon rtk-status
+axon rtk-init --agent codex
+axon rtk-proxy "git status"
+axon rtk "git diff"
 ```
 
 If RTK is not installed, the main AXON workflows still work.
@@ -240,7 +240,7 @@ on every push.
 pb ask "What should I know before resuming this project?"
 
 # while working
-pb search "previous decision about indexing" --ctx personal
+axon search "previous decision about indexing" --ctx personal
 pb til "important implementation note" --tags project-x
 
 # end of day
@@ -291,7 +291,7 @@ Check these first:
 
 ```bash
 docker compose ps
-pb search "health check" --ctx knowledge --top 1
+axon search "health check" --ctx knowledge --top 1
 pb memory smoke --ctx knowledge
 ```
 

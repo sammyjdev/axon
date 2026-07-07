@@ -134,7 +134,7 @@ project.
   - support modes: `full-local`, `hybrid-local`, `remote-infra`, `minimal`;
   - support targets: macOS, Linux, Windows/WSL2, CPU-first and GPU-capable
     machines;
-  - provide `pb init`, `pb doctor`, profiles, and profile-driven defaults
+  - provide `axon bootstrap`, `axon doctor`, profiles, and profile-driven defaults
     before broader domain-pack expansion.
 - Rationale: AXON only becomes a credible shared tool when another
   developer can install, size, and use it without inheriting the author's
@@ -180,8 +180,8 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
   drain idempotent with quarantine pattern; no daemon, no IPC.
 - [dec-113](decisions/dec-113-hooks-pre-commit-framework.md): AXON never
   mutates `core.hooksPath` or `.git/hooks/` by default; integrates as
-  pre-commit framework entry; `pb hooks install` requires `--apply`.
-- [dec-114](decisions/dec-114-doctor-diagnostic-first.md): `pb doctor` has
+  pre-commit framework entry; `axon hooks install` requires `--apply`.
+- [dec-114](decisions/dec-114-doctor-diagnostic-first.md): `axon doctor` has
   three modes (default read-only, `--apply` opt-in interactive, `--ci` JSON
   exit-0); validates commit-msg toolchain compatibility for `arch:` signal.
 - [dec-122](decisions/dec-122-local-roles-backend-gpt-oss-120b.md): back the
@@ -189,3 +189,10 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
   scoring→Groq / compressor→Cerebras to stack the free quotas; `ctx=work` stays
   local. Lands the eval harness `axon.benchmark.model_eval`; production wiring is
   a follow-up.
+- [dec-125](decisions/dec-125-retire-pb-entry-point.md): `axon` becomes the
+  single, complete CLI entry point, finishing the T6.3 unification; every
+  still-relevant `pb.py` command (`hooks`, `pending`, `portability`,
+  `configure`, `note`, `session-save`, `index-dev`, `setup`, plus the merged
+  `doctor`) is re-registered onto it, `init` is renamed `bootstrap` to avoid a
+  name collision, the permanently-cut T6.3 commands stay cut, and the stray
+  `pb` binary is retired for good.

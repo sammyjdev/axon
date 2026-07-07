@@ -18,17 +18,12 @@ from axon.context.registry import VALID_CONTEXTS
 from axon.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
 
 app = typer.Typer(
-    name="pb",
+    name="axon",
     help="AXON CLI — segundo cérebro do Sammy",
     no_args_is_help=True,
 )
 adr_app = typer.Typer(help="Gerencia ADRs (Architectural Decision Records)")
 session_app = typer.Typer(help="Gerencia sessão de contexto ativa")
-career_app = typer.Typer(help="Comandos de carreira")
-cost_app = typer.Typer(help="Exibe custo de uso de LLMs")
-til_app = typer.Typer(help="TIL e HOW-TO — knowledge automation")
-deep_app = typer.Typer(help="Sugestões de aprofundamento técnico")
-expand_app = typer.Typer(help="Expansão manual com staging obrigatório")
 graph_app = typer.Typer(help="Grafo estrutural de código (SQLite)")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
 portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
@@ -37,11 +32,6 @@ hooks_app = typer.Typer(help="Instala hooks AXON (dec-113, opt-in com --apply)")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
-app.add_typer(career_app, name="career")
-app.add_typer(cost_app, name="cost")
-app.add_typer(til_app, name="til")
-app.add_typer(deep_app, name="deep")
-app.add_typer(expand_app, name="expand")
 app.add_typer(graph_app, name="graph")
 app.add_typer(profile_app, name="profile")
 app.add_typer(portability_app, name="portability")
@@ -190,14 +180,6 @@ async def _compress_context_pipeline(
         after_tokens,
         reduction_pct,
     )
-
-
-def _handle_expand_expected_error(exc: FileNotFoundError | ValueError) -> None:
-    if isinstance(exc, FileNotFoundError):
-        typer.echo(f"Arquivo não encontrado: {exc}", err=True)
-    else:
-        typer.echo(f"Não foi possível concluir a operação: {exc}", err=True)
-    raise typer.Exit(1)
 
 
 def _normalize_configure_value(
@@ -404,174 +386,6 @@ async def _semantic_search_hits(
     return hits
 
 
-# ---------------------------------------------------------------------------
-# pb ask
-# ---------------------------------------------------------------------------
-
-
-@app.command()
-def ask(
-    query: Annotated[str, typer.Argument(help="Pergunta ou task")],
-    ctx: Annotated[
-        str | None, typer.Option("--ctx", help=_CTX_HELP)
-    ] = None,
-    cwd: Annotated[
-        str | None, typer.Option("--cwd", help="Diretório para detecção automática de contexto")
-    ] = None,
-    rtk_max_tokens: Annotated[
-        int, typer.Option("--rtk-max-tokens", help="Budget de tokens para contexto comprimido")
-    ] = _RUNTIME.rtk_max_tokens,
-) -> None:
-    """Consulta ao segundo cérebro — detecta contexto e roteia para o modelo adequado."""
-    from axon.context.detector import ContextDetector
-    from axon.store.collections import get_search_collections
-    from axon.store.session_store import SessionStore
-
-    resolved_ctx = _resolve_ctx(ctx)
-
-    async def _ask() -> None:
-        from axon.observability import TraceStore
-
-        db = _get_db_path()
-        db.parent.mkdir(parents=True, exist_ok=True)
-        store = SessionStore(db)
-        await store.init()
-        trace_id = str(uuid.uuid4())
-        trace = TraceStore(_RUNTIME).recorder(trace_id=trace_id, caller="cli", ctx=resolved_ctx)
-        try:
-            detector = ContextDetector(store)
-            result = detector.detect(query, cwd=cwd or os.getcwd())
-            effective_ctx = resolved_ctx or result.context
-            strategy, task_type, profile, mode = _select_retrieval_strategy(query, effective_ctx)
-            collections = (
-                get_search_collections(effective_ctx) if effective_ctx else list(strategy.contexts)
-            )
-            hits = await _semantic_search_hits(
-                query,
-                collections=collections,
-                top_k=strategy.max_segments,
-            )
-            trace.append_stage(
-                "retrieval",
-                ctx=effective_ctx,
-                payload={
-                    "strategy": strategy.name,
-                    "task_type": task_type,
-                    "profile": profile or "",
-                    "mode": mode,
-                    "hit_count": len(hits),
-                },
-            )
-            pack = _build_context_pack(
-                strategy=strategy,
-                task_type=task_type,
-                profile=profile,
-                mode=mode,
-                effective_ctx=effective_ctx,
-                hits=hits,
-            )
-
-            typer.echo(f"Contexto detectado: {result.display}")
-            typer.echo(f"Busca em ctx={effective_ctx} ({collections})")
-            typer.echo(f"trace_id: {trace_id}")
-
-            if not hits:
-                typer.echo(_context_pack_summary(pack))
-                typer.echo("\nNenhum contexto relevante encontrado.")
-                return
-
-            typer.echo("\nContexto relevante:")
-            snippets: list[str] = []
-            for i, hit in enumerate(hits[: len(pack.segments)], start=1):
-                payload = hit.get("payload", {})
-                file_path = payload.get("file_path", "<sem arquivo>")
-                symbol = payload.get("symbol", "<sem símbolo>")
-                score = hit.get("score", 0.0)
-                content = str(payload.get("content", "")).strip().replace("\n", " ")
-                preview = (content[:200] + "...") if len(content) > 200 else content
-                snippets.append(preview)
-                typer.echo(f"{i}. [{score:.4f}] {file_path} :: {symbol}")
-
-            typer.echo("\nSíntese inicial:")
-            typer.echo(
-                "Baseado nos trechos recuperados, estes parecem ser os pontos mais relevantes "
-                "para sua pergunta:"
-            )
-            for i, text in enumerate(snippets[:3], start=1):
-                typer.echo(f"{i}) {text}")
-
-            if strategy.enable_compression:
-                (
-                    compressed_context,
-                    engine_name,
-                    caveman_note,
-                    rtk_note,
-                    before_tokens,
-                    after_tokens,
-                    reduction_pct,
-                ) = await _compress_context_pipeline(
-                    pack.text,
-                    max_tokens=rtk_max_tokens,
-                    caller="cli",
-                    ctx=effective_ctx,
-                )
-            else:
-                compressed_context = pack.text
-                engine_name = "disabled"
-                caveman_note = f"strategy={strategy.name}"
-                rtk_note = None
-                before_tokens = _estimate_tokens(pack.text)
-                after_tokens = before_tokens
-                reduction_pct = 0.0
-            trace.append_stage(
-                "compression",
-                ctx=effective_ctx,
-                model=engine_name,
-                payload={
-                    "strategy": strategy.name,
-                    "before_tokens": before_tokens,
-                    "after_tokens": after_tokens,
-                    "reduction_pct": round(reduction_pct, 1),
-                    "compression_enabled": strategy.enable_compression,
-                    "caveman_note": caveman_note or "",
-                    "rtk_note": rtk_note or "",
-                },
-            )
-
-            planner_prompt, executor_prompt, local_prompt = _build_planner_executor_prompts(
-                query=query,
-                compressed_context=compressed_context,
-                ctx_name=effective_ctx,
-            )
-
-            typer.echo("\ncompression:")
-            typer.echo(f"engine: {engine_name}")
-            if caveman_note:
-                typer.echo(f"caveman_note: {caveman_note}")
-            if rtk_note:
-                typer.echo(f"rtk_note: {rtk_note}")
-            typer.echo(f"tokens aprox: {before_tokens} -> {after_tokens} (-{reduction_pct:.1f}%)")
-            typer.echo(_context_pack_summary(pack))
-            stale_notes = _staleness_notes(hits)
-            if stale_notes:
-                typer.echo("staleness:")
-                for note in stale_notes:
-                    typer.echo(f"- {note}")
-
-            typer.echo("\nPrompt pronto — Claude (Planner):")
-            typer.echo(planner_prompt)
-
-            typer.echo("\nPrompt pronto — Codex (Executor):")
-            typer.echo(executor_prompt)
-
-            typer.echo("\nPrompt pronto — Local (Knowledge Draft):")
-            typer.echo(local_prompt)
-        finally:
-            await store.close()
-
-    asyncio.run(_ask())
-
-
 @app.command()
 def rtk(
     text: Annotated[str, typer.Argument(help="Texto a comprimir")],
@@ -719,14 +533,21 @@ def git_proxy(
         list[str], typer.Argument(help="Argumentos do git (ex.: status, diff, log -n 5)")
     ],
 ) -> None:
-    """Atalho para `pb git ...` com saída filtrada por RTK."""
+    """Atalho para `axon git ...` com saída filtrada por RTK."""
     if not git_args:
-        raise typer.BadParameter("informe ao menos um argumento, ex.: pb git status")
+        raise typer.BadParameter("informe ao menos um argumento, ex.: axon git status")
     rtk_proxy(f"git {' '.join(git_args)}")
 
 
 @app.command()
 def doctor(
+    stale_days: Annotated[
+        int,
+        typer.Option(
+            "--stale-days",
+            help="Threshold (days) after which an activity is reported as stale.",
+        ),
+    ] = 7,
     apply: Annotated[
         bool,
         typer.Option(
@@ -833,6 +654,125 @@ def doctor(
     typer.echo("\ncapture & adr checks (dec-114):")
     typer.echo(human_format(results))
 
+    # RTK/caveman presence + liveness (merged from the former axon.__main__ doctor)
+    import subprocess
+    import sys
+    from datetime import UTC, datetime, timedelta
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _pkg_version
+
+    now = datetime.now(UTC)
+    stale_cutoff = now - timedelta(days=stale_days)
+
+    def fmt_age(ts: datetime) -> str:
+        delta = now - ts
+        if delta.days >= 1:
+            return f"{delta.days}d ago"
+        hours = delta.seconds // 3600
+        return f"{hours}h ago" if hours else "just now"
+
+    presence_lines: list[str] = ["", "## Presence"]
+    try:
+        v = _pkg_version("axon-mcp")
+    except PackageNotFoundError:
+        v = "unknown"
+    presence_lines.append(f"- axon: ok ({v})")
+
+    from axon.context.rtk import rtk_binary_path
+
+    rtk_path = rtk_binary_path()
+    if rtk_path:
+        try:
+            rtk_v = subprocess.check_output([rtk_path, "--version"], text=True, timeout=3).strip()
+        except Exception:
+            rtk_v = "unknown"
+        presence_lines.append(f"- rtkx: ok ({rtk_v}) [{rtk_path}]")
+    else:
+        presence_lines.append("- rtkx: not installed (run `axon rtk-install`)")
+
+    try:
+        from axon.router.compressor import caveman_compress  # noqa: F401
+
+        presence_lines.append("- caveman engine: ok (axon.router.compressor)")
+    except Exception as exc:
+        presence_lines.append(f"- caveman engine: error ({exc})")
+
+    presence_lines += ["", "## Liveness"]
+
+    async def _latest_decision_ts():
+        from axon.store.session_store import SessionStore
+
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            ts = await store.latest_decision_ts()
+            return datetime.fromisoformat(ts) if ts is not None else None
+        finally:
+            await store.close()
+
+    try:
+        latest_dec_ts = asyncio.run(_latest_decision_ts())
+        if latest_dec_ts is None:
+            presence_lines.append(
+                "- axon captures: none yet (commit something in an axon-init'd repo)"
+            )
+        else:
+            if latest_dec_ts.tzinfo is None:
+                latest_dec_ts = latest_dec_ts.replace(tzinfo=UTC)
+            tag = "stale" if latest_dec_ts < stale_cutoff else "ok"
+            presence_lines.append(f"- axon captures: {tag} (last {fmt_age(latest_dec_ts)})")
+    except Exception as exc:
+        presence_lines.append(f"- axon captures: error ({exc})")
+
+    try:
+        from axon.observability.compression_telemetry import CompressionTelemetryStore
+
+        tstore = CompressionTelemetryStore()
+        records = tstore.load_all()
+        if not records:
+            presence_lines.append("- compression telemetry: none yet")
+        else:
+            latest = records[-1]
+            latest_ts = datetime.fromisoformat(latest.ts)
+            if latest_ts.tzinfo is None:
+                latest_ts = latest_ts.replace(tzinfo=UTC)
+            tag = "stale" if latest_ts < stale_cutoff else "ok"
+            presence_lines.append(
+                f"- compression telemetry: {tag} "
+                f"({len(records)} records, last {fmt_age(latest_ts)})"
+            )
+            caveman_recent = [r for r in records[-50:] if r.engine.startswith("caveman/")]
+            if caveman_recent:
+                presence_lines.append(
+                    f"- caveman engine activity: ok ({len(caveman_recent)} of last 50 records)"
+                )
+            else:
+                presence_lines.append(
+                    "- caveman engine activity: not seen in last 50 records "
+                    "(compression may be falling back)"
+                )
+    except Exception as exc:
+        presence_lines.append(f"- compression telemetry: error ({exc})")
+
+    if sys.platform == "darwin":
+        share_root = Path.home() / "Library" / "Application Support"
+    else:
+        share_root = Path.home() / ".local" / "share"
+    rtk_db = share_root / "rtkx" / "history.db"
+    for name in ("rtkx", "rtk"):
+        candidate = share_root / name / "history.db"
+        if candidate.exists():
+            rtk_db = candidate
+            break
+    if rtk_db.exists():
+        rtk_ts = datetime.fromtimestamp(rtk_db.stat().st_mtime, tz=UTC)
+        tag = "stale" if rtk_ts < stale_cutoff else "ok"
+        presence_lines.append(f"- rtkx activity: {tag} (history.db touched {fmt_age(rtk_ts)})")
+    else:
+        presence_lines.append(f"- rtkx activity: not found ({rtk_db})")
+
+    typer.echo("\n".join(presence_lines))
+
     severity = max_severity(results)
     if severity is CheckStatus.FAIL:
         raise typer.Exit(2)
@@ -910,8 +850,8 @@ def init(
     typer.echo(f"mode: {normalized_mode}")
     typer.echo("Próximos passos:")
     typer.echo(f"1. source {env_file}")
-    typer.echo("2. rode `pb doctor`")
-    typer.echo("3. indexe seu vault com `pb index ~/vault/knowledge --ctx knowledge`")
+    typer.echo("2. rode `axon doctor`")
+    typer.echo("3. indexe seu vault (ver `axon --help` para o comando de indexação atual)")
 
 
 @profile_app.command("list")
@@ -1173,8 +1113,8 @@ def configure(
         f"overkill_capabilities: {', '.join(capability_selection.overkill_features) or '(none)'}"
     )
     typer.echo("Próximos passos:")
-    typer.echo("1. revise com `pb profile show`")
-    typer.echo("2. valide ambiente com `pb doctor`")
+    typer.echo("1. revise com `axon profile show`")
+    typer.echo("2. valide ambiente com `axon doctor`")
 
 
 # ---------------------------------------------------------------------------
@@ -1278,7 +1218,7 @@ def session_root(
 ) -> None:
     """Inicia ou exibe sessão ativa."""
     if ctx_name is None:
-        typer.echo("Nenhuma sessão ativa. Use: pb session <contexto>")
+        typer.echo("Nenhuma sessão ativa. Use: axon session <contexto>")
         return
 
     resolved = _resolve_ctx(ctx_name)
@@ -1313,7 +1253,7 @@ def session_note(
 def note(
     text: Annotated[str, typer.Argument(help="Texto da nota livre de sessão")],
 ) -> None:
-    """Alias para pb session note."""
+    """Alias para axon session note."""
     session_note(text)
 
 
@@ -1591,7 +1531,7 @@ def hooks_install(
 
     if apply and not _is_tty():
         typer.echo(
-            "Erro: `--apply` requer TTY interativo. Use `pb hooks install` "
+            "Erro: `--apply` requer TTY interativo. Use `axon hooks install` "
             "para preview, ou rode manualmente em um shell.",
             err=True,
         )
@@ -1838,7 +1778,7 @@ def adr_validate_drafts() -> None:
     L1-full is currently a stub (Fase 2d follow-up wires the tree-sitter
     graph). This command exposes the entry point so triggers can call
     it; the body updates ``last_l1_full_at`` on each draft to clear the
-    ``stale-pending`` state surfaced by ``pb doctor``.
+    ``stale-pending`` state surfaced by ``axon doctor``.
     """
     from datetime import UTC
     from datetime import datetime as _dt
@@ -1919,251 +1859,7 @@ def pending_recover(
         target = pending_dir / f.name.rsplit(".", 1)[0]
         os.replace(f, target)
         typer.echo(f"recovered: {f.name} → {target.name}")
-    typer.echo(f"Recovered {len(files)} file(s); run `pb pending drain`.")
-
-
-# ---------------------------------------------------------------------------
-# pb career
-# ---------------------------------------------------------------------------
-
-
-@career_app.command("metrics")
-def career_metrics() -> None:
-    """Exibe métricas de carreira compiladas do vault."""
-    vault = _RUNTIME.vault_root
-    career_path = vault / "career"
-    if not career_path.exists():
-        typer.echo("Vault de carreira não encontrado. Configure AXON_VAULT.")
-        raise typer.Exit(1)
-    typer.echo(f"[career metrics] Lendo de {career_path}...")
-    typer.echo("Funcionalidade completa disponível após indexação inicial (pb index).")
-
-
-@career_app.command("brief")
-def career_brief(
-    company: Annotated[str, typer.Argument(help="Nome da empresa")],
-) -> None:
-    """Gera brief de empresa para entrevista."""
-    typer.echo(f"Gerando brief para: {company}")
-    typer.echo("[brief] Requer MCP Gateway ativo — rode `docker compose up -d` primeiro.")
-
-
-@career_app.command("interview")
-def career_interview(
-    topic: Annotated[str, typer.Argument(help="Tópico da entrevista")],
-) -> None:
-    """Puxa respostas relevantes de entrevistas anteriores."""
-    typer.echo(f"Buscando experiências para: {topic}")
-    typer.echo("[interview] Requer MCP Gateway ativo — rode `docker compose up -d` primeiro.")
-
-
-# ---------------------------------------------------------------------------
-# pb cost
-# ---------------------------------------------------------------------------
-
-
-@cost_app.callback(invoke_without_command=True)
-def cost_root(ctx: typer.Context) -> None:
-    if ctx.invoked_subcommand is None:
-        cost_today()
-
-
-@cost_app.command("today")
-def cost_today() -> None:
-    """Exibe custo total de hoje."""
-    _show_cost("today")
-
-
-@cost_app.command("week")
-def cost_week(
-    breakdown: Annotated[bool, typer.Option("--breakdown", help="Detalha por contexto")] = False,
-) -> None:
-    """Exibe custo total da semana."""
-    _show_cost("week", breakdown=breakdown)
-
-
-def _show_cost(period: str, breakdown: bool = False) -> None:
-    # Langfuse expõe API de custo quando infra está up
-    typer.echo(f"Custo {period}: $0.00 (Langfuse não iniciado ou sem dados)")
-    if breakdown:
-        typer.echo("  personal:   $0.00")
-        typer.echo("  career:     $0.00")
-        typer.echo("  knowledge:  $0.00")
-        typer.echo("  work:       $0.00")
-
-
-@cost_app.command("compression")
-def cost_compression() -> None:
-    """Exibe tokens economizados pelo pipeline caveman+RTK."""
-    from axon.observability.compression_telemetry import CompressionTelemetryStore
-
-    store = CompressionTelemetryStore()
-    s = store.summary()
-    if s["total_calls"] == 0:
-        typer.echo("Sem dados de compressão ainda.")
-        return
-    typer.echo(f"Total de chamadas : {s['total_calls']}")
-    typer.echo(f"Tokens antes      : {s['total_before_tokens']:,}")
-    typer.echo(f"Tokens depois     : {s['total_after_tokens']:,}")
-    typer.echo(f"Tokens economizados: {s['total_saved_tokens']:,}")
-    avg = s["avg_reduction_pct"]
-    typer.echo(
-        f"Redução média     : {avg}% (n={s['count_compressed']} comprimidos)"
-        if avg is not None
-        else "Redução média     : sem registros comprimidos"
-    )
-    typer.echo("Por engine:")
-    for engine, count in s["by_engine"].items():
-        typer.echo(f"  {engine}: {count}x")
-
-
-# ---------------------------------------------------------------------------
-# pb til
-# ---------------------------------------------------------------------------
-
-
-@til_app.callback(invoke_without_command=True)
-def til_capture(
-    ctx: typer.Context,
-    text: Annotated[str | None, typer.Argument(help="Texto do TIL")] = None,
-    tags: Annotated[str | None, typer.Option("--tags", help="Tags separadas por vírgula")] = None,
-    list_pending: Annotated[
-        bool, typer.Option("--list", "--list-pending", help="Lista TILs pendentes")
-    ] = False,
-    promote_today: Annotated[
-        bool, typer.Option("--promote-today", help="Promove todos os TILs do dia")
-    ] = False,
-) -> None:
-    """Captura TIL ou lista/promove TILs pendentes."""
-    if ctx.invoked_subcommand is not None:
-        return
-
-    if promote_today:
-        _do_promote_today()
-        return
-
-    if list_pending:
-        _list_til_pending()
-        return
-
-    if text:
-        _capture_til(text, tags)
-    else:
-        typer.echo("Use: pb til <texto> [--tags tag1,tag2] | --list | --promote-today")
-
-
-def _capture_til(text: str, tags_str: str | None) -> None:
-    import datetime
-
-    vault = _RUNTIME.vault_root
-    today = datetime.date.today().isoformat()
-    tags = [t.strip() for t in (tags_str or "").split(",") if t.strip()]
-    tags_yaml = f"[{', '.join(tags)}]" if tags else "[]"
-
-    filename = f"til-{today}-{text[:30].lower().replace(' ', '-').replace('/', '-')}.md"
-    # Salva no diretório daily do dia atual
-    daily_dir = vault / "knowledge" / "daily" / today
-    daily_dir.mkdir(parents=True, exist_ok=True)
-    til_path = daily_dir / filename
-
-    content = f"""---
-tags: {tags_yaml}
-created: {today}
-type: til
-promoted: false
----
-
-# TIL: {text}
-
-<!-- Adicione detalhes, código, contexto aqui -->
-"""
-    til_path.write_text(content)
-    typer.echo(f"TIL salvo: {til_path}")
-
-
-def _list_til_pending() -> None:
-    vault = _RUNTIME.vault_root
-    knowledge = vault / "knowledge"
-    if not knowledge.exists():
-        typer.echo("Vault não encontrado.")
-        return
-
-    pending = [f for f in knowledge.rglob("til-*.md") if "promoted: false" in f.read_text()]
-    if not pending:
-        typer.echo("Nenhum TIL pendente de promoção.")
-        return
-    typer.echo(f"{len(pending)} TIL(s) pendente(s):")
-    for p in pending:
-        typer.echo(f"  {p.relative_to(vault)}")
-
-
-def _do_promote_today() -> None:
-    try:
-        from axon.vault.til_promoter import run as promote_run
-    except ImportError:
-        typer.echo("[promote] til_promoter não disponível.")
-        return
-
-    howto_paths = promote_run()
-    if not howto_paths:
-        return
-    _reindex_howtos(howto_paths)
-
-
-def _reindex_howtos(howto_paths: list[Path]) -> None:
-    """Reindex promoted HOW-TOs so they appear in semantic search immediately.
-
-    Failures are reported but never derail promotion — the HOW-TO file on disk
-    is the source of truth; the index is an optimization.
-    """
-    try:
-        from axon.embedder.engine import EmbedderEngine
-        from axon.embedder.pipeline import index_path
-        from axon.store.vector_store_factory import make_vector_store
-    except ImportError as exc:
-        typer.echo(f"[promote] reindex pulado: {exc}")
-        return
-
-    async def _reindex() -> int:
-        engine = EmbedderEngine()
-        store = make_vector_store(_RUNTIME)
-        file_cache, db_conn = await _open_file_cache()
-        try:
-            await store.ensure_collections()
-            total_chunks = 0
-            for howto in howto_paths:
-                try:
-                    async with _index_lock_guard(fatal=False, label="howto") as acquired:
-                        if acquired:
-                            _, chunks = await index_path(
-                                howto,
-                                engine=engine,
-                                store=store,
-                                vault_root=_RUNTIME.vault_root,
-                                file_cache=file_cache,
-                                languages={"markdown"},
-                            )
-                            total_chunks += chunks
-                except Exception as exc:
-                    typer.echo(
-                        f"[promote] reindex falhou para {howto.name}: {exc}",
-                        err=True,
-                    )
-            return total_chunks
-        finally:
-            await store.close()
-            await db_conn.close()
-
-    try:
-        chunks = asyncio.run(_reindex())
-    except Exception as exc:
-        typer.echo(f"[promote] reindex abortado: {exc}", err=True)
-        return
-    if chunks:
-        typer.echo(
-            f"[promote] {chunks} chunk(s) reindexado(s) "
-            f"a partir de {len(howto_paths)} HOW-TO(s)."
-        )
+    typer.echo(f"Recovered {len(files)} file(s); run `axon pending drain`.")
 
 
 # ---------------------------------------------------------------------------
@@ -2246,245 +1942,9 @@ def graph_path(
     typer.echo(" -> ".join(path))
 
 
-@til_app.command("howto")
-def til_to_howto(
-    from_file: Annotated[str, typer.Option("--from", help="Arquivo TIL de origem")],
-) -> None:
-    """Converte um TIL específico em HOW-TO manualmente."""
-    vault = _RUNTIME.vault_root
-    til_path = vault / from_file if not Path(from_file).is_absolute() else Path(from_file)
-
-    if not til_path.exists():
-        typer.echo(f"Arquivo não encontrado: {til_path}")
-        raise typer.Exit(1)
-
-    try:
-        from axon.vault.til_promoter import promote_to_howto
-
-        howto_path = promote_to_howto(til_path)
-        typer.echo(f"HOW-TO criado: {howto_path}")
-    except ImportError:
-        typer.echo("[howto] til_promoter não disponível.")
-
-
-# ---------------------------------------------------------------------------
-# pb deep
-# ---------------------------------------------------------------------------
-
-
-@deep_app.command("suggest")
-def deep_suggest() -> None:
-    """Analisa TILs da semana e sugere tópicos para aprofundamento."""
-
-    async def _suggest() -> None:
-        try:
-            from axon.vault.deep_suggester import suggest_deep_topics
-
-            suggestions = await suggest_deep_topics()
-            if not suggestions:
-                typer.echo("Nenhuma sugestão gerada (vault vazio ou Ollama não disponível).")
-                return
-            typer.echo(f"\n{len(suggestions)} sugestão(ões) de aprofundamento:\n")
-            for i, s in enumerate(suggestions, 1):
-                typer.echo(f"{i}. {s['suggested_title']}")
-                typer.echo(f"   Por quê: {s['why']}")
-                typer.echo("   Perguntas:")
-                for q in s.get("starting_questions", []):
-                    typer.echo(f"     - {q}")
-                typer.echo()
-        except Exception as e:
-            typer.echo(f"[deep suggest] Erro: {e}")
-
-    asyncio.run(_suggest())
-
-
-@deep_app.command("list")
-def deep_list() -> None:
-    """Lista notas deep existentes no vault."""
-    vault = _RUNTIME.vault_root
-    deep_dir = vault / "knowledge" / "deep"
-    if not deep_dir.exists():
-        typer.echo("Diretório deep não encontrado no vault.")
-        return
-    notes = list(deep_dir.rglob("*.md"))
-    if not notes:
-        typer.echo("Nenhuma nota deep encontrada.")
-        return
-    typer.echo(f"{len(notes)} nota(s) deep:\n")
-    for n in sorted(notes):
-        typer.echo(f"  {n.relative_to(vault)}")
-
-
-# ---------------------------------------------------------------------------
-# pb expand
-# ---------------------------------------------------------------------------
-
-
-@expand_app.command("run")
-def expand_run(
-    ctx: Annotated[str, typer.Option("--ctx", help="Contexto alvo")],
-    topic: Annotated[str, typer.Option("--topic", help="Tema para expansão manual")],
-    fast: Annotated[
-        bool, typer.Option("--fast", help="Limita coleta local para execução rápida")
-    ] = False,
-    allow_cloud: Annotated[
-        bool, typer.Option("--allow-cloud", help="Permite uso cloud se policy e budget liberarem")
-    ] = False,
-) -> None:
-    """Executa expansão manual e grava apenas em staging."""
-    from axon.expansion.service import ExpansionService
-
-    resolved_ctx = _resolve_ctx(ctx)
-    if resolved_ctx is None:
-        raise typer.BadParameter("--ctx é obrigatório")
-
-    service = ExpansionService(_RUNTIME)
-    staging_path = service.run(
-        ctx=resolved_ctx,
-        topic=topic,
-        fast=fast,
-        allow_cloud=allow_cloud,
-    )
-    draft = service.review(staging_path)
-    typer.echo(f"Staging criado: {staging_path}")
-    typer.echo("Nenhuma escrita foi feita no vault final.")
-    typer.echo(ExpansionService.format_review(draft))
-
-
-@expand_app.command("review")
-def expand_review(
-    staging_file: Annotated[str, typer.Argument(help="Arquivo markdown de staging")],
-) -> None:
-    """Exibe gate de revisão e caminho de publicação."""
-    from axon.expansion.service import ExpansionService
-
-    service = ExpansionService(_RUNTIME)
-    try:
-        draft = service.review(Path(staging_file))
-    except (FileNotFoundError, ValueError) as exc:
-        _handle_expand_expected_error(exc)
-    typer.echo(ExpansionService.format_review(draft))
-
-
-@expand_app.command("approve")
-def expand_approve(
-    staging_file: Annotated[str, typer.Argument(help="Arquivo markdown de staging")],
-) -> None:
-    """Publica um draft aprovado e reindexa o arquivo final."""
-    from axon.expansion.service import ExpansionService
-
-    service = ExpansionService(_RUNTIME)
-    try:
-        publish_path, reindex_status = service.approve(Path(staging_file))
-    except (FileNotFoundError, ValueError) as exc:
-        _handle_expand_expected_error(exc)
-    typer.echo(f"Publicado: {publish_path}")
-    if reindex_status == "reindex_ok":
-        typer.echo("Reindex concluído para o arquivo publicado.")
-    else:
-        typer.echo("Reindex não executado; publicação concluída e pode ser indexada depois.")
-
-
-@expand_app.command("reject")
-def expand_reject(
-    staging_file: Annotated[str, typer.Argument(help="Arquivo markdown de staging")],
-) -> None:
-    """Rejeita um draft sem tocar o vault final."""
-    from axon.expansion.service import ExpansionService
-
-    service = ExpansionService(_RUNTIME)
-    try:
-        rejected_path = service.reject(Path(staging_file))
-    except (FileNotFoundError, ValueError) as exc:
-        _handle_expand_expected_error(exc)
-    typer.echo(f"Staging rejeitado: {rejected_path}")
-    typer.echo("Vault final preservado.")
-
-
 # ---------------------------------------------------------------------------
 # pb index
 # ---------------------------------------------------------------------------
-
-
-@app.command()
-def index(
-    path: Annotated[
-        str | None, typer.Argument(help="Caminho a indexar (default: vault inteiro)")
-    ] = None,
-    ctx: Annotated[str | None, typer.Option("--ctx")] = None,
-) -> None:
-    """Indexação one-shot do vault ou de um path específico."""
-    resolved_ctx = _resolve_ctx(ctx)
-    target = Path(path) if path else _RUNTIME.vault_root
-    typer.echo(f"Indexando: {target} (ctx={resolved_ctx or 'auto'})")
-
-    if not target.exists():
-        typer.echo(f"Path não encontrado: {target}")
-        raise typer.Exit(1)
-
-    async def _index() -> None:
-        import uuid
-
-        from axon.embedder.engine import EmbedderEngine
-        from axon.embedder.pipeline import index_path
-        from axon.observability.trace_store import TraceStore
-        from axon.store.pg_symbol_deps import PostgresSymbolDeps
-        from axon.store.vector_store_factory import make_vector_store
-
-        engine = EmbedderEngine()
-        store = make_vector_store(_RUNTIME)
-        graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
-        file_cache, db_conn = await _open_file_cache()
-
-        # Emit index-start activity into TraceStore (best-effort; never breaks indexing)
-        _recorder = None
-        try:
-            _trace_store = TraceStore(_RUNTIME)
-            _recorder = _trace_store.recorder(
-                trace_id=uuid.uuid4().hex,
-                caller="cli",
-            )
-            _recorder.append_stage(
-                "index",
-                payload={"phase": "start", "target": str(target)},
-            )
-        except Exception:
-            pass
-
-        try:
-            await store.ensure_collections()
-            await graph_store.ensure_schema()
-            vault_root = _RUNTIME.vault_root
-            async with _index_lock_guard(fatal=True):
-                indexed_files, total_chunks = await index_path(
-                    target,
-                    engine=engine,
-                    store=store,
-                    vault_root=vault_root,
-                    file_cache=file_cache,
-                    forced_ctx=resolved_ctx,
-                    graph_store=graph_store,
-                )
-        finally:
-            await store.close()
-            await graph_store.close()
-            await db_conn.close()
-
-        # Emit index-done stage (best-effort)
-        try:
-            if _recorder is not None:
-                _recorder.append_stage(
-                    "index",
-                    payload={"phase": "done", "symbols": total_chunks},
-                )
-        except Exception:
-            pass
-
-        typer.echo(f"Indexação concluída: {indexed_files} arquivo(s), {total_chunks} chunk(s)")
-        if indexed_files == 0:
-            typer.echo("Nenhum arquivo suportado encontrado (.java/.py/.ts/.md/.txt)")
-
-    asyncio.run(_index())
 
 
 @app.command("index-dev")
@@ -2579,70 +2039,6 @@ def index_dev(
         typer.echo(f"Indexação dev concluída: {total_files} arquivo(s), {total_chunks} chunk(s)")
 
     asyncio.run(_index_dev())
-
-
-@app.command()
-def watch(
-    path: Annotated[
-        str | None, typer.Argument(help="Caminho para observar (default: vault inteiro)")
-    ] = None,
-    ctx: Annotated[str | None, typer.Option("--ctx")] = None,
-) -> None:
-    """Observa mudanças e reindexa arquivos suportados em tempo real."""
-    resolved_ctx = _resolve_ctx(ctx)
-    vault_root = _RUNTIME.vault_root
-    target = Path(path) if path else vault_root
-
-    if not target.exists():
-        typer.echo(f"Path não encontrado: {target}")
-        raise typer.Exit(1)
-
-    typer.echo(f"Watcher ativo em: {target} (ctx={resolved_ctx or 'auto'})")
-    typer.echo("Pressione Ctrl+C para encerrar.")
-
-    async def _watch() -> None:
-        from axon.embedder.engine import EmbedderEngine
-        from axon.embedder.pipeline import index_path
-        from axon.store.pg_symbol_deps import PostgresSymbolDeps
-        from axon.store.vector_store_factory import make_vector_store
-        from axon.watcher.main import run_watcher
-
-        engine = EmbedderEngine()
-        store = make_vector_store(_RUNTIME)
-        graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
-        file_cache, db_conn = await _open_file_cache()
-
-        async def _on_file(changed_path: Path) -> None:
-            # Non-fatal: if a manual `pb index` holds the lock, skip this change
-            # rather than crash the watcher; the next event re-indexes it.
-            async with _index_lock_guard(fatal=False, label="watch") as acquired:
-                if not acquired:
-                    return
-                indexed_files, total_chunks = await index_path(
-                    changed_path,
-                    engine=engine,
-                    store=store,
-                    vault_root=vault_root,
-                    file_cache=file_cache,
-                    forced_ctx=resolved_ctx,
-                    graph_store=graph_store,
-                )
-                if indexed_files > 0:
-                    typer.echo(f"[watch] Reindexado: {changed_path} ({total_chunks} chunk(s))")
-
-        try:
-            await store.ensure_collections()
-            await graph_store.ensure_schema()
-            await run_watcher(target, _on_file)
-        finally:
-            await store.close()
-            await graph_store.close()
-            await db_conn.close()
-
-    try:
-        asyncio.run(_watch())
-    except KeyboardInterrupt:
-        typer.echo("Watcher encerrado.")
 
 
 # ---------------------------------------------------------------------------
@@ -2773,7 +2169,7 @@ def scan(
     write_project_manifest(manifest_path, to_add)
     typer.echo(f"\n{len(to_add)} repositório(s) adicionado(s) ao manifesto.")
 
-    if typer.confirm("Indexar agora com pb index-dev?", default=True):
+    if typer.confirm("Indexar agora com axon index-dev?", default=True):
         for entry in to_add:
             typer.echo(f"Indexando {entry.name}...")
 
