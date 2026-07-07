@@ -437,8 +437,11 @@ from axon.cli.pb import (  # noqa: E402
     doctor,
     git_proxy,
     graph_app,
+    hooks_app,
     index_dev,
     note,
+    pending_app,
+    portability_app,
     profile_app,
     rtk,
     rtk_init,
@@ -456,6 +459,9 @@ from axon.cli.pb import init as pb_bootstrap  # noqa: E402
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(graph_app, name="graph")
+app.add_typer(hooks_app, name="hooks")
+app.add_typer(pending_app, name="pending")
+app.add_typer(portability_app, name="portability")
 app.add_typer(profile_app, name="profile")
 app.add_typer(session_app, name="session")
 
