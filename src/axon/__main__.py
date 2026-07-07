@@ -438,6 +438,7 @@ from axon.cli.pb import (  # noqa: E402
     git_proxy,
     graph_app,
     index_dev,
+    note,
     profile_app,
     rtk,
     rtk_init,
@@ -448,6 +449,7 @@ from axon.cli.pb import (  # noqa: E402
     scan,
     search,
     session_app,
+    session_save,
     setup,
 )
 from axon.cli.pb import init as pb_bootstrap  # noqa: E402
@@ -471,6 +473,8 @@ app.command("bootstrap")(pb_bootstrap)
 app.command("setup")(setup)
 app.command("configure")(configure)
 app.command("index-dev")(index_dev)
+app.command("note")(note)
+app.command("session-save")(session_save)
 
 if __name__ == "__main__":
     app()
