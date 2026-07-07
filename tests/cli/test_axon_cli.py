@@ -285,6 +285,12 @@ def test_export_summary(monkeypatch, tmp_path):
     assert "exported summary" in result.stdout
 
 
+def test_setup_configure_index_dev_registered():
+    names = _registered_command_names()
+    for name in ("setup", "configure", "index-dev"):
+        assert name in names
+
+
 def test_bootstrap_scaffolds_env_and_config(tmp_path):
     engine_dir = tmp_path / "engine"
     vault_dir = tmp_path / "vault"
