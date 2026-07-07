@@ -161,7 +161,7 @@ vector_backend = "pgvector"
 ### 6. Confirm doctor output
 
 ```bash
-axon pb doctor
+axon doctor
 ```
 
 The output must contain:
@@ -182,7 +182,7 @@ vector_backend = "qdrant"
 Or override with the env var for a single command:
 
 ```bash
-AXON_VECTOR_BACKEND=qdrant axon pb doctor
+AXON_VECTOR_BACKEND=qdrant axon doctor
 ```
 
 Qdrant data is intact throughout - no data is deleted by the cutover process.

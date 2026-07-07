@@ -15,12 +15,9 @@ set -euo pipefail
 
 echo "Sincronizando vault..."
 
-if command -v pb >/dev/null 2>&1; then
-  pb til --promote-today || true
-else
-  PYTHONPATH="$HOME/dev/axon/src${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -m axon.vault.til_promoter || true
-fi
+# pb til --promote-today removed — that command is permanently cut (see dec-125).
+PYTHONPATH="$HOME/dev/axon/src${PYTHONPATH:+:$PYTHONPATH}" \
+  python3 -m axon.vault.til_promoter || true
 
 if git status --porcelain | grep -q "howto-"; then
   git add knowledge/

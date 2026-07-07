@@ -4,31 +4,24 @@ set -euo pipefail
 # AXON — metrics snapshot (Mac client -> Desktop infra)
 #
 # Collects:
-# - pb ask latency (N runs)
 # - budgets from env
-# - compression telemetry summary (pb cost compression)
 # - Qdrant points_count per collection (via Desktop IP)
+#
+# pb ask / pb cost compression removed — those commands are permanently cut (see dec-125).
 #
 # Usage:
 #   ./scripts/collect_metrics_mac.sh --desktop-ip 192.168.112.1
-#   ./scripts/collect_metrics_mac.sh --desktop-ip 192.168.112.1 --runs 7 --query "summarize my indexing pipeline"
 #
 # Notes:
-# - Run on the Mac (where you execute pb). Qdrant is queried on the Desktop.
-# - Requires: bash, python3, curl, pb installed and configured.
+# - Qdrant is queried on the Desktop.
+# - Requires: bash, python3, curl.
 
 DESKTOP_IP="${DESKTOP_IP:-}"
-RUNS="${RUNS:-5}"
-QUERY="${QUERY:-test query for pb ask latency}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --desktop-ip)
       DESKTOP_IP="${2:-}"; shift 2 ;;
-    --runs)
-      RUNS="${2:-}"; shift 2 ;;
-    --query)
-      QUERY="${2:-}"; shift 2 ;;
     -h|--help)
       sed -n '1,120p' "$0"; exit 0 ;;
     *)
@@ -98,69 +91,3 @@ for name in sorted(names):
         print(f"- {name}: ERROR {e}")
 PY
 echo
-
-echo "== pb cost compression =="
-if command -v pb >/dev/null 2>&1; then
-  # This prints "Sem dados..." if you haven't run pb ask yet.
-  pb cost compression || true
-else
-  echo "pb not found in PATH"
-fi
-echo
-
-echo "== pb ask latency (runs=${RUNS}) =="
-echo "query: ${QUERY}"
-python3 - <<PY
-import os, subprocess, statistics, time, sys
-
-runs = int("${RUNS}")
-query = "${QUERY}"
-
-def run_once() -> float:
-    start = time.perf_counter()
-    # Suppress output; we only want wall-clock time.
-    p = subprocess.run(
-        ["pb", "ask", query],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        text=True,
-        env=os.environ.copy(),
-    )
-    end = time.perf_counter()
-    if p.returncode != 0:
-        raise RuntimeError(f"pb ask failed with exit_code={p.returncode}")
-    return end - start
-
-times = []
-failures = 0
-for i in range(1, runs + 1):
-    try:
-        t = run_once()
-        times.append(t)
-        print(f"run_{i}: {t:.3f}s")
-    except Exception as e:
-        failures += 1
-        print(f"run_{i}: ERROR {e}")
-
-if not times:
-    print("No successful runs; cannot compute summary.", file=sys.stderr)
-    sys.exit(1)
-
-times_sorted = sorted(times)
-def pct(p: float) -> float:
-    if len(times_sorted) == 1:
-        return times_sorted[0]
-    k = int(round((p/100) * (len(times_sorted) - 1)))
-    return times_sorted[max(0, min(k, len(times_sorted) - 1))]
-
-print("")
-print("summary:")
-print(f"- ok_runs: {len(times)}")
-print(f"- failed_runs: {failures}")
-print(f"- min_s: {min(times):.3f}")
-print(f"- avg_s: {statistics.mean(times):.3f}")
-print(f"- p50_s: {pct(50):.3f}")
-print(f"- p95_s: {pct(95):.3f}")
-print(f"- max_s: {max(times):.3f}")
-PY
-
