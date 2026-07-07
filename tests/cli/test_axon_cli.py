@@ -283,3 +283,15 @@ def test_export_summary(monkeypatch, tmp_path):
     result = runner.invoke(app, ["export", "summary", "--repo", "AXON"])
     assert result.exit_code == 0
     assert "exported summary" in result.stdout
+
+
+def test_bootstrap_scaffolds_env_and_config(tmp_path):
+    engine_dir = tmp_path / "engine"
+    vault_dir = tmp_path / "vault"
+    result = runner.invoke(
+        app, ["bootstrap", "--engine", str(engine_dir), "--vault", str(vault_dir)]
+    )
+    assert result.exit_code == 0
+    assert (engine_dir / ".env.local").exists()
+    assert (engine_dir / "axon.toml").exists()
+    assert "Scaffold criado" in result.stdout

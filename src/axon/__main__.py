@@ -447,6 +447,7 @@ from axon.cli.pb import (  # noqa: E402
     search,
     session_app,
 )
+from axon.cli.pb import init as pb_bootstrap  # noqa: E402
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(graph_app, name="graph")
@@ -463,6 +464,7 @@ app.command("rtk-proxy")(rtk_proxy)
 app.command("run")(run_proxy)
 app.command("git")(git_proxy)
 app.command("doctor")(doctor)
+app.command("bootstrap")(pb_bootstrap)
 
 if __name__ == "__main__":
     app()
