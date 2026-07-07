@@ -727,6 +727,13 @@ def git_proxy(
 
 @app.command()
 def doctor(
+    stale_days: Annotated[
+        int,
+        typer.Option(
+            "--stale-days",
+            help="Threshold (days) after which an activity is reported as stale.",
+        ),
+    ] = 7,
     apply: Annotated[
         bool,
         typer.Option(
@@ -832,6 +839,125 @@ def doctor(
     results = run_all_checks()
     typer.echo("\ncapture & adr checks (dec-114):")
     typer.echo(human_format(results))
+
+    # RTK/caveman presence + liveness (merged from the former axon.__main__ doctor)
+    import subprocess
+    import sys
+    from datetime import UTC, datetime, timedelta
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _pkg_version
+
+    now = datetime.now(UTC)
+    stale_cutoff = now - timedelta(days=stale_days)
+
+    def fmt_age(ts: datetime) -> str:
+        delta = now - ts
+        if delta.days >= 1:
+            return f"{delta.days}d ago"
+        hours = delta.seconds // 3600
+        return f"{hours}h ago" if hours else "just now"
+
+    presence_lines: list[str] = ["", "## Presence"]
+    try:
+        v = _pkg_version("axon-mcp")
+    except PackageNotFoundError:
+        v = "unknown"
+    presence_lines.append(f"- axon: ok ({v})")
+
+    from axon.context.rtk import rtk_binary_path
+
+    rtk_path = rtk_binary_path()
+    if rtk_path:
+        try:
+            rtk_v = subprocess.check_output([rtk_path, "--version"], text=True, timeout=3).strip()
+        except Exception:
+            rtk_v = "unknown"
+        presence_lines.append(f"- rtkx: ok ({rtk_v}) [{rtk_path}]")
+    else:
+        presence_lines.append("- rtkx: not installed (run `axon rtk-install`)")
+
+    try:
+        from axon.router.compressor import caveman_compress  # noqa: F401
+
+        presence_lines.append("- caveman engine: ok (axon.router.compressor)")
+    except Exception as exc:
+        presence_lines.append(f"- caveman engine: error ({exc})")
+
+    presence_lines += ["", "## Liveness"]
+
+    async def _latest_decision_ts():
+        from axon.store.session_store import SessionStore
+
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            ts = await store.latest_decision_ts()
+            return datetime.fromisoformat(ts) if ts is not None else None
+        finally:
+            await store.close()
+
+    try:
+        latest_dec_ts = asyncio.run(_latest_decision_ts())
+        if latest_dec_ts is None:
+            presence_lines.append(
+                "- axon captures: none yet (commit something in an axon-init'd repo)"
+            )
+        else:
+            if latest_dec_ts.tzinfo is None:
+                latest_dec_ts = latest_dec_ts.replace(tzinfo=UTC)
+            tag = "stale" if latest_dec_ts < stale_cutoff else "ok"
+            presence_lines.append(f"- axon captures: {tag} (last {fmt_age(latest_dec_ts)})")
+    except Exception as exc:
+        presence_lines.append(f"- axon captures: error ({exc})")
+
+    try:
+        from axon.observability.compression_telemetry import CompressionTelemetryStore
+
+        tstore = CompressionTelemetryStore()
+        records = tstore.load_all()
+        if not records:
+            presence_lines.append("- compression telemetry: none yet")
+        else:
+            latest = records[-1]
+            latest_ts = datetime.fromisoformat(latest.ts)
+            if latest_ts.tzinfo is None:
+                latest_ts = latest_ts.replace(tzinfo=UTC)
+            tag = "stale" if latest_ts < stale_cutoff else "ok"
+            presence_lines.append(
+                f"- compression telemetry: {tag} "
+                f"({len(records)} records, last {fmt_age(latest_ts)})"
+            )
+            caveman_recent = [r for r in records[-50:] if r.engine.startswith("caveman/")]
+            if caveman_recent:
+                presence_lines.append(
+                    f"- caveman engine activity: ok ({len(caveman_recent)} of last 50 records)"
+                )
+            else:
+                presence_lines.append(
+                    "- caveman engine activity: not seen in last 50 records "
+                    "(compression may be falling back)"
+                )
+    except Exception as exc:
+        presence_lines.append(f"- compression telemetry: error ({exc})")
+
+    if sys.platform == "darwin":
+        share_root = Path.home() / "Library" / "Application Support"
+    else:
+        share_root = Path.home() / ".local" / "share"
+    rtk_db = share_root / "rtkx" / "history.db"
+    for name in ("rtkx", "rtk"):
+        candidate = share_root / name / "history.db"
+        if candidate.exists():
+            rtk_db = candidate
+            break
+    if rtk_db.exists():
+        rtk_ts = datetime.fromtimestamp(rtk_db.stat().st_mtime, tz=UTC)
+        tag = "stale" if rtk_ts < stale_cutoff else "ok"
+        presence_lines.append(f"- rtkx activity: {tag} (history.db touched {fmt_age(rtk_ts)})")
+    else:
+        presence_lines.append(f"- rtkx activity: not found ({rtk_db})")
+
+    typer.echo("\n".join(presence_lines))
 
     severity = max_severity(results)
     if severity is CheckStatus.FAIL:

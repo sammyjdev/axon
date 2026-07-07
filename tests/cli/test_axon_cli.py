@@ -19,16 +19,29 @@ def test_app_with_no_args_shows_help():
 
 
 def test_doctor_runs_and_reports_presence(monkeypatch, tmp_path):
-    # Isolate from the real user's data: empty store + telemetry dirs.
     monkeypatch.setattr("axon.cli.pb._get_db_path", lambda: tmp_path / "axon.db")
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path))
     monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path))
     result = runner.invoke(app, ["doctor"])
-    assert result.exit_code == 0
+    assert result.exit_code in (0, 1, 2)
     assert "AXON doctor" in result.stdout
-    assert "Presence" in result.stdout
-    assert "Liveness" in result.stdout
+    assert "capture & adr checks" in result.stdout
+    assert "## Presence" in result.stdout
+    assert "## Liveness" in result.stdout
     assert "axon: ok" in result.stdout
     assert "caveman engine: ok" in result.stdout
+
+
+def test_doctor_supports_ci_mode(monkeypatch, tmp_path):
+    monkeypatch.setattr("axon.cli.pb._get_db_path", lambda: tmp_path / "axon.db")
+    monkeypatch.setenv("AXON_ENGINE", str(tmp_path))
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path))
+    result = runner.invoke(app, ["doctor", "--ci"])
+    assert result.exit_code == 0
+    import json
+
+    payload = json.loads(result.stdout)
+    assert payload["version"] == "1"
 
 
 def test_install_hooks_reports_installed(monkeypatch):
