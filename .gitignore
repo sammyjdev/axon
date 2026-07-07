@@ -63,6 +63,9 @@ docker-compose.override.yml
 # Subagent-driven-development scratch (briefs, ledger, review packages)
 .superpowers/
 
+# forge scratch (spec/tasks/validation artifacts, never tracked)
+.specs/
+
 # Coverage artifacts
 .coverage
 .coverage.*
