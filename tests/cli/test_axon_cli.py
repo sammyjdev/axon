@@ -301,3 +301,14 @@ def test_bootstrap_scaffolds_env_and_config(tmp_path):
     assert (engine_dir / ".env.local").exists()
     assert (engine_dir / "axon.toml").exists()
     assert "Scaffold criado" in result.stdout
+
+
+def test_note_and_session_save_registered():
+    names = _registered_command_names()
+    for name in ("note", "session-save"):
+        assert name in names
+
+
+def test_session_save_subcommand_already_shared():
+    result = runner.invoke(app, ["session", "save", "--help"])
+    assert result.exit_code == 0
