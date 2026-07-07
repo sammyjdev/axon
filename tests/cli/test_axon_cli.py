@@ -312,3 +312,24 @@ def test_note_and_session_save_registered():
 def test_session_save_subcommand_already_shared():
     result = runner.invoke(app, ["session", "save", "--help"])
     assert result.exit_code == 0
+
+
+def test_session_save_alias_is_bound_to_session_save_not_note():
+    """Top-level `session-save` must be pb.session_save, not a lookalike.
+
+    `note` also registers as a zero/near-zero-arg top-level command, so
+    checking only that the name "session-save" is registered (as
+    test_note_and_session_save_registered does) can't catch the alias being
+    wired to the wrong function. This asserts on option surface and help text
+    that are unique to session_save's real signature/docstring.
+    """
+    result = runner.invoke(app, ["session-save", "--help"])
+    assert result.exit_code == 0
+    # session_save's own options - `note` takes a positional TEXT argument
+    # and has neither of these, so this fails under an alias-to-`note` miswiring.
+    assert "--cwd" in result.stdout
+    assert "--transcript" in result.stdout
+    # Distinctive wording from session_save's docstring; note's docstring
+    # ("Alias para pb session note.") shares none of it.
+    assert "session memory" in result.stdout
+    assert "PostStop" in result.stdout
