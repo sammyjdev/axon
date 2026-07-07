@@ -38,6 +38,14 @@ CLI silently fell behind the one people actually ran.
 
 ## Consequences
 
+- **`axon doctor`'s exit code changed.** Before this dec, `axon.__main__`'s
+  `doctor` always exited 0 (pure presence/liveness report). Since pb.py's
+  richer diagnostic wins, `axon doctor` now exits 2 on a FAIL check and 1 on
+  a WARN (dec-114's severity gate), even when the folded-in RTK/caveman
+  section is fully healthy. Intentional — this is the whole reason pb.py's
+  doctor was chosen to win — but any future script treating `axon doctor` as
+  an always-succeeds liveness probe needs `axon doctor --ci` (always exits 0,
+  emits JSON) instead of the human-readable default.
 - `scripts/collect_metrics_mac.sh` and `scripts/install_vault_hook.sh` lose
   the metrics/automation they ran through the now-permanently-cut `ask`/
   `cost`/`til` commands.
