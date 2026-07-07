@@ -1,8 +1,10 @@
 """AXON CLI — agent-agnostic execution & context network.
 
-Same context, any AI coding agent. This is the focused `axon` entry point
-(T6.3). Legacy AXON-vault commands live in `axon.cli.pb` and are not
-surfaced here.
+Same context, any AI coding agent. This is the single `axon` entry point
+(T6.3, unified per dec-125). Commands are implemented in `axon.cli.pb` and
+re-registered here; the permanently-cut commands (ask/index/watch/til/deep/
+expand/career/cost) are deleted from `axon.cli.pb` itself, not merely
+unsurfaced.
 """
 
 from __future__ import annotations

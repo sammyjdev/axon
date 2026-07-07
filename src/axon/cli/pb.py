@@ -18,7 +18,7 @@ from axon.context.registry import VALID_CONTEXTS
 from axon.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
 
 app = typer.Typer(
-    name="pb",
+    name="axon",
     help="AXON CLI — segundo cérebro do Sammy",
     no_args_is_help=True,
 )
@@ -533,9 +533,9 @@ def git_proxy(
         list[str], typer.Argument(help="Argumentos do git (ex.: status, diff, log -n 5)")
     ],
 ) -> None:
-    """Atalho para `pb git ...` com saída filtrada por RTK."""
+    """Atalho para `axon git ...` com saída filtrada por RTK."""
     if not git_args:
-        raise typer.BadParameter("informe ao menos um argumento, ex.: pb git status")
+        raise typer.BadParameter("informe ao menos um argumento, ex.: axon git status")
     rtk_proxy(f"git {' '.join(git_args)}")
 
 
@@ -850,8 +850,8 @@ def init(
     typer.echo(f"mode: {normalized_mode}")
     typer.echo("Próximos passos:")
     typer.echo(f"1. source {env_file}")
-    typer.echo("2. rode `pb doctor`")
-    typer.echo("3. indexe seu vault com `pb index ~/vault/knowledge --ctx knowledge`")
+    typer.echo("2. rode `axon doctor`")
+    typer.echo("3. indexe seu vault (ver `axon --help` para o comando de indexação atual)")
 
 
 @profile_app.command("list")
@@ -1113,8 +1113,8 @@ def configure(
         f"overkill_capabilities: {', '.join(capability_selection.overkill_features) or '(none)'}"
     )
     typer.echo("Próximos passos:")
-    typer.echo("1. revise com `pb profile show`")
-    typer.echo("2. valide ambiente com `pb doctor`")
+    typer.echo("1. revise com `axon profile show`")
+    typer.echo("2. valide ambiente com `axon doctor`")
 
 
 # ---------------------------------------------------------------------------
@@ -1218,7 +1218,7 @@ def session_root(
 ) -> None:
     """Inicia ou exibe sessão ativa."""
     if ctx_name is None:
-        typer.echo("Nenhuma sessão ativa. Use: pb session <contexto>")
+        typer.echo("Nenhuma sessão ativa. Use: axon session <contexto>")
         return
 
     resolved = _resolve_ctx(ctx_name)
@@ -1253,7 +1253,7 @@ def session_note(
 def note(
     text: Annotated[str, typer.Argument(help="Texto da nota livre de sessão")],
 ) -> None:
-    """Alias para pb session note."""
+    """Alias para axon session note."""
     session_note(text)
 
 
@@ -1531,7 +1531,7 @@ def hooks_install(
 
     if apply and not _is_tty():
         typer.echo(
-            "Erro: `--apply` requer TTY interativo. Use `pb hooks install` "
+            "Erro: `--apply` requer TTY interativo. Use `axon hooks install` "
             "para preview, ou rode manualmente em um shell.",
             err=True,
         )
@@ -1778,7 +1778,7 @@ def adr_validate_drafts() -> None:
     L1-full is currently a stub (Fase 2d follow-up wires the tree-sitter
     graph). This command exposes the entry point so triggers can call
     it; the body updates ``last_l1_full_at`` on each draft to clear the
-    ``stale-pending`` state surfaced by ``pb doctor``.
+    ``stale-pending`` state surfaced by ``axon doctor``.
     """
     from datetime import UTC
     from datetime import datetime as _dt
@@ -1859,7 +1859,7 @@ def pending_recover(
         target = pending_dir / f.name.rsplit(".", 1)[0]
         os.replace(f, target)
         typer.echo(f"recovered: {f.name} → {target.name}")
-    typer.echo(f"Recovered {len(files)} file(s); run `pb pending drain`.")
+    typer.echo(f"Recovered {len(files)} file(s); run `axon pending drain`.")
 
 
 # ---------------------------------------------------------------------------
@@ -2169,7 +2169,7 @@ def scan(
     write_project_manifest(manifest_path, to_add)
     typer.echo(f"\n{len(to_add)} repositório(s) adicionado(s) ao manifesto.")
 
-    if typer.confirm("Indexar agora com pb index-dev?", default=True):
+    if typer.confirm("Indexar agora com axon index-dev?", default=True):
         for entry in to_add:
             typer.echo(f"Indexando {entry.name}...")
 
