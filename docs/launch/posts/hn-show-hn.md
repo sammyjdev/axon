@@ -22,15 +22,15 @@ decisions, re-describe what you were in the middle of, and watch the model
 confidently ignore constraints it was told about three sessions ago.
 
 AXON captures context at the moments it crystallises: git commit, post-push,
-and session start/end hooks. It stores everything in SQLite (source of truth),
-fans out to Redis (graph cache) and Qdrant + mem0 (vector + semantic memory),
-and surfaces context on demand either over MCP or through a plain
-`.axon/context.md` file in the repo.
+and session start/end hooks. It stores everything in a single Postgres
+instance (pgvector for embeddings) — sessions, decisions, the code-dependency
+graph, and code vectors all in one place — and surfaces context on demand
+either over MCP or through a plain `.axon/context.md` file in the repo.
 
 **Architecture in one paragraph:**
 
 Git hooks fire on commit/push/init. Session hooks fire when your agent starts
-and ends. Both paths write to SQLite. An LLM judge running on those events
+and ends. Both paths write to Postgres. An LLM judge running on those events
 infers architectural decisions and open questions. The MCP server exposes tools
 (`axon_get_context`, `axon_search`, `axon_handoff`) so any MCP-capable agent
 can pull the right context slice without being handed the whole transcript.
@@ -62,8 +62,8 @@ posting here to get feedback on the design before cutting a proper release.
 
 1. Is the `.axon/context.md` file fallback the right interface for agents that
    do not support MCP, or is there a better convention?
-2. SQLite as the source of truth felt right for a single-developer install.
-   At what scale does that break down?
+2. Postgres as the single source of truth felt right for a single-developer
+   install. At what scale does that break down?
 3. The benchmark model assumes baseline re-sends accumulated decision context
    (+300 tokens/turn). Is that conservative or generous relative to how your
    agents actually behave?

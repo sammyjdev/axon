@@ -67,7 +67,7 @@ Methodology and all assumptions: github.com/sammyjdev/axon/blob/master/benchmark
 6/7
 
 What AXON actually is: event-driven (git hooks + session hooks) context
-capture → SQLite + Redis + Qdrant + mem0 → MCP tools or a plain
+capture → PostgreSQL (pgvector) → MCP tools or a plain
 .axon/context.md file. Works across Claude Code, Codex, Cursor.
 
 Alpha, not on PyPI, install from source.

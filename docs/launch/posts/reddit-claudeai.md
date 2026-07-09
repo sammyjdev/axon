@@ -33,7 +33,7 @@ So I built AXON to solve the handoff problem specifically.
    ends.
 2. As you work, AXON captures context at those event boundaries — not
    continuously, just at commits and session edges. An LLM judge runs on each
-   event and extracts architectural decisions and open questions into SQLite.
+   event and extracts architectural decisions and open questions into Postgres.
 3. When you open Codex (or whatever is next), you register the AXON MCP server
    in that agent's config. The tool `axon_handoff` supplies Codex with the
    decisions, open questions, and code index from the previous session.
@@ -53,8 +53,9 @@ using it on my own projects, but it has not had wide testing. There are known
 gaps, especially around the session hook serialiser. I am posting here to get
 feedback before a proper release.
 
-The storage stack is SQLite (source of truth) + Redis (graph cache) + Qdrant
-and mem0 (vector and semantic memory). There is a deterministic cost model in
+The storage stack is a single PostgreSQL instance with pgvector for
+embeddings — sessions, the code-dependency graph, and code vectors all in one
+place. There is a deterministic cost model in
 the benchmarks folder that shows 52.3% fewer input tokens in a modelled 20-turn
 session vs. re-sending full context every turn — but that is a model, not a
 live measurement. Read the methodology before citing it.

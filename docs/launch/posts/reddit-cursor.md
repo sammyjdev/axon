@@ -34,7 +34,7 @@ session summaries, and a code index entry point.
 
 **What this looks like in practice for Cursor:**
 
-- You commit a change. AXON's post-commit hook fires, updates SQLite, and
+- You commit a change. AXON's post-commit hook fires, updates Postgres, and
   rewrites `.axon/context.md`.
 - Next time you open Cursor on this repo, you (or Cursor's context picker) can
   reference `.axon/context.md` at the top of the session. The model gets the

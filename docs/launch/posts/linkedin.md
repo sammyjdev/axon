@@ -24,29 +24,25 @@ Between events, the system is completely idle. This was a deliberate choice to
 avoid the "always-on context daemon" pattern, which has real cost at scale and
 non-trivial privacy surface.
 
-**Triple-storage with clear role separation**
+**One store, one source of truth**
 
-The storage stack has four components, each with a distinct job:
+The storage stack used to be four components (SQLite, Redis, Qdrant, mem0),
+each with a distinct job. I have since consolidated all of it onto a single
+PostgreSQL instance with pgvector for embeddings — sessions, decisions, the
+code-dependency graph, and code vectors all live in the same database now.
 
-SQLite is the source of truth. Every capture event writes a durable record
-here first. Nothing else is authoritative — Redis and Qdrant are projections
-of SQLite state, not independent stores.
+That was not the original design. It started split by role — a cache here, a
+vector store there — and the operational cost of running and reasoning about
+four stores (which one is authoritative, what is a projection, what happens
+when they drift) outweighed the marginal win of treating graph cache and
+vector search as separate systems. Postgres with pgvector, plus a well-indexed
+dependency table for the code graph, turned out fast enough, and there is
+exactly one place to look when something is wrong.
 
-Redis holds the graph cache: dependency relationships between code symbols and
-modules. Graph traversal over Redis is fast enough for real-time MCP tool
-calls; computing it from SQLite on every query would not be.
-
-Qdrant provides code vector search and backs the mem0 layer for semantic
-similarity queries. When an agent calls `axon_search`, the query hits Qdrant
-first, then Redis for graph context, then SQLite for the full record.
-
-mem0 provides the semantic memory layer on top of Qdrant — it handles the
-retrieval logic so AXON does not need to manage embedding similarity manually.
-
-Neo4j was evaluated and dropped. The graph use cases here (code dependency,
-decision chains) do not need a full property graph engine, and the operational
-complexity is not justified for a single-developer install. That decision is
-documented in the repo.
+Neo4j was evaluated and dropped earlier in the project. The graph use cases
+here (code dependency, decision chains) do not need a full property graph
+engine, and the operational complexity is not justified for a
+single-developer install. That decision is documented in the repo.
 
 **Recall over MCP, with a plain-file fallback**
 
