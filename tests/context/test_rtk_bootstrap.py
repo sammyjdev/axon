@@ -5,6 +5,7 @@ import io
 import os
 import stat
 import tarfile
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -157,3 +158,66 @@ def test_bootstrap_raises_when_checksum_entry_missing(tmp_path) -> None:
 
     with pytest.raises(boot.BootstrapError, match="[Cc]hecksum"):
         boot.bootstrap_rtkx("v1", dest_dir=tmp_path, target=target, download=fake_download)
+
+
+def test_attestations_url_construction() -> None:
+    url = boot.attestations_url("deadbeef" * 8, repo="sammyjdev/rtkx")
+    assert url == (
+        "https://api.github.com/repos/sammyjdev/rtkx/attestations/"
+        f"sha256:{'deadbeef' * 8}"
+    )
+
+
+def test_bootstrap_succeeds_silently_when_attestation_found(tmp_path) -> None:
+    target = boot.detect_target("Linux", "x86_64")
+    archive = _targz_bytes("rtkx", b"ELFISH")
+    fake_download = _fake_download_with_checksum(archive, boot.artifact_name(target))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        out = boot.bootstrap_rtkx(
+            "v1",
+            dest_dir=tmp_path,
+            target=target,
+            download=fake_download,
+            fetch_attestations=lambda url: [{"bundle": "..."}],
+        )
+
+    assert out.read_bytes() == b"ELFISH"
+
+
+def test_bootstrap_warns_but_still_installs_when_no_attestation_found(tmp_path) -> None:
+    target = boot.detect_target("Linux", "x86_64")
+    archive = _targz_bytes("rtkx", b"ELFISH")
+    fake_download = _fake_download_with_checksum(archive, boot.artifact_name(target))
+
+    with pytest.warns(boot.AttestationWarning, match="[Aa]ttestation"):
+        out = boot.bootstrap_rtkx(
+            "v1",
+            dest_dir=tmp_path,
+            target=target,
+            download=fake_download,
+            fetch_attestations=lambda url: [],
+        )
+
+    assert out.read_bytes() == b"ELFISH"
+
+
+def test_bootstrap_warns_but_still_installs_when_attestation_fetch_fails(tmp_path) -> None:
+    target = boot.detect_target("Linux", "x86_64")
+    archive = _targz_bytes("rtkx", b"ELFISH")
+    fake_download = _fake_download_with_checksum(archive, boot.artifact_name(target))
+
+    def failing_fetch(url: str) -> list:
+        raise OSError("network down")
+
+    with pytest.warns(boot.AttestationWarning, match="[Aa]ttestation"):
+        out = boot.bootstrap_rtkx(
+            "v1",
+            dest_dir=tmp_path,
+            target=target,
+            download=fake_download,
+            fetch_attestations=failing_fetch,
+        )
+
+    assert out.read_bytes() == b"ELFISH"
