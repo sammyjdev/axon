@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 import stat
@@ -72,12 +73,31 @@ def _targz_bytes(member: str, content: bytes) -> bytes:
     return buf.getvalue()
 
 
+def _fake_download_with_checksum(archive: bytes, artifact: str):
+    """Serve the archive plus a matching checksums.txt, keyed by URL suffix."""
+    digest = hashlib.sha256(archive).hexdigest()
+
+    def fake_download(url: str, dest: Path) -> None:
+        if url.endswith("checksums.txt"):
+            dest.write_text(f"{digest}  {artifact}\n")
+        else:
+            dest.write_bytes(archive)
+
+    return fake_download
+
+
+def test_checksums_url_construction() -> None:
+    url = boot.checksums_url("v0.42.2-rtkx.1", repo="sammyjdev/rtkx")
+    assert url == (
+        "https://github.com/sammyjdev/rtkx/releases/download/"
+        "v0.42.2-rtkx.1/checksums.txt"
+    )
+
+
 def test_bootstrap_extracts_zip(tmp_path) -> None:
     target = boot.detect_target("Windows", "AMD64")
     archive = _zip_bytes("rtkx.exe", b"BINARY")
-
-    def fake_download(url: str, dest: Path) -> None:
-        dest.write_bytes(archive)
+    fake_download = _fake_download_with_checksum(archive, boot.artifact_name(target))
 
     out = boot.bootstrap_rtkx(
         "v1", dest_dir=tmp_path, target=target, download=fake_download
@@ -90,9 +110,7 @@ def test_bootstrap_extracts_zip(tmp_path) -> None:
 def test_bootstrap_extracts_targz_and_sets_exec(tmp_path) -> None:
     target = boot.detect_target("Linux", "x86_64")
     archive = _targz_bytes("rtkx", b"ELFISH")
-
-    def fake_download(url: str, dest: Path) -> None:
-        dest.write_bytes(archive)
+    fake_download = _fake_download_with_checksum(archive, boot.artifact_name(target))
 
     out = boot.bootstrap_rtkx(
         "v1", dest_dir=tmp_path, target=target, download=fake_download
@@ -107,9 +125,35 @@ def test_bootstrap_extracts_targz_and_sets_exec(tmp_path) -> None:
 def test_bootstrap_raises_when_binary_missing_in_archive(tmp_path) -> None:
     target = boot.detect_target("Linux", "x86_64")
     archive = _targz_bytes("something-else", b"x")
-
-    def fake_download(url: str, dest: Path) -> None:
-        dest.write_bytes(archive)
+    fake_download = _fake_download_with_checksum(archive, boot.artifact_name(target))
 
     with pytest.raises(boot.BootstrapError):
+        boot.bootstrap_rtkx("v1", dest_dir=tmp_path, target=target, download=fake_download)
+
+
+def test_bootstrap_raises_on_checksum_mismatch(tmp_path) -> None:
+    target = boot.detect_target("Linux", "x86_64")
+    archive = _targz_bytes("rtkx", b"ELFISH")
+
+    def fake_download(url: str, dest: Path) -> None:
+        if url.endswith("checksums.txt"):
+            dest.write_text(f"{'0' * 64}  {boot.artifact_name(target)}\n")
+        else:
+            dest.write_bytes(archive)
+
+    with pytest.raises(boot.BootstrapError, match="[Cc]hecksum"):
+        boot.bootstrap_rtkx("v1", dest_dir=tmp_path, target=target, download=fake_download)
+
+
+def test_bootstrap_raises_when_checksum_entry_missing(tmp_path) -> None:
+    target = boot.detect_target("Linux", "x86_64")
+    archive = _targz_bytes("rtkx", b"ELFISH")
+
+    def fake_download(url: str, dest: Path) -> None:
+        if url.endswith("checksums.txt"):
+            dest.write_text("deadbeef  some-other-artifact.tar.gz\n")
+        else:
+            dest.write_bytes(archive)
+
+    with pytest.raises(boot.BootstrapError, match="[Cc]hecksum"):
         boot.bootstrap_rtkx("v1", dest_dir=tmp_path, target=target, download=fake_download)

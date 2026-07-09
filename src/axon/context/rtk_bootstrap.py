@@ -7,6 +7,7 @@ download step is injectable so the extraction logic is testable offline.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -71,6 +72,10 @@ def download_url(tag: str, target: RtkxTarget, repo: str = RTKX_REPO) -> str:
     return f"https://github.com/{repo}/releases/download/{tag}/{artifact_name(target)}"
 
 
+def checksums_url(tag: str, repo: str = RTKX_REPO) -> str:
+    return f"https://github.com/{repo}/releases/download/{tag}/checksums.txt"
+
+
 def _http_download(url: str, dest: Path) -> None:
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     with urllib.request.urlopen(req) as resp, dest.open("wb") as fh:  # noqa: S310
@@ -126,6 +131,29 @@ def _match_member(names: list[str], binary_name: str) -> str:
     raise BootstrapError(f"{binary_name} not found in release archive")
 
 
+def _parse_checksums(text: str) -> dict[str, str]:
+    checksums: dict[str, str] = {}
+    for line in text.splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        digest, name = parts
+        checksums[name.strip().lstrip("*")] = digest.strip().lower()
+    return checksums
+
+
+def _verify_checksum(archive: Path, checksums_path: Path, artifact: str) -> None:
+    checksums = _parse_checksums(checksums_path.read_text())
+    expected = checksums.get(artifact)
+    if not expected:
+        raise BootstrapError(f"No checksum entry for {artifact} in checksums.txt")
+    actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if actual != expected:
+        raise BootstrapError(
+            f"Checksum mismatch for {artifact}: expected {expected}, got {actual}"
+        )
+
+
 def bootstrap_rtkx(
     tag: str,
     *,
@@ -134,15 +162,24 @@ def bootstrap_rtkx(
     repo: str = RTKX_REPO,
     download: Callable[[str, Path], None] = _http_download,
 ) -> Path:
-    """Download and install the rtkx binary, returning its path."""
+    """Download and install the rtkx binary, returning its path.
+
+    The archive's SHA-256 is verified against the release's `checksums.txt`
+    before extraction (GHSA-r7wg-f7r2-8wf7); a mismatch raises BootstrapError
+    without extracting or chmod'ing anything.
+    """
     target = target or detect_target()
     dest_dir = dest_dir or _bin_dir()
+    artifact = artifact_name(target)
     url = download_url(tag, target, repo=repo)
 
     with tempfile.TemporaryDirectory() as tmp:
-        archive = Path(tmp) / artifact_name(target)
+        archive = Path(tmp) / artifact
+        checksums_path = Path(tmp) / "checksums.txt"
         try:
             download(url, archive)
+            download(checksums_url(tag, repo=repo), checksums_path)
         except OSError as exc:
-            raise BootstrapError(f"Failed to download {url}: {exc}") from exc
+            raise BootstrapError(f"Failed to download release assets for {tag}: {exc}") from exc
+        _verify_checksum(archive, checksums_path, artifact)
         return _extract_binary(archive, target, dest_dir)
