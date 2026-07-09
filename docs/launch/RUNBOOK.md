@@ -23,16 +23,12 @@ The repository is public at `https://github.com/sammyjdev/axon`, and that URL is
 already set throughout the codebase (`README.md`, `site/`, `pyproject.toml`, the
 launch posts, and this runbook). No action needed.
 
-### 1.2 Confirm the license
+### 1.2 Confirm the license — done
 
-`pyproject.toml` and `LICENSE` currently specify MIT. The original project plan
-mentioned Apache 2.0. Decide which you intend and make them consistent:
-
-- `LICENSE` (file in repo root)
-- `pyproject.toml` → `license` field
-
-This is your decision to make. MIT and Apache 2.0 are both fine for open-source
-tools; they differ primarily in patent grant language.
+Apache-2.0, chosen 2026-07-09 to match the rest of the ecosystem (`gnomon-eval`,
+`rtkx`) and for the patent grant/retaliation clause. `LICENSE`, `pyproject.toml`
+(`license` field + classifier), README, and the launch posts in this directory
+are all synced. `glyph-kg` was relicensed the same day for consistency.
 
 ### 1.3 Run the full test suite
 
