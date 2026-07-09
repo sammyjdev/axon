@@ -71,7 +71,7 @@ try:
 except ModuleNotFoundError as _exc:  # pragma: no cover
     raise ModuleNotFoundError(
         "The 'http' extra is required for axon serve-http. "
-        "Install it with: pip install axon-mcp[http]"
+        "Install it with: pip install axon-context-mcp[http]"
     ) from _exc
 
 # ---------------------------------------------------------------------------
