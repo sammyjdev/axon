@@ -18,7 +18,7 @@ It is the front layer of a three-part stack:
 - **rtkx** — reversible context compression (the `rtk` binary).
 
 Stack: Python 3.11+, Pydantic v2 domain models, async I/O, litellm for routing.
-MIT-licensed, installed from source (not on PyPI).
+Apache-2.0-licensed, installed from source (not on PyPI).
 
 ## Subsystems (`src/axon/`)
 

@@ -59,7 +59,7 @@ the benchmarks folder that shows 52.3% fewer input tokens in a modelled 20-turn
 session vs. re-sending full context every turn — but that is a model, not a
 live measurement. Read the methodology before citing it.
 
-Repo: https://github.com/sammyjdev/axon (MIT)
+Repo: https://github.com/sammyjdev/axon (Apache-2.0)
 
 Happy to answer questions about the design. Specifically curious whether anyone
 has a cleaner approach to the session boundary detection problem — right now I

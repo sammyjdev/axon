@@ -80,4 +80,4 @@ Posting here because I want feedback on the benchmark model specifically —
 are the baseline assumptions (300 tokens/turn growth, 20 turns) representative
 of how your agents behave?
 
-Repo: https://github.com/sammyjdev/axon — MIT, fully self-hosted.
+Repo: https://github.com/sammyjdev/axon — Apache-2.0, fully self-hosted.

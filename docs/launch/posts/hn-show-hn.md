@@ -69,4 +69,4 @@ posting here to get feedback on the design before cutting a proper release.
    agents actually behave?
 
 Repo: https://github.com/sammyjdev/axon
-License: MIT, self-hosted only — no telemetry, no cloud dependency.
+License: Apache-2.0, self-hosted only — no telemetry, no cloud dependency.

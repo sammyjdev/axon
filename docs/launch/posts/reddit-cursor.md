@@ -46,7 +46,7 @@ session summaries, and a code index entry point.
 
 Alpha, not on PyPI, install from source. The file-based fallback is the most
 stable part of the system — the MCP tools and session hook coverage are still
-getting hardened. MIT license, fully self-hosted.
+getting hardened. Apache-2.0 license, fully self-hosted.
 
 Repo: https://github.com/sammyjdev/axon
 

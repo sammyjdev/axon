@@ -11,7 +11,7 @@ coding workflows: context evaporates when you switch agents or resume a project
 after time away.
 
 The project is called AXON — agent-agnostic execution and context network. It
-is alpha, MIT-licensed, and self-hosted. Here is the design I landed on after
+is alpha, Apache-2.0-licensed, and self-hosted. Here is the design I landed on after
 a few iterations.
 
 **Event-driven capture, not time-driven**
