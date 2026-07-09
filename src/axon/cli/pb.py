@@ -1213,12 +1213,12 @@ def search(
 @session_app.callback(invoke_without_command=True)
 def session_root(
     ctx_name: Annotated[
-        str | None, typer.Argument(help=_CTX_HELP)
+        str | None, typer.Option("--ctx", help=_CTX_HELP)
     ] = None,
 ) -> None:
     """Inicia ou exibe sessão ativa."""
     if ctx_name is None:
-        typer.echo("Nenhuma sessão ativa. Use: axon session <contexto>")
+        typer.echo("Nenhuma sessão ativa. Use: axon session --ctx <contexto>")
         return
 
     resolved = _resolve_ctx(ctx_name)
