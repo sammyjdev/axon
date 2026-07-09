@@ -15,6 +15,7 @@ import stat
 import tarfile
 import tempfile
 import urllib.request
+import warnings
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -25,6 +26,10 @@ _USER_AGENT = "axon-rtk-bootstrap"
 
 
 class BootstrapError(RuntimeError):
+    pass
+
+
+class AttestationWarning(UserWarning):
     pass
 
 
@@ -74,6 +79,19 @@ def download_url(tag: str, target: RtkxTarget, repo: str = RTKX_REPO) -> str:
 
 def checksums_url(tag: str, repo: str = RTKX_REPO) -> str:
     return f"https://github.com/{repo}/releases/download/{tag}/checksums.txt"
+
+
+def attestations_url(digest_sha256: str, repo: str = RTKX_REPO) -> str:
+    return f"https://api.github.com/repos/{repo}/attestations/sha256:{digest_sha256}"
+
+
+def _fetch_attestations(url: str) -> list:
+    req = urllib.request.Request(
+        url, headers={"User-Agent": _USER_AGENT, "Accept": "application/vnd.github+json"}
+    )
+    with urllib.request.urlopen(req) as resp:  # noqa: S310
+        payload = json.loads(resp.read())
+    return payload.get("attestations", [])
 
 
 def _http_download(url: str, dest: Path) -> None:
@@ -154,6 +172,39 @@ def _verify_checksum(archive: Path, checksums_path: Path, artifact: str) -> None
         )
 
 
+def _check_attestation(
+    archive: Path, repo: str, fetch_attestations: Callable[[str], list]
+) -> None:
+    """Best-effort: confirm GitHub recorded a build-provenance attestation for this
+    exact artifact digest (GHSA-r7wg-f7r2-8wf7 follow-up). A cryptographically signed
+    attestation can't be forged with repo push access alone - it requires the OIDC
+    token of the GitHub Actions runner - unlike checksums.txt, which ships from the
+    same release as the archive it checksums.
+
+    Warns rather than raises when absent: the currently pinned stable rtkx release
+    predates attestation support, so failing closed here today would break every
+    install. ponytail: fail-open ceiling, flip to raising BootstrapError once a
+    stable rtkx release with attestation is the floor everyone is on.
+    """
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    try:
+        attestations = fetch_attestations(attestations_url(digest, repo))
+    except (OSError, ValueError) as exc:
+        warnings.warn(
+            f"Could not verify rtkx build attestation for {digest[:12]}...: {exc}",
+            AttestationWarning,
+            stacklevel=2,
+        )
+        return
+    if not attestations:
+        warnings.warn(
+            f"No build attestation found for rtkx artifact {digest[:12]}... in {repo} "
+            "- falling back to checksum-only verification.",
+            AttestationWarning,
+            stacklevel=2,
+        )
+
+
 def bootstrap_rtkx(
     tag: str,
     *,
@@ -161,12 +212,15 @@ def bootstrap_rtkx(
     target: RtkxTarget | None = None,
     repo: str = RTKX_REPO,
     download: Callable[[str, Path], None] = _http_download,
+    fetch_attestations: Callable[[str], list] = _fetch_attestations,
 ) -> Path:
     """Download and install the rtkx binary, returning its path.
 
     The archive's SHA-256 is verified against the release's `checksums.txt`
     before extraction (GHSA-r7wg-f7r2-8wf7); a mismatch raises BootstrapError
-    without extracting or chmod'ing anything.
+    without extracting or chmod'ing anything. A GitHub build attestation is
+    additionally checked (warns, doesn't block, if absent - see
+    `_check_attestation`).
     """
     target = target or detect_target()
     dest_dir = dest_dir or _bin_dir()
@@ -182,4 +236,5 @@ def bootstrap_rtkx(
         except OSError as exc:
             raise BootstrapError(f"Failed to download release assets for {tag}: {exc}") from exc
         _verify_checksum(archive, checksums_path, artifact)
+        _check_attestation(archive, repo, fetch_attestations)
         return _extract_binary(archive, target, dest_dir)
