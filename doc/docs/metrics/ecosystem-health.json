@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-06-29T15:48:52.319238Z",
+  "timestamp": "2026-07-09T15:25:21.434014Z",
   "overall_status": "warning",
   "metrics": {
     "versioning": {
-      "gnomon_pin_in_glyph": {
+      "glyph_eval_dependency_free": {
         "status": "ok",
-        "value": "gnomon-eval @ git+https://github.com/sammyjdev/gnomon-eval.git",
+        "value": null,
         "severity": "critical"
       },
       "glyph_pin_in_axon": {
@@ -22,7 +22,7 @@
     "coupling": {
       "axon_imports_glyph": {
         "status": "ok",
-        "imports_found": 14,
+        "imports_found": 15,
         "severity": "info"
       },
       "glyph_imports_axon": {
@@ -51,47 +51,47 @@
     },
     "performance": {
       "glyph_graph_build_latency_ms": {
-        "status": "ok",
+        "status": "unknown",
         "value": null,
         "target_ms": 500,
         "severity": "info",
-        "note": "Cache implemented; latency recorded after first build"
+        "note": "Requires instrumentation in AXON _build_glyph_graph()"
       },
       "glyph_cache_hit_rate": {
-        "status": "ok",
-        "value": "cache_implemented_no_runtime_data",
+        "status": "unknown",
+        "value": null,
         "target_percent": 80,
         "severity": "info",
-        "note": "Cache implemented; hit rate available after first requests"
+        "note": "Requires cache implementation in AXON"
       }
     },
     "ci_status": {
       "axon": {
         "status": "unknown",
         "note": "GitHub API integration pending",
-        "last_commit": "823febb",
-        "last_message": "style(store): clean ruff lint in dec-121 backfill test files",
+        "last_commit": "eafffa1",
+        "last_message": "docs: add CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, and issue templates",
         "severity": "info"
       },
       "glyph": {
         "status": "unknown",
         "note": "GitHub API integration pending",
-        "last_commit": "9bff58e",
-        "last_message": "chore: bump version to 0.1.0",
+        "last_commit": "f3ebf1c",
+        "last_message": "chore: relicense from MIT to Apache-2.0",
         "severity": "info"
       },
       "gnomon": {
         "status": "unknown",
         "note": "GitHub API integration pending",
-        "last_commit": "f7b91d3",
-        "last_message": "docs: translate Portuguese commit examples to English for OSS launch",
+        "last_commit": "7df8292",
+        "last_message": "docs: promote golden-pin dataset-count exception to Enforced in RULES.md",
         "severity": "info"
       },
       "forge": {
         "status": "unknown",
         "note": "GitHub API integration pending",
-        "last_commit": "9949d5d",
-        "last_message": "fix: add RULES.md template + porting guide step; test validate() in local-infer",
+        "last_commit": "eb23276",
+        "last_message": "docs: align README with the shipped loop (D1 feedback + telemetry + TCM gate + ADRs)",
         "severity": "info"
       }
     }

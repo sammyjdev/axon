@@ -13,8 +13,15 @@ class VersioningCheck:
         self.glyph_path = projects_root / "glyph-kg"
         self.axon_path = projects_root / "axon"
 
-    def check_gnomon_pin_in_glyph(self) -> Dict[str, Any]:
-        """GLYPH must pin GNOMON eval extra to semver tag or PyPI version."""
+    def check_glyph_eval_dependency_free(self) -> Dict[str, Any]:
+        """GLYPH's eval judge must stay free of gnomon-eval/ragas/langchain.
+
+        a3fe54a replaced gnomon-eval (which pulled in ragas + langchain-openai,
+        ~30 transitive packages, one of them broken against current
+        langchain-community) with a hand-rolled, dependency-free judge. This
+        guards against silently reintroducing that dependency chain, rather
+        than checking for a pin on a dependency that no longer exists.
+        """
         glyph_pyproject = self.glyph_path / "pyproject.toml"
 
         if not glyph_pyproject.exists():
@@ -35,28 +42,17 @@ class VersioningCheck:
                 "error": str(e),
             }
 
-        optional_deps = data.get("project", {}).get("optional-dependencies", {})
-        eval_deps = optional_deps.get("eval", [])
+        project = data.get("project", {})
+        all_deps = list(project.get("dependencies", []))
+        for group_deps in project.get("optional-dependencies", {}).values():
+            all_deps.extend(group_deps)
 
-        gnomon_dep = next(
-            (d for d in eval_deps if "gnomon" in d.lower()), None
-        )
-
-        if gnomon_dep is None:
-            return {
-                "status": "missing",
-                "value": None,
-                "severity": "critical",
-            }
-
-        # Check if it's floating (git main/master without version)
-        is_floating = "@" in gnomon_dep and any(
-            ref in gnomon_dep.lower() for ref in ["main", "master", "head"]
-        )
+        banned = ("gnomon", "ragas", "langchain")
+        offenders = [d for d in all_deps if any(b in d.lower() for b in banned)]
 
         return {
-            "status": "critical" if is_floating else "ok",
-            "value": gnomon_dep,
+            "status": "critical" if offenders else "ok",
+            "value": offenders if offenders else None,
             "severity": "critical",
         }
 
@@ -143,7 +139,7 @@ class VersioningCheck:
     def run(self) -> Dict[str, Dict[str, Any]]:
         """Run all versioning checks."""
         return {
-            "gnomon_pin_in_glyph": self.check_gnomon_pin_in_glyph(),
+            "glyph_eval_dependency_free": self.check_glyph_eval_dependency_free(),
             "glyph_pin_in_axon": self.check_glyph_pin_in_axon(),
             "forge_axon_dep": self.check_forge_axon_dep(),
         }

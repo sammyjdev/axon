@@ -20,7 +20,7 @@ def test_versioning_check_runs():
     result = check.run()
 
     assert isinstance(result, dict)
-    assert "gnomon_pin_in_glyph" in result
+    assert "glyph_eval_dependency_free" in result
     assert "glyph_pin_in_axon" in result
     assert "forge_axon_dep" in result
 
