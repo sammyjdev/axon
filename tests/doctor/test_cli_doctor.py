@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from axon.cli.pb import app
 
-runner = CliRunner()
+runner = CliRunner(mix_stderr=False)
 
 
 @pytest.fixture(autouse=True)
