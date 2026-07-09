@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "axon-mcp"
+name = "axon-context-mcp"
 version = "0.1.1"
 description = "Agent-agnostic context network — same context across any AI coding agent"
 requires-python = ">=3.11"
@@ -37,14 +37,16 @@ dependencies = [
     "pyyaml>=6.0",
     "asyncpg>=0.29",
     "pgvector>=0.3",
-    # GLYPH is the canonical knowledge-graph retrieval lib (dec-116). Pinned to
-    # the v0.1.0 tag (the completed GLYPH P0-P7 state, commit 5366308) so the
-    # build stays deterministic. AXON wires GraphRetriever/NetworkXStore through
-    # their constructors (not the file-based facade), which are stable here.
-    # `retrieval` extra pulls numpy (InMemoryVectorIndex); we wrap AXON's own
-    # EmbedderEngine, so the heavy `embeddings`/sentence-transformers extra is
-    # intentionally omitted.
-    "glyph-kg[retrieval] @ git+https://github.com/sammyjdev/glyph-kg.git@v0.1.0",
+    # GLYPH is the canonical knowledge-graph retrieval lib (dec-116). AXON wires
+    # GraphRetriever/NetworkXStore through their constructors (not the
+    # file-based facade), which are stable across the 0.1.0 -> 0.2.0 jump.
+    # `retrieval` extra pulls numpy + scipy (InMemoryVectorIndex, PageRank); we
+    # wrap AXON's own EmbedderEngine, so the heavy `embeddings`/
+    # sentence-transformers extra is intentionally omitted. Pinned to ==0.2.0
+    # (not a range) for the same determinism dec-116 wanted from the old git
+    # tag pin - glyph-kg is now a normal PyPI dependency (GHSA-r7wg-f7r2-8wf7:
+    # PyPI rejects direct git+https Requires-Dist entries outright).
+    "glyph-kg[retrieval]==0.2.0",
 ]
 
 [project.urls]
@@ -58,7 +60,7 @@ axon = "axon.__main__:app"
 [project.optional-dependencies]
 http = [
     # OpenAI-compatible HTTP endpoint (axon serve-http).
-    # Install with: pip install axon-mcp[http]
+    # Install with: pip install axon-context-mcp[http]
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.29.0",
 ]
