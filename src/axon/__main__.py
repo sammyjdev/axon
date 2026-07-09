@@ -28,7 +28,7 @@ def _version_callback(value: bool) -> None:
     if not value:
         return
     try:
-        v = _pkg_version("axon-mcp")
+        v = _pkg_version("axon-context-mcp")
     except PackageNotFoundError:
         v = "unknown"
     typer.echo(f"axon {v}")
@@ -172,7 +172,7 @@ def serve_http(
 
     Requires the 'http' optional extra::
 
-        pip install axon-mcp[http]
+        pip install axon-context-mcp[http]
 
     Point gnomon at it with base_url = http://localhost:8765/v1
     """
@@ -180,7 +180,7 @@ def serve_http(
         import uvicorn
     except ModuleNotFoundError:
         typer.echo(
-            "uvicorn is not installed. Run: pip install axon-mcp[http]",
+            "uvicorn is not installed. Run: pip install axon-context-mcp[http]",
             err=True,
         )
         raise typer.Exit(1)
