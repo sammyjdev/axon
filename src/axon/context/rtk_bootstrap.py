@@ -181,10 +181,11 @@ def _check_attestation(
     token of the GitHub Actions runner - unlike checksums.txt, which ships from the
     same release as the archive it checksums.
 
-    Warns rather than raises when absent: the currently pinned stable rtkx release
-    predates attestation support, so failing closed here today would break every
-    install. ponytail: fail-open ceiling, flip to raising BootstrapError once a
-    stable rtkx release with attestation is the floor everyone is on.
+    Fails closed when no attestation is found: every stable rtkx release since
+    v0.43.1 (2026-07-09) ships one, so an artifact digest with none is either a
+    stale/unattested release or a forged archive (the GHSA-r7wg-f7r2-8wf7
+    precondition). A network/API failure while checking still only warns -
+    that's an availability problem, not evidence of tampering.
     """
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     try:
@@ -197,11 +198,9 @@ def _check_attestation(
         )
         return
     if not attestations:
-        warnings.warn(
+        raise BootstrapError(
             f"No build attestation found for rtkx artifact {digest[:12]}... in {repo} "
-            "- falling back to checksum-only verification.",
-            AttestationWarning,
-            stacklevel=2,
+            "- refusing to install an unattested binary"
         )
 
 

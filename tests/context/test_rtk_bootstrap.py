@@ -186,13 +186,13 @@ def test_bootstrap_succeeds_silently_when_attestation_found(tmp_path) -> None:
     assert out.read_bytes() == b"ELFISH"
 
 
-def test_bootstrap_warns_but_still_installs_when_no_attestation_found(tmp_path) -> None:
+def test_bootstrap_raises_when_no_attestation_found(tmp_path) -> None:
     target = boot.detect_target("Linux", "x86_64")
     archive = _targz_bytes("rtkx", b"ELFISH")
     fake_download = _fake_download_with_checksum(archive, boot.artifact_name(target))
 
-    with pytest.warns(boot.AttestationWarning, match="[Aa]ttestation"):
-        out = boot.bootstrap_rtkx(
+    with pytest.raises(boot.BootstrapError, match="[Aa]ttestation"):
+        boot.bootstrap_rtkx(
             "v1",
             dest_dir=tmp_path,
             target=target,
@@ -200,7 +200,7 @@ def test_bootstrap_warns_but_still_installs_when_no_attestation_found(tmp_path) 
             fetch_attestations=lambda url: [],
         )
 
-    assert out.read_bytes() == b"ELFISH"
+    assert not (tmp_path / "rtkx").exists()
 
 
 def test_bootstrap_warns_but_still_installs_when_attestation_fetch_fails(tmp_path) -> None:
