@@ -82,7 +82,7 @@ python3 -m twine upload --repository testpypi dist/*
 Then install from TestPyPI in a fresh virtualenv to confirm it works end-to-end:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ axon-mcp
+pip install --index-url https://test.pypi.org/simple/ axon-context-mcp
 axon --version
 ```
 
@@ -98,11 +98,11 @@ python3 -m twine upload dist/*
 Prerequisites:
 - PyPI account at https://pypi.org
 - API token configured (add to `~/.pypirc` or pass as `--password`)
-- Package name `axon-mcp` must be available (check https://pypi.org/project/axon-mcp/)
+- Package name `axon-context-mcp` must be available (check https://pypi.org/project/axon-context-mcp/)
 
 After upload, install from PyPI to confirm:
 ```bash
-pip install axon-mcp
+pip install axon-context-mcp
 axon --version
 ```
 
@@ -112,7 +112,7 @@ Once PyPI is live, update `README.md` to replace the "install from source"
 quickstart with:
 
 ```bash
-pip install axon-mcp
+pip install axon-context-mcp
 ```
 
 Commit and push this change.
@@ -215,10 +215,10 @@ control of the maintainer — treat them as signal, not pass/fail gates.
 | GitHub stars | >50 in first 48h after HN post | GitHub repo → Stars tab |
 | External issues / PRs | >5 opened by non-maintainers within one week | GitHub Issues / PRs |
 | Technical newsletter mention | >1 mention (e.g. TLDR, Pointer, AI digest) | Search / Google Alerts |
-| PyPI live and installable | Confirmed | `pip install axon-mcp && axon --version` |
+| PyPI live and installable | Confirmed | `pip install axon-context-mcp && axon --version` |
 
 Set up a GitHub Star notification or check manually at the 24h and 48h marks.
-Search for "axon-mcp" and "AXON MCP" on the relevant platforms a week after launch.
+Search for "axon-context-mcp" and "AXON MCP" on the relevant platforms a week after launch.
 
 ---
 

@@ -673,7 +673,7 @@ def doctor(
 
     presence_lines: list[str] = ["", "## Presence"]
     try:
-        v = _pkg_version("axon-mcp")
+        v = _pkg_version("axon-context-mcp")
     except PackageNotFoundError:
         v = "unknown"
     presence_lines.append(f"- axon: ok ({v})")
