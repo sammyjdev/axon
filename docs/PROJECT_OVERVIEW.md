@@ -2,7 +2,9 @@
 
 > Single-page map of what AXON is, what it can do today, the state of every
 > branch, and the development/validation flow. Kept current as a reference for
-> coding agents. Last validated: 2026-06-26 against `master` HEAD `556ac2d`.
+> coding agents. Storage/routing and local-roles sections refreshed 2026-07-09
+> against `master` HEAD `312b502`; the Branch state section is stale (see its
+> own note) and needs a fresh curation pass.
 
 ## What AXON is
 
@@ -26,7 +28,7 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 |---|---|
 | `router` | Task classification (TRIVIAL/CODE_ANALYSIS/ARCHITECTURE/DEEP_REASONING) + model selection per profile; budget downgrade, circuit-break. Hosts `compressor.py` (caveman compression) and `llm_backend.py` (litellm kwarg builder). |
 | `embedder` | Code chunking (Python/Java/TS/Markdown via tree-sitter), embeddings (fastembed BGE-base 768d), `index_path` pipeline. Structure-aware Markdown chunker is recent (commits `b488f27`+). |
-| `store` | Persistence: `SessionStore` (SQLite, source of truth), `GraphStore` (Redis cache), `VectorStore` (Qdrant), `FailureStore`. Postgres repos exist on agent branches (see dec-121). |
+| `store` | Persistence, all on Postgres (dec-121): `pg_session_repository`, `pg_decision_repository`, `pg_graph_repository` (code-dependency graph, `symbol_deps`), `pg_vector_store` (pgvector embeddings), `pg_file_cache`, `failure_store`, `outcome_store`. |
 | `validation` | LLM-judge scoring of captured Decisions; pass-rate aggregation. `Decision.judged` is the canonical "scored" flag. |
 | `adr` | ADR lifecycle: draft pool, rejection audit, commit-signal extraction (dec-110). |
 | `recall` | Unified recall: merge + rank (recency × relevance × validation score) + token-budget truncation; soft supersession (dec-115). |
@@ -34,7 +36,7 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 | `cli` | `axon` (`__main__.py`), the single CLI entry point (dec-125); re-registers the surviving commands from `cli/pb.py`, which is no longer its own entry point. |
 | `code` | Repo indexer (`index_repo`), diff-symbols, resolver. |
 | `context` | Context auto-detection, retrieval strategies, GLYPH adapter (`graph_source.py`), rtkx bootstrap. |
-| `memory` | mem0/Qdrant semantic memory; session transcript compression. |
+| `memory` | Session transcript compression (`session_compressor.py`) and hook (`session_hook.py`). mem0/Qdrant semantic memory was retired with dec-121. |
 | `expansion` | Domain-pack knowledge expansion + candidate **scoring** (a local-role, dec-122). |
 | `doctor` | Stack diagnostics, 3 modes: read-only / `--apply` / `--ci` JSON (dec-114). |
 | `hooks` | Git hook install + post-commit/push capture; pre-commit framework bridge (dec-113). |
@@ -74,7 +76,7 @@ Risk class enforced by `@traced_tool`. Destructive needs `AXON_ALLOW_DESTRUCTIVE
 | `get_adrs` | read | Stored ADRs; `ctx=work` gated. |
 | `save_adr` | write | Persist an ADR. |
 | `ask` | read | Unified context entry: detect ctx, retrieve, caveman+rtkx compress. |
-| `get_graph_neighbors` / `get_graph_path` / `get_graph_context` | read | Graph navigation (SQLite; `get_graph_context` via GLYPH, dec-116). |
+| `get_graph_neighbors` / `get_graph_path` / `get_graph_context` | read | Graph navigation (Postgres `symbol_deps`; `get_graph_context` via GLYPH, dec-116). |
 | `restore_context` | read | Reverse rtkx compression from a `[[ccr:<handle>]]` marker. |
 | `axon_session_start` / `axon_session_end` | write | Open/close a session; refresh `.axon/context.md`. |
 | `axon_capture` / `axon_capture_event` | write | Capture in-session decision / universal event. |
@@ -87,15 +89,17 @@ Risk class enforced by `@traced_tool`. Destructive needs `AXON_ALLOW_DESTRUCTIVE
 
 ## Storage & routing today
 
-**Runtime stack (dec-101, in force on `master`):** SQLite (source of truth,
-`~/.axon/axon.db`) + Qdrant (vectors, BGE-base 768d) + Redis (graph cache) + mem0
-(semantic memory over Qdrant) + `.axon/context.md` file fallback.
-
-**Migration in flight (dec-121, status: proposed):** consolidate onto a single
-**Postgres + pgvector** (port **5434**, container `axon-postgres`) retiring Qdrant
-and Redis from the default runtime. GLYPH stays on in-memory `NetworkXStore` fed
-from Postgres. Incremental, gated by the recall regression guard (`AXON_RUN_RECALL=1`).
-The agent/issue-* branches (below) are the implementation of this migration.
+**Runtime stack (dec-121, complete — accepted 2026-06-29):** a single
+**PostgreSQL** instance (port **5434**, container `axon-postgres`, `pgvector`
+for embeddings) is the source of truth for sessions, decisions, ADRs, the file
+index, and the code-dependency graph (`symbol_deps` table), plus the
+FailureStore/OutcomeStore. SQLite, Qdrant, Redis, and mem0 were fully retired —
+the sqlite/redis/qdrant modules and the `aiosqlite` dependency were deleted
+outright, replaced by the `pg_*` repositories in `src/axon/store/`. GLYPH keeps
+graph **retrieval** in an in-memory `NetworkXStore` fed from Postgres
+(dec-116/117 stand). Neo4j was evaluated and dropped separately (dec-101).
+Guarded by `tests/test_no_{sqlite,qdrant,redis}.py` (import bans + pyproject
+dependency bans + deleted-module assertions — all currently passing).
 
 **Routing (dec-106, accepted):** tier shape is fixed (D2); concrete models come
 from `AXON_PROVIDER_PROFILE`:
@@ -111,68 +115,43 @@ never routed to cloud. Rate-limit breaches raise `DENY_RATE_LIMIT` (not a model
 failure). Per machine policy: **no local models/Postgres/Langfuse on the Mac** —
 cloud free-tier (NIM/Groq) is the default.
 
-## Active initiative — local roles (dec-122)
+## Local roles (dec-122) — landed
 
 Two subsystems run on a small instruct model instead of a frontier LLM:
 **scoring** (`expansion/scoring.py`, expansion-candidate verdicts) and the
-**caveman compressor** (`router/compressor.py`). dec-122 moves both off
+**caveman compressor** (`router/compressor.py`). dec-122 moved both off
 hard-wired local Ollama onto hosted **`gpt-oss-120b`**, split by provider:
 
 - **scoring → Groq** (`groq/openai/gpt-oss-120b`) — high RPM suits per-candidate bursts.
 - **compressor → Cerebras** (`cerebras/gpt-oss-120b`) — high TPM/TPD suits larger payloads.
 - `ctx=work` stays local/blocked, never reaches a hosted provider.
 
-Rationale (from the in-task `benchmark/model_eval.py` harness): `phi3:mini`
-dropped 100% of required symbols; `gpt-oss-120b` scored 1.00 on all checks at
+Rationale (from the `benchmark/model_eval.py` harness): `phi3:mini` dropped
+100% of required symbols; `gpt-oss-120b` scored 1.00 on all checks at
 ~0.7-1.2s; `qwen3:4b` matched quality but 2-40x slower; desktop Ollama had a
 KV-cache OOM trap from an unpinned `num_ctx`.
 
-**Status: uncommitted work-in-progress on `feat/axon-local-roles-wiring`** (the
-branch sits at the same commit as `master`; all wiring is in the working tree):
+Landed on `master`: `router/llm_backend.py` (`resolve_litellm_model()` +
+`litellm_kwargs()`), `config/runtime.py` (`scoring_model` / `scoring_num_ctx`),
+`expansion/scoring.py` (litellm-backed, dec-106 opt-in enforced),
+`router/compressor.py` (`caveman_compress(ctx=...)` + `is_corporate_context()`
+guard), `mcp/server.py` (`ask` threads `ctx=effective_ctx` through). TDD
+surface: `tests/router/test_llm_backend.py`, `tests/config/test_scoring_config.py`.
 
-| File | Change |
-|---|---|
-| `router/llm_backend.py` *(new)* | `resolve_litellm_model()` (bare name → `ollama/` prefix; known providers pass through) + `litellm_kwargs()` (ollama gets `api_base`+`num_ctx`; hosted providers get neither). |
-| `config/runtime.py` | New fields `scoring_model` / `scoring_num_ctx` (env `AXON_SCORING_MODEL`, `AXON_SCORING_NUM_CTX`). |
-| `expansion/scoring.py` | `ollama` → `litellm`; drops `host` param; `_slm_enabled()` enforces dec-106 opt-in; bare `except` → `logger.warning` before heuristic fallback. |
-| `router/compressor.py` | `caveman_compress(ctx=...)` + `is_corporate_context()` guard: never sends `ctx=work` to a hosted provider. |
-| `mcp/server.py` | `ask` threads `ctx=effective_ctx` into `caveman_compress_guarded`. |
+## Branch state
 
-TDD surface: `tests/router/test_llm_backend.py` (4 tests: prefix resolution +
-kwargs by provider), `tests/config/test_scoring_config.py` (2 tests: defaults +
-env resolution).
-
-## Branch state (vs `master` `556ac2d`) — curated 2026-06-26
-
-Verdicts established with `git cherry` (patch-id), not ahead/behind. Two dead
-branches were deleted (their commits were already in `master` by identical
-patch-id): `capture-robustness` (8 commits — dec-110/111/112/113/114, all
-already landed) and `feat/axon-pet` (0 unique commits).
-
-| Branch | Theme | Status | Action |
-|---|---|---|---|
-| `feat/axon-local-roles-wiring` | dec-122 wiring (uncommitted) | active, current work | finish → commit → PR |
-| `chore/oss-housekeeping` | AGPL-3.0 relicense + `pyproject` target-version fix | **new, salvaged from oss branch** | review → merge to master (license change) |
-| `oss-licensing-and-english` | only the PT→EN doc translation is still unmerged | stale (168 behind; covers pre-dec-115 docs) | re-translate fresh, then delete |
-| `agent/issue-29` | race-safe lazy pool/repo init (`asyncio.Lock`) | **ESSENTIAL, independent** | rebase + merge first (no overlap) |
-| `agent/issue-33` | dedupe SQLite helpers → `sqlite_helpers.py` | **ESSENTIAL** | rebase before #34 |
-| `agent/issue-34` | typed `SessionRepository` Protocol + `_session_columns.py` | **ESSENTIAL** | rebase after #33 |
-| `agent/issue-30` | versioned PG migration runner (`schema_version`) | **ESSENTIAL, foundational** | rebase before #27 |
-| `agent/issue-27-legendary` | idempotent SQLite→PG copy (`ON CONFLICT` natural key) | **ESSENTIAL** | rebase after #30 (move UNIQUE idx into migration SQL) |
-| `agent/issue-28` | atomic `end_session` (writable CTE) + non-destructive re-save | **ESSENTIAL** | rebase after #27 |
-| `agent/issue-35` | lint debt + Windows-path test fixes + PEP695 revert | **ESSENTIAL** (2 commits, apply as pair) | cherry-pick pair last |
-
-**The `agent/issue-*` batch** is a coordinated, agent-generated set (one GH issue
-each, #27-#35) hardening the **Postgres layer** whose base already lives in
-`master` (`pg_*_repository.py`, `migrations/*.sql`); dec-121 is still `proposed`.
-All seven are ESSENTIAL — none redundant — fixing live race conditions,
-non-idempotent copies, duplicated helpers, and untyped Protocols. Five edit
-`pg_session_repository.py` and three edit `session_repository.py`, so they
-**cannot merge independently**. Recommended rebase order:
-`#29 → #33 → #34 → #30 → #27 → #28 → #35`, tests after each. Issues #31
-(timestamptz) and #32 (migration validation) are open but have no branch yet.
-Note: the `pyproject` py312→py311 fix (in `chore/oss-housekeeping`) removes the
-root cause behind #35's PEP695 breakage.
+**Stale — the 2026-06-26 curation below no longer matches reality.** Every
+branch it tracked (the `feat/axon-local-roles-wiring` and `chore/oss-housekeeping`
+work, the full `agent/issue-27..35` batch) has landed on `master` and no
+longer exists, local or remote. `master` now also carries a fresh, unrelated
+set of branches (`agent/issue-60`, `agent/issue-63`, plus ~10 remote-only
+branches: `chore/retrieval-telemetry-analysis`, `docs/benchmarks-readme-retired`,
+`docs/issue-45-embedder-plan`, `docs/stale-launch-posts`,
+`feat/continuous-accounting`, `feat/honest-usage-wave1`,
+`feat/issue-45-embedder-bge-m3`, `feat/measured-claims-propagation`,
+`feat/session-savings-wave2`, and others) that have not been curated. This
+section needs a fresh `git cherry` pass before it can be trusted again — treat
+it as a to-do, not a status report, until that happens.
 
 ## Development & validation flow
 

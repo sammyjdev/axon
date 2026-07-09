@@ -1,6 +1,8 @@
 # AXON Metrics Manifest
 
-Date computed: 2026-06-08 (compression telemetry, test suite, and decision-record rows recomputed 2026-06-16)
+Date computed: 2026-06-08 (compression telemetry recomputed 2026-06-16; test
+suite, decision-record count, and storage rows recomputed 2026-07-09 after
+dec-121 retired SQLite/Qdrant/Redis/mem0 in favor of Postgres+pgvector)
 
 Source of truth: code and committed data files. Every figure below was recomputed
 from the live repo and traces to a command output or a committed file. No figure
@@ -24,11 +26,11 @@ Savings claims name their counterfactual per gnomon-eval ADR-0011.
 | Compression mean (measured telemetry) | 78.8% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
 | Compression p95 (measured telemetry) | 95.5% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
 | Compression max (measured telemetry) | 97.0% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
-| Test suite | 868 passed, 51 failed, 1 skipped | pytest tests/ -q (after pip install -e .) | the 51 failures are a Windows-only TOML path-escaping bug + the untracked data/architectural_lexicon.txt fixture | 920 total | 2026-06-16 |
+| Test suite | 1355 passed, 0 failed, 5 skipped, 7 xfailed | pytest tests/ -q | full suite green; the 4 CLI/TTY-detection failures present through 2026-06-16 were fixed 2026-07-09 | 1367 total | 2026-07-09 |
 | ADRs | 13 | docs/ADR.md | count of ADR-NNN headers, ADR-001 to ADR-013 | 13 | 2026-06-08 |
-| Decision records | 17 | docs/decisions/ | count of dec-*.md, dec-100 to dec-116 | 17 | 2026-06-16 |
-| Chunks ingested (storage) | NOT AVAILABLE as a canonical metric | live Qdrant localhost:6333 | runtime state only, not a committed file; local index is known polluted | n/a | 2026-06-08 |
-| Collections (storage) | NOT AVAILABLE as a canonical metric | live Qdrant localhost:6333 | runtime state only; live count is 5 (career, knowledge, personal, saas, work) | n/a | 2026-06-08 |
+| Decision records | 24 | docs/decisions/ | count of dec-*.md, dec-100 to dec-125 | 24 | 2026-07-09 |
+| Chunks ingested (storage) | RETIRED metric | n/a | Qdrant was the source for this metric; retired by dec-121 (Postgres+pgvector). No replacement metric computed yet | n/a | 2026-07-09 |
+| Collections (storage) | RETIRED metric | n/a | same as above — Qdrant collections no longer exist in the runtime | n/a | 2026-07-09 |
 | Retrieval or end-to-end latency | NOT AVAILABLE | data/trace/records.jsonl | no duration field; ts deltas across stages yield p50 0.001s, which is logging time, not measured latency | n/a | 2026-06-08 |
 
 ## Benchmark assumptions (deterministic model)
@@ -45,7 +47,9 @@ or measure real token consumption (see benchmarks/README.md caveats).
 
 ## Telemetry filter (live production data)
 
-- Source: `data/compression/stats.jsonl`, N=69 total records (committed snapshot; every record is a real compression event).
+- Source: `data/compression/stats.jsonl`, N=110 total records as of the committed
+  HEAD snapshot (69 of which have `reduction_pct > 0`; the rest are legitimate
+  no-op calls, see filter below).
 - Filter: `reduction_pct > 0` (the compression pipeline actually fired). This
   single filter already excludes every no-op: disabled engine, graph tools
   (get_graph_path, get_graph_neighbors), and rtk-only paths all record
@@ -58,10 +62,10 @@ or measure real token consumption (see benchmarks/README.md caveats).
 
 ## Storage note
 
-Live Qdrant (localhost:6333) currently holds 7061 points across 5 collections.
-This is volatile per-machine runtime state, not a committed repo figure, and the
-local index is known to be polluted (a .venv was indexed previously). It is not a
-publishable metric and is recorded here only for transparency.
+Qdrant was retired by dec-121 (2026-06-29): storage is now a single Postgres
+instance with pgvector for embeddings. The "chunks ingested" / "collections"
+runtime metrics this section used to report against live Qdrant no longer
+apply and have not been replaced with a Postgres-native equivalent yet.
 
 ## Reproduction commands
 
@@ -74,13 +78,13 @@ session_total(DEFAULT_SESSION, mode='axon'), round(savings(DEFAULT_SESSION)*100,
 
 # Compression telemetry (measured; reproduces from the committed snapshot)
 python -m axon.observability.compression_telemetry
-# -> count_total 69, count_compressed 69, p50 85.5, avg 78.8, p95 95.5, max 97.0
+# -> count_total 110, count_compressed 69, p50 85.5, avg 78.8, p95 95.5, max 97.0
 
 # Test suite (after: pip install -e .)
 pytest tests/ -q
-# -> 868 passed, 51 failed (Windows-only TOML path bug), 1 skipped
+# -> 1355 passed, 0 failed, 5 skipped, 7 xfailed
 
 # ADR count
 grep -c "^#\+ ADR-" docs/ADR.md            # 13
-ls docs/decisions/dec-*.md | wc -l         # 16
+ls docs/decisions/dec-*.md | wc -l         # 24
 ```

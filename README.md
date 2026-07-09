@@ -132,10 +132,7 @@ flowchart LR
     end
 
     subgraph Storage
-        SQ[(SQLite\nsource of truth)]
-        RD[(Redis\ngraph cache)]
-        QD[(Qdrant\ncode vectors + mem0 backend)]
-        M0[(mem0\nsemantic memory)]
+        PG[(PostgreSQL + pgvector\nsessions, decisions, graph, vectors)]
     end
 
     subgraph Recall
@@ -149,14 +146,10 @@ flowchart LR
         CU[Cursor]
     end
 
-    GE --> SQ
-    SH --> SQ
-    SQ --> RD
-    SQ --> QD
-    SQ --> M0
-    QD --> M0
-    SQ --> MCP
-    SQ --> CF
+    GE --> PG
+    SH --> PG
+    PG --> MCP
+    PG --> CF
     MCP --> CC
     MCP --> CX
     MCP --> CU
@@ -168,9 +161,12 @@ Capture is **event-driven only** — git commit/push/init and agent session
 start/end. No background timer, no idle cost (see
 [dec-104](docs/decisions/dec-104-event-driven-not-time-driven.md)).
 
-Storage is: **SQLite** (source of truth) + **Redis** (graph cache) +
-**Qdrant** (code vector search and mem0 backend) + **mem0** (semantic memory).
-Neo4j was evaluated and dropped
+Storage is a single **PostgreSQL** instance with **pgvector** for embeddings:
+sessions, decisions, ADRs, the code-dependency graph, and code vectors all
+live in Postgres
+([dec-121](docs/decisions/dec-121-postgres-unified-storage.md)). SQLite,
+Redis, Qdrant, and mem0 were retired as part of that consolidation. Neo4j was
+evaluated and dropped separately
 ([dec-101](docs/decisions/dec-101-revoke-d4-drop-neo4j.md)).
 
 The primary transport is **MCP (stdio)**. A `.axon/context.md` file in the repo
@@ -192,7 +188,7 @@ index from the previous session — no copy-pasting required.
 
 On a project that spans weeks, the important context is not your last five
 messages but the architectural decisions made three sprints ago. AXON captures
-decisions from commit messages and session summaries into SQLite, so `axon
+decisions from commit messages and session summaries into Postgres, so `axon
 search` and `axon_get_context` return what actually matters, not stale history.
 
 ### Auto-generated architecture docs
