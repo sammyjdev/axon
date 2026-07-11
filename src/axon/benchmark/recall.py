@@ -36,7 +36,7 @@ def _gather_chunks(src_root: Path, repo_root: Path) -> list:
         rel_path = py_file.relative_to(repo_root).as_posix()
         try:
             chunks = chunk_source(source, "python", rel_path)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S112
             continue
         all_chunks.extend(chunks)
     return all_chunks

@@ -27,8 +27,8 @@ def _installed_repo_root() -> Path:
 def check_install_branch() -> CheckResult:
     try:
         root = _installed_repo_root()
-        completed = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
+        completed = subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],  # noqa: S607
             capture_output=True,
             text=True,
             timeout=_TIMEOUT_S,

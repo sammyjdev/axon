@@ -45,8 +45,8 @@ def iter_git_files(root: Path, *, suffixes: set[str]) -> list[Path]:
     this limitation.
     """
     try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "--cached"],
+        result = subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), "ls-files", "--cached"],  # noqa: S607
             capture_output=True,
             text=True,
             check=True,
@@ -75,8 +75,8 @@ def iter_git_files(root: Path, *, suffixes: set[str]) -> list[Path]:
     rel_posix = {p: p.relative_to(root).as_posix() for p in all_tracked}
     try:
         check_input_bytes = ("\0".join(rel_posix.values()) + "\0").encode("utf-8")
-        ignore_result = subprocess.run(
-            ["git", "-C", str(root), "check-ignore", "--no-index", "--stdin", "-z"],
+        ignore_result = subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), "check-ignore", "--no-index", "--stdin", "-z"],  # noqa: S607
             input=check_input_bytes,
             capture_output=True,
         )

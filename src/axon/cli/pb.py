@@ -416,10 +416,14 @@ def rtk_status() -> None:
         raise typer.Exit(1)
 
     typer.echo(f"RTK: instalado em {rtk_path}")
-    version = subprocess.run([rtk_path, "--version"], capture_output=True, text=True)
+    version = subprocess.run(  # noqa: S603
+        [rtk_path, "--version"], capture_output=True, text=True
+    )
     typer.echo((version.stdout or version.stderr or "versão indisponível").strip())
 
-    show = subprocess.run([rtk_path, "init", "--show"], capture_output=True, text=True)
+    show = subprocess.run(  # noqa: S603
+        [rtk_path, "init", "--show"], capture_output=True, text=True
+    )
     if show.returncode == 0 and (show.stdout or "").strip():
         typer.echo("\nRTK init --show:")
         typer.echo(show.stdout.strip())
@@ -458,7 +462,7 @@ def rtk_init(
         raise typer.BadParameter("agent deve ser claude, codex ou copilot")
 
     typer.echo(f"Executando: {' '.join(cmd)}")
-    result = subprocess.run(cmd, text=True)
+    result = subprocess.run(cmd, text=True)  # noqa: S603
     if result.returncode != 0:
         raise typer.Exit(result.returncode)
     typer.echo("RTK inicializado com sucesso.")
@@ -514,7 +518,7 @@ def rtk_proxy(
 
     cmd = [rtk_path, "proxy", *parts]
     typer.echo(f"Executando: {' '.join(cmd)}")
-    result = subprocess.run(cmd, text=True)
+    result = subprocess.run(cmd, text=True)  # noqa: S603
     if result.returncode != 0:
         raise typer.Exit(result.returncode)
 
@@ -683,7 +687,9 @@ def doctor(
     rtk_path = rtk_binary_path()
     if rtk_path:
         try:
-            rtk_v = subprocess.check_output([rtk_path, "--version"], text=True, timeout=3).strip()
+            rtk_v = subprocess.check_output(  # noqa: S603
+                [rtk_path, "--version"], text=True, timeout=3
+            ).strip()
         except Exception:
             rtk_v = "unknown"
         presence_lines.append(f"- rtkx: ok ({rtk_v}) [{rtk_path}]")
@@ -1071,9 +1077,9 @@ def configure(
                 optional=True,
             )
 
-    assert normalized_use_case is not None
-    assert normalized_privacy is not None
-    assert normalized_hardware is not None
+    assert normalized_use_case is not None  # noqa: S101
+    assert normalized_privacy is not None  # noqa: S101
+    assert normalized_hardware is not None  # noqa: S101
     _validate_configure_combination(
         privacy=normalized_privacy,
         preferred_mode=normalized_preferred_mode,
@@ -2103,7 +2109,7 @@ def scan(
             from axon.config.projects import load_project_manifest
             existing = load_project_manifest(manifest_path)
             existing_names = {e.name for e in existing}
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
     def find_repos(base: Path, current_depth: int) -> list[Path]:

@@ -305,7 +305,7 @@ class ExpansionService:
         finally:
             try:
                 asyncio.run(self.outcome_store.close())
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
     def _record_failure(
@@ -334,7 +334,7 @@ class ExpansionService:
         finally:
             try:
                 asyncio.run(self.failure_store.close())
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
     def _validate_context(self, ctx: str) -> None:

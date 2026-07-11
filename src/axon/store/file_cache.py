@@ -61,7 +61,7 @@ def sha1_of_source(source: str) -> str:
 
     Does not pass usedforsecurity kwarg to match pipeline.py exactly.
     """
-    return hashlib.sha1(source.encode("utf-8")).hexdigest()
+    return hashlib.sha1(source.encode("utf-8")).hexdigest()  # noqa: S324
 
 
 async def make_file_cache(runtime: RuntimeConfig) -> tuple[FileCache, object]:
