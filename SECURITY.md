@@ -33,6 +33,9 @@ security surface includes:
 - Git hook installation (`axon hooks install`)
 - Pre-commit hooks (`.pre-commit-config.yaml`): `ruff` lint and `gitleaks`
   secret scanning via the standard `pre-commit` framework
+- CI secret scanning (`.github/workflows/ci.yml`): `gitleaks` re-scans every
+  pull request's full commit range as a safety net for commits that bypass
+  the pre-commit hook (`--no-verify`, or `pre-commit` not installed)
 
 Issues outside this scope (e.g. vulnerabilities in a pinned third-party
 dependency) should be reported upstream, but feel free to flag them here too
