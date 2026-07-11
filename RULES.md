@@ -94,3 +94,13 @@ promotes them into a section above after curation.
   (e.g. `--help`) and asserts on output unique to the correct underlying
   function (a distinctive option flag or docstring phrase), not merely that the
   name exists. (FORGE #60)
+- **A security-lint suppression (`# noqa`) justified against a function's
+  primary call site must be re-checked against every OTHER caller of that
+  function.** Trust assumptions can differ per caller: a URL-fetch helper
+  suppressed for S310 as "first-party/config-sourced URL" (its main call
+  site) can be reused by a second caller that feeds it URLs extracted from
+  untrusted remote content (e.g. `<link>` elements parsed from a followed
+  feed), turning an accurate suppression into a latent SSRF/file-read gap.
+  Check: before finalizing a suppression's justification, grep every caller
+  of the suppressed function/line and confirm the trust rationale holds for
+  ALL of them, not just the one the maker happened to read first. (FORGE #68)
