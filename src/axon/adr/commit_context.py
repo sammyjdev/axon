@@ -95,4 +95,4 @@ def from_head(repo_root: Path | None = None) -> CommitContext:
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.check_output(["git", *args], text=True, cwd=str(root))
+    return subprocess.check_output(["git", *args], text=True, cwd=str(root))  # noqa: S603, S607

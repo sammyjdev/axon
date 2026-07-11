@@ -45,7 +45,7 @@ def _created_after(path: Path, cutoff: date) -> bool:
             if line.startswith("created:"):
                 created_str = line.split(":", 1)[1].strip()
                 return date.fromisoformat(created_str[:10]) >= cutoff
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     # Fallback: mtime do arquivo
     import datetime

@@ -111,7 +111,7 @@ def init(
                 "index",
                 payload={"phase": "start", "target": str(repo_path)},
             )
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         try:
@@ -127,7 +127,7 @@ def init(
                     "index",
                     payload={"phase": "done", "symbols": count_sym},
                 )
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         return count_sym

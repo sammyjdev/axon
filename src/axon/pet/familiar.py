@@ -156,7 +156,7 @@ class ActivityPoller:
                 continue
             try:
                 new_records.append(json.loads(line))
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
         return new_records
 

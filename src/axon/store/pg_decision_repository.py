@@ -146,7 +146,7 @@ class PostgresDecisionRepository:
             where = " WHERE frontmatter->>'repo' = $2"
         async with pool.acquire() as con:
             row = await con.fetchrow(
-                "SELECT"
+                "SELECT"  # noqa: S608
                 " COUNT(*) AS n_total,"
                 " COUNT(*) FILTER (WHERE frontmatter->>'judged' = 'true') AS n_scored,"
                 " COUNT(*) FILTER (WHERE frontmatter->>'judged' = 'true'"

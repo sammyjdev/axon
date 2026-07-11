@@ -272,7 +272,7 @@ async def ingest_vault(
                 if close is not None:
                     try:
                         await close()
-                    except Exception:  # noqa: BLE001
+                    except Exception:  # noqa: BLE001, S110
                         pass
 
     logger.info(

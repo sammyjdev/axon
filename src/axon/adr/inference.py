@@ -135,7 +135,7 @@ async def run_for_head_async(
         )
 
     if outcome is not None and not outcome.passed:
-        assert commit_ctx is not None  # narrow for type checker
+        assert commit_ctx is not None  # noqa: S101
         draft = DraftRecord(
             commit_hash=commit_ctx.commit_hash,
             title=payload.title,
@@ -188,8 +188,8 @@ async def run_for_head_async(
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.check_output(
-        ["git", *args], text=True, cwd=str(root)
+    return subprocess.check_output(  # noqa: S603
+        ["git", *args], text=True, cwd=str(root)  # noqa: S607
     )
 
 

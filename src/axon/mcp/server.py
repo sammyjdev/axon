@@ -1006,7 +1006,7 @@ def _detect_repo_root() -> Path | None:
 
     try:
         root = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", "rev-parse", "--show-toplevel"],  # noqa: S607
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()

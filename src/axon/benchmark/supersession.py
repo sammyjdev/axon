@@ -106,7 +106,7 @@ async def run_ab(scenarios: tuple[SupersessionScenario, ...]) -> dict[str, Metri
 
         for sc in supersession:
             ranks = await _ranks(sc, enable=enable)
-            assert sc.current_id and sc.stale_id
+            assert sc.current_id and sc.stale_id  # noqa: S101
             cur = ranks.get(sc.current_id, 0.0)
             stale = ranks.get(sc.stale_id, 0.0)
             if sc.stale_id in ranks:

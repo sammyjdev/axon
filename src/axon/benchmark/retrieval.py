@@ -89,7 +89,7 @@ FIRST_RETRIEVAL_BENCHMARK = RetrievalBenchmarkFixture(
             "payload": {
                 "symbol": "upsert",
                 "language": "python",
-                "file_path": "/tmp/vector_store.py",
+                "file_path": "/tmp/vector_store.py",  # noqa: S108
                 "content": "async def upsert(self, chunk): ...",
             },
         },

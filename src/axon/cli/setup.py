@@ -36,7 +36,7 @@ def run_step_transport(session: SetupSession) -> SetupSession:
                 typer.echo("Port must be a number (e.g. 8080).", err=True)
         return SetupSession(**{**session.__dict__, "transport": "http", "http_port": port})
 
-    host = typer.prompt("Host", default="0.0.0.0")
+    host = typer.prompt("Host", default="0.0.0.0")  # noqa: S104
     while True:
         port_str = typer.prompt("Port", default="8080")
         try:
@@ -190,8 +190,8 @@ def run_step_commit(
 
     # 4. Smoke test: compile src
     src_root = Path(__file__).parents[3] / "src" / "axon"
-    result = _sp.run(
-        ["python3", "-m", "compileall", "-q", str(src_root)],
+    result = _sp.run(  # noqa: S603
+        ["python3", "-m", "compileall", "-q", str(src_root)],  # noqa: S607
         capture_output=True,
         text=True,
     )

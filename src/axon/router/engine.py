@@ -101,7 +101,7 @@ def daily_cost() -> float:
             _COST_CACHE["value"] = float(r.json().get("cost", 0.0))
             _COST_CACHE["at"] = now
             return _COST_CACHE["value"]
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     _COST_CACHE["value"] = 0.0
     _COST_CACHE["at"] = now

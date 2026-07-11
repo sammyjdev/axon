@@ -64,7 +64,7 @@ def compress_text_with_rtk(text: str, max_tokens: int, timeout_seconds: int = 10
         tmp_path = Path(tmp.name)
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             [path, "read", str(tmp_path)],
             capture_output=True,
             text=True,
@@ -103,7 +103,7 @@ def store_original_with_rtk(text: str, timeout_seconds: int = 10) -> str | None:
         tmp_path = Path(tmp.name)
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             [path, "ccr", "store", str(tmp_path)],
             capture_output=True,
             text=True,
@@ -130,7 +130,7 @@ def restore_original_with_rtk(handle: str, timeout_seconds: int = 10) -> str:
         raise RTKError("rtk binary not found")
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             [path, "ccr", "restore", handle],
             capture_output=True,
             text=True,

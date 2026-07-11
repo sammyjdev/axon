@@ -50,7 +50,7 @@ async def with_retry(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise RetryExhausted("retry budget exhausted") from last_exc
-            jitter = delay * jitter_ratio * (random.random() * 2 - 1)
+            jitter = delay * jitter_ratio * (random.random() * 2 - 1)  # noqa: S311
             sleep_for = max(0.0, min(delay + jitter, remaining))
             await asyncio.sleep(sleep_for)
             delay = min(delay * multiplier, max_delay_s)

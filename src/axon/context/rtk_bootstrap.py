@@ -86,7 +86,7 @@ def attestations_url(digest_sha256: str, repo: str = RTKX_REPO) -> str:
 
 
 def _fetch_attestations(url: str) -> list:
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310
         url, headers={"User-Agent": _USER_AGENT, "Accept": "application/vnd.github+json"}
     )
     with urllib.request.urlopen(req) as resp:  # noqa: S310
@@ -95,7 +95,7 @@ def _fetch_attestations(url: str) -> list:
 
 
 def _http_download(url: str, dest: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})  # noqa: S310
     with urllib.request.urlopen(req) as resp, dest.open("wb") as fh:  # noqa: S310
         fh.write(resp.read())
 
@@ -106,7 +106,7 @@ def resolve_latest_tag(repo: str = RTKX_REPO, *, include_prerelease: bool = Fals
         url = f"https://api.github.com/repos/{repo}/releases"
     else:
         url = f"https://api.github.com/repos/{repo}/releases/latest"
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})  # noqa: S310
     try:
         with urllib.request.urlopen(req) as resp:  # noqa: S310
             payload = json.loads(resp.read())
