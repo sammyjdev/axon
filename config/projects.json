@@ -118,6 +118,13 @@
       "ctx": "saas",
       "enabled": true,
       "languages": ["python", "markdown", "text"]
+    },
+    {
+      "name": "claude-skills",
+      "path": "/Users/samdev/.claude",
+      "ctx": "personal",
+      "enabled": true,
+      "languages": ["python", "markdown", "text"]
     }
   ]
 }
