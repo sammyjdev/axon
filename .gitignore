@@ -69,3 +69,4 @@ docker-compose.override.yml
 # Coverage artifacts
 .coverage
 .coverage.*
+.wrangler/
