@@ -104,3 +104,12 @@ promotes them into a section above after curation.
   Check: before finalizing a suppression's justification, grep every caller
   of the suppressed function/line and confirm the trust rationale holds for
   ALL of them, not just the one the maker happened to read first. (FORGE #68)
+- **Generated prose (docs, CI step names, commit bodies) needs an explicit
+  em/en-dash scan before commit, not just a mental style check.** A maker
+  writing new CONTRIBUTING.md/README.md/SECURITY.md prose reached for an
+  em-dash mid-sentence despite "Plain hyphens only" being an enforced
+  RULES.md invariant the maker's own brief already named - the violation
+  wasn't caught until independent review. Check: `grep -n "—\|–" <changed
+  doc files>` on every new/modified line (diff against the pre-change file
+  to exclude pre-existing, out-of-scope hits) before the maker reports the
+  change as done, not left solely to the reviewer to catch. (FORGE #73)
