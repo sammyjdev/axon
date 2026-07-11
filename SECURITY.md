@@ -31,6 +31,8 @@ security surface includes:
 - The `ctx=work` restricted-context isolation (see `docs/decisions/dec-109-*.md`)
 - MCP tool risk gating (`read` / `write` / `destructive`, see ADR-013)
 - Git hook installation (`axon hooks install`)
+- Pre-commit hooks (`.pre-commit-config.yaml`): `ruff` lint and `gitleaks`
+  secret scanning via the standard `pre-commit` framework
 
 Issues outside this scope (e.g. vulnerabilities in a pinned third-party
 dependency) should be reported upstream, but feel free to flag them here too
