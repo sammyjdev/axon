@@ -11,6 +11,8 @@ from typing import Any
 from urllib.parse import urljoin
 from xml.etree import ElementTree
 
+from defusedxml.ElementTree import fromstring as _safe_fromstring
+
 from axon.expansion.models import SourceDefinition, SourceDocument, SourceFormat
 
 
@@ -70,7 +72,7 @@ def _extract_rss_items(
     payload: str,
     article_payloads: dict[str, str],
 ) -> list[SourceDocument]:
-    root = ElementTree.fromstring(payload)
+    root = _safe_fromstring(payload)
     items: list[SourceDocument] = []
     for node in root.findall(".//item"):
         title = _normalize_text(_xml_text(node.find("title")))
@@ -98,7 +100,7 @@ def _extract_atom_items(
     payload: str,
     article_payloads: dict[str, str],
 ) -> list[SourceDocument]:
-    root = ElementTree.fromstring(payload)
+    root = _safe_fromstring(payload)
     namespace = ""
     if root.tag.startswith("{") and "}" in root.tag:
         namespace = root.tag.split("}", 1)[0] + "}"
@@ -290,10 +292,10 @@ def resolve_article_urls(
     if not source.follow_links:
         return []
     if source.format is SourceFormat.RSS:
-        root = ElementTree.fromstring(payload)
+        root = _safe_fromstring(payload)
         urls = [_xml_text(node.find("link")).strip() for node in root.findall(".//item")]
     elif source.format is SourceFormat.ATOM:
-        root = ElementTree.fromstring(payload)
+        root = _safe_fromstring(payload)
         namespace = ""
         if root.tag.startswith("{") and "}" in root.tag:
             namespace = root.tag.split("}", 1)[0] + "}"
