@@ -9,6 +9,7 @@ expect some rough edges and fast-moving internals.
 git clone https://github.com/sammyjdev/axon.git
 cd axon
 pip install -e ".[dev]"
+pre-commit install   # ruff lint + gitleaks secret-scan on commit (.pre-commit-config.yaml)
 ```
 
 ## Before opening a PR
