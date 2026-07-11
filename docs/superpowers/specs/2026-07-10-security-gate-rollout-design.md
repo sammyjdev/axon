@@ -78,19 +78,40 @@ finding volume, DAST approach).
 
 ## Axon backlog (phase 1)
 
+Published directly as GitHub issues (see "Publishing" below) — `to-prd`/
+`to-issues` were bypassed since axon isn't onboarded to the Pocock
+`docs/agents/*` convention; FORGE's own `agent:ready`/`agent:blocked` labels
+(from `.claude/loop.yaml`) are the ones that actually matter for `forge task`.
+
 | # | Issue | Depends on |
 |---|---|---|
-| 1 | `.pre-commit-config.yaml` (ruff + gitleaks) | — |
-| 2 | `ruff --select S` in report mode, triage findings | — |
-| 3 | `ruff S` blocking in CI | 2 |
-| 4 | `pip-audit` CI job | — |
-| 5 | `gitleaks` full-history CI job | — |
-| 6 | `hypothesis` tests on the highest-risk parsing entry point | — |
-| 7 | DAST job (ZAP baseline vs FastAPI/MCP server), non-blocking | — |
-| 8 | DAST promoted to blocking, after baseline review | 7 |
+| [#67](https://github.com/sammyjdev/axon/issues/67) | `.pre-commit-config.yaml` (ruff + gitleaks) | — |
+| [#68](https://github.com/sammyjdev/axon/issues/68) | `ruff --select S` in report mode, triage findings | — |
+| [#69](https://github.com/sammyjdev/axon/issues/69) | `ruff S` blocking in CI | #68 |
+| [#70](https://github.com/sammyjdev/axon/issues/70) | `pip-audit` CI job | — |
+| [#71](https://github.com/sammyjdev/axon/issues/71) | `gitleaks` full-history CI job | — |
+| [#72](https://github.com/sammyjdev/axon/issues/72) | `hypothesis` tests on `_load_toml_runtime_overrides` (`src/axon/config/runtime.py:225`) | — |
+| [#73](https://github.com/sammyjdev/axon/issues/73) | DAST job (ZAP baseline vs FastAPI/MCP server), non-blocking | — |
+| [#74](https://github.com/sammyjdev/axon/issues/74) | DAST promoted to blocking, after baseline review | #73 |
 
-(A 9th slot is reserved during `to-issues` triage if the vertical-slice pass
-splits any of the above — the count is a planning estimate, not a hard cap.)
+`#69` and `#74` are filed with `agent:blocked` (not `agent:ready`) since they
+depend on `#68`/`#73` landing first — flip the label once the dependency is
+merged.
+
+## Publishing
+
+Issues were created via `gh issue create` directly against `sammyjdev/axon`,
+not through `to-prd`/`to-issues`. Those Pocock skills hard-require
+`docs/agents/issue-tracker.md` + `docs/agents/triage-labels.md`, which axon
+doesn't have (unlike `glyph-kg`/`gnomon-eval`) — and FORGE's own loop
+already defines the label vocabulary that actually drives `forge task`
+(`agent:ready` / `agent:blocked` in `.claude/loop.yaml`), which differs from
+Pocock's `ready-for-agent` vocabulary. Running axon through Pocock onboarding
+just to satisfy `to-prd`'s gate would have produced a second, unused label
+scheme. `forge blueprint`'s own issue-publishing convention (spec → GitHub
+issue, label `{READY}` resolved from `loop.yaml`) was the closer fit; its
+Temper (requirement-closure) phase was already satisfied by this doc's
+brainstorming pass, so blueprint wasn't re-run per issue.
 
 ## Benchmark: Codex vs Claude Code
 
