@@ -70,7 +70,7 @@ def detect_platform() -> PlatformConfig:
 def _get_mac_memory() -> int:
     try:
         result = subprocess.run(
-            ["sysctl", "hw.memsize"],
+            ["sysctl", "hw.memsize"],  # noqa: S607
             capture_output=True,
             text=True,
             check=True,
@@ -82,7 +82,7 @@ def _get_mac_memory() -> int:
 
 def _get_nvidia_vram() -> int:
     result = subprocess.run(
-        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],  # noqa: S607
         capture_output=True,
         text=True,
     )

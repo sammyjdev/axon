@@ -169,7 +169,7 @@ class PgVectorStore:
                     language=EXCLUDED.language, chunk_type=EXCLUDED.chunk_type,
                     symbol=EXCLUDED.symbol, project=EXCLUDED.project, content=EXCLUDED.content,
                     git_commit=EXCLUDED.git_commit, modified_at=EXCLUDED.modified_at
-                """,
+                """,  # noqa: S608
                 rows,
             )
 
@@ -196,7 +196,7 @@ class PgVectorStore:
             WHERE {where}
             ORDER BY vector <=> $1
             LIMIT {int(top_k)}
-        """
+        """  # noqa: S608
         async with pool.acquire() as con:
             records = await con.fetch(sql, *params)
             lexical_records = []
@@ -210,7 +210,7 @@ class PgVectorStore:
                     WHERE content_tsv @@ q.query AND {lex_where}
                     ORDER BY ts_rank(content_tsv, q.query) DESC
                     LIMIT {int(top_k)}
-                """
+                """  # noqa: S608
                 lexical_records = await con.fetch(lex_sql, *lex_params)
         results = [_record_to_result(r) for r in records]
         if lexical_records:
@@ -227,7 +227,9 @@ class PgVectorStore:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             await con.execute(
-                f"DELETE FROM {self._table} WHERE ctx=$1 AND file_path=$2", ctx, file_path
+                f"DELETE FROM {self._table} WHERE ctx=$1 AND file_path=$2",  # noqa: S608
+                ctx,
+                file_path,
             )
 
     async def close(self) -> None:

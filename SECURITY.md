@@ -31,6 +31,14 @@ security surface includes:
 - The `ctx=work` restricted-context isolation (see `docs/decisions/dec-109-*.md`)
 - MCP tool risk gating (`read` / `write` / `destructive`, see ADR-013)
 - Git hook installation (`axon hooks install`)
+- Pre-commit hooks (`.pre-commit-config.yaml`): `ruff` lint and `gitleaks`
+  secret scanning via the standard `pre-commit` framework
+- CI secret scanning (`.github/workflows/ci.yml`): `gitleaks` re-scans every
+  pull request's full commit range as a safety net for commits that bypass
+  the pre-commit hook (`--no-verify`, or `pre-commit` not installed)
+- CI dynamic security testing (`.github/workflows/ci.yml`): OWASP ZAP baseline
+  scan runs against the FastAPI/MCP server on every pull request (non-blocking;
+  scan report available as CI artifact `dast-zap-baseline-report`)
 
 Issues outside this scope (e.g. vulnerabilities in a pinned third-party
 dependency) should be reported upstream, but feel free to flag them here too

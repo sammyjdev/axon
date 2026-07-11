@@ -22,8 +22,8 @@ class UrllibSourceTransport:
         return await asyncio.to_thread(self._fetch_sync, url, headers)
 
     def _fetch_sync(self, url: str, headers: dict[str, str]) -> SourceResponse:
-        request = Request(url, headers=headers)
-        with urlopen(request, timeout=self.timeout_seconds) as response:
+        request = Request(url, headers=headers)  # noqa: S310
+        with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
             charset = response.headers.get_content_charset() or "utf-8"
             body = response.read().decode(charset, errors="replace")
             return SourceResponse(

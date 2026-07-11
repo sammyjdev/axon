@@ -9,6 +9,7 @@ expect some rough edges and fast-moving internals.
 git clone https://github.com/sammyjdev/axon.git
 cd axon
 pip install -e ".[dev]"
+pre-commit install   # ruff lint + gitleaks secret-scan on commit (.pre-commit-config.yaml)
 ```
 
 ## Before opening a PR
@@ -21,6 +22,14 @@ python3 -m compileall src
 
 All tests must pass. Fix `ruff` errors; warnings are at your discretion until
 the broader lint scope is enforced in CI (see `.github/workflows/ci.yml`).
+
+## CI workflow and artifacts
+
+On every pull request, the CI runs security and validation checks including:
+linting, compilation, tests, dependency audit, secret scanning, and dynamic
+security testing (OWASP ZAP baseline scan). The ZAP scan report is available
+as a CI artifact (`dast-zap-baseline-report`) in the Actions tab of the pull
+request - use it to review potential security findings.
 
 ## Workflow
 

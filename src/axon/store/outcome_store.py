@@ -85,7 +85,7 @@ class OutcomeStore:
         params.append(limit)
         where_clause = " AND ".join(conditions)
         rows = await self._fetch(
-            f"SELECT * FROM outcome_record WHERE {where_clause}"
+            f"SELECT * FROM outcome_record WHERE {where_clause}"  # noqa: S608
             f" ORDER BY created_at DESC LIMIT ${len(params)}",
             *params,
         )

@@ -123,8 +123,8 @@ def l1_full(adr_text: str, *, repo_root: Path) -> tuple[bool, dict[str, object]]
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.check_output(
-        ["git", *args],
+    return subprocess.check_output(  # noqa: S603
+        ["git", *args],  # noqa: S607
         text=True,
         cwd=str(root),
         stderr=subprocess.DEVNULL,

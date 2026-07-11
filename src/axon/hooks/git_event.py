@@ -39,7 +39,7 @@ _AGENTS = {"claude-code", "codex", "cursor", "manual"}
 
 
 def _git(args: list[str], cwd: Path | None = None) -> str:
-    return subprocess.check_output(["git", *args], cwd=cwd, text=True).strip()
+    return subprocess.check_output(["git", *args], cwd=cwd, text=True).strip()  # noqa: S603, S607
 
 
 def _repo_root(cwd: Path | None = None) -> Path:

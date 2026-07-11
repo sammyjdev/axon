@@ -50,8 +50,8 @@ def symbols_touched_by_commit(
     """
     root = Path(repo_root)
     try:
-        diff = subprocess.check_output(
-            ["git", "-C", str(root), "show", commit_hash,
+        diff = subprocess.check_output(  # noqa: S603
+            ["git", "-C", str(root), "show", commit_hash,  # noqa: S607
              "--unified=0", "--no-color", "--format="],
             text=True,
         )

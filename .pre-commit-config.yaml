@@ -1,0 +1,22 @@
+# Security + lint gate (issue #67). The pre-commit framework is the umbrella;
+# `axon hooks install --apply` additively registers an axon-post-commit entry
+# INTO this file (dec-113) — it is an optional integration, not superseded here.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.21
+    hooks:
+      - id: ruff-check
+        # Reads pyproject.toml [tool.ruff.lint] (E,F,I,UP) as-is — no args.
+        # Excludes pre-existing findings (I001/UP006/UP035/E402/E501) that are
+        # out-of-scope debt for #67 and cannot be fixed here: 4 in test files
+        # (the loop forbids modifying existing test files) plus 8 more in
+        # doc/ (a separate, self-contained AXON ecosystem health-check
+        # sub-tool, never covered by this repo's CI ruff job either) and
+        # scripts/. Mirrors ci.yml's dec-107 scope TODO. This is an
+        # enumerated ratchet, not a directory exclude — any NEW file added
+        # under doc/ or scripts/ is still linted.
+        exclude: ^(tests/(config/test_runtime_expansion|context/test_rtk_ccr|embedder/test_md_relations|store/test_stores)|doc/(scripts/checks/(ci_status|coupling|drift|performance|versioning)|scripts/health-check|tests/test_health_check)|scripts/analyze_retrieval_telemetry)\.py$
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

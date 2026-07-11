@@ -29,8 +29,8 @@ class ScopeSignal:
 def tag_at_head(repo_root: Path | str) -> str | None:
     """Return a tag pointing at HEAD, or None if there is none."""
     try:
-        out = subprocess.check_output(
-            ["git", "-C", str(repo_root), "tag", "--points-at", "HEAD"],
+        out = subprocess.check_output(  # noqa: S603
+            ["git", "-C", str(repo_root), "tag", "--points-at", "HEAD"],  # noqa: S607
             text=True,
             stderr=subprocess.DEVNULL,
         )
