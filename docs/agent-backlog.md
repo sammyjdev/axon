@@ -5,8 +5,125 @@ Each item is independently pickable: scope, acceptance criteria, and test plan
 are self-contained. Shared context lives in the linked spec.
 
 Status legend: `ready` (pickable now) | `blocked` (waiting on a dep) |
-`in-progress` | `done`. Priority: P1 (correctness/high-impact) > P2 (safety) >
-P3 (quality). Size: S (<1d) / M (1-2d) / L (multi-day).
+`in-progress` | `done`. Priority: P0 (false safety signal) > P1
+(correctness/high-impact) > P2 (safety) > P3 (quality). Size: S (<1d) /
+M (1-2d) / L (multi-day).
+
+Epic: **Benchmark-guided AXON evolution** -
+[`docs/superpowers/specs/2026-07-11-benchmark-guided-axon-evolution-design.md`](superpowers/specs/2026-07-11-benchmark-guided-axon-evolution-design.md).
+Fix confirmed contract gaps before adding retrieval techniques. Recommended order:
+**L1-0** first; **OPS-1**, **HTTP-1**, and **EMB-1** are independent; **L1-1**
+waits for an owner decision about index authority and freshness.
+
+---
+
+## L1-0 - Make L1-full revalidation honest
+
+- Priority: P0 | Size: S | Status: ready | Depends-on: none
+- Spec: benchmark-guided evolution, "Task L1-0"
+
+**Problem.** `l1_full()` returns unconditional stub success and
+`axon adr validate-drafts` updates `last_l1_full_at`, clearing `stale-pending`
+without structural validation.
+
+**Acceptance criteria.**
+- [ ] An unavailable L1-full backend returns `indeterminate` and leaves
+      `last_l1_full_at` unchanged.
+- [ ] The draft remains active and `stale-pending`; it is not validated,
+      promoted, or demoted.
+- [ ] CLI and git-event callers share the same tri-state transition and report
+      `validated`, `demoted`, and `indeterminate` separately.
+- [ ] Lookup failures fail safe as `indeterminate`; L1-light is unchanged.
+
+**Files.** `src/axon/adr/gates/l1.py`, `src/axon/cli/pb.py`,
+`src/axon/hooks/git_event.py`, focused ADR/CLI/doctor tests.
+
+**Test plan.** Start with a regression test for the false timestamp update, then
+run `rtk pytest tests/adr/gates/test_l1.py tests/adr/test_clis.py
+tests/doctor/test_checks_adr.py -q`.
+
+---
+
+## L1-1 - Connect L1-full to the structural index
+
+- Priority: P1 | Size: M | Status: blocked | Depends-on: L1-0 + owner decision
+- Spec: benchmark-guided evolution, "Task L1-1"
+
+**Blocker.** Decide which existing Postgres structure is authoritative for
+symbol existence, how repository identity scopes keys, and how index freshness
+is proven for the evaluated revision. Missing, ambiguous, or stale evidence must
+remain `indeterminate`.
+
+**Acceptance criteria.**
+- [ ] The owner decision records index authority, repository scope, freshness,
+      and path/symbol candidate semantics.
+- [ ] Present candidates in the correct repository return `validated`.
+- [ ] Absent candidates in a proven-current index return `demoted` with details.
+- [ ] Missing, stale, ambiguous, or unavailable index state returns
+      `indeterminate` without renewing the timestamp.
+- [ ] CLI and hooks use the L1-0 transition; tests cover cross-repo collisions.
+
+**Files.** Selected Postgres graph repository, `src/axon/adr/gates/l1.py`, and
+focused repository/gate tests.
+
+**Test plan.** Contract tests with fake lookups for present, absent, unavailable,
+stale, and cross-repository collision cases, followed by the L1-0 test command.
+
+---
+
+## OPS-1 - Align the operational contract with Postgres
+
+- Priority: P1 | Size: S | Status: ready | Depends-on: none
+- Spec: benchmark-guided evolution, "Task OPS-1"
+
+**Problem.** dec-121 and `AGENTS.md` define unified Postgres storage, while active
+rules, health/help output, and operational docs still advertise SQLite, Redis,
+or Qdrant as current runtime components.
+
+**Acceptance criteria.**
+- [ ] `RULES.md` and active runtime configuration no longer promise SQLite
+      rollback or retired backend choices.
+- [ ] `axon health` and help name the Postgres, pgvector, vault, and git probes
+      they actually execute.
+- [ ] Active operational docs and runtime docstrings stop instructing users to
+      configure SQLite, Redis, or Qdrant.
+- [ ] Historical ADRs and migration plans remain unchanged.
+- [ ] Health-label tests pass and a scoped retired-term scan is reviewed.
+
+**Files.** `RULES.md`, runtime config, health/help surfaces,
+`docs/SECOND_BRAIN.md`, relevant runtime docstrings and tests.
+
+**Test plan.** Run focused MCP/CLI tests and the scoped scan defined in the spec.
+
+---
+
+## HTTP-1 - Correlate HTTP evaluation with retrieval
+
+- Priority: P1 | Size: M | Status: ready | Depends-on: none
+- Spec: benchmark-guided evolution, "Task HTTP-1"
+
+**Problem.** `POST /v1/chat/completions` retrieves context and records usage but
+does not connect the HTTP response, retrieval stage, and `RecallRecord` by a
+request identifier.
+
+**Acceptance criteria.**
+- [ ] Every context-enabled response has a non-empty `trace_id` shared with
+      exactly one `RecallRecord`.
+- [ ] The existing trace store records one retrieval stage with non-negative
+      duration, hit count, and strategy metadata when available.
+- [ ] Context-disabled requests preserve `contexts=[]` and do not fabricate
+      retrieval hits or strategy.
+- [ ] Telemetry stores neither raw query nor retrieved segment text.
+- [ ] Telemetry persistence remains non-fatal and the HTTP contract remains
+      additive for GNOMON.
+
+**Files.** `src/axon/http/app.py`, existing trace/recall telemetry models, and
+focused HTTP/observability tests.
+
+**Test plan.** TDD both `include_context` branches, then run
+`rtk pytest tests/http/test_chat_completions.py
+tests/observability/test_recall_telemetry.py -q`. External GNOMON validation
+remains blocked until this task is complete.
 
 Epic: **Postgres storage hardening** -
 [`docs/superpowers/specs/2026-06-22-pg-storage-hardening-design.md`](superpowers/specs/2026-06-22-pg-storage-hardening-design.md)
@@ -344,9 +461,10 @@ Recommended order: **EMB-4** (independent quick win) → **EMB-1** → **EMB-2**
 
 ## EMB-1 - Widen the loop gate to cover the embedder + a retrieval-eval smoke
 
-- Priority: P2 | Size: S | Status: deferred | Depends-on: none
-- Spec: bge-m3-fallback design, "Gate"
-- Note: deferred — SDD validated the epic directly; this is a FORGE prerequisite for later.
+- Priority: P2 | Size: S | Status: ready | Depends-on: green candidate baseline
+- Specs: bge-m3-fallback design, "Gate"; benchmark-guided evolution, "Task EMB-1"
+- Note: reactivated as the existing hermetic gate item; do not create a second
+  harness, golden set, or retrieval-eval implementation.
 
 **Problem.** `.claude/loop.yaml` `gate_cmd` runs only `router/resilience/store/scripts`.
 It does NOT run `tests/embedder` or `tests/benchmark`, so a FORGE slice that changes
@@ -361,6 +479,9 @@ must not land through a gate that can't see it.
       pre-existing debt, fix or explicitly scope them out in a comment — do not
       widen onto red).
 - [ ] Comment updated to state what the gate now covers and why.
+- [ ] Each added test group has a non-zero collected count and runs without
+      `.env`, credentials, network, Postgres, or GPU.
+- [ ] The live recall guard remains opt-in and outside the merge gate.
 
 **Files.** `.claude/loop.yaml`.
 
