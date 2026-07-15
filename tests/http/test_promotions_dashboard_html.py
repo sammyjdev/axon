@@ -29,6 +29,21 @@ def test_dashboard_has_accessible_interaction_contract() -> None:
     assert "prefers-reduced-motion" in html
 
 
+def test_dashboard_uses_system_typography_and_violet_as_its_only_accent() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert "font-family: system-ui, sans-serif;" in html
+    assert "font-family: ui-monospace, monospace;" in html
+    for forbidden in (
+        "IBM Plex Sans",
+        "Space Grotesk",
+        "JetBrains Mono",
+        "--cyan",
+        "evidence-value",
+    ):
+        assert forbidden not in html
+
+
 def test_dashboard_covers_decision_states_and_terminal_confession_design() -> None:
     html = PROMOTIONS_DASHBOARD_HTML
 
@@ -39,10 +54,6 @@ def test_dashboard_covers_decision_states_and_terminal_confession_design() -> No
         "#ECE8F2",
         "#9B93AD",
         "#9D7AE8",
-        "#4EC9E8",
-        "Space Grotesk",
-        "IBM Plex Sans",
-        "JetBrains Mono",
         "max-width: 700px",
         "max-width: 430px",
     ):

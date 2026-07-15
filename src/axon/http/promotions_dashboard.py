@@ -18,7 +18,6 @@ PROMOTIONS_DASHBOARD_HTML = """\
       --text: #ECE8F2;
       --dim: #9B93AD;
       --violet: #9D7AE8;
-      --cyan: #4EC9E8;
       --control-radius: 6px;
       --panel-radius: 14px;
     }
@@ -31,7 +30,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      font-family: system-ui, sans-serif;
       font-size: 15px;
       line-height: 1.55;
     }
@@ -63,7 +62,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
     .field dt,
     .queue-id,
     .source-note {
-      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-family: ui-monospace, monospace;
       font-size: 12px;
       letter-spacing: 0.06em;
     }
@@ -77,7 +76,6 @@ PROMOTIONS_DASHBOARD_HTML = """\
     h1,
     h2 {
       margin: 0;
-      font-family: "Space Grotesk", system-ui, sans-serif;
       letter-spacing: -0.02em;
     }
 
@@ -111,7 +109,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
       gap: 16px;
       min-height: 44px;
       color: var(--dim);
-      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-family: ui-monospace, monospace;
       font-size: 12px;
     }
 
@@ -135,7 +133,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
     .panel-heading {
       padding: 4px 4px 12px;
       color: var(--dim);
-      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-family: ui-monospace, monospace;
       font-size: 12px;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -217,8 +215,6 @@ PROMOTIONS_DASHBOARD_HTML = """\
     }
 
     .field dd { margin: 0; overflow-wrap: anywhere; }
-    .field .evidence-value { color: var(--cyan); }
-
     .field ul {
       margin: 0;
       padding-left: 18px;
@@ -237,7 +233,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
     summary {
       color: var(--dim);
       cursor: pointer;
-      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-family: ui-monospace, monospace;
       font-size: 12px;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -386,11 +382,11 @@ PROMOTIONS_DASHBOARD_HTML = """\
         return ["Evidence ready", "Source metadata is available for technical review."];
       }
 
-      function addField(list, label, value, important) {
+      function addField(list, label, value) {
         const field = document.createElement("div");
         field.className = "field";
         addText(field, "dt", "", label);
-        const item = addText(field, "dd", important ? "evidence-value" : "", displayValue(value));
+        const item = addText(field, "dd", "", displayValue(value));
         list.appendChild(field);
         return item;
       }
@@ -517,18 +513,18 @@ PROMOTIONS_DASHBOARD_HTML = """\
         addText(provenance, "summary", "", "Technical provenance");
         const evidence = document.createElement("dl");
         evidence.className = "evidence";
-        addField(evidence, "Disposition", candidate.disposition, false);
-        addField(evidence, "Baseline", candidate.baseline, true);
-        addField(evidence, "Owner", candidate.owner, false);
-        addField(evidence, "Target", candidate.target, false);
-        addField(evidence, "Scope", candidate.scope, false);
-        addField(evidence, "Claim status", candidate.claim_status, false);
-        addField(evidence, "Run status", candidate.run_status, false);
-        addField(evidence, "Evidence state", candidate.evidence_state, false);
-        addField(evidence, "Target state", candidate.target_state, false);
-        addField(evidence, "Eligible", candidate.eligible ? "Yes" : "No", false);
+        addField(evidence, "Disposition", candidate.disposition);
+        addField(evidence, "Baseline", candidate.baseline);
+        addField(evidence, "Owner", candidate.owner);
+        addField(evidence, "Target", candidate.target);
+        addField(evidence, "Scope", candidate.scope);
+        addField(evidence, "Claim status", candidate.claim_status);
+        addField(evidence, "Run status", candidate.run_status);
+        addField(evidence, "Evidence state", candidate.evidence_state);
+        addField(evidence, "Target state", candidate.target_state);
+        addField(evidence, "Eligible", candidate.eligible ? "Yes" : "No");
         addListField(evidence, "Run limitations", candidate.run_limitations);
-        addField(evidence, "Candidate ID", candidate.candidate_id, false);
+        addField(evidence, "Candidate ID", candidate.candidate_id);
         provenance.appendChild(evidence);
 
         addText(provenance, "p", "source-note", "Run " + candidate.run_id);
