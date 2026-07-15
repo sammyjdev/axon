@@ -101,6 +101,14 @@ def test_blocked_state_copy_matches_the_contract() -> None:
     assert "More evidence is required; promotion remains ineligible." in html
 
 
+def test_stale_state_takes_priority_over_unsupported_target() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    stale_check = 'candidate.evidence_state === "stale"'
+    unsupported_check = 'candidate.target_state === "unsupported"'
+    assert html.index(stale_check) < html.index(unsupported_check)
+
+
 def test_multi_value_evidence_uses_semantic_lists_and_safe_text() -> None:
     html = PROMOTIONS_DASHBOARD_HTML
 
