@@ -107,11 +107,15 @@ PROMOTIONS_DASHBOARD_HTML = """\
     .status-row {
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      gap: 16px;
       min-height: 44px;
       color: var(--dim);
       font-family: "JetBrains Mono", ui-monospace, monospace;
       font-size: 12px;
     }
+
+    .source-time { text-align: right; }
 
     .workspace {
       display: grid;
@@ -228,6 +232,22 @@ PROMOTIONS_DASHBOARD_HTML = """\
       overflow-wrap: anywhere;
     }
 
+    details { margin-top: 22px; }
+
+    summary {
+      color: var(--dim);
+      cursor: pointer;
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    summary:focus-visible {
+      outline: 2px solid var(--violet);
+      outline-offset: 2px;
+    }
+
     .empty {
       min-height: 360px;
       display: grid;
@@ -249,6 +269,8 @@ PROMOTIONS_DASHBOARD_HTML = """\
       .shell { width: min(100% - 20px, 410px); }
       .topbar { display: grid; }
       .refresh { width: 100%; }
+      .status-row { align-items: flex-start; flex-direction: column; gap: 0; padding: 8px 0; }
+      .source-time { text-align: left; }
       .queue { grid-template-columns: 1fr; }
       .evidence { grid-template-columns: 1fr; }
       .field:nth-child(odd),
@@ -278,7 +300,10 @@ PROMOTIONS_DASHBOARD_HTML = """\
       <button class="refresh" id="refresh" type="button">Refresh</button>
     </header>
 
-    <div class="status-row" id="status" aria-live="polite">Loading promotion candidates</div>
+    <div class="status-row">
+      <span id="status" aria-live="polite">Loading promotion candidates</span>
+      <span class="source-time" id="source-time"></span>
+    </div>
 
     <section class="workspace" aria-label="Promotion candidates">
       <aside class="panel queue-panel" aria-labelledby="queue-heading">
@@ -304,6 +329,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
       const detail = document.getElementById("detail");
       const refreshButton = document.getElementById("refresh");
       const status = document.getElementById("status");
+      const sourceTime = document.getElementById("source-time");
       let candidates = [];
       let selectedIndex = 0;
 
@@ -451,10 +477,18 @@ PROMOTIONS_DASHBOARD_HTML = """\
         addText(banner, "div", "", copy[1]);
         detail.appendChild(banner);
 
+        const decisionEvidence = document.createElement("dl");
+        decisionEvidence.className = "evidence";
+        addListField(decisionEvidence, "Why blocked", candidate.blockers);
+        addListField(decisionEvidence, "Evidence needed", candidate.evidence_requests);
+        detail.appendChild(decisionEvidence);
+
         addText(detail, "p", "eyebrow", candidate.claim_id);
         addText(detail, "h2", "candidate-heading", displayValue(candidate.wording));
         addText(detail, "p", "candidate-summary", candidate.limitation);
 
+        const provenance = document.createElement("details");
+        addText(provenance, "summary", "", "Technical provenance");
         const evidence = document.createElement("dl");
         evidence.className = "evidence";
         addField(evidence, "Disposition", candidate.disposition, false);
@@ -468,12 +502,11 @@ PROMOTIONS_DASHBOARD_HTML = """\
         addField(evidence, "Target state", candidate.target_state, false);
         addField(evidence, "Eligible", candidate.eligible ? "Yes" : "No", false);
         addListField(evidence, "Run limitations", candidate.run_limitations);
-        addListField(evidence, "Blockers", candidate.blockers);
-        addListField(evidence, "Evidence requests", candidate.evidence_requests);
         addField(evidence, "Candidate ID", candidate.candidate_id, false);
-        detail.appendChild(evidence);
+        provenance.appendChild(evidence);
 
-        addText(detail, "p", "source-note", "Run " + candidate.run_id);
+        addText(provenance, "p", "source-note", "Run " + candidate.run_id);
+        detail.appendChild(provenance);
       }
 
       function announce(message) {
@@ -501,6 +534,9 @@ PROMOTIONS_DASHBOARD_HTML = """\
           const response = await fetch("/api/promotion-candidates");
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.detail || payload.code || "source error");
+          const published = "Published " + payload.generated_at;
+          const read = "Read " + payload.observed_at;
+          sourceTime.textContent = published + " / " + read;
           renderQueue(payload.candidates);
           renderCandidate(payload.candidates[0] || null);
           announce("Promotion candidates refreshed");
