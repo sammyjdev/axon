@@ -7,13 +7,15 @@ from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError
 
 _REFERENCED_MAX_BYTES = 5 * 1024 * 1024
 _SOURCE_MAX_BYTES = 1024 * 1024
 _Identifier = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")]
 _Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 _PresentationText = Annotated[str, Field(min_length=1, max_length=4096)]
+_Target = Annotated[str, Field(min_length=1, max_length=512)]
+_ScopeItem = Annotated[str, Field(min_length=1, max_length=128)]
 _EvidenceRequest = Annotated[str, Field(min_length=1, max_length=500)]
 _REQUEST_EVIDENCE_STATUSES = {
     "published",
@@ -29,6 +31,21 @@ _VALID_STATUSES = _REQUEST_EVIDENCE_STATUSES | {
     "superseded",
     "archived",
 }
+
+
+def _parse_datetime_with_timezone(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError("timestamp must be a string")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("timestamp must be ISO 8601") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("timestamp must include a timezone")
+    return parsed
+
+
+_GeneratedAt = Annotated[datetime, BeforeValidator(_parse_datetime_with_timezone)]
 
 
 class PromotionSourceError(Exception):
@@ -82,9 +99,9 @@ class _CandidateSource(BaseModel):
     claim_ref: _PresentationText
     manifest_ref: _PresentationText
     owner: _Identifier
-    target: _PresentationText
+    target: _Target
     disposition: Literal["request-evidence"]
-    scope: tuple[_PresentationText, ...]
+    scope: tuple[_ScopeItem, ...] = Field(min_length=1, max_length=20)
     evidence_digest: _Digest
     target_digest: _Digest
     evidence_requests: tuple[_EvidenceRequest, ...] = Field(max_length=10)
@@ -94,7 +111,7 @@ class _CandidatesSource(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[1]
-    generated_at: datetime
+    generated_at: _GeneratedAt
     candidates: tuple[_CandidateSource, ...] = Field(max_length=200)
 
 
@@ -157,6 +174,8 @@ def load_promotion_candidates(
         raise _schema_error("candidate_id values must be unique")
     for candidate in source.candidates:
         _validate_target_reference(candidate.target)
+        if len(candidate.scope) != len(set(candidate.scope)):
+            raise _schema_error("scope values must be unique")
     owner_targets = [(candidate.owner, candidate.target) for candidate in source.candidates]
     if len(owner_targets) != len(set(owner_targets)):
         raise _schema_error("owner and target pairs must be unique")
@@ -287,7 +306,13 @@ def _validate_target_reference(target: str) -> None:
 
 def _contained_file(root: Path, reference: str, max_bytes: int) -> Path:
     reference_path = Path(reference)
-    if reference_path.is_absolute() or ".." in reference_path.parts:
+    windows_reference_path = PureWindowsPath(reference)
+    if (
+        reference_path.is_absolute()
+        or windows_reference_path.is_absolute()
+        or ".." in reference_path.parts
+        or ".." in windows_reference_path.parts
+    ):
         raise _schema_error("reference must stay inside evidence repository")
     try:
         resolved_root = root.resolve(strict=True)

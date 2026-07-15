@@ -65,6 +65,13 @@ def rewrite_candidate(root: Path, **changes: object) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def rewrite_source(root: Path, **changes: object) -> None:
+    path = root / "promotion" / "candidates.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload.update(changes)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def rewrite_manifest(root: Path, **changes: object) -> None:
     path = root / "evidence" / "runs" / "forge-executor-2026-07-12" / "manifest.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -104,6 +111,84 @@ def test_parent_reference_is_schema_error(promotion_fixture: Path) -> None:
 
     assert raised.value.status_code == 422
     assert raised.value.code == "PROMOTION_SCHEMA_INVALID"
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [r"..\CLAIMS.md#C-FORGE-EXEC-001", r"C:\CLAIMS.md#C-FORGE-EXEC-001"],
+)
+def test_windows_claim_reference_is_schema_error(
+    promotion_fixture: Path, reference: str
+) -> None:
+    rewrite_candidate(promotion_fixture, claim_ref=reference)
+
+    with pytest.raises(PromotionSourceError) as raised:
+        load_promotion_candidates(promotion_fixture)
+
+    assert (raised.value.status_code, raised.value.code) == (
+        422,
+        "PROMOTION_SCHEMA_INVALID",
+    )
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [r"..\manifest.json", r"C:\manifest.json"],
+)
+def test_windows_manifest_reference_is_schema_error(
+    promotion_fixture: Path, reference: str
+) -> None:
+    rewrite_candidate(promotion_fixture, manifest_ref=reference)
+
+    with pytest.raises(PromotionSourceError) as raised:
+        load_promotion_candidates(promotion_fixture)
+
+    assert (raised.value.status_code, raised.value.code) == (
+        422,
+        "PROMOTION_SCHEMA_INVALID",
+    )
+
+
+@pytest.mark.parametrize(
+    "generated_at",
+    [0, "2026-07-14T00:00:00", "not-a-timestamp"],
+)
+def test_generated_at_requires_iso_string_with_timezone(
+    promotion_fixture: Path, generated_at: object
+) -> None:
+    rewrite_source(promotion_fixture, generated_at=generated_at)
+
+    with pytest.raises(PromotionSourceError) as raised:
+        load_promotion_candidates(promotion_fixture)
+
+    assert (raised.value.status_code, raised.value.code) == (
+        422,
+        "PROMOTION_SCHEMA_INVALID",
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("target", "x" * 513),
+        ("scope", []),
+        ("scope", ["x"] * 21),
+        ("scope", ["x" * 129]),
+        ("scope", ["python", "python"]),
+    ],
+)
+def test_candidate_contract_limits_are_enforced(
+    promotion_fixture: Path, field: str, value: object
+) -> None:
+    rewrite_candidate(promotion_fixture, **{field: value})
+
+    with pytest.raises(PromotionSourceError) as raised:
+        load_promotion_candidates(promotion_fixture)
+
+    assert (raised.value.status_code, raised.value.code) == (
+        422,
+        "PROMOTION_SCHEMA_INVALID",
+    )
 
 
 def test_stale_manifest_is_visible_not_empty(promotion_fixture: Path) -> None:
