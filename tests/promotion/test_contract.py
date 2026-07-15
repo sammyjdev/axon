@@ -75,6 +75,15 @@ def rewrite_manifest(root: Path, **changes: object) -> None:
     )
 
 
+def rewrite_claim_status(root: Path, status: str) -> None:
+    path = root / "CLAIMS.md"
+    content = path.read_text(encoding="utf-8")
+    path.write_text(
+        content.replace("| published | forge-executor", f"| {status} | forge-executor"),
+        encoding="utf-8",
+    )
+
+
 def test_loads_request_evidence_candidate(promotion_fixture: Path) -> None:
     response = load_promotion_candidates(promotion_fixture)
 
@@ -184,6 +193,25 @@ def test_matching_known_target_remains_unsupported(
     assert "TARGET_CAPABILITY_UNSUPPORTED" in response.candidates[0].blockers
 
 
+@pytest.mark.parametrize(
+    "target",
+    ["/etc/passwd", "C:/Windows/system.ini", "../secret", "models.json#../secret"],
+)
+def test_unsafe_unsupported_target_is_rejected_without_serialized_leak(
+    promotion_fixture: Path, target: str
+) -> None:
+    rewrite_candidate(promotion_fixture, owner="other", target=target)
+
+    with pytest.raises(PromotionSourceError) as raised:
+        load_promotion_candidates(promotion_fixture)
+
+    assert (raised.value.status_code, raised.value.code) == (
+        422,
+        "PROMOTION_SCHEMA_INVALID",
+    )
+    assert target not in json.dumps(raised.value.__dict__)
+
+
 def test_malformed_digest_is_schema_error(promotion_fixture: Path) -> None:
     rewrite_candidate(promotion_fixture, evidence_digest="sha256:nope")
 
@@ -203,6 +231,18 @@ def test_truncated_or_invalid_json_is_schema_error(
         load_promotion_candidates(promotion_fixture)
 
     assert raised.value.status_code == 422
+
+
+def test_invalid_utf8_candidate_source_is_schema_error(promotion_fixture: Path) -> None:
+    (promotion_fixture / "promotion" / "candidates.json").write_bytes(b"\xff")
+
+    with pytest.raises(PromotionSourceError) as raised:
+        load_promotion_candidates(promotion_fixture)
+
+    assert (raised.value.status_code, raised.value.code) == (
+        422,
+        "PROMOTION_SCHEMA_INVALID",
+    )
 
 
 def test_unknown_candidate_field_is_schema_error(promotion_fixture: Path) -> None:
@@ -225,6 +265,18 @@ def test_claim_and_run_identity_divergence_is_schema_error(
     assert raised.value.status_code == 422
 
 
+def test_unknown_manifest_field_is_schema_error(promotion_fixture: Path) -> None:
+    rewrite_manifest(promotion_fixture, surprise=True)
+
+    with pytest.raises(PromotionSourceError) as raised:
+        load_promotion_candidates(promotion_fixture)
+
+    assert (raised.value.status_code, raised.value.code) == (
+        422,
+        "PROMOTION_SCHEMA_INVALID",
+    )
+
+
 def test_claim_and_run_status_divergence_remains_visible(promotion_fixture: Path) -> None:
     rewrite_manifest(promotion_fixture, status="preliminary")
 
@@ -233,6 +285,45 @@ def test_claim_and_run_status_divergence_remains_visible(promotion_fixture: Path
     assert candidate.claim_status == "published"
     assert candidate.run_status == "preliminary"
     assert candidate.eligible is False
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "published",
+        "replicated",
+        "preliminary",
+        "near_miss",
+        "inconclusive",
+        "not_comparable",
+    ],
+)
+def test_request_evidence_accepts_v1_reviewable_statuses(
+    promotion_fixture: Path, status: str
+) -> None:
+    rewrite_claim_status(promotion_fixture, status)
+
+    candidate = load_promotion_candidates(promotion_fixture).candidates[0]
+
+    assert candidate.claim_status == status
+    assert candidate.disposition == "request-evidence"
+
+
+@pytest.mark.parametrize(
+    "status", ["unavailable", "invalidated", "superseded", "archived"]
+)
+def test_request_evidence_rejects_v1_terminal_statuses(
+    promotion_fixture: Path, status: str
+) -> None:
+    rewrite_claim_status(promotion_fixture, status)
+
+    with pytest.raises(PromotionSourceError) as raised:
+        load_promotion_candidates(promotion_fixture)
+
+    assert (raised.value.status_code, raised.value.code) == (
+        422,
+        "PROMOTION_SCHEMA_INVALID",
+    )
 
 
 def test_referenced_source_size_limit_is_enforced(promotion_fixture: Path) -> None:

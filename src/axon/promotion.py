@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -15,12 +15,15 @@ _Identifier = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 _Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 _PresentationText = Annotated[str, Field(min_length=1, max_length=4096)]
 _EvidenceRequest = Annotated[str, Field(min_length=1, max_length=500)]
-_VALID_STATUSES = {
+_REQUEST_EVIDENCE_STATUSES = {
     "published",
     "replicated",
     "preliminary",
     "near_miss",
     "inconclusive",
+    "not_comparable",
+}
+_VALID_STATUSES = _REQUEST_EVIDENCE_STATUSES | {
     "unavailable",
     "invalidated",
     "superseded",
@@ -96,12 +99,20 @@ class _CandidatesSource(BaseModel):
 
 
 class _RunManifest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     run_id: _Identifier
     status: _PresentationText
     claim_ids: tuple[_Identifier, ...]
     limitations: tuple[_PresentationText, ...]
+    source_repo: _PresentationText | None = None
+    commit: _PresentationText | None = None
+    dataset_id: _PresentationText | None = None
+    dataset_hash: _Digest | None = None
+    model_ids: tuple[_PresentationText, ...] = ()
+    command: _PresentationText | None = None
+    executed_at: datetime | None = None
+    artifact_list: tuple[_PresentationText, ...] = ()
 
 
 def load_promotion_candidates(
@@ -138,12 +149,14 @@ def load_promotion_candidates(
         source = _CandidatesSource.model_validate(raw_source)
     except PromotionSourceError:
         raise
-    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
         raise _source_error(exc) from exc
 
     candidate_ids = [candidate.candidate_id for candidate in source.candidates]
     if len(candidate_ids) != len(set(candidate_ids)):
         raise _schema_error("candidate_id values must be unique")
+    for candidate in source.candidates:
+        _validate_target_reference(candidate.target)
     owner_targets = [(candidate.owner, candidate.target) for candidate in source.candidates]
     if len(owner_targets) != len(set(owner_targets)):
         raise _schema_error("owner and target pairs must be unique")
@@ -184,6 +197,11 @@ def _project_candidate(
         raise _schema_error("claim and run identities must agree")
     if claim["status"] not in _VALID_STATUSES or manifest.status not in _VALID_STATUSES:
         raise _schema_error("claim and run statuses must be supported")
+    if (
+        candidate.disposition == "request-evidence"
+        and claim["status"] not in _REQUEST_EVIDENCE_STATUSES
+    ):
+        raise _schema_error("claim status does not permit request-evidence")
 
     evidence_state = (
         "current" if _digest(manifest_bytes) == candidate.evidence_digest else "stale"
@@ -251,6 +269,18 @@ def _load_claim(path: Path, claim_id: str) -> dict[str, str]:
 
 def _digest(content: bytes) -> str:
     return "sha256:" + hashlib.sha256(content).hexdigest()
+
+
+def _validate_target_reference(target: str) -> None:
+    path, _, fragment = target.partition("#")
+    for value in (path, fragment):
+        component = Path(value)
+        if (
+            component.is_absolute()
+            or PureWindowsPath(value).is_absolute()
+            or ".." in component.parts
+        ):
+            raise _schema_error("target must not contain absolute or parent paths")
 
 
 def _contained_file(root: Path, reference: str, max_bytes: int) -> Path:
