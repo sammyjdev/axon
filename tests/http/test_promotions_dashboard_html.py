@@ -86,6 +86,16 @@ def test_queue_uses_candidate_identity_with_claim_as_secondary_metadata() -> Non
     assert 'addText(button, "span", "queue-claim", candidate.claim_id)' in html
 
 
+def test_selected_candidate_and_queue_text_remain_visible_on_mobile() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert 'button[aria-pressed="true"] {\n      border-color: var(--violet);' in html
+    for selector in (".queue-id", ".queue-claim", ".queue-title"):
+        assert f"{selector} {{" in html
+        rule = html.split(f"{selector} {{", 1)[1].split("}", 1)[0]
+        assert "overflow-wrap: anywhere" in rule
+
+
 def test_status_is_the_only_live_region_and_selection_is_announced() -> None:
     html = PROMOTIONS_DASHBOARD_HTML
 
