@@ -6,7 +6,7 @@ from axon.http.promotions_dashboard import PROMOTIONS_DASHBOARD_HTML
 def test_dashboard_is_read_only_and_self_contained() -> None:
     html = PROMOTIONS_DASHBOARD_HTML
 
-    assert "read only" in html.lower()
+    assert "read-only decision support" in html.lower()
     assert "/api/promotion-candidates" in html
     for forbidden in (
         "<form",
@@ -115,6 +115,18 @@ def test_status_is_the_only_live_region_and_selection_is_announced() -> None:
     assert 'announce("Selected " + candidate.candidate_id)' in html
 
 
+def test_selection_focuses_the_rendered_candidate_heading() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    click_handler = html.split('button.addEventListener("click"', 1)[1].split(
+        "queue.appendChild(button)", 1
+    )[0]
+    assert "const heading = renderCandidate(candidates[index])" in click_handler
+    assert "heading.focus()" in click_handler
+    assert 'heading.setAttribute("tabindex", "-1")' in html
+    assert "return heading" in html
+
+
 def test_header_and_unsupported_state_name_the_owning_next_step() -> None:
     html = PROMOTIONS_DASHBOARD_HTML
 
@@ -157,6 +169,13 @@ def test_status_shows_published_and_read_source_times() -> None:
     assert '<span class="source-time" id="source-time"></span>' in html
     assert '"Published " + payload.generated_at' in html
     assert '"Read " + payload.observed_at' in html
+
+
+def test_refresh_clears_source_times_before_reading_again() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    busy_branch = html.split("if (busy) {", 1)[1].split("}", 1)[0]
+    assert 'sourceTime.textContent = ""' in busy_branch
 
 
 def test_refresh_has_a_bounded_timeout_and_cleans_up_the_timer() -> None:

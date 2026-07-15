@@ -97,4 +97,4 @@ def test_promotions_dashboard_route_is_read_only(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert "read only" in response.text.lower()
+    assert "read-only" in response.text.lower()
