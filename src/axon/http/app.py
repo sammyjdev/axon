@@ -250,6 +250,23 @@ async def health() -> JSONResponse:
     return JSONResponse(content={"status": "ok"})
 
 
+@app.get("/api/promotion-candidates")
+async def api_promotion_candidates() -> JSONResponse:
+    from axon.promotion import (  # noqa: PLC0415
+        PromotionSourceError,
+        load_promotion_candidates,
+    )
+
+    try:
+        response = load_promotion_candidates()
+    except PromotionSourceError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"code": exc.code, "detail": exc.detail},
+        )
+    return JSONResponse(content=response.model_dump(mode="json"))
+
+
 # ---------------------------------------------------------------------------
 # Dashboard — read-only observability routes (dec-119)
 # ---------------------------------------------------------------------------
@@ -301,3 +318,12 @@ async def dashboard() -> HTMLResponse:
     from axon.http.dashboard import DASHBOARD_HTML  # noqa: PLC0415
 
     return HTMLResponse(content=DASHBOARD_HTML)
+
+
+@app.get("/dashboard/promotions", response_class=HTMLResponse)
+async def promotions_dashboard() -> HTMLResponse:
+    from axon.http.promotions_dashboard import (  # noqa: PLC0415
+        PROMOTIONS_DASHBOARD_HTML,
+    )
+
+    return HTMLResponse(content=PROMOTIONS_DASHBOARD_HTML)
