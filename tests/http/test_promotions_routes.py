@@ -73,6 +73,7 @@ def test_promotions_api_returns_valid_queue(
     client: TestClient, promotion_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("AXON_EVIDENCE_REPO", str(promotion_root))
+    monkeypatch.delenv("AXON_PROMOTION_FORGE_ROOT", raising=False)
 
     response = client.get("/api/promotion-candidates")
 
