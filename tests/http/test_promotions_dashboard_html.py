@@ -1,0 +1,79 @@
+"""Static contract tests for the read-only promotion dashboard."""
+
+from axon.http.promotions_dashboard import PROMOTIONS_DASHBOARD_HTML
+
+
+def test_dashboard_is_read_only_and_self_contained() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert "read only" in html.lower()
+    assert "/api/promotion-candidates" in html
+    for forbidden in (
+        "<form",
+        "method=",
+        'fetch("http',
+        "file://",
+        "setInterval",
+        "innerHTML",
+    ):
+        assert forbidden not in html
+
+
+def test_dashboard_has_accessible_interaction_contract() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert 'aria-live="polite"' in html
+    assert 'id="refresh"' in html
+    assert 'document.createElement("button")' in html
+    assert ".textContent" in html
+    assert "prefers-reduced-motion" in html
+
+
+def test_dashboard_covers_decision_states_and_terminal_confession_design() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    for token in (
+        "#0B0A0E",
+        "#131019",
+        "#2C2738",
+        "#ECE8F2",
+        "#9B93AD",
+        "#9D7AE8",
+        "#4EC9E8",
+        "Space Grotesk",
+        "IBM Plex Sans",
+        "JetBrains Mono",
+        "max-width: 700px",
+        "max-width: 430px",
+    ):
+        assert token in html
+
+    for state in (
+        "Loading",
+        "No promotion candidates",
+        "Source error",
+        "Stale evidence",
+        "Unsupported candidate",
+        "Request evidence",
+    ):
+        assert state in html
+
+    assert 'setAttribute("aria-pressed"' in html
+    assert "async function refresh()" in html
+    assert 'fetch("/api/promotion-candidates")' in html
+    assert "renderQueue(payload.candidates)" in html
+    assert "renderCandidate(payload.candidates[0] || null)" in html
+    assert "setBusy(false)" in html
+    for field in (
+        "candidate.candidate_id",
+        "candidate.claim_id",
+        "candidate.run_id",
+        "candidate.disposition",
+        "candidate.evidence_state",
+        "candidate.target_state",
+        "candidate.evidence_requests",
+    ):
+        assert field in html
+    assert "firstValue" not in html
+    for forbidden in ("Promote", "promotion command", "navigator.clipboard", 'id="copy"'):
+        assert forbidden not in html
