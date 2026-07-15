@@ -290,7 +290,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
         <p class="eyebrow">AXON // evidence review</p>
         <h1>Promotion Workbench</h1>
         <p class="read-only">
-          Read only decision support. Review evidence here, then update
+          Read-only decision support. Review evidence here, then update
           promotion/candidates.json in the owning evidence repository.
         </p>
       </div>
@@ -473,7 +473,8 @@ PROMOTIONS_DASHBOARD_HTML = """\
           button.addEventListener("click", function () {
             selectedIndex = index;
             updateSelection();
-            renderCandidate(candidates[index]);
+            const heading = renderCandidate(candidates[index]);
+            heading.focus();
             announce("Selected " + candidate.candidate_id);
           });
           queue.appendChild(button);
@@ -506,7 +507,10 @@ PROMOTIONS_DASHBOARD_HTML = """\
         detail.appendChild(decisionEvidence);
 
         addText(detail, "p", "eyebrow", candidate.claim_id);
-        addText(detail, "h2", "candidate-heading", displayValue(candidate.wording));
+        const heading = addText(
+          detail, "h2", "candidate-heading", displayValue(candidate.wording)
+        );
+        heading.setAttribute("tabindex", "-1");
         addText(detail, "p", "candidate-summary", candidate.limitation);
 
         const provenance = document.createElement("details");
@@ -529,6 +533,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
 
         addText(provenance, "p", "source-note", "Run " + candidate.run_id);
         detail.appendChild(provenance);
+        return heading;
       }
 
       function announce(message) {
@@ -540,6 +545,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
         workspace.setAttribute("aria-busy", busy ? "true" : "false");
         refreshButton.textContent = busy ? "Refreshing" : "Refresh";
         if (busy) {
+          sourceTime.textContent = "";
           clear(queue);
           renderEmpty(
             "Loading",
