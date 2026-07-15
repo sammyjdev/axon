@@ -164,6 +164,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
     }
 
     .queue-id { display: block; color: var(--violet); }
+    .queue-claim { display: block; margin-top: 2px; color: var(--dim); }
     .queue-title { display: block; margin-top: 3px; }
 
     .detail { padding: 24px 26px 26px; }
@@ -213,6 +214,13 @@ PROMOTIONS_DASHBOARD_HTML = """\
 
     .field dd { margin: 0; overflow-wrap: anywhere; }
     .field .evidence-value { color: var(--cyan); }
+
+    .field ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .field li + li { margin-top: 6px; }
 
     .source-note {
       margin: 20px 0 0;
@@ -273,16 +281,16 @@ PROMOTIONS_DASHBOARD_HTML = """\
     <div class="status-row" id="status" aria-live="polite">Loading promotion candidates</div>
 
     <section class="workspace" aria-label="Promotion candidates">
-      <aside class="panel queue-panel" aria-label="Candidate queue">
-        <div class="panel-heading">Candidate queue</div>
+      <aside class="panel queue-panel" aria-labelledby="queue-heading">
+        <h2 class="panel-heading" id="queue-heading">Candidate queue</h2>
         <div class="queue" id="queue"></div>
       </aside>
 
-      <article class="panel detail" id="detail" aria-live="polite">
+      <article class="panel detail" id="detail">
         <div class="empty">
           <p class="state-label">Loading</p>
           <h2>Reading the evidence source</h2>
-          <p>The queue will appear after a manual source read completes.</p>
+          <p>The queue will appear after the initial source read completes.</p>
         </div>
       </article>
     </section>
@@ -337,13 +345,13 @@ PROMOTIONS_DASHBOARD_HTML = """\
         if (state === "unsupported") {
           return [
             "Unsupported candidate",
-            "This candidate cannot be evaluated by the current policy reader."
+            "Target capability unsupported"
           ];
         }
         if (state === "request-evidence") {
           return [
             "Request evidence",
-            "The current record does not support a disposition yet."
+            "More evidence is required; promotion remains ineligible."
           ];
         }
         return ["Evidence ready", "Source metadata is available for technical review."];
@@ -356,6 +364,23 @@ PROMOTIONS_DASHBOARD_HTML = """\
         const item = addText(field, "dd", important ? "evidence-value" : "", displayValue(value));
         list.appendChild(field);
         return item;
+      }
+
+      function addListField(list, label, values) {
+        const field = document.createElement("div");
+        field.className = "field";
+        addText(field, "dt", "", label);
+        const description = document.createElement("dd");
+        const items = document.createElement("ul");
+        const entries = Array.isArray(values) && values.length ? values : ["None"];
+        entries.forEach(function (value) {
+          const item = document.createElement("li");
+          item.textContent = String(value);
+          items.appendChild(item);
+        });
+        description.appendChild(items);
+        field.appendChild(description);
+        list.appendChild(field);
       }
 
       function renderEmpty(label, heading, copy) {
@@ -394,12 +419,14 @@ PROMOTIONS_DASHBOARD_HTML = """\
           const button = document.createElement("button");
           button.type = "button";
           button.setAttribute("aria-pressed", index === selectedIndex ? "true" : "false");
-          addText(button, "span", "queue-id", candidate.claim_id);
+          addText(button, "span", "queue-id", candidate.candidate_id);
+          addText(button, "span", "queue-claim", candidate.claim_id);
           addText(button, "span", "queue-title", displayValue(candidate.wording));
           button.addEventListener("click", function () {
             selectedIndex = index;
             updateSelection();
             renderCandidate(candidates[index]);
+            announce("Selected " + candidate.candidate_id);
           });
           queue.appendChild(button);
         });
@@ -440,9 +467,9 @@ PROMOTIONS_DASHBOARD_HTML = """\
         addField(evidence, "Evidence state", candidate.evidence_state, false);
         addField(evidence, "Target state", candidate.target_state, false);
         addField(evidence, "Eligible", candidate.eligible ? "Yes" : "No", false);
-        addField(evidence, "Run limitations", candidate.run_limitations, false);
-        addField(evidence, "Blockers", candidate.blockers, false);
-        addField(evidence, "Evidence requests", candidate.evidence_requests, false);
+        addListField(evidence, "Run limitations", candidate.run_limitations);
+        addListField(evidence, "Blockers", candidate.blockers);
+        addListField(evidence, "Evidence requests", candidate.evidence_requests);
         addField(evidence, "Candidate ID", candidate.candidate_id, false);
         detail.appendChild(evidence);
 

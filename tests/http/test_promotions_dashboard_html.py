@@ -77,3 +77,40 @@ def test_dashboard_covers_decision_states_and_terminal_confession_design() -> No
     assert "firstValue" not in html
     for forbidden in ("Promote", "promotion command", "navigator.clipboard", 'id="copy"'):
         assert forbidden not in html
+
+
+def test_queue_uses_candidate_identity_with_claim_as_secondary_metadata() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert 'addText(button, "span", "queue-id", candidate.candidate_id)' in html
+    assert 'addText(button, "span", "queue-claim", candidate.claim_id)' in html
+
+
+def test_status_is_the_only_live_region_and_selection_is_announced() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert html.count('aria-live="polite"') == 1
+    assert '<article class="panel detail" id="detail">' in html
+    assert 'announce("Selected " + candidate.candidate_id)' in html
+
+
+def test_blocked_state_copy_matches_the_contract() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert "Target capability unsupported" in html
+    assert "More evidence is required; promotion remains ineligible." in html
+
+
+def test_multi_value_evidence_uses_semantic_lists_and_safe_text() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert "function addListField" in html
+    assert 'document.createElement("ul")' in html
+    assert 'document.createElement("li")' in html
+    assert "item.textContent = String(value)" in html
+    for field in (
+        'addListField(evidence, "Run limitations", candidate.run_limitations)',
+        'addListField(evidence, "Blockers", candidate.blockers)',
+        'addListField(evidence, "Evidence requests", candidate.evidence_requests)',
+    ):
+        assert field in html
