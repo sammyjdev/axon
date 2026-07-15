@@ -128,7 +128,31 @@ def test_multi_value_evidence_uses_semantic_lists_and_safe_text() -> None:
     assert "item.textContent = String(value)" in html
     for field in (
         'addListField(evidence, "Run limitations", candidate.run_limitations)',
-        'addListField(evidence, "Blockers", candidate.blockers)',
-        'addListField(evidence, "Evidence requests", candidate.evidence_requests)',
+        'addListField(decisionEvidence, "Why blocked", candidate.blockers)',
+        'addListField(decisionEvidence, "Evidence needed", candidate.evidence_requests)',
     ):
         assert field in html
+
+
+def test_status_shows_published_and_read_source_times() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert '<span id="status" aria-live="polite">' in html
+    assert '<span class="source-time" id="source-time"></span>' in html
+    assert '"Published " + payload.generated_at' in html
+    assert '"Read " + payload.observed_at' in html
+
+
+def test_decision_evidence_precedes_native_technical_provenance() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    blocker = 'addListField(decisionEvidence, "Why blocked", candidate.blockers)'
+    request = (
+        'addListField(decisionEvidence, "Evidence needed", candidate.evidence_requests)'
+    )
+    provenance = 'addText(provenance, "summary", "", "Technical provenance")'
+
+    assert html.index(blocker) < html.index(provenance)
+    assert html.index(request) < html.index(provenance)
+    assert 'document.createElement("details")' in html
+    assert 'addText(provenance, "summary", "", "Technical provenance")' in html
