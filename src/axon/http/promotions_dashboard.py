@@ -326,10 +326,10 @@ PROMOTIONS_DASHBOARD_HTML = """\
       }
 
       function normalizedState(candidate) {
-        if (candidate.target_state === "unsupported") return "unsupported";
         if (candidate.evidence_state === "stale" || candidate.target_state === "stale") {
           return "stale";
         }
+        if (candidate.target_state === "unsupported") return "unsupported";
         if (candidate.disposition === "request-evidence") return "request-evidence";
         return "ready";
       }
