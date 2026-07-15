@@ -275,10 +275,12 @@ def _validate_target_reference(target: str) -> None:
     path, _, fragment = target.partition("#")
     for value in (path, fragment):
         component = Path(value)
+        windows_component = PureWindowsPath(value)
         if (
             component.is_absolute()
-            or PureWindowsPath(value).is_absolute()
+            or windows_component.is_absolute()
             or ".." in component.parts
+            or ".." in windows_component.parts
         ):
             raise _schema_error("target must not contain absolute or parent paths")
 

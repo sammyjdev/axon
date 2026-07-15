@@ -195,7 +195,14 @@ def test_matching_known_target_remains_unsupported(
 
 @pytest.mark.parametrize(
     "target",
-    ["/etc/passwd", "C:/Windows/system.ini", "../secret", "models.json#../secret"],
+    [
+        "/etc/passwd",
+        "C:/Windows/system.ini",
+        "../secret",
+        "models.json#../secret",
+        r"..\secret",
+        r"models.json#..\secret",
+    ],
 )
 def test_unsafe_unsupported_target_is_rejected_without_serialized_leak(
     promotion_fixture: Path, target: str
