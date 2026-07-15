@@ -158,14 +158,14 @@ PROMOTIONS_DASHBOARD_HTML = """\
     .queue button:hover { background: var(--bg); color: var(--text); }
 
     .queue button[aria-pressed="true"] {
-      border-color: var(--line);
+      border-color: var(--violet);
       background: var(--bg);
       color: var(--text);
     }
 
-    .queue-id { display: block; color: var(--violet); }
-    .queue-claim { display: block; margin-top: 2px; color: var(--dim); }
-    .queue-title { display: block; margin-top: 3px; }
+    .queue-id { display: block; color: var(--violet); overflow-wrap: anywhere; }
+    .queue-claim { display: block; margin-top: 2px; color: var(--dim); overflow-wrap: anywhere; }
+    .queue-title { display: block; margin-top: 3px; overflow-wrap: anywhere; }
 
     .detail { padding: 24px 26px 26px; }
 
