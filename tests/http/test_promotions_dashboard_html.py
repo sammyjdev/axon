@@ -60,7 +60,7 @@ def test_dashboard_covers_decision_states_and_terminal_confession_design() -> No
 
     assert 'setAttribute("aria-pressed"' in html
     assert "async function refresh()" in html
-    assert 'fetch("/api/promotion-candidates")' in html
+    assert 'fetch("/api/promotion-candidates", {' in html
     assert "renderQueue(payload.candidates)" in html
     assert "renderCandidate(payload.candidates[0] || null)" in html
     assert "setBusy(false)" in html
@@ -104,10 +104,15 @@ def test_status_is_the_only_live_region_and_selection_is_announced() -> None:
     assert 'announce("Selected " + candidate.candidate_id)' in html
 
 
-def test_blocked_state_copy_matches_the_contract() -> None:
+def test_header_and_unsupported_state_name_the_owning_next_step() -> None:
     html = PROMOTIONS_DASHBOARD_HTML
 
-    assert "Target capability unsupported" in html
+    assert "Review evidence here, then update" in html
+    assert "promotion/candidates.json in the owning evidence repository" in html
+    assert "Add this target to models.json in the owning configuration" in html
+    assert "repository before promotion." in html
+    assert "leave this surface to act" not in html
+    assert "Target capability unsupported" not in html
     assert "More evidence is required; promotion remains ineligible." in html
 
 
@@ -141,6 +146,42 @@ def test_status_shows_published_and_read_source_times() -> None:
     assert '<span class="source-time" id="source-time"></span>' in html
     assert '"Published " + payload.generated_at' in html
     assert '"Read " + payload.observed_at' in html
+
+
+def test_refresh_has_a_bounded_timeout_and_cleans_up_the_timer() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert "new AbortController()" in html
+    assert "setTimeout" in html
+    assert "10000" in html
+    assert "signal: controller.signal" in html
+    assert "clearTimeout(timeoutId)" in html
+
+
+def test_refresh_marks_the_workspace_busy_and_keeps_the_button_disabled() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert 'class="workspace" id="workspace" aria-busy="false"' in html
+    assert 'workspace.setAttribute("aria-busy", busy ? "true" : "false")' in html
+    assert "refreshButton.disabled = busy" in html
+    assert html.count('aria-live="polite"') == 1
+
+
+def test_refresh_maps_known_source_errors_and_has_stable_fallbacks() -> None:
+    html = PROMOTIONS_DASHBOARD_HTML
+
+    assert "function sourceErrorMessage(code)" in html
+    for code in (
+        "PROMOTION_SOURCE_NOT_CONFIGURED",
+        "PROMOTION_SOURCE_UNAVAILABLE",
+        "PROMOTION_SOURCE_TOO_LARGE",
+        "PROMOTION_SCHEMA_INVALID",
+    ):
+        assert code in html
+    assert "Set AXON_EVIDENCE_REPO" in html
+    assert "promotion/candidates.json" in html
+    assert "The promotion source returned invalid JSON." in html
+    assert "The promotion source request timed out." in html
 
 
 def test_decision_evidence_precedes_native_technical_provenance() -> None:

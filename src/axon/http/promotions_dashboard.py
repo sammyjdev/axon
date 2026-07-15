@@ -294,7 +294,8 @@ PROMOTIONS_DASHBOARD_HTML = """\
         <p class="eyebrow">AXON // evidence review</p>
         <h1>Promotion Workbench</h1>
         <p class="read-only">
-          Read only decision support. Review evidence here, then leave this surface to act.
+          Read only decision support. Review evidence here, then update
+          promotion/candidates.json in the owning evidence repository.
         </p>
       </div>
       <button class="refresh" id="refresh" type="button">Refresh</button>
@@ -305,7 +306,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
       <span class="source-time" id="source-time"></span>
     </div>
 
-    <section class="workspace" aria-label="Promotion candidates">
+    <section class="workspace" id="workspace" aria-busy="false" aria-label="Promotion candidates">
       <aside class="panel queue-panel" aria-labelledby="queue-heading">
         <h2 class="panel-heading" id="queue-heading">Candidate queue</h2>
         <div class="queue" id="queue"></div>
@@ -327,6 +328,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
 
       const queue = document.getElementById("queue");
       const detail = document.getElementById("detail");
+      const workspace = document.getElementById("workspace");
       const refreshButton = document.getElementById("refresh");
       const status = document.getElementById("status");
       const sourceTime = document.getElementById("source-time");
@@ -371,7 +373,8 @@ PROMOTIONS_DASHBOARD_HTML = """\
         if (state === "unsupported") {
           return [
             "Unsupported candidate",
-            "Target capability unsupported"
+            "Add this target to models.json in the owning configuration " +
+              "repository before promotion."
           ];
         }
         if (state === "request-evidence") {
@@ -427,6 +430,29 @@ PROMOTIONS_DASHBOARD_HTML = """\
           "The evidence source could not be read",
           message || "Unknown source error"
         );
+      }
+
+      function sourceErrorMessage(code) {
+        if (code === "PROMOTION_SOURCE_NOT_CONFIGURED") {
+          return "Set AXON_EVIDENCE_REPO to the owning evidence repository, then refresh.";
+        }
+        if (code === "PROMOTION_SOURCE_UNAVAILABLE") {
+          return "Make AXON_EVIDENCE_REPO readable, then refresh.";
+        }
+        if (code === "PROMOTION_SOURCE_TOO_LARGE") {
+          return "Reduce promotion/candidates.json in the evidence repository, then refresh.";
+        }
+        if (code === "PROMOTION_SCHEMA_INVALID") {
+          return "Fix promotion/candidates.json in the evidence repository, then refresh.";
+        }
+        if (code === "PROMOTION_SOURCE_TIMEOUT") {
+          return "The promotion source request timed out. Check the AXON service, then refresh.";
+        }
+        if (code === "PROMOTION_RESPONSE_INVALID") {
+          return "The promotion source returned invalid JSON. " +
+            "Check the AXON service logs, then refresh.";
+        }
+        return "The promotion source could not be reached. Check the AXON service, then refresh.";
       }
 
       function updateSelection() {
@@ -515,7 +541,7 @@ PROMOTIONS_DASHBOARD_HTML = """\
 
       function setBusy(busy) {
         refreshButton.disabled = busy;
-        refreshButton.setAttribute("aria-busy", busy ? "true" : "false");
+        workspace.setAttribute("aria-busy", busy ? "true" : "false");
         refreshButton.textContent = busy ? "Refreshing" : "Refresh";
         if (busy) {
           clear(queue);
@@ -530,10 +556,19 @@ PROMOTIONS_DASHBOARD_HTML = """\
 
       async function refresh() {
         setBusy(true);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(function () { controller.abort(); }, 10000);
+        let failureCode;
         try {
-          const response = await fetch("/api/promotion-candidates");
+          const response = await fetch("/api/promotion-candidates", {
+            signal: controller.signal
+          });
+          failureCode = "PROMOTION_RESPONSE_INVALID";
           const payload = await response.json();
-          if (!response.ok) throw new Error(payload.detail || payload.code || "source error");
+          if (!response.ok) {
+            failureCode = payload.code;
+            throw new Error();
+          }
           const published = "Published " + payload.generated_at;
           const read = "Read " + payload.observed_at;
           sourceTime.textContent = published + " / " + read;
@@ -541,9 +576,11 @@ PROMOTIONS_DASHBOARD_HTML = """\
           renderCandidate(payload.candidates[0] || null);
           announce("Promotion candidates refreshed");
         } catch (error) {
-          renderSourceError(error.message);
+          const code = error.name === "AbortError" ? "PROMOTION_SOURCE_TIMEOUT" : failureCode;
+          renderSourceError(sourceErrorMessage(code));
           announce("Promotion source error");
         } finally {
+          clearTimeout(timeoutId);
           setBusy(false);
         }
       }
