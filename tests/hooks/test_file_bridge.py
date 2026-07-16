@@ -10,7 +10,8 @@ from typing import Any
 import pytest
 
 from axon.core.decision import Decision
-from axon.hooks.file_bridge import update_context_file
+from axon.hooks.file_bridge import _render, update_context_file
+from axon.observability.friction import FrictionPattern
 from axon.store.session_store import SessionStore
 
 
@@ -81,3 +82,30 @@ async def test_rewrite_refreshes_content(
     await store.save_decision(_decision(id="dec-001", summary="now there is one"))
     target = await update_context_file(repo_root, store=store)
     assert "now there is one" in target.read_text(encoding="utf-8")
+
+
+def test_render_includes_recurring_friction() -> None:
+    content = _render(
+        "myrepo",
+        [],
+        friction=[
+            FrictionPattern(
+                caller="mcp.axon_capture",
+                reason_code="DENY_RESTRICTED_TOOL_WRITE",
+                ctx="work",
+                count=3,
+                distinct_days=2,
+                last_ts="2026-07-02T10:00:00+00:00",
+            )
+        ],
+    )
+
+    assert "## Recurring friction" in content
+    assert (
+        "- `DENY_RESTRICTED_TOOL_WRITE` via mcp.axon_capture (ctx=work) - 3x across 2 days"
+        in content
+    )
+
+
+def test_render_omits_recurring_friction_when_empty() -> None:
+    assert "## Recurring friction" not in _render("myrepo", [])

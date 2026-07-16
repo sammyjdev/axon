@@ -29,6 +29,7 @@ from axon.observability.compression_telemetry import (
     CompressionRecord,
     CompressionTelemetryStore,
 )
+from axon.observability.friction import aggregate_friction
 from axon.observability.recall_telemetry import ChunkEntry, ChunkRecord, RecallTelemetryStore
 from axon.observability.trace_store import TraceStore
 from axon.observability.traced_tool import current_trace_recorder, traced_tool
@@ -1061,7 +1062,12 @@ async def axon_session_end(session_id: str, summary: str | None = None) -> str:
         await store.save_note(SessionNote(project=repo, body=summary))
     root = _detect_repo_root()
     if root is not None and root.name == repo:
-        await update_context_file(root, store=store)
+        try:
+            # ponytail: full-file JSONL scan (~5k lines today), partition by month if it grows.
+            patterns = aggregate_friction(TraceStore().query(stage="policy"))
+        except Exception:
+            patterns = ()
+        await update_context_file(root, store=store, friction=patterns)
     return f"session {session_id} ended ({repo})."
 
 
