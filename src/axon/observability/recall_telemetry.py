@@ -87,3 +87,14 @@ class RecallTelemetryStore:
                 if line:
                     records.append(RecallRecord(**json.loads(line)))
         return records
+
+    def load_chunks(self) -> list[ChunkRecord]:
+        if not self._chunks_file.exists():
+            return []
+        records = []
+        with self._chunks_file.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    records.append(ChunkRecord(**json.loads(line)))
+        return records
