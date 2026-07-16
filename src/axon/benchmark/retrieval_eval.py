@@ -45,6 +45,17 @@ def recall(expected: frozenset[str], hits: list[dict]) -> float:
     return len(found) / len(expected)
 
 
+def precision(expected: frozenset[str], hits: list[dict]) -> float:
+    """|expected ∩ found| / |found|; no hits -> 1.0.
+
+    Mirror of recall's empty-expected convention.
+    """
+    found = symbols_of(hits)
+    if not found:
+        return 1.0
+    return len(expected & found) / len(found)
+
+
 async def evaluate(
     cases: list[GoldenCase],
     first_pass_fn: Callable[[GoldenCase], Awaitable[tuple[str, object, list[dict]]]],
@@ -52,19 +63,24 @@ async def evaluate(
 ) -> dict:
     n = len(cases)
     if n == 0:
-        return {"recall_first": 0.0, "recall_after": 0.0, "delta": 0.0,
+        return {"recall_first": 0.0, "recall_after": 0.0,
+                "precision_first": 0.0, "precision_after": 0.0, "delta": 0.0,
                 "retry_rate": 0.0, "give_up_rate": 0.0, "n": 0}
-    r_first = r_after = retries = gave_up = 0.0
+    r_first = r_after = p_first = p_after = retries = gave_up = 0.0
     for case in cases:
         cc, pack, hits = await first_pass_fn(case)
         r_first += recall(case.expected_symbols, hits)
+        p_first += precision(case.expected_symbols, hits)
         result = await correct_fn(case, cc, pack, hits)
         r_after += recall(case.expected_symbols, result.hits)
+        p_after += precision(case.expected_symbols, result.hits)
         retries += 1.0 if result.meta.get("retried") else 0.0
         gave_up += 1.0 if result.meta.get("gave_up") else 0.0
     return {
         "recall_first": r_first / n,
         "recall_after": r_after / n,
+        "precision_first": p_first / n,
+        "precision_after": p_after / n,
         "delta": (r_after - r_first) / n,
         "retry_rate": retries / n,
         "give_up_rate": gave_up / n,
