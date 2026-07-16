@@ -6,6 +6,7 @@ from axon.benchmark.retrieval_eval import (
     GoldenCase,
     evaluate,
     load_golden,
+    precision,
     recall,
     symbols_of,
 )
@@ -21,6 +22,13 @@ def test_recall_full_and_partial():
     assert recall(frozenset({"A", "B"}), hits_full) == 1.0
     assert recall(frozenset({"A", "B"}), [{"payload": {"symbol": "A"}}]) == 0.5
     assert recall(frozenset(), []) == 1.0  # nothing expected -> trivially satisfied
+
+
+def test_precision_full_partial_and_empty():
+    hits_full = [{"payload": {"symbol": "A"}}, {"payload": {"symbol": "B"}}]
+    assert precision(frozenset({"A", "B"}), hits_full) == 1.0
+    assert precision(frozenset({"A"}), hits_full) == 0.5
+    assert precision(frozenset({"A"}), []) == 1.0
 
 
 def test_load_golden_reads_fixture(tmp_path):
@@ -49,3 +57,19 @@ async def test_evaluate_computes_delta_and_rates():
     assert report["retry_rate"] == 1.0
     assert report["give_up_rate"] == 0.0
     assert report["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_evaluate_computes_precision_means():
+    cases = [GoldenCase("q1", "personal", frozenset({"A"}))]
+
+    async def first_pass(case):
+        return ("CTX", object(), [{"payload": {"symbol": "A"}},
+                                   {"payload": {"symbol": "Z"}}])
+
+    async def correct(case, cc, pack, hits):
+        return CorrectionResult("CTX2", pack, [{"payload": {"symbol": "A"}}], {})
+
+    report = await evaluate(cases, first_pass, correct)
+    assert report["precision_first"] == 0.5
+    assert report["precision_after"] == 1.0
