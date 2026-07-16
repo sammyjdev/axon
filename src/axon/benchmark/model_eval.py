@@ -128,6 +128,120 @@ def make_litellm_compress() -> CompressFn:
     return compress
 
 
+def make_litellm_adr_chat(max_tokens: int = 400) -> ChatFn:
+    """Cloud ADR-classifier backend via litellm.
+
+    Mirrors ``axon.adr.inference._call_llm`` exactly: the prompt arrives
+    fully rendered, sent as a single user message with ``max_tokens=400``
+    and no temperature override — the eval must see what production sees.
+    ``max_tokens`` is overridable to measure candidate production contracts
+    (reasoning models truncate at 400).
+    """
+    import litellm
+
+    def chat(model: str, prompt: str) -> str:
+        response = litellm.completion(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+        )
+        return (response.choices[0].message.content or "").strip()
+
+    return chat
+
+
+@dataclass(frozen=True)
+class ADREvalCase:
+    commit_message: str
+    diff_summary: str
+    expected: str  # "adr" | "null"
+    key_terms: tuple[str, ...]
+
+
+def _adr_prompt(case: ADREvalCase, template: str | None = None) -> str:
+    if template is None:
+        from axon.adr.inference import _TEMPLATE_PATH
+
+        template = _TEMPLATE_PATH.read_text(encoding="utf-8")
+    return template.format(
+        commit_message=case.commit_message, diff_summary=case.diff_summary
+    )
+
+
+def _parse_adr_reply(raw: str) -> dict | None:
+    """Strict production parse (``axon.adr.inference``): plain JSON only."""
+    import json
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def evaluate_adr_model(
+    model: str,
+    cases: Sequence[ADREvalCase],
+    *,
+    chat: ChatFn,
+    template: str | None = None,
+) -> BenchmarkResult:
+    checks: list[BenchmarkCheck] = []
+    start = perf_counter()
+    for case in cases:
+        raw = chat(model, _adr_prompt(case, template))
+        is_null = not raw or raw.lower().startswith("null")
+        payload = None if is_null else _parse_adr_reply(raw)
+
+        if case.expected == "null":
+            checks.append(
+                BenchmarkCheck(
+                    name="verdict_match",
+                    passed=is_null,
+                    expected="null",
+                    actual="null" if is_null else raw[:60],
+                )
+            )
+            continue
+
+        checks.append(
+            BenchmarkCheck(
+                name="verdict_match",
+                passed=payload is not None,
+                expected="ADR JSON",
+                actual="parsed" if payload is not None else raw[:60],
+            )
+        )
+        checks.append(
+            BenchmarkCheck(
+                name="json_valid",
+                passed=payload is not None,
+                expected="parseable JSON object",
+                actual="parsed" if payload is not None else "unparseable",
+            )
+        )
+        text = " ".join(
+            str(payload.get(k, ""))
+            for k in ("title", "context", "decision", "rationale")
+        ).lower() if payload else ""
+        missing = [t for t in case.key_terms if t.lower() not in text]
+        checks.append(
+            BenchmarkCheck(
+                name="key_terms_present",
+                passed=not missing,
+                expected=f"mentions {list(case.key_terms)}",
+                actual=f"missing {missing}" if missing else "all present",
+            )
+        )
+    duration_ms = (perf_counter() - start) * 1000
+    return BenchmarkResult(
+        suite="model_eval.adr",
+        name=model,
+        duration_ms=duration_ms,
+        checks=tuple(checks),
+    )
+
+
 @dataclass(frozen=True)
 class ScoringEvalCase:
     candidate: ExpansionCandidate
