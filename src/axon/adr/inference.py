@@ -229,10 +229,12 @@ async def _call_llm(commit_msg: str, diff_summary: str) -> str | None:
     )
     try:
         import litellm
+        # 2000, not 400: reasoning models (gpt-oss-120b) spend budget thinking
+        # and truncate the JSON at 400 (0/18 valid vs 18/18 at 2000, k=3 grid).
         response = await litellm.acompletion(
             model=_adr_model(),
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=400,
+            max_tokens=2000,
         )
         return (response.choices[0].message.content or "").strip()
     except Exception:  # noqa: BLE001 — best-effort, every error is recoverable

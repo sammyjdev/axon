@@ -19,7 +19,7 @@ class TestAdrModelResolution:
     ) -> None:
         monkeypatch.delenv("AXON_ADR_MODEL", raising=False)
         monkeypatch.setenv("AXON_PROVIDER_PROFILE", "free")
-        assert _adr_model() == "groq/llama-3.1-8b-instant"
+        assert _adr_model() == "groq/openai/gpt-oss-120b"
 
     def test_paid_profile_also_uses_groq_classifier(
         self, monkeypatch: pytest.MonkeyPatch
@@ -27,7 +27,7 @@ class TestAdrModelResolution:
         """Classification is cheap — both profiles share the classifier."""
         monkeypatch.delenv("AXON_ADR_MODEL", raising=False)
         monkeypatch.setenv("AXON_PROVIDER_PROFILE", "paid")
-        assert _adr_model() == "groq/llama-3.1-8b-instant"
+        assert _adr_model() == "groq/openai/gpt-oss-120b"
 
     def test_env_override_picks_nim(
         self, monkeypatch: pytest.MonkeyPatch
