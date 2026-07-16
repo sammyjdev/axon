@@ -29,7 +29,7 @@ _FREE = ProfileSpec(
         "LOCAL_ONLY": "groq/llama-3.1-8b-instant",
         "UNKNOWN": "groq/llama-3.1-8b-instant",
     },
-    classifier_model="groq/llama-3.1-8b-instant",
+    classifier_model="groq/openai/gpt-oss-120b",
     cost_per_1k={
         "groq/llama-3.1-8b-instant": 0.0,
         "groq/llama-3.3-70b-versatile": 0.0,
@@ -49,7 +49,7 @@ _PAID = ProfileSpec(
         "LOCAL_ONLY": "openrouter/anthropic/claude-haiku-4",
         "UNKNOWN": "openrouter/anthropic/claude-haiku-4",
     },
-    classifier_model="groq/llama-3.1-8b-instant",
+    classifier_model="groq/openai/gpt-oss-120b",
     cost_per_1k={
         "openrouter/anthropic/claude-haiku-4": 0.0008,
         "openrouter/anthropic/claude-sonnet-4": 0.009,
