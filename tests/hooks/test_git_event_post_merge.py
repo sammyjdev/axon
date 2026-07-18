@@ -80,10 +80,20 @@ async def test_scan_is_idempotent(pulled_repo, store):
     clone, signal_hash, _ = pulled_repo
 
     await _scan_pulled_range(store=store, cwd=clone)
-    await _scan_pulled_range(store=store, cwd=clone)
-
     first = await store.find_decision_by_git_hash(signal_hash, repo=clone.name)
     assert first is not None
+
+    await _scan_pulled_range(store=store, cwd=clone)
+
+    # second pass must not raise nor duplicate: exactly one decision row
+    # for this git_hash, and it must be the same row (not a new insert).
+    matching = [
+        d
+        for d in await store.find_decisions_by_repo(clone.name, limit=50)
+        if d.git_hash == signal_hash
+    ]
+    assert len(matching) == 1
+    assert matching[0].id == first.id
 
 
 @pytest.mark.asyncio
