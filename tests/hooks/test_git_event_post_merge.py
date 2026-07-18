@@ -41,8 +41,17 @@ def _commit(path: Path, fname: str, msg: str) -> str:
 
 
 @pytest.fixture
-def pulled_repo(tmp_path):
-    """origin gains one signal + one plain commit; clone pulls them."""
+def pulled_repo(tmp_path, monkeypatch):
+    """origin gains one signal + one plain commit; clone pulls them.
+
+    Signal commits can trigger a real ADR inference call (live LLM access is
+    configured in some dev environments), which falls through to
+    axon.adr.draft_pool.write_draft() on a promotion-gate rejection. That
+    resolves its write location via data_root(), which reads $AXON_DATA_ROOT
+    or else defaults to the real process CWD's .axon/ -- pin it to a
+    tmp-scoped dir so tests never leak drafts into the real repo tree.
+    """
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))
     origin = tmp_path / "origin"
     _git_init(origin)
     _commit(origin, "base.txt", "chore: base")
