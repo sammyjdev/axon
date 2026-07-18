@@ -100,7 +100,11 @@ async def test_scan_is_idempotent(pulled_repo, store):
 async def test_scan_no_orig_head_is_noop(tmp_path, store):
     repo = tmp_path / "fresh"
     _git_init(repo)
-    _commit(repo, "a.txt", "arch: something")
+    signal_hash = _commit(repo, "a.txt", "arch: something")
     from axon.hooks.git_event import _scan_pulled_range
 
-    await _scan_pulled_range(store=store, cwd=repo)
+    await _scan_pulled_range(store=store, cwd=repo)  # must not raise
+
+    assert (
+        await store.find_decision_by_git_hash(signal_hash, repo=repo.name)
+    ) is None, "no ORIG_HEAD means nothing was pulled - nothing may be captured"

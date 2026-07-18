@@ -25,9 +25,15 @@ def test_refuses_without_target() -> None:
 
 
 def test_refuses_local_target() -> None:
-    r = _run({"AXON_MIRROR_PG_URL": "postgresql://axon@localhost:5433/axon"})
-    assert r.returncode == 1
-    assert "local" in r.stderr
+    for url in (
+        "postgresql://axon@localhost:5433/axon",
+        "postgresql://axon@127.0.0.1:5433/axon",
+        "postgresql://axon@[::1]:5433/axon",
+        "postgresql://axon@0.0.0.0:5433/axon",
+    ):
+        r = _run({"AXON_MIRROR_PG_URL": url})
+        assert r.returncode == 1, url
+        assert "local" in r.stderr, url
 
 
 def test_dry_run_prints_pipeline() -> None:
