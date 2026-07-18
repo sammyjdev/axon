@@ -30,6 +30,10 @@ quality_rubric:
   scalability: true
   progression: true
 
+# Async cross-vendor review lens (Codex) on every FORGE PR - see
+# forge/references/cross-review.md. Advisory, never gates the pass.
+cross_review: true
+
 # Notes for the loop operator (axon-specific):
 # - Worktrees are SAFE here: the root conftest.py inserts the worktree-relative
 #   src (no editable install), so per-worktree tests validate that worktree's code.
