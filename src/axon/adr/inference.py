@@ -65,7 +65,7 @@ async def run_for_head_async(
     store: object | None = None,
     commit: str = "HEAD",
 ) -> InferenceResult:
-    """Run ADR inference against the current ``HEAD`` commit.
+    """Run ADR inference against ``commit`` (default: the current ``HEAD``).
 
     The orchestrator is intentionally side-effecting (writes drafts,
     audit entries, or persists ADRs) but returns a structured result so

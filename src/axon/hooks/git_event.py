@@ -289,7 +289,9 @@ async def _scan_pulled_range(
         hashes = _git(["rev-list", "--reverse", "ORIG_HEAD..HEAD"], root).splitlines()
     except Exception:
         return  # no ORIG_HEAD (fresh clone / first merge) - nothing pulled
-    hashes = [h for h in hashes if h][:_PULL_SCAN_CAP]
+    # Keep the NEWEST cap-window (chronological order preserved): on a
+    # pathological pull the recent signal commits matter more than the tail.
+    hashes = [h for h in hashes if h][-_PULL_SCAN_CAP:]
     if not hashes:
         return
 

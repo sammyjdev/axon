@@ -22,7 +22,7 @@ if [ -z "$DST" ]; then
   exit 1
 fi
 case "$DST" in
-  *localhost*|*127.0.0.1*)
+  *localhost*|*127.0.0.1*|*'[::1]'*|*0.0.0.0*)
     echo "error: mirror target looks local - refusing to mirror onto itself" >&2
     exit 1
     ;;
