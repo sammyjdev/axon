@@ -25,7 +25,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from axon.adr.audit import record_rejection
-from axon.adr.commit_context import from_head
+from axon.adr.commit_context import from_commit
 from axon.adr.draft_pool import DraftRecord, write_draft
 from axon.adr.gates import ADRPayload, GateConfig, GateOutcome, evaluate
 from axon.adr.signal import detect as detect_signal
@@ -63,6 +63,7 @@ async def run_for_head_async(
     repo_root: Path | None = None,
     db_path: Path | None = None,
     store: object | None = None,
+    commit: str = "HEAD",
 ) -> InferenceResult:
     """Run ADR inference against the current ``HEAD`` commit.
 
@@ -76,18 +77,23 @@ async def run_for_head_async(
     a fresh store is created and closed inside this call.
     """
     root = repo_root or Path.cwd()
+    # ponytail: omit the ref token for the "HEAD" default so subprocess argv
+    # stays byte-identical to before this function took a commit argument
+    # (git already defaults "log -1" to HEAD; only non-default commits need
+    # an explicit ref).
+    ref: list[str] = [] if commit == "HEAD" else [commit]
 
     try:
         commit_msg_full = _git(
-            root, "log", "-1", "--pretty=%B"
+            root, "log", "-1", *ref, "--pretty=%B"
         ).rstrip("\n")
-        commit_msg = _git(root, "log", "-1", "--pretty=%s").strip()
-        diff_stat = _git(root, "log", "-1", "--stat", "--pretty=").strip()
+        commit_msg = _git(root, "log", "-1", *ref, "--pretty=%s").strip()
+        diff_stat = _git(root, "log", "-1", *ref, "--stat", "--pretty=").strip()
         diff_full = _git(
             root,
             "diff",
-            "HEAD~1",
-            "HEAD",
+            f"{commit}~1",
+            commit,
             "--",
             ":(exclude)*.lock",
             ":(exclude)*.json",
@@ -124,7 +130,7 @@ async def run_for_head_async(
     )
 
     try:
-        commit_ctx = from_head(root)
+        commit_ctx = from_commit(root, commit)
     except subprocess.CalledProcessError:
         commit_ctx = None
 
