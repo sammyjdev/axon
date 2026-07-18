@@ -65,6 +65,20 @@ change would violate one of these, STOP and surface it - do not work around it.
 
 - Plain hyphens only - never em or en dashes.
 
+## Testing
+
+- **Tests that exercise a real (non-mocked) dec-110/ADR-inference path must
+  isolate `AXON_DATA_ROOT`.** `draft_pool.write_draft()` resolves its write
+  location from the process CWD via `data_root()`, not from any
+  `repo_root`/`cwd` argument - an unisolated test silently writes real ADR
+  draft files into the repo under test and can break unrelated checks in the
+  same gate run (observed: flipped `pb doctor`'s `adr.stale_pending` from ok
+  to FAIL, breaking an unrelated CLI test). Check: any test invoking
+  `_scan_pulled_range`, `on_commit`, `run_for_head_async`, or another real
+  call into the dec-110/ADR pipeline sets
+  `monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))` first.
+  (promoted from the loop - cloud-arm-bridge task 2, 2026-07-18)
+
 ## Proposed by the loop
 
 Candidate invariants surfaced by FORGE reviews. NOT yet enforced - the human
@@ -113,21 +127,3 @@ promotes them into a section above after curation.
   doc files>` on every new/modified line (diff against the pre-change file
   to exclude pre-existing, out-of-scope hits) before the maker reports the
   change as done, not left solely to the reviewer to catch. (FORGE #73)
-- **Tests that exercise a real dec-110/ADR-inference code path must isolate
-  `AXON_DATA_ROOT`.** `axon.adr.draft_pool.write_draft()` resolves its write
-  location via `data_root()`, which defaults to `.axon/` relative to the real
-  process CWD (correct for actual git hooks, which run with cwd = the repo
-  root) - not to any `repo_root`/`cwd` parameter a caller passes in. A test
-  that spins up a real git repo with a real `arch:`/`decision:` signal commit
-  and calls the real inference pipeline (not mocked - e.g. because a live LLM
-  key is configured in the dev environment) will silently write real draft
-  `.md` files into whatever `.axon/adr-draft/` the test process's CWD
-  resolves to, typically the actual repo or worktree under test, not the
-  test's own tmp directory. This pollutes the environment and can break
-  unrelated checks in the SAME gate run (observed: it flipped `pb doctor`'s
-  `adr.stale_pending` check from ok to FAIL, failing an unrelated CLI test in
-  the same pytest run). Check: any test invoking `_scan_pulled_range`,
-  `on_commit`, `run_for_head_async`, or another real (non-mocked) call into
-  the dec-110/ADR pipeline must set `monkeypatch.setenv("AXON_DATA_ROOT",
-  str(tmp_path / ".axon"))` (or otherwise isolate `data_root()`) before
-  exercising it. (cloud-arm-bridge plan, task 2, 2026-07-18)
