@@ -19,6 +19,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from axon.adr.signal import detect
 from axon.code.diff_symbols import symbols_touched_by_commit
 from axon.config.runtime import load_runtime_config
 from axon.core.decision import Decision
@@ -271,11 +272,90 @@ async def on_post_merge_or_checkout(
         logger.warning("on_post_merge_or_checkout failed: %s", exc)
 
 
+_PULL_SCAN_CAP = 50  # ponytail: bounds pathological pulls; raise if a legit sync exceeds it
+
+
+async def _scan_pulled_range(
+    *, store: SessionStore | None = None, cwd: Path | None = None
+) -> None:
+    """Capture dec-110 signal commits from the just-pulled range (cloud-arm bridge).
+
+    Only commits carrying an explicit architectural signal are captured -
+    a pull may contain dozens of mechanical commits and capturing them all
+    would be noise. Local commits keep the richer on_commit path.
+    """
+    root = _repo_root(cwd)
+    try:
+        hashes = _git(["rev-list", "--reverse", "ORIG_HEAD..HEAD"], root).splitlines()
+    except Exception:
+        return  # no ORIG_HEAD (fresh clone / first merge) - nothing pulled
+    hashes = [h for h in hashes if h][:_PULL_SCAN_CAP]
+    if not hashes:
+        return
+
+    owns_store = store is None
+    store = store or _default_store()
+    try:
+        await store.init()
+        for commit_hash in hashes:
+            message = _git(["log", "-1", commit_hash, "--pretty=%B"], root)
+            if detect(message) is None:
+                continue
+            existing = await store.find_decision_by_git_hash(
+                commit_hash, repo=root.name
+            )
+            if existing is not None:
+                continue
+            subject = _git(["log", "-1", commit_hash, "--pretty=%s"], root)
+            files = _git(
+                ["log", "-1", commit_hash, "--name-only", "--format="], root
+            ).splitlines()
+            decision = Decision(
+                id=await store.next_decision_id(),
+                timestamp=datetime.now(UTC),
+                agent="remote",
+                repo=root.name,
+                files=[Path(f) for f in files if f],
+                summary=subject[:80],
+                git_hash=commit_hash,
+                status="draft",
+            )
+            await store.save_decision(decision)
+            await _link_touched_symbols(store, decision.id, root, commit_hash)
+            try:
+                from axon.adr.inference import run_for_head_async
+
+                await run_for_head_async(
+                    project=root.name,
+                    repo_root=root,
+                    store=store,
+                    commit=commit_hash,
+                )
+            except Exception as exc:  # best-effort; never block git
+                logger.warning(
+                    "ADR inference skipped for %s: %s", commit_hash[:8], exc
+                )
+    finally:
+        if owns_store:
+            await store.close()
+
+
+async def on_post_merge(
+    *, store: SessionStore | None = None, cwd: Path | None = None
+) -> None:
+    """post-merge: capture pulled dec-110 commits, then revalidate drafts."""
+    try:
+        await _scan_pulled_range(store=store, cwd=cwd)
+    except Exception as exc:  # never block git
+        logger.warning("pulled-range scan failed: %s", exc)
+    await on_post_merge_or_checkout(store=store, cwd=cwd)
+
+
 _HANDLERS = {
     "commit": on_commit,
     "push": on_push,
     "init": on_init,
-    "post-merge": on_post_merge_or_checkout,
+    "post-merge": on_post_merge,
     "post-checkout": on_post_merge_or_checkout,
 }
 

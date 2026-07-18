@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from axon.exceptions import ValidationError
 
-Agent = Literal["claude-code", "codex", "cursor", "manual"]
+Agent = Literal["claude-code", "codex", "cursor", "manual", "remote"]
 Status = Literal["draft", "active", "superseded", "deprecated"]
 
 _ID_RE = re.compile(r"^dec-\d{3,}$")

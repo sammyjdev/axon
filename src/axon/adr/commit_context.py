@@ -32,32 +32,37 @@ class CommitContext:
         return self.subject
 
 
-def from_head(repo_root: Path | None = None) -> CommitContext:
-    """Build a ``CommitContext`` from the current ``HEAD`` commit.
+def from_commit(repo_root: Path | None = None, commit: str = "HEAD") -> CommitContext:
+    """Build a ``CommitContext`` from ``commit`` (default ``HEAD``).
 
     Calls ``git`` once per piece of information. Returns an empty-ish
     context (with ``commit_hash=""``) when the directory is not a repo
     or has no commits yet.
     """
     root = repo_root or Path.cwd()
+    # ponytail: omit the ref token for the "HEAD" default so subprocess argv
+    # stays byte-identical to before this function took a commit argument
+    # (git already defaults "log -1" to HEAD; only non-default commits need
+    # an explicit ref).
+    ref: list[str] = [] if commit == "HEAD" else [commit]
     try:
-        commit_hash = _git(root, "log", "-1", "--pretty=%H").strip()
+        commit_hash = _git(root, "log", "-1", *ref, "--pretty=%H").strip()
     except subprocess.CalledProcessError:
         return CommitContext(commit_hash="", subject="", body="", diff="")
 
-    subject = _git(root, "log", "-1", "--pretty=%s").rstrip("\n")
-    body = _git(root, "log", "-1", "--pretty=%b").rstrip("\n")
+    subject = _git(root, "log", "-1", *ref, "--pretty=%s").rstrip("\n")
+    body = _git(root, "log", "-1", *ref, "--pretty=%b").rstrip("\n")
     diff = _git(
         root,
         "diff",
-        "HEAD~1",
-        "HEAD",
+        f"{commit}~1",
+        commit,
         "--",
         ":(exclude)*.lock",
         ":(exclude)*.json",
     )
     name_status = _git(
-        root, "diff", "HEAD~1", "HEAD", "--find-renames=80%", "--name-status"
+        root, "diff", f"{commit}~1", commit, "--find-renames=80%", "--name-status"
     )
 
     files_changed: list[str] = []
@@ -92,6 +97,11 @@ def from_head(repo_root: Path | None = None) -> CommitContext:
         deleted_files=deleted_files,
         repo_root=root,
     )
+
+
+def from_head(repo_root: Path | None = None) -> CommitContext:
+    """Build a ``CommitContext`` from the current ``HEAD`` commit."""
+    return from_commit(repo_root, "HEAD")
 
 
 def _git(root: Path, *args: str) -> str:
