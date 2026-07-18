@@ -126,6 +126,21 @@ class PgVectorStore:
                 f"CREATE INDEX IF NOT EXISTS idx_{t}_hnsw "
                 f"ON {t} USING hnsw (vector vector_cosine_ops)"
             )
+            # A rename-based migration can leave idx_{t}_hnsw attached to a
+            # previous table; IF NOT EXISTS then no-ops on the NAME and this
+            # table silently runs unindexed (observed after the bge-m3
+            # re-index). Verify presence ON THE TABLE and heal with a
+            # deterministic fallback name.
+            hnsw_rows = await con.fetch(
+                "SELECT indexname FROM pg_indexes "
+                "WHERE tablename = $1 AND indexdef ILIKE '%hnsw%'",
+                t,
+            )
+            if not hnsw_rows:
+                await con.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{t}_hnsw2 "
+                    f"ON {t} USING hnsw (vector vector_cosine_ops)"
+                )
             await con.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{t}_ctx_file ON {t} (ctx, file_path)"
             )
