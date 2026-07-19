@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from typing import Protocol
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from axon.expansion.models import SourceDefinition, SourceResponse
+from axon.expansion.url_safety import build_guarded_opener, check_url_safety
+
+_OPENER = build_guarded_opener()
 
 
 class SourceTransport(Protocol):
@@ -22,8 +25,11 @@ class UrllibSourceTransport:
         return await asyncio.to_thread(self._fetch_sync, url, headers)
 
     def _fetch_sync(self, url: str, headers: dict[str, str]) -> SourceResponse:
-        request = Request(url, headers=headers)  # noqa: S310
-        with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
+        check_url_safety(url)
+        request = Request(url, headers=headers)
+        # guarded by check_url_safety (scheme allowlist + private-IP block);
+        # redirects validated via GuardedRedirectHandler
+        with _OPENER.open(request, timeout=self.timeout_seconds) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             body = response.read().decode(charset, errors="replace")
             return SourceResponse(
