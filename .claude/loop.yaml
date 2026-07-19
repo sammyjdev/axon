@@ -8,10 +8,11 @@ default_branch: master            # axon uses master, not main
 # to the working area for the current backlog (store + scripts + cli + doctor).
 # tests/cli and tests/doctor were verified green (non-interactive, no skips) on
 # 2026-07-06 before being added here - see issue #60, which touches both dirs.
-# It does NOT run the full suite: tests/config and tests/benchmark carry
-# pre-existing failures that CI never gated (ci.yml only runs router+resilience).
+# It does NOT run the full suite: tests/config is now included except
+# test_setup_script.py (pre-existing test debt, tracked separately), while
+# tests/benchmark remains excluded.
 # See the "test-debt + expand CI" backlog item before widening further.
-gate_cmd: "ruff check src/axon/router src/axon/resilience tests/router tests/resilience && pytest tests/router tests/resilience tests/store tests/scripts tests/cli tests/doctor -q"
+gate_cmd: "ruff check src/axon/router src/axon/resilience tests/router tests/resilience && pytest tests/router tests/resilience tests/store tests/scripts tests/cli tests/doctor tests/config --ignore=tests/config/test_setup_script.py -q"
 setup_cmd: "pip install -e \".[dev]\""   # same as CI (ci.yml); shared venv already provisioned
 labels:
   ready: agent:ready
@@ -39,8 +40,8 @@ cross_review: true
 #   src (no editable install), so per-worktree tests validate that worktree's code.
 # - pytest can HANG ON EXIT (unclosed asyncpg pool past the printed summary);
 #   wrap gate runs in a timeout and read the printed "N passed/failed".
-# - The full `pytest -q` is RED on master from pre-existing test debt (config mode
-#   default, benchmark, some hooks TTY+Windows cases) - that is NOT a regression
+# - The full `pytest -q` is RED on master from pre-existing test debt (test_setup_script.py,
+#   benchmark, some hooks TTY+Windows cases) - that is NOT a regression
 #   and NOT an env leak; it is simply outside the CI gate. Do not treat it as a
 #   base failure; widen the gate only after the test-debt backlog item lands.
 #   (tests/doctor was moved out of this exclusion list on 2026-07-06 - it is

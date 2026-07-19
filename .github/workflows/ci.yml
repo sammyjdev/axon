@@ -60,10 +60,10 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: install project + dev deps
         run: pip install -e ".[dev]"
-      - name: pytest router + resilience
+      - name: pytest router + resilience + config
         env:
           AXON_PROVIDER_PROFILE: ${{ matrix.profile }}
-        run: python3 -m pytest tests/router tests/resilience -q
+        run: python3 -m pytest tests/router tests/resilience tests/config --ignore=tests/config/test_setup_script.py -q
 
   profile-smoke:
     name: profile import smoke (${{ matrix.profile }})
