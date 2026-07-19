@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from axon.config import platform as platform_mod
 from axon.config.platform import (
     PlatformConfig,
     _to_dotenv,
     build_doctor_report,
     build_setup_plan,
+    detect_platform,
     merge_env_text,
 )
 from axon.config.runtime import (
@@ -15,6 +17,37 @@ from axon.config.runtime import (
     ExpansionPaths,
     RuntimeConfig,
 )
+
+
+def test_detect_platform_pc_without_nvidia_uses_cpu_providers(monkeypatch) -> None:
+    # A non-mac host with no working nvidia-smi (_get_nvidia_vram -> 0) must NOT
+    # claim CUDA: that drives compose_profile to "gpu" and brings up the GPU
+    # docker stack on a CPU-only box. Regression for the CI-only failure the
+    # gate widening (#77) exposed.
+    monkeypatch.setattr(platform_mod.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(platform_mod, "_get_nvidia_vram", lambda: 0)
+
+    config = detect_platform()
+
+    assert config.platform == "pc"
+    assert config.embedding_providers == ["CPUExecutionProvider"]
+    plan = build_setup_plan(
+        runtime_mode="full-local", platform_config=config, remote_infra_host=None
+    )
+    assert plan.compose_profile == "cpu"
+
+
+def test_detect_platform_pc_with_nvidia_uses_cuda_providers(monkeypatch) -> None:
+    monkeypatch.setattr(platform_mod.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(platform_mod, "_get_nvidia_vram", lambda: 24)
+
+    config = detect_platform()
+
+    assert config.embedding_providers == ["CUDAExecutionProvider"]
+    plan = build_setup_plan(
+        runtime_mode="full-local", platform_config=config, remote_infra_host=None
+    )
+    assert plan.compose_profile == "gpu"
 
 
 def test_to_dotenv_uses_remote_infra_when_host_is_defined(monkeypatch) -> None:

@@ -56,10 +56,13 @@ def detect_platform() -> PlatformConfig:
         )
     else:
         vram_gb = _get_nvidia_vram()
+        has_nvidia = vram_gb > 0
         return PlatformConfig(
             platform="pc",
-            embedding_providers=["CUDAExecutionProvider"],
-            ollama_flash=True,
+            embedding_providers=(
+                ["CUDAExecutionProvider"] if has_nvidia else ["CPUExecutionProvider"]
+            ),
+            ollama_flash=has_nvidia,
             max_models=2 if vram_gb >= 16 else 1,
             model_primary="gemma4:e4b",
             model_knowledge="gemma4:26b" if vram_gb >= 10 else "gemma4:e4b",
