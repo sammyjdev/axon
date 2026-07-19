@@ -31,6 +31,19 @@ security testing (OWASP ZAP baseline scan). The ZAP scan report is available
 as a CI artifact (`dast-zap-baseline-report`) in the Actions tab of the pull
 request - use it to review potential security findings.
 
+If you want to run the dependency audit locally, use a clean, isolated venv
+- not one shared with other projects:
+
+```bash
+python -m venv .venv-audit && source .venv-audit/bin/activate
+pip install -e . && pip-audit
+```
+
+A shared dev venv will report findings from every package installed for
+other projects, not just AXON's own dependencies. CI's `audit` job (see
+`.github/workflows/ci.yml`) is the authoritative check - trust it over a
+local run in a shared venv.
+
 ## Workflow
 
 - TDD is expected: a failing test before production code, a regression test
