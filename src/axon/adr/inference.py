@@ -61,7 +61,6 @@ async def run_for_head_async(
     project: str,
     force: bool = False,
     repo_root: Path | None = None,
-    db_path: Path | None = None,
     store: object | None = None,
     commit: str = "HEAD",
 ) -> InferenceResult:
@@ -170,7 +169,7 @@ async def run_for_head_async(
 
     owns_store = store is None
     if owns_store:
-        store = SessionStore(db_path or _default_db_path())
+        store = SessionStore()
         await store.init()
     try:
         adr = ADR(
@@ -245,9 +244,3 @@ async def _call_llm(commit_msg: str, diff_summary: str) -> str | None:
         return (response.choices[0].message.content or "").strip()
     except Exception:  # noqa: BLE001 — best-effort, every error is recoverable
         return None
-
-
-def _default_db_path() -> Path:
-    from axon.config.runtime import load_runtime_config
-
-    return load_runtime_config().data_root / "axon.db"

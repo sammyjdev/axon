@@ -156,7 +156,7 @@ class TestSaveADR:
             ),
         ):
             result = await run_for_head_async(
-                project="t", repo_root=fake_repo, db_path=db_path
+                project="t", repo_root=fake_repo
             )
         assert result.status is InferenceStatus.SAVED_ADR, result.error
         # Postgres-only (dec-121 Phase 3): verify the ADR actually persisted by
