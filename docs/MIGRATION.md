@@ -104,23 +104,30 @@ done
 Do NOT blindly index restricted contexts (e.g. `work`); only migrate a
 restricted ctx if it has data and you explicitly intend to.
 
-CRITICAL - the indexer is INCREMENTAL. A plain `pb index` compares each file
-against the SQLite file_cache (sha1) and SKIPS unchanged files, so pointing it
-at a fresh pgvector backend writes NOTHING (the cache still says "done" from the
-Qdrant era). Force a FULL re-index with a throwaway file_cache by pointing
-`AXON_ENGINE` at a temp dir (this never touches your real `axon.db`):
+CRITICAL - the indexer is INCREMENTAL. Its `file_index` cache is Postgres-only
+and belongs to the database selected by `AXON_PG_URL`; changing `AXON_ENGINE`
+does not isolate it. For a clean cutover, point `AXON_PG_URL` at a separate,
+empty Postgres target. To force a full re-index of an existing target ctx,
+delete that ctx's cache rows first. This reprocesses every file in the manifest;
+use a fresh target for a completely isolated cutover.
 
 ```bash
-TMP=$(mktemp -d); mkdir -p "$TMP/data"
-AXON_ENGINE="$TMP" AXON_VAULT="<your-vault>" \
-AXON_VECTOR_BACKEND=pgvector AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
-PYTHONPATH=src .venv/Scripts/python.exe -m axon.cli.pb index --ctx knowledge
-rm -rf "$TMP"
+MANIFEST=$(mktemp)
+cat > "$MANIFEST" <<'JSON'
+{"projects":[{"name":"knowledge-vault","path":"<absolute-path-to-vault/knowledge>","ctx":"knowledge","enabled":true,"languages":["markdown","text"]}]}
+JSON
+
+# Skip this DELETE when AXON_PG_URL already names a fresh target database.
+psql "$AXON_PG_URL" -c "DELETE FROM file_index WHERE ctx = 'knowledge';"
+AXON_VECTOR_BACKEND=pgvector \
+  axon index-dev --manifest "$MANIFEST" --project knowledge-vault
+rm "$MANIFEST"
 ```
 
-(The top-level `axon index` command was removed; use `pb index`. After the
-flip, normal `pb index` runs against your real cache and stays consistent:
-unchanged files are already in pgvector, changed files re-embed into it.)
+`axon index-dev` is manifest-driven: it indexes each enabled entry using its
+declared path, ctx, and language filters. After the first run, rerunning the
+same command against the same Postgres target skips unchanged files; changed
+files re-embed into pgvector.
 
 ### 3. Parity check (counts only - no model load)
 
@@ -196,40 +203,39 @@ scope here).
 - A FAIL from parity means the pgvector index is incomplete - re-run indexing
   for the affected ctx before retrying.
 
-# file_index Cutover Runbook (dec-121 step 3, wave 1)
+# file_index Postgres Runbook (dec-121 step 3, wave 1)
 
-The `file_index` (the incremental indexing cache) is selected by
-`AXON_FILEINDEX_BACKEND` env > `axon.toml [runtime] fileindex_backend` >
-default. As of this wave the default is `postgres`.
+The `file_index` incremental-indexing cache is Postgres-only and uses the
+database selected by `AXON_PG_URL`.
 
 ## Why no data copy
 
 `file_index` is a CACHE (file -> sha1 -> done/pending), not a source of truth.
-Switching backends leaves an empty Postgres table that the NEXT index rebuilds -
-a one-time full re-index, the same incremental-cache behavior as the vector
-cutover. There is nothing to migrate.
+An empty target table makes the next index rebuild it. There is nothing to
+migrate.
 
 ## Cutover sequence
 
 ```bash
 docker compose up -d axon-postgres
-# Full index (Postgres file_index starts empty -> every file is processed once):
-AXON_FILEINDEX_BACKEND=postgres AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
-  PYTHONPATH=src .venv/Scripts/python.exe -m axon.cli.pb index --ctx knowledge
+# Create this manifest once, replacing the path with the vault ctx to index:
+MANIFEST=$(mktemp)
+cat > "$MANIFEST" <<'JSON'
+{"projects":[{"name":"knowledge-vault","path":"<absolute-path-to-vault/knowledge>","ctx":"knowledge","enabled":true,"languages":["markdown","text"]}]}
+JSON
+# Full index (an empty Postgres file_index processes every manifest file once):
+AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
+  axon index-dev --manifest "$MANIFEST" --project knowledge-vault
 # Verify populated:
 docker compose exec -T axon-postgres psql -U axon -d axon -tAc "SELECT count(*) FROM file_index;"
 # Second run MUST dedup (0 files, 0 chunks processed):
-AXON_FILEINDEX_BACKEND=postgres AXON_PG_URL="..." PYTHONPATH=src \
-  .venv/Scripts/python.exe -m axon.cli.pb index --ctx knowledge
+AXON_PG_URL="postgresql://axon:axon@localhost:5433/axon" \
+  axon index-dev --manifest "$MANIFEST" --project knowledge-vault
+rm "$MANIFEST"
 ```
 
-Then set `fileindex_backend = "postgres"` in `axon.toml` (already the default).
-
-## Rollback
-
-Set `fileindex_backend = "sqlite"` (or `AXON_FILEINDEX_BACKEND=sqlite` for one
-command). The SQLite `file_index` is untouched by the Postgres path; the next
-sqlite index reconciles it against the repo. No data is lost.
+No backend switch or SQLite rollback exists after dec-121; preserve the target
+database if its cache rows are needed for incremental indexing.
 
 ## Mixed backend is expected during step 3
 
