@@ -1631,7 +1631,7 @@ def adr_infer_commit(
 
     async def _run() -> None:
         result = await run_for_head_async(
-            project=project, force=force, db_path=_get_db_path()
+            project=project, force=force
         )
         if result.status is InferenceStatus.SAVED_ADR:
             typer.echo(f"[axon] ADR salvo: {result.title}")
