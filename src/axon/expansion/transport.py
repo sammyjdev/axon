@@ -26,7 +26,7 @@ class UrllibSourceTransport:
 
     def _fetch_sync(self, url: str, headers: dict[str, str]) -> SourceResponse:
         check_url_safety(url)
-        request = Request(url, headers=headers)
+        request = Request(url, headers=headers)  # noqa: S310 - URL is guarded before request creation.
         # guarded by check_url_safety (scheme allowlist + private-IP block);
         # redirects validated via GuardedRedirectHandler
         with _OPENER.open(request, timeout=self.timeout_seconds) as response:
