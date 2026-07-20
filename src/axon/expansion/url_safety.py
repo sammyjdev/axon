@@ -10,6 +10,7 @@ from urllib.request import (
     HTTPRedirectHandler,
     HTTPSHandler,
     OpenerDirector,
+    ProxyHandler,
     build_opener,
 )
 
@@ -38,11 +39,17 @@ def _same_origin(url_a: str, url_b: str) -> bool:
     return (a.scheme, a.hostname, port_a) == (b.scheme, b.hostname, port_b)
 
 
-# Explicit special-use denylist for ranges Python 3.11's is_global misses.
-# 192.0.0.0/24 (IETF Protocol Assignments, RFC 6890) reports is_global=True
-# for addresses like 192.0.0.8, so it slips past the is_global/is_multicast/
-# is_reserved check below.
-_SPECIAL_USE_DENYLIST = (ipaddress.ip_network("192.0.0.0/24"),)
+# Explicit special-use denylist for ranges Python 3.11's is_global misses
+# (all report is_global=True and are neither multicast nor reserved):
+# - 192.0.0.0/24: IETF Protocol Assignments (RFC 6890), e.g. 192.0.0.8.
+# - 192.88.99.0/24: 6to4 relay anycast (RFC 7526) - can pivot via a relay.
+# - 2002::/16: 6to4 - embeds an arbitrary IPv4 (incl. private) in the address,
+#   e.g. 2002:0a00:0005:: is 10.0.0.5.
+_SPECIAL_USE_DENYLIST = (
+    ipaddress.ip_network("192.0.0.0/24"),
+    ipaddress.ip_network("192.88.99.0/24"),
+    ipaddress.ip_network("2002::/16"),
+)
 
 
 def check_url_safety(url: str) -> str:
@@ -174,4 +181,13 @@ class PinnedHTTPSHandler(HTTPSHandler):
 
 
 def build_guarded_opener() -> OpenerDirector:
-    return build_opener(GuardedRedirectHandler(), PinnedHTTPHandler(), PinnedHTTPSHandler())
+    # ProxyHandler({}) disables build_opener's default proxy discovery from
+    # HTTP_PROXY/HTTPS_PROXY: an ambient proxy env var would otherwise route the
+    # fetch through a proxy that does its own unpinned DNS resolution + connect,
+    # bypassing the IP-pinning guard entirely (Codex cross-review of PR #95).
+    return build_opener(
+        ProxyHandler({}),
+        GuardedRedirectHandler(),
+        PinnedHTTPHandler(),
+        PinnedHTTPSHandler(),
+    )
