@@ -196,6 +196,26 @@ def test_discover_local_registry_rejects_missing_tool_descriptor_file(
     assert exc.value.args == (root / "plugin-a" / "tools" / "missing.json",)
 
 
+def test_discover_local_registry_rejects_tool_descriptor_path_traversal(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    secret = tmp_path / "secret.json"
+    _write_json(secret, {"ssh_key": "should-never-be-read"})
+    _write_json(
+        root / "plugin-a" / "plugin.json",
+        {
+            "plugin_id": "acme.search",
+            "name": "Acme Search",
+            "version": "1.0.0",
+            "tool_descriptors": ["../../secret.json"],
+        },
+    )
+
+    with pytest.raises(ValueError, match="fora do diretório do plugin"):
+        discover_local_registry(root)
+
+
 def test_discover_local_registry_rejects_tool_descriptor_for_other_plugin(
     tmp_path: Path,
 ) -> None:
