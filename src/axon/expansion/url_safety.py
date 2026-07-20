@@ -135,44 +135,23 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
 
 
-def _is_proxied(req) -> bool:  # noqa: ANN001 - urllib.request.Request, no public type alias
-    """True once a ProxyHandler has already rewritten req.host to the proxy's
-    host:port. ProxyHandler.proxy_open() mutates req.host but leaves
-    req.full_url (the original target) untouched, so comparing the two
-    detects the rewrite regardless of what the proxy's address is."""
-    return req.host != urlsplit(req.full_url).netloc
-
-
 class PinnedHTTPHandler(HTTPHandler):
     # ponytail: this re-validates + re-resolves the same url that
     # UrllibSourceTransport._fetch_sync already validated once before
     # building the Request. Two resolutions of the INITIAL url is accepted
     # (a few ms) - it is not a TOCTOU gap, because this resolution is the one
     # whose result gets pinned and used for the connect() that immediately
-    # follows, with no unvetted resolution in between.
+    # follows, with no unvetted resolution in between. Every request is pinned:
+    # the guarded opener installs no ProxyHandler (build_guarded_opener passes
+    # ProxyHandler({})), so proxies are not supported here by design and there
+    # is no unpinned path to fall back to.
     def http_open(self, req):
-        if _is_proxied(req):
-            # ponytail: pinning depends on doing our own DNS resolution and
-            # connecting straight to that IP - through a proxy, the proxy
-            # does the resolution/connect instead, and our connect()
-            # override would reuse the proxy's port with the target's IP,
-            # silently breaking or bypassing the proxy. Skipping pinning
-            # here shifts the DNS-rebinding TOCTOU concern to the proxy -
-            # accepted, not fixed, because axon's expansion collector has no
-            # proxy configuration today (no HTTP_PROXY/HTTPS_PROXY/
-            # ProxyHandler references anywhere in src/axon/expansion or
-            # docs/decisions).
-            return super().http_open(req)
         ip = check_url_safety(req.full_url)
         return self.do_open(functools.partial(_PinnedHTTPConnection, pinned_ip=ip), req)
 
 
 class PinnedHTTPSHandler(HTTPSHandler):
     def https_open(self, req):
-        if _is_proxied(req):
-            # ponytail: see PinnedHTTPHandler.http_open for why pinning is
-            # skipped when proxied.
-            return super().https_open(req)
         ip = check_url_safety(req.full_url)
         # Only `context` is passed through: on Python 3.12,
         # http.client.HTTPSConnection.__init__ no longer accepts a

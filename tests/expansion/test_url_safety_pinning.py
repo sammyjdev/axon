@@ -165,38 +165,3 @@ def test_http_open_connects_to_pinned_ip_not_rebound_address(
     # never asking the (hostile) resolver a second time.
     assert call_count == 1
     assert captured == [("93.184.216.34", 80)]
-
-
-def test_http_open_skips_pinning_when_proxied(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When a ProxyHandler has already rewritten req.host to the proxy's
-    address (simulated here via Request.set_proxy, the same stdlib method
-    ProxyHandler.proxy_open uses), PinnedHTTPHandler must fall back to the
-    standard non-pinned connection instead of pinning the target's IP onto
-    the proxy's port - see Finding 3: pinning through a proxy connects to
-    (target_ip, proxy_port), which silently breaks or bypasses the proxy."""
-
-    def fail_if_called(url):  # noqa: ARG001
-        raise AssertionError("check_url_safety must not run for a proxied request")
-
-    monkeypatch.setattr(url_safety, "check_url_safety", fail_if_called)
-
-    captured: list = []
-
-    def fake_create_connection(address, timeout=None, source_address=None):  # noqa: ARG001
-        captured.append(address)
-        return _FakeSocket()
-
-    monkeypatch.setattr(socket, "create_connection", fake_create_connection)
-
-    req = Request("http://target.example.com/path")
-    req.timeout = socket._GLOBAL_DEFAULT_TIMEOUT
-    # Simulate ProxyHandler.proxy_open: rewrites req.host to the proxy,
-    # leaving req.full_url (the original target) untouched.
-    req.set_proxy("proxy.example.com:9999", "http")
-
-    response = PinnedHTTPHandler().http_open(req)
-    response.close()
-
-    # Connected straight to the proxy's own host:port (correct proxy
-    # behavior) - not to the target's pinned IP with the proxy's port.
-    assert captured == [("proxy.example.com", 9999)]
