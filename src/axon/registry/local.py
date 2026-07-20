@@ -49,7 +49,13 @@ def discover_local_registry(root: Path) -> LocalRegistry:
         plugin_manifests.append(plugin)
 
         for descriptor_relpath in plugin.tool_descriptors:
-            descriptor_path = (manifest_path.parent / descriptor_relpath).resolve()
+            manifest_dir = manifest_path.parent.resolve()
+            descriptor_path = (manifest_dir / descriptor_relpath).resolve()
+            if not descriptor_path.is_relative_to(manifest_dir):
+                raise ValueError(
+                    f"tool_descriptor '{descriptor_relpath}' de '{plugin.plugin_id}' "
+                    f"fora do diretório do plugin: {descriptor_path}"
+                )
             if not descriptor_path.exists():
                 raise FileNotFoundError(descriptor_path)
             tool = load_tool_descriptor(descriptor_path)
