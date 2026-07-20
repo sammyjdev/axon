@@ -5,7 +5,7 @@ from typing import Protocol
 from urllib.request import Request
 
 from axon.expansion.models import SourceDefinition, SourceResponse
-from axon.expansion.url_safety import build_guarded_opener, check_url_safety
+from axon.expansion.url_safety import _same_origin, build_guarded_opener, check_url_safety
 
 _OPENER = build_guarded_opener()
 
@@ -20,7 +20,10 @@ class UrllibSourceTransport:
 
     async def fetch(self, url: str, source: SourceDefinition | None = None) -> SourceResponse:
         headers = {"User-Agent": "AxonExpansion/1.0"}
-        if source:
+        # Only merge source.headers (which may carry Authorization) when the
+        # target url shares the source endpoint's origin - a source's own
+        # headers have no business going to a third-party host.
+        if source and _same_origin(url, source.endpoint):
             headers.update(dict(source.headers))
         return await asyncio.to_thread(self._fetch_sync, url, headers)
 
