@@ -234,6 +234,40 @@ def _context_layers(task: TaskRequest) -> tuple[str, str, str]:
     return static_layer, semi_static, dynamic
 
 
+async def _call_completion(model: str, layered_messages: list[dict]) -> object:
+    """Build kwargs (incl. Ollama api_base) and call litellm for one model."""
+    # Para modelos Ollama, litellm precisa do api_base — resolve via env ou
+    # AXON_OLLAMA_LOCAL_HOST. Não afeta provedores cloud.
+    completion_kwargs: dict = {"model": model, "messages": layered_messages}
+    if model.startswith("ollama/"):
+        ollama_host = (
+            os.environ.get("OLLAMA_BASE_URL")
+            or _RUNTIME.ollama_local_host
+            or "http://localhost:11434"
+        )
+        completion_kwargs["api_base"] = ollama_host
+    return await litellm.acompletion(**completion_kwargs)
+
+
+def _fallback_model_for(task_type: TaskType, primary_model: str) -> str | None:
+    """Distinct fallback model for a task's tier, or None if none applies.
+
+    Mirrors the tier-downgrade helpers used for budget-driven pre-flight
+    downgrade (D2 fallback: trivial of the active profile). Returns None
+    when the tier has no fallback concept (LOCAL_ONLY) or when the fallback
+    helper would return the SAME model as the primary (TRIVIAL_COMPLETION/
+    UNKNOWN already map to bottom tier) -- callers must not blind-retry an
+    identical model.
+    """
+    if task_type in (TaskType.ARCHITECTURE, TaskType.DEEP_REASONING):
+        candidate = _mid_tier_model()
+    elif task_type is TaskType.CODE_ANALYSIS:
+        candidate = _bottom_tier_model()
+    else:
+        return None
+    return candidate if candidate != primary_model else None
+
+
 async def complete_with_usage(
     task: TaskRequest, messages: list[dict]
 ) -> tuple[str, CompletionUsage | None]:
@@ -287,23 +321,42 @@ async def complete_with_usage(
     if not _BREAKER.allow_call(breaker_key):
         raise RuntimeError(ReasonCode.DENY_BREAKER_OPEN.value)
 
-    # Para modelos Ollama, litellm precisa do api_base — resolve via env ou
-    # AXON_OLLAMA_LOCAL_HOST. Não afeta provedores cloud.
-    completion_kwargs: dict = {"model": result.model, "messages": layered_messages}
-    if result.model.startswith("ollama/"):
-        ollama_host = (
-            os.environ.get("OLLAMA_BASE_URL")
-            or _RUNTIME.ollama_local_host
-            or "http://localhost:11434"
-        )
-        completion_kwargs["api_base"] = ollama_host
-
     try:
-        response = await litellm.acompletion(**completion_kwargs)
+        response = await _call_completion(result.model, layered_messages)
         _BREAKER.record_success(breaker_key)
-    except Exception:
+    except Exception as exc:
         _BREAKER.record_failure(breaker_key)
-        raise
+        logger.warning("completion failed for model=%s: %s", result.model, exc)
+        fallback_model = _fallback_model_for(result.task_type, result.model)
+        if fallback_model is None:
+            raise
+        fallback_key = f"router:{fallback_model}"
+        if not _BREAKER.allow_call(fallback_key):
+            logger.warning(
+                "completion fallback denied by breaker for model=%s (primary=%s)",
+                fallback_model,
+                result.model,
+            )
+            raise exc
+        try:
+            response = await _call_completion(fallback_model, layered_messages)
+        except Exception as fallback_exc:
+            _BREAKER.record_failure(fallback_key)
+            logger.warning(
+                "completion fallback also failed model=%s: %s (primary=%s)",
+                fallback_model,
+                fallback_exc,
+                result.model,
+            )
+            raise exc from fallback_exc
+        _BREAKER.record_success(fallback_key)
+        logger.warning(
+            "completion recovered via fallback model=%s after primary=%s failed: %s",
+            fallback_model,
+            result.model,
+            exc,
+        )
+        result.model = fallback_model
     content = response.choices[0].message.content
     raw_usage = getattr(response, "usage", None)
     usage: CompletionUsage | None = None
