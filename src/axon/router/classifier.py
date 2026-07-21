@@ -11,6 +11,8 @@ from axon.resilience.circuit_breaker import CircuitBreaker
 from axon.resilience.rate_limiter import RateLimiter, spec_from_env
 from axon.router.provider_validation import provider_for_model
 
+litellm.drop_params = True
+
 
 class TaskType(StrEnum):
     TRIVIAL_COMPLETION = "TRIVIAL_COMPLETION"
@@ -57,6 +59,7 @@ def _classify_with_litellm(model: str, content: str) -> TaskType:
         ],
         timeout=_RUNTIME.classifier_timeout_seconds,
         max_tokens=32,
+        reasoning_effort="low",
     )
     message = response.choices[0].message.content or ""
     return _normalize_task_type(message)
