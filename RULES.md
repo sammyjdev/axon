@@ -127,3 +127,13 @@ promotes them into a section above after curation.
   doc files>` on every new/modified line (diff against the pre-change file
   to exclude pre-existing, out-of-scope hits) before the maker reports the
   change as done, not left solely to the reviewer to catch. (FORGE #73)
+- **Cutting a CLI command can silently delete the only entry point for a whole
+  workflow, not just the command itself.** `pb index`/`pb watch` were cut in
+  be66a51 (dec-125, CLI unification) - correct on its own terms - but nothing
+  noticed they were the vault's ONLY bulk-(re)index path, so the vault silently
+  stopped being reindexed after 2026-06-26 (~70% coverage rot by the time issue
+  #104 caught it, all `file_index` rows clustered at one historical `indexed_at`).
+  Check: before deleting a command, grep for any workflow/doc/cron that depends
+  on it being run periodically (not just at call sites in code) - a command with
+  no direct caller in the codebase can still be the only thing that invokes a
+  pipeline function against a real target. (FORGE #104)

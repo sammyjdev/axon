@@ -2047,6 +2047,64 @@ def index_dev(
     asyncio.run(_index_dev())
 
 
+@app.command("index-vault")
+def index_vault(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Lista arquivos do vault sem gravar")
+    ] = False,
+) -> None:
+    """Indexa o vault inteiro (ctx inferido por arquivo via infer_ctx_from_path).
+
+    Sem isso, `pb index`/`pb watch` (removidos em be66a51 / dec-125) deixaram o
+    vault sem nenhum ponto de reindexação: cada arquivo recebe seu ctx via
+    infer_ctx_from_path (forced_ctx=None), exatamente como index_path já
+    suporta - `work/` continua excluído por is_ctx_indexable.
+    """
+    from axon.embedder.pipeline import iter_supported_files
+
+    vault_root = _RUNTIME.vault_root
+
+    if dry_run:
+        files = list(iter_supported_files(vault_root, languages={"markdown"}))
+        typer.echo(f"vault_root: {vault_root}")
+        typer.echo(f"files={len(files)}")
+        return
+
+    async def _index_vault() -> None:
+        from axon.embedder.engine import EmbedderEngine
+        from axon.embedder.pipeline import index_path
+        from axon.store.pg_symbol_deps import PostgresSymbolDeps
+        from axon.store.vector_store_factory import make_vector_store
+
+        engine = EmbedderEngine()
+        store = make_vector_store(_RUNTIME)
+        graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
+        file_cache, db_conn = await _open_file_cache()
+
+        try:
+            await store.ensure_collections()
+            await graph_store.ensure_schema()
+            async with _index_lock_guard(fatal=True):
+                indexed_files, chunks = await index_path(
+                    vault_root,
+                    engine=engine,
+                    store=store,
+                    vault_root=vault_root,
+                    file_cache=file_cache,
+                    forced_ctx=None,
+                    graph_store=graph_store,
+                    languages={"markdown"},
+                )
+        finally:
+            await store.close()
+            await graph_store.close()
+            await db_conn.close()
+
+        typer.echo(f"Vault indexado: {indexed_files} arquivo(s), {chunks} chunk(s)")
+
+    asyncio.run(_index_vault())
+
+
 # ---------------------------------------------------------------------------
 # pb portability
 # ---------------------------------------------------------------------------
