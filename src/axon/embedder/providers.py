@@ -1,4 +1,4 @@
-"""bge-m3 provider chain: Ollama -> NIM -> DeepInfra (EMB-2).
+"""bge-m3 provider chain: Ollama -> DeepInfra (EMB-2; NIM opt-in, endpoint broken upstream).
 
 Thin per-provider HTTP adapters behind one `ProviderFn` interface, tried in
 configured order with fall-through on error. See

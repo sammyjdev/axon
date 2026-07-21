@@ -89,6 +89,15 @@ def test_falls_through_when_provider_returns_fewer_vectors_than_texts() -> None:
     assert result == [[0.0, 1.0], [0.0, 1.0]]
 
 
+def test_default_chain_is_ollama_then_deepinfra(monkeypatch: pytest.MonkeyPatch) -> None:
+    """NIM's bge-m3 embedding endpoint is broken upstream (HTTP 500, verified
+    2026-07-21); DeepInfra is the remote provider for bge-m3. NIM stays
+    available opt-in by name via AXON_EMBEDDER_CHAIN."""
+    monkeypatch.delenv("AXON_EMBEDDER_CHAIN", raising=False)
+    chain = load_embedder_chain_config()
+    assert [p.name for p in chain.providers] == ["ollama", "deepinfra"]
+
+
 def test_all_providers_short_raises_clear_error() -> None:
     """When every provider returns a malformed (short) vector list, raise -- never return it."""
     call_log: list[str] = []
