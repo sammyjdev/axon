@@ -95,7 +95,7 @@ class EmbedderProviderConfig:
 
 @dataclass(frozen=True)
 class EmbedderChainConfig:
-    """Ordered bge-m3 provider chain (default: Ollama -> NIM -> DeepInfra).
+    """Ordered bge-m3 provider chain (default: Ollama -> DeepInfra).
 
     Order and membership are configurable via AXON_EMBEDDER_CHAIN (comma-separated
     provider names); each listed provider's endpoint/model id is fixed per the
@@ -686,7 +686,10 @@ def _load_expansion_config(engine_root: Path) -> ExpansionConfig:
 
 
 _EMBEDDER_CHAIN_MODEL = "bge-m3"
-_DEFAULT_EMBEDDER_CHAIN_ORDER = ("ollama", "nim", "deepinfra")
+# NIM removed from the default: its bge-m3 embedding endpoint returns
+# HTTP 500 upstream (verified live 2026-07-21). Re-enable by name via
+# AXON_EMBEDDER_CHAIN if the provider fixes it.
+_DEFAULT_EMBEDDER_CHAIN_ORDER = ("ollama", "deepinfra")
 
 
 def _embedder_provider_specs(ollama_local_host: str) -> dict[str, EmbedderProviderConfig]:
@@ -715,7 +718,7 @@ def load_embedder_chain_config() -> EmbedderChainConfig:
     """Load the bge-m3 provider chain.
 
     Order/membership: AXON_EMBEDDER_CHAIN env (comma-separated provider names,
-    default "ollama,nim,deepinfra"). Each provider's endpoint/model id is fixed.
+    default "ollama,deepinfra"). Each provider's endpoint/model id is fixed.
     """
     ollama_local_host = os.environ.get("AXON_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434")
     raw_order = os.environ.get("AXON_EMBEDDER_CHAIN", ",".join(_DEFAULT_EMBEDDER_CHAIN_ORDER))
