@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+import types
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from typer.testing import CliRunner
@@ -1015,3 +1017,94 @@ def test_index_dev_rejects_invalid_manifest(tmp_path) -> None:
 
     assert result.exit_code == 1
     assert "Manifesto inválido:" in result.output
+
+
+def test_index_vault_dry_run_lists_vault_files_without_writes(tmp_path, monkeypatch) -> None:
+    # Regression for issue #104: pb had no CLI entry point wired to index the
+    # whole vault (ask/index/watch were cut in be66a51 / dec-125), so nothing
+    # reindexed the vault after the 2026-06-26 bulk run. --dry-run must list
+    # the vault's markdown files without touching a store/engine/DB.
+    vault_root = tmp_path / "vault"
+    knowledge_dir = vault_root / "knowledge" / "research" / "some-slug"
+    career_dir = vault_root / "career"
+    ignored_dir = vault_root / "knowledge" / "node_modules"
+    knowledge_dir.mkdir(parents=True)
+    career_dir.mkdir(parents=True)
+    ignored_dir.mkdir(parents=True)
+    (knowledge_dir / "CONTEXT.md").write_text("# Context\n", encoding="utf-8")
+    (career_dir / "resume.md").write_text("# Resume\n", encoding="utf-8")
+    (ignored_dir / "readme.md").write_text("# Ignored\n", encoding="utf-8")
+
+    monkeypatch.setattr(pb, "_RUNTIME", types.SimpleNamespace(vault_root=vault_root))
+
+    result = runner.invoke(pb.app, ["index-vault", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "files=2" in result.stdout
+
+
+def _patch_index_vault_wiring(monkeypatch, tmp_path: Path, *, index_path_mock) -> None:
+    """Mock every collaborator the wired (non-dry-run) index_vault path opens.
+
+    All patched at their source module, since _index_vault() imports them
+    locally at call time (`from module import name`) - patching the module
+    attribute before invoking the CLI is what a fresh local import picks up.
+    """
+    fake_runtime = types.SimpleNamespace(
+        vault_root=tmp_path / "vault",
+        pg_url="postgresql://fake",
+        data_root=tmp_path / "data",
+    )
+    monkeypatch.setattr(pb, "_RUNTIME", fake_runtime)
+    monkeypatch.setattr(
+        pb, "_open_file_cache", AsyncMock(return_value=(MagicMock(), AsyncMock()))
+    )
+    monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", MagicMock())
+    monkeypatch.setattr(
+        "axon.store.vector_store_factory.make_vector_store",
+        MagicMock(return_value=AsyncMock()),
+    )
+    monkeypatch.setattr(
+        "axon.store.pg_symbol_deps.PostgresSymbolDeps",
+        MagicMock(return_value=AsyncMock()),
+    )
+    monkeypatch.setattr("axon.embedder.pipeline.index_path", index_path_mock)
+    return fake_runtime
+
+
+def test_index_vault_wired_indexes_whole_vault_with_no_forced_ctx(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Regression for a Quench-surfaced gap: nothing exercised index_vault's
+    # wired (non-dry-run) branch, so a mutation changing forced_ctx=None to
+    # forced_ctx="knowledge" (which would force every file's ctx instead of
+    # inferring it per-file via infer_ctx_from_path) survived silently.
+    index_path_mock = AsyncMock(return_value=(3, 7))
+    fake_runtime = _patch_index_vault_wiring(
+        monkeypatch, tmp_path, index_path_mock=index_path_mock
+    )
+
+    result = runner.invoke(pb.app, ["index-vault"])
+
+    assert result.exit_code == 0, result.output
+    index_path_mock.assert_awaited_once()
+    call = index_path_mock.await_args
+    assert call.args[0] == fake_runtime.vault_root
+    assert call.kwargs["forced_ctx"] is None
+    assert call.kwargs["vault_root"] == fake_runtime.vault_root
+    assert "3 arquivo(s), 7 chunk(s)" in result.stdout
+
+
+def test_index_vault_wired_propagates_index_path_errors(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Regression for a second Quench-surfaced mutation: wrapping index_path()
+    # in a try/except that silently swallowed errors (indexed_files, chunks =
+    # 0, 0) survived because no test drove a failure through the wired path.
+    index_path_mock = AsyncMock(side_effect=RuntimeError("boom"))
+    _patch_index_vault_wiring(monkeypatch, tmp_path, index_path_mock=index_path_mock)
+
+    result = runner.invoke(pb.app, ["index-vault"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, RuntimeError)
