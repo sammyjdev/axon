@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import litellm
@@ -268,6 +269,23 @@ def _fallback_model_for(task_type: TaskType, primary_model: str) -> str | None:
     return candidate if candidate != primary_model else None
 
 
+def _usage_field(raw_usage: object, field_name: str) -> int:
+    """Read one token-count field off a provider usage payload.
+
+    litellm attaches `usage` to a completion response inconsistently across
+    its own internal paths: the common case wraps it in a
+    `litellm.types.utils.Usage` object (attribute access), but some paths
+    (e.g. streaming chunk aggregation) assign the raw provider dict directly.
+    Attribute-only extraction silently reads 0 for a dict-shaped payload
+    instead of the real value, so check Mapping shape first.
+    """
+    if isinstance(raw_usage, Mapping):
+        value = raw_usage.get(field_name, 0)
+    else:
+        value = getattr(raw_usage, field_name, 0)
+    return value or 0
+
+
 async def complete_with_usage(
     task: TaskRequest, messages: list[dict]
 ) -> tuple[str, CompletionUsage | None]:
@@ -363,9 +381,9 @@ async def complete_with_usage(
     if raw_usage is not None:
         usage = CompletionUsage(
             model=result.model,
-            prompt_tokens=int(getattr(raw_usage, "prompt_tokens", 0) or 0),
-            completion_tokens=int(getattr(raw_usage, "completion_tokens", 0) or 0),
-            total_tokens=int(getattr(raw_usage, "total_tokens", 0) or 0),
+            prompt_tokens=int(_usage_field(raw_usage, "prompt_tokens")),
+            completion_tokens=int(_usage_field(raw_usage, "completion_tokens")),
+            total_tokens=int(_usage_field(raw_usage, "total_tokens")),
         )
     return content, usage
 
