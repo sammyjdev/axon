@@ -7,8 +7,11 @@ set -u
 # PATH precisa incluir docker (Docker Desktop ou Homebrew)
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-COMPOSE_FILE="<home>/dev/axon/docker-compose.yml"
-LOG="<home>/dev/axon/data/backends-start.log"
+# Derive repo root from this script's location (LaunchAgent invokes it by
+# absolute path), so no machine-specific path is baked in.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
+LOG="$REPO_ROOT/data/backends-start.log"
 mkdir -p "$(dirname "$LOG")"
 
 ts() { date '+%Y-%m-%dT%H:%M:%S%z'; }
