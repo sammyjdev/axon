@@ -1,0 +1,19 @@
+{
+  "_comment": "Per-machine index manifest. Copy to projects.json and edit for your machine. projects.json is gitignored (it holds absolute local paths and is multi-machine by design).",
+  "projects": [
+    {
+      "name": "axon",
+      "path": "${HOME}/dev/axon",
+      "ctx": "personal",
+      "enabled": true,
+      "languages": ["python", "typescript", "markdown", "text"]
+    },
+    {
+      "name": "example-project",
+      "path": "${HOME}/dev/example-project",
+      "ctx": "personal",
+      "enabled": false,
+      "languages": ["python", "markdown", "text"]
+    }
+  ]
+}
