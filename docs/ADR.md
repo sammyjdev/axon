@@ -196,3 +196,9 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
   `doctor`) is re-registered onto it, `init` is renamed `bootstrap` to avoid a
   name collision, the permanently-cut T6.3 commands stay cut, and the stray
   `pb` binary is retired for good.
+- [dec-127](decisions/dec-127-bedrock-generation-backend.md): AWS Bedrock joins
+  the generation providers through the existing litellm funnel (`bedrock/`
+  prefix, opt-in `AXON_PROVIDER_BEDROCK`, AWS profile/region via AXON-scoped
+  envs, boto3 as the `[bedrock]` extra) instead of a parallel boto3 adapter
+  path, so breaker/rate/budget/usage capture apply unchanged; reachable via
+  the pinned-model escape hatch, not the D2 tiers.
