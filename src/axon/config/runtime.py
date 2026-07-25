@@ -138,6 +138,11 @@ class RuntimeConfig:
     graph_backend: str = "sqlite"
     decisions_backend: str = "sqlite"
     sessions_backend: str = "sqlite"
+    # Bedrock is opt-in (mirrors AXON_PROVIDER_BEDROCK default "0"), so the
+    # fields carry defaults and existing RuntimeConfig call sites stay valid.
+    provider_bedrock_enabled: bool = False
+    bedrock_profile: str | None = None
+    bedrock_region: str = "us-east-1"
 
     @property
     def data_root(self) -> Path:
@@ -770,6 +775,9 @@ def load_runtime_config() -> RuntimeConfig:
         provider_anthropic_enabled=os.environ.get("AXON_PROVIDER_ANTHROPIC", "1") == "1",
         provider_openrouter_enabled=os.environ.get("AXON_PROVIDER_OPENROUTER", "1") == "1",
         provider_ollama_enabled=os.environ.get("AXON_PROVIDER_OLLAMA", "0") == "1",
+        provider_bedrock_enabled=os.environ.get("AXON_PROVIDER_BEDROCK", "0") == "1",
+        bedrock_profile=os.environ.get("AXON_BEDROCK_PROFILE") or None,
+        bedrock_region=os.environ.get("AXON_BEDROCK_REGION", "us-east-1"),
         provider_profile=_resolve_provider_profile(),
         openrouter_compliance_required=_env_bool("AXON_OPENROUTER_COMPLIANCE", False),
         expansion=_load_expansion_config(engine_root),
