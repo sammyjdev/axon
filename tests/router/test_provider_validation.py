@@ -12,6 +12,7 @@ from axon.router.provider_validation import (
 def test_provider_for_model_maps_known_prefixes() -> None:
     assert provider_for_model("ollama/phi3:mini") == "ollama"
     assert provider_for_model("openrouter/google/gemini") == "openrouter"
+    assert provider_for_model("bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0") == "bedrock"
     assert provider_for_model("claude-haiku-4-5-20251001") == "anthropic"
 
 

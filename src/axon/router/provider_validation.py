@@ -8,6 +8,8 @@ def provider_for_model(model: str) -> str:
         return "openrouter"
     if model.startswith("groq/"):
         return "groq"
+    if model.startswith("bedrock/"):
+        return "bedrock"
     if model.startswith("nvidia_nim/"):
         return "nvidia_nim"
     return "anthropic"

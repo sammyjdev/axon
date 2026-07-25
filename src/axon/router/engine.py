@@ -209,7 +209,8 @@ def _context_layers(task: TaskRequest) -> tuple[str, str, str]:
     availability = (
         f"anthropic={int(_RUNTIME.provider_anthropic_enabled)};"
         f"openrouter={int(_RUNTIME.provider_openrouter_enabled)};"
-        f"ollama={int(_RUNTIME.provider_ollama_enabled)}"
+        f"ollama={int(_RUNTIME.provider_ollama_enabled)};"
+        f"bedrock={int(_RUNTIME.provider_bedrock_enabled)}"
     )
     cache_key = build_composite_cache_key(
         content="policy-layers",
@@ -247,6 +248,13 @@ async def _call_completion(model: str, layered_messages: list[dict]) -> object:
             or "http://localhost:11434"
         )
         completion_kwargs["api_base"] = ollama_host
+    if model.startswith("bedrock/"):
+        # AWS creds come from the named profile (boto3 chain), never from
+        # AXON config -- AXON only carries names. AXON-scoped envs keep the
+        # machine-global AWS_PROFILE untouched.
+        if _RUNTIME.bedrock_profile:
+            completion_kwargs["aws_profile_name"] = _RUNTIME.bedrock_profile
+        completion_kwargs["aws_region_name"] = _RUNTIME.bedrock_region
     return await litellm.acompletion(**completion_kwargs)
 
 
@@ -313,6 +321,7 @@ async def complete_with_usage(
         "anthropic": _RUNTIME.provider_anthropic_enabled,
         "openrouter": _RUNTIME.provider_openrouter_enabled,
         "ollama": _RUNTIME.provider_ollama_enabled,
+        "bedrock": _RUNTIME.provider_bedrock_enabled,
     }.get(provider, True)
     if not provider_enabled:
         raise RuntimeError(f"provider disabled: {provider}")
