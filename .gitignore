@@ -70,3 +70,14 @@ docker-compose.override.yml
 .coverage
 .coverage.*
 .wrangler/
+
+# Per-machine index manifest (absolute local paths + private project names)
+config/projects.json
+
+# Launch marketing drafts + beta outreach (personal, keep local)
+docs/launch/posts/
+docs/launch/beta.md
+
+# Launch marketing drafts + beta outreach (personal, keep local)
+docs/launch/posts/
+docs/launch/beta.md
