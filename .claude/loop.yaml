@@ -20,12 +20,18 @@ labels:
 
 # posture (axon is an internal context engine, not a customer-facing product)
 posture: internal
+# risk_areas ARM the classifier floor: normalize_classification.py greps these keywords
+# in the issue text and forces effective_tier=Legendary on a match (closes the classifier
+# false-clear gap). Keywords are the tool/artifact names an issue actually says, not the
+# category name. Over-match is the safe direction (false-escalate > false-clear); axon-
+# ubiquitous words like "chunk"/"token" are deliberately excluded so the floor does not
+# escalate every issue. Tune per real routing/cost.
 risk_areas:
-  - restricted-context   # ctx=work; DENY_RESTRICTED_TOOL_WRITE (dec-109) - never bypass
-  - destructive-tools    # AXON_ALLOW_DESTRUCTIVE gate; default deny
-  - secrets              # .env / API keys - never commit
-  - chunker              # Java chunker is a release gate (D5) - do not weaken its tests
-  - migration            # relational backend cutover (dec-121); SQLite rollback must survive
+  - restricted-context: [ctx=work, DENY_RESTRICTED, PolicyRegistry, work-data barrier, dec-109]
+  - destructive-tools: [AXON_ALLOW_DESTRUCTIVE, destructive, hard-delete, drop table, purge]
+  - secrets: [gitleaks, bandit, credential, api key, .env]
+  - chunker: [chunker, java chunker, D5]
+  - migration: [migration, migrate, alembic, schema, dec-121, backend cutover]
 quality_rubric:
   testability: true
   scalability: true
