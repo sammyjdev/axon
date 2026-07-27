@@ -242,15 +242,25 @@ with 95% confidence intervals, and every claim names its counterfactual
 - **Session cost** (vs re-sending the conversation - 10-turn sessions, 3
   stable runs, 2026-07-04): cost parity (pooled +4%), crossing to net savings
   at turn 6-9, with final-turn faithfulness at parity or better.
-- **Real-usage savings** (vs reading each source file in full): 90.7% - 32,298
-  tokens returned where the Read workflow would have cost 346,081 (100
-  instrumented requests).
+- **Real-usage savings** (vs reading each source file in full): **86.8%** -
+  174,358 tokens returned where the Read workflow would have cost 1,317,041,
+  over the 182 instrumented requests whose source files all still resolve
+  (exact counting). Including the 167 requests with since-moved files - whose
+  counterfactual is undercounted, biasing *against* the claim - the
+  conservative floor over all 349 requests is 83.1%. Reproducible from the
+  committed snapshot alone:
+  `python3 scripts/recall_savings_report.py --snapshot benchmarks/recall_savings_snapshot.jsonl`
+  ([`benchmarks/recall_savings_snapshot.jsonl`](benchmarks/recall_savings_snapshot.jsonl):
+  whitelisted integer counts and opaque ids only - raw telemetry with local
+  paths never ships).
 
-Retired: an earlier version of this section cited **52.3%** token savings.
-That figure was a deterministic projection against an assumed 87,000-token
-baseline - a model, never a measurement. It is kept in
-[`benchmarks/model.py`](benchmarks/model.py) for provenance; the
-projection-vs-measurement story is documented in gnomon-eval ADR-0011.
+Retired: an earlier version of this section cited **52.3%** token savings -
+a deterministic projection against an assumed 87,000-token baseline, a model,
+never a measurement (kept in [`benchmarks/model.py`](benchmarks/model.py) for
+provenance; see gnomon-eval ADR-0011). A later version cited **90.7%**
+(n=100, 2026-07-04) - a real measurement, but computed live against local
+files and no longer reproducible after a filesystem reorganization moved the
+historical paths; superseded by the committed-snapshot figure above.
 
 Measured compression telemetry from running the real pipeline (`phi3:mini`
 via Ollama, caveman + RTK) over 69 representative technical context windows
