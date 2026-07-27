@@ -30,7 +30,7 @@ def test_export_adr_writes_decision_note(tmp_path: Path) -> None:
     decision = _decision(symbols=["pkg.Mod"], linked_decisions=["dec-002"])
     target = export_adr(decision, vault=tmp_path)
 
-    assert target == tmp_path / "AXON" / "Decisions" / "dec-001.md"
+    assert target == tmp_path / "AXON" / "Journal" / "dec-001.md"
     text = target.read_text(encoding="utf-8")
     assert "drop neo4j backend" in text
     assert "pkg.Mod" in text
@@ -58,7 +58,7 @@ def test_export_project_summary_filters_by_date(tmp_path: Path) -> None:
 
 def test_write_is_atomic_and_leaves_no_tmp(tmp_path: Path) -> None:
     export_adr(_decision(), vault=tmp_path)
-    decisions_dir = tmp_path / "AXON" / "Decisions"
+    decisions_dir = tmp_path / "AXON" / "Journal"
     assert (decisions_dir / "dec-001.md").exists()
     assert not (decisions_dir / "dec-001.md.tmp").exists()
 

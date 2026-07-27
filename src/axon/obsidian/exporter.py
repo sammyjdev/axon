@@ -1,6 +1,6 @@
 """Obsidian doc export (T5.3).
 
-Writes Markdown into ``<vault>/AXON/{Architecture,Summaries,Decisions}/``.
+Writes Markdown into ``<vault>/AXON/{Architecture,Summaries,Journal}/``.
 Every write is atomic (temp file + ``os.replace``) so a vault is never left
 with a half-written note. Docs cross-reference each other via Obsidian
 ``[[wikilinks]]`` keyed on decision id.
@@ -19,7 +19,7 @@ from axon.core.decision import Decision
 _ROOT = "AXON"
 _ARCHITECTURE_DIR = "Architecture"
 _SUMMARIES_DIR = "Summaries"
-_DECISIONS_DIR = "Decisions"
+_DECISIONS_DIR = "Journal"
 
 _STATUS_ORDER = ("active", "draft", "superseded", "deprecated")
 _STATUS_HEADING = {
@@ -66,7 +66,7 @@ def _grouped_decisions(decisions: list[Decision]) -> str:
 
 
 def export_adr(decision: Decision, *, vault: Path) -> Path:
-    """Write one decision as an ADR note at ``AXON/Decisions/<id>.md``.
+    """Write one decision as an ADR note at ``AXON/Journal/<id>.md``.
 
     Metadata lives in YAML frontmatter (filter facets, not embedded); the body
     is the summary as an H1 plus optional ``#tags`` and ``[[related]]`` links.

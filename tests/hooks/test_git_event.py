@@ -253,7 +253,7 @@ async def test_on_push_exports_when_scope_ends(
     await on_push(store=store, cwd=repo)
 
     assert (vault / "AXON" / "Architecture" / "pushrepo.md").exists()
-    assert (vault / "AXON" / "Decisions" / "dec-001.md").exists()
+    assert (vault / "AXON" / "Journal" / "dec-001.md").exists()
 
 
 async def test_judge_emits_validation_result_trace_per_scored_decision(
