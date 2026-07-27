@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import secrets
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -11,6 +13,12 @@ METHOD = (
     "telemetry rows without file_path (pre-T8) are excluded"
 )
 
+# The public-snapshot privacy boundary: exactly these keys, nothing else.
+# Raw telemetry carries absolute vault/repo paths that must never ship.
+SNAPSHOT_FIELDS = frozenset(
+    {"id", "date", "returned_tokens", "counterfactual_tokens", "missing_files"}
+)
+
 
 @dataclass(frozen=True)
 class SavingsRequest:
@@ -18,6 +26,7 @@ class SavingsRequest:
     returned_tokens: int
     counterfactual_tokens: int
     missing_files: int
+    date: str = "?"
 
 
 @dataclass(frozen=True)
@@ -94,6 +103,7 @@ def aggregate_recall_savings(file_path: Path, *, max_lines: int | None = None) -
                 returned_tokens=returned_tokens,
                 counterfactual_tokens=counterfactual_tokens,
                 missing_files=missing_here,
+                date=str(record.get("ts", "?"))[:10],
             )
         )
 
@@ -104,5 +114,57 @@ def aggregate_recall_savings(file_path: Path, *, max_lines: int | None = None) -
         rows_skipped_no_file_path=rows_skipped_no_file_path,
         rows_skipped_missing_files=rows_skipped_missing_files,
         missing_file_refs=missing_file_refs,
+        request_rows=request_rows,
+    )
+
+
+def export_savings_snapshot(file_path: Path) -> list[dict[str, object]]:
+    """Whitelisted public rows from raw recall telemetry (SNAPSHOT_FIELDS only).
+
+    Ids are re-hashed with a fresh random salt that is discarded, so snapshot
+    rows cannot be linked back to raw query hashes or across exports.
+    """
+    salt = secrets.token_bytes(16)
+    rows: list[dict[str, object]] = []
+    for request in aggregate_recall_savings(file_path).request_rows:
+        opaque = hashlib.sha256(salt + request.query_hash.encode("utf-8")).hexdigest()[:16]
+        rows.append(
+            {
+                "id": opaque,
+                "date": request.date,
+                "returned_tokens": request.returned_tokens,
+                "counterfactual_tokens": request.counterfactual_tokens,
+                "missing_files": request.missing_files,
+            }
+        )
+    return rows
+
+
+def aggregate_snapshot(file_path: Path) -> SavingsAggregate:
+    """Recompute the savings aggregate from a public snapshot alone."""
+    requests = 0
+    returned_total = 0
+    counterfactual_total = 0
+    request_rows: list[SavingsRequest] = []
+    for raw_line in file_path.read_text(encoding="utf-8").splitlines():
+        if not raw_line.strip():
+            continue
+        row = json.loads(raw_line)
+        requests += 1
+        returned_total += int(row["returned_tokens"])
+        counterfactual_total += int(row["counterfactual_tokens"])
+        request_rows.append(
+            SavingsRequest(
+                query_hash=str(row["id"]),
+                returned_tokens=int(row["returned_tokens"]),
+                counterfactual_tokens=int(row["counterfactual_tokens"]),
+                missing_files=int(row["missing_files"]),
+                date=str(row["date"]),
+            )
+        )
+    return SavingsAggregate(
+        requests=requests,
+        returned_tokens=returned_total,
+        counterfactual_tokens=counterfactual_total,
         request_rows=request_rows,
     )

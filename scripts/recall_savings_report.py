@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from axon.observability.savings import (
     METHOD,
     aggregate_recall_savings,
+    aggregate_snapshot,
     format_ratio,
 )
 
@@ -25,8 +26,8 @@ def _default_chunks_file(data_root: Path) -> Path:
     return data_root / "recall" / "chunks.jsonl"
 
 
-def build_report(file_path: Path) -> str:
-    aggregate = aggregate_recall_savings(file_path)
+def build_report(file_path: Path, *, snapshot: bool = False) -> str:
+    aggregate = aggregate_snapshot(file_path) if snapshot else aggregate_recall_savings(file_path)
     lines = [f"METHOD: {METHOD}"]
     for request in aggregate.request_rows:
         lines.append(
@@ -66,7 +67,16 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Override chunks.jsonl path.",
     )
+    parser.add_argument(
+        "--snapshot",
+        type=Path,
+        help="Report from a public snapshot (benchmarks/recall_savings_snapshot.jsonl) "
+        "instead of raw local telemetry.",
+    )
     args = parser.parse_args(argv)
+    if args.snapshot:
+        print(build_report(args.snapshot, snapshot=True))
+        return 0
     target = args.file or _default_chunks_file(args.data_root)
     print(build_report(target))
     return 0
