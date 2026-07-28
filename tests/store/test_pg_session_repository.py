@@ -35,6 +35,45 @@ async def test_memory_note_return_ids_and_order(pg_dsn) -> None:
         await repo.close()
 
 
+async def test_large_summary_and_note_roundtrip_and_dedup(pg_dsn) -> None:
+    # Regression #111: the natural-key UNIQUE indexes were btree over the full
+    # text columns, so any summary/body above ~2.6KB failed to insert (btree
+    # caps index rows at 2704 bytes). The indexes now hash the text via md5().
+    # High-entropy content, or TOAST compression shrinks it under the cap and
+    # the regression never trips.
+    import hashlib
+
+    from axon.store.pg_session_repository import PostgresSessionRepository
+
+    def incompressible(seed: str, chars: int) -> str:
+        out: list[str] = []
+        i = 0
+        while sum(len(c) for c in out) < chars:
+            out.append(hashlib.sha256(f"{seed}{i}".encode()).hexdigest())
+            i += 1
+        return "".join(out)[:chars]
+
+    repo = PostgresSessionRepository(dsn=pg_dsn)
+    try:
+        await repo.ensure_schema()
+        big_summary = incompressible("summary", 9000)
+        mem = SessionMemory(project="p111", summary=big_summary, raw_turns=0)
+        i1 = await repo.save_session_memory(mem)
+        i2 = await repo.save_session_memory(mem)  # natural-key dedup still holds
+        assert i1 == i2
+        mems = await repo.get_session_memories("p111", limit=1)
+        assert mems[0].summary == big_summary
+
+        big_body = incompressible("body", 9000)
+        note = SessionNote(project="p111", body=big_body)
+        n1 = await repo.save_note(note)
+        n2 = await repo.save_note(note)
+        assert n1 == n2
+        assert (await repo.get_notes("p111"))[0].body == big_body
+    finally:
+        await repo.close()
+
+
 async def test_code_change_upsert_and_session_lifecycle(pg_dsn) -> None:
     from axon.store.pg_session_repository import PostgresSessionRepository
 
