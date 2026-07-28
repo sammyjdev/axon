@@ -81,3 +81,28 @@ def test_aggregate_recall_savings_uses_most_recent_line_limit(tmp_path: Path) ->
     assert result.request_rows[0].query_hash == "recent"
     assert result.returned_tokens == 2
     assert result.counterfactual_tokens == 20
+
+
+def test_aggregate_applies_declared_path_remaps(tmp_path: Path) -> None:
+    new_home = tmp_path / "products" / "repo"
+    new_home.mkdir(parents=True)
+    moved = new_home / "mod.py"
+    moved.write_text("x" * 40, encoding="utf-8")
+    chunks_file = tmp_path / "chunks.jsonl"
+    old_path = tmp_path / "repo" / "mod.py"  # never existed here
+
+    _write_record(
+        chunks_file,
+        query_hash="req-moved",
+        chunks=[{"hash": "m1", "file_path": str(old_path), "token_estimate": 3}],
+    )
+
+    without = aggregate_recall_savings(chunks_file)
+    assert without.requests == 0  # file unresolvable at recorded path
+
+    remapped = aggregate_recall_savings(
+        chunks_file, path_remaps={str(tmp_path / "repo"): str(new_home)}
+    )
+    assert remapped.requests == 1
+    assert remapped.counterfactual_tokens == 10
+    assert remapped.missing_file_refs == 0
