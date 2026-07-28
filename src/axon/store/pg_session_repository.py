@@ -45,7 +45,7 @@ class PostgresSessionRepository:
             new_id = await con.fetchval(
                 "INSERT INTO session_memory (project, summary, raw_turns, created_at)"
                 " VALUES ($1, $2, $3, $4)"
-                " ON CONFLICT (project, summary, raw_turns, created_at) DO NOTHING"
+                " ON CONFLICT (project, md5(summary), raw_turns, created_at) DO NOTHING"
                 " RETURNING id",
                 mem.project, mem.summary, mem.raw_turns, mem.created_at.isoformat(),
             )
@@ -73,7 +73,7 @@ class PostgresSessionRepository:
             new_id = await con.fetchval(
                 "INSERT INTO session_note (project, body, created_at)"
                 " VALUES ($1, $2, $3)"
-                " ON CONFLICT (project, body, created_at) DO NOTHING"
+                " ON CONFLICT (project, md5(body), created_at) DO NOTHING"
                 " RETURNING id",
                 note.project, note.body, note.created_at.isoformat(),
             )
