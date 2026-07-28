@@ -42,6 +42,7 @@ from axon.router.compressor import caveman_compress_guarded
 from axon.router.engine import _bottom_tier_model
 from axon.router.llm_backend import litellm_kwargs
 from axon.store.collections import get_search_collections
+from axon.store.outcome_store import OutcomeRecord, OutcomeStore
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.session_store import ADR, SessionNote, SessionStore
 from axon.store.vector_common import (
@@ -78,6 +79,7 @@ mcp = FastMCP("axon-context-engine")
 # Stores são inicializados lazy no primeiro uso
 _vector_store: object | None = None
 _graph_store: PostgresSymbolDeps | None = None
+_outcome_store: OutcomeStore | None = None
 _session_store: SessionStore | None = None
 _embedder: EmbedderEngine | None = None
 _reranker: object | None = None
@@ -127,6 +129,13 @@ def _get_graph_store() -> PostgresSymbolDeps:
     if _graph_store is None:
         _graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
     return _graph_store
+
+
+def _get_outcome_store() -> OutcomeStore:
+    global _outcome_store
+    if _outcome_store is None:
+        _outcome_store = OutcomeStore(dsn=_RUNTIME.pg_url)
+    return _outcome_store
 
 
 def _get_session_store() -> SessionStore:
@@ -1086,6 +1095,38 @@ async def axon_capture_event(event_type: str, payload: dict) -> str:
     body = f"[{event_type}] {_json.dumps(payload, sort_keys=True, ensure_ascii=False)}"
     await store.save_note(SessionNote(project=repo, body=body))
     return f"captured {event_type} for {repo}."
+
+
+@mcp.tool()
+@traced_tool(risk="write")
+async def axon_record_outcome(
+    summary: str,
+    outcome: str,
+    repo: str | None = None,
+    context: str = "ship",
+    tags: list[str] | None = None,
+) -> str:
+    """Record a shipped-work outcome for outcome-aware recall (FORGE Ship → axon).
+
+    Closes the dev-OS loop: after a PR ships, the orchestrator records what was
+    built (``summary``) and how it went (``outcome``) so future recall can learn
+    from results, not just intent. ``context`` is a free-text label (default
+    ``ship``); it is NOT the restricted axon ctx bucket. Persisted in the
+    Postgres OutcomeStore (dec-121). Returns the new outcome id.
+    """
+    store = _get_outcome_store()
+    await store.init()
+    repo = repo or _detect_repo()
+    rid = await store.save_outcome(
+        OutcomeRecord(
+            project=repo,
+            context=context,
+            summary=summary,
+            outcome=outcome,
+            tags=tags or [],
+        )
+    )
+    return f"recorded outcome {rid} for {repo} ({context})."
 
 
 # ---------------------------------------------------------------------------
