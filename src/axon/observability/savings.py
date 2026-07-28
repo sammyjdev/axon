@@ -61,7 +61,30 @@ def _lines(file_path: Path, max_lines: int | None) -> Iterable[str]:
         yield from deque(fh, maxlen=max_lines)
 
 
-def aggregate_recall_savings(file_path: Path, *, max_lines: int | None = None) -> SavingsAggregate:
+def _resolve(path: Path, path_remaps: dict[str, str] | None) -> Path | None:
+    """Resolve a recorded telemetry path, applying declared directory moves.
+
+    Remaps are explicit old-prefix -> new-prefix pairs (e.g. a repo folder that
+    moved in a filesystem reorganization); a remap only applies when the file
+    actually exists at the new location.
+    """
+    if path.exists():
+        return path
+    for old, new in (path_remaps or {}).items():
+        text = str(path)
+        if text.startswith(old + "/"):
+            candidate = Path(new + text[len(old) :])
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def aggregate_recall_savings(
+    file_path: Path,
+    *,
+    max_lines: int | None = None,
+    path_remaps: dict[str, str] | None = None,
+) -> SavingsAggregate:
     if not file_path.exists():
         return SavingsAggregate()
 
@@ -83,7 +106,9 @@ def aggregate_recall_savings(file_path: Path, *, max_lines: int | None = None) -
             continue
 
         unique_paths = sorted({Path(str(chunk["file_path"])) for chunk in chunks})
-        existing_paths = [path for path in unique_paths if path.exists()]
+        existing_paths = [
+            resolved for path in unique_paths if (resolved := _resolve(path, path_remaps))
+        ]
         missing_here = len(unique_paths) - len(existing_paths)
         missing_file_refs += missing_here
         if not existing_paths:
@@ -118,7 +143,9 @@ def aggregate_recall_savings(file_path: Path, *, max_lines: int | None = None) -
     )
 
 
-def export_savings_snapshot(file_path: Path) -> list[dict[str, object]]:
+def export_savings_snapshot(
+    file_path: Path, *, path_remaps: dict[str, str] | None = None
+) -> list[dict[str, object]]:
     """Whitelisted public rows from raw recall telemetry (SNAPSHOT_FIELDS only).
 
     Ids are re-hashed with a fresh random salt that is discarded, so snapshot
@@ -126,7 +153,7 @@ def export_savings_snapshot(file_path: Path) -> list[dict[str, object]]:
     """
     salt = secrets.token_bytes(16)
     rows: list[dict[str, object]] = []
-    for request in aggregate_recall_savings(file_path).request_rows:
+    for request in aggregate_recall_savings(file_path, path_remaps=path_remaps).request_rows:
         opaque = hashlib.sha256(salt + request.query_hash.encode("utf-8")).hexdigest()[:16]
         rows.append(
             {

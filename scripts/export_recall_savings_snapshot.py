@@ -26,9 +26,19 @@ def main(argv: list[str] | None = None) -> int:
         Path(__file__).resolve().parents[1] / "benchmarks" / "recall_savings_snapshot.jsonl"
     )
     parser.add_argument("--out", type=Path, default=default_out)
+    parser.add_argument(
+        "--remap-json",
+        type=Path,
+        help="JSON dict of declared directory moves (old prefix -> new prefix), "
+        "e.g. benchmarks/recall_savings_remap.json; a remap only applies when "
+        "the file exists at the new location.",
+    )
     args = parser.parse_args(argv)
 
-    rows = export_savings_snapshot(args.chunks)
+    path_remaps = (
+        json.loads(args.remap_json.read_text(encoding="utf-8")) if args.remap_json else None
+    )
+    rows = export_savings_snapshot(args.chunks, path_remaps=path_remaps)
     args.out.parent.mkdir(exist_ok=True)
     with args.out.open("w", encoding="utf-8") as fh:
         for row in rows:
