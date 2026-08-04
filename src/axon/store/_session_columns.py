@@ -1,12 +1,14 @@
-"""Shared column definitions and row->model builder functions for both
-SqliteSessionRepository and PostgresSessionRepository.
+"""Shared column definitions and row->model builder functions for the
+Postgres session repository.
 
 A single source of truth: any schema change (new column, rename, type tweak)
-is made here and is automatically picked up by both backends.
+is made here.
+
+Timestamp columns are timestamptz as of 0004 (#31), so asyncpg hands back
+datetime objects directly - no fromisoformat parsing.
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from axon.store.session_store import CodeChange, SessionMemory, SessionNote
@@ -37,7 +39,7 @@ def row_to_session_memory(r: Any) -> SessionMemory:
         project=r["project"],
         summary=r["summary"],
         raw_turns=r["raw_turns"],
-        created_at=datetime.fromisoformat(r["created_at"]),
+        created_at=r["created_at"],
     )
 
 
@@ -47,7 +49,7 @@ def row_to_session_note(r: Any) -> SessionNote:
         id=r["id"],
         project=r["project"],
         body=r["body"],
-        created_at=datetime.fromisoformat(r["created_at"]),
+        created_at=r["created_at"],
     )
 
 
@@ -58,5 +60,5 @@ def row_to_code_change(r: Any) -> CodeChange:
         file_path=r["file_path"],
         diff_summary=r["diff_summary"],
         why=r["why"],
-        changed_at=datetime.fromisoformat(r["changed_at"]),
+        changed_at=r["changed_at"],
     )
