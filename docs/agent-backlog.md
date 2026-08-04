@@ -461,7 +461,7 @@ Recommended order: **EMB-4** (independent quick win) → **EMB-1** → **EMB-2**
 
 ## EMB-1 - Widen the loop gate to cover the embedder + a retrieval-eval smoke
 
-- Priority: P2 | Size: S | Status: ready | Depends-on: green candidate baseline
+- Priority: P2 | Size: S | Status: done (2026-08-03) | Depends-on: green candidate baseline
 - Specs: bge-m3-fallback design, "Gate"; benchmark-guided evolution, "Task EMB-1"
 - Note: reactivated as the existing hermetic gate item; do not create a second
   harness, golden set, or retrieval-eval implementation.

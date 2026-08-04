@@ -9,10 +9,15 @@ default_branch: master            # axon uses master, not main
 # tests/cli and tests/doctor were verified green (non-interactive, no skips) on
 # 2026-07-06 before being added here - see issue #60, which touches both dirs.
 # tests/config was verified fully green (82 passed) on 2026-07-18 and is included
-# without exclusions. tests/benchmark carries pre-existing failures and is outside
-# this gate.
+# without exclusions.
+# tests/embedder + tests/benchmark/test_retrieval_eval.py added 2026-08-03 (EMB-1):
+# without them a slice that changes the embedder passed this gate without ever
+# running the embedder's own tests. Both verified green first (305 + 6 passed);
+# the widened gate is 764 passed / 1 skipped in ~87s, up from 453 in ~67s.
+# Only the injected-fakes eval smoke is in scope - the live-DB recall sweep
+# (tests/recall) stays opt-in and outside the merge gate.
 # See the "test-debt + expand CI" backlog item before widening further.
-gate_cmd: "ruff check src/axon/router src/axon/resilience tests/router tests/resilience && pytest tests/router tests/resilience tests/store tests/scripts tests/cli tests/doctor tests/config -q"
+gate_cmd: "ruff check src/axon/router src/axon/resilience tests/router tests/resilience && pytest tests/router tests/resilience tests/store tests/scripts tests/cli tests/doctor tests/config tests/embedder tests/benchmark/test_retrieval_eval.py -q"
 setup_cmd: "pip install -e \".[dev]\""   # same as CI (ci.yml); shared venv already provisioned
 labels:
   ready: agent:ready
@@ -46,9 +51,14 @@ cross_review: true
 #   src (no editable install), so per-worktree tests validate that worktree's code.
 # - pytest can HANG ON EXIT (unclosed asyncpg pool past the printed summary);
 #   wrap gate runs in a timeout and read the printed "N passed/failed".
-# - The full `pytest -q` is RED on master from pre-existing test debt (benchmark,
-#   some hooks TTY+Windows cases) - that is NOT a regression
+# - The full `pytest -q` is RED on master from pre-existing test debt (some hooks
+#   TTY+Windows cases) - that is NOT a regression
 #   and NOT an env leak; it is simply outside the CI gate. Do not treat it as a
 #   base failure; widen the gate only after the test-debt backlog item lands.
 #   (tests/doctor was moved out of this exclusion list on 2026-07-06 - it is
-#   green and now part of gate_cmd above.)
+#   green and now part of gate_cmd above. tests/benchmark was listed here as red
+#   until 2026-08-03, when it measured 27 passed; only its eval smoke is gated,
+#   but it is no longer a known-red area.)
+# - The gate needs a working Docker daemon: the pg-backed tests guard with
+#   pytest.importorskip("testcontainers.postgres"), which skips on a missing
+#   PACKAGE, not a missing daemon. Without Docker they ERROR rather than skip.
