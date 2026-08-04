@@ -9,6 +9,7 @@ developer's real ~/.axon data root during tests.
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,19 @@ async def _truncate_all(dsn: str) -> None:
                 pass  # created lazily on first use
     finally:
         await con.close()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_git_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the developer's global/system git config out of temp repos (#115).
+
+    Tests that `git init` a temp directory sit outside this repo's local
+    `commit.gpgsign=false` override and inherit the global one. With signing on
+    and the key unavailable, every `git commit` in the suite fails. CI never saw
+    it because CI has no signing config at all.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
 
 
 @pytest.fixture(autouse=True)

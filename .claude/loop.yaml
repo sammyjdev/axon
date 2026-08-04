@@ -51,14 +51,17 @@ cross_review: true
 #   src (no editable install), so per-worktree tests validate that worktree's code.
 # - pytest can HANG ON EXIT (unclosed asyncpg pool past the printed summary);
 #   wrap gate runs in a timeout and read the printed "N passed/failed".
-# - The full `pytest -q` is RED on master from pre-existing test debt (some hooks
-#   TTY+Windows cases) - that is NOT a regression
-#   and NOT an env leak; it is simply outside the CI gate. Do not treat it as a
-#   base failure; widen the gate only after the test-debt backlog item lands.
-#   (tests/doctor was moved out of this exclusion list on 2026-07-06 - it is
-#   green and now part of gate_cmd above. tests/benchmark was listed here as red
-#   until 2026-08-03, when it measured 27 passed; only its eval smoke is gated,
-#   but it is no longer a known-red area.)
+# - The full `pytest -q` is GREEN on master as of 2026-08-04: 1547 passed,
+#   6 skipped, 7 xfailed. This note previously claimed it was RED from
+#   "pre-existing test debt (benchmark, some hooks TTY+Windows cases)". That was
+#   wrong on every count. The 29 failures were tests that `git init` a temp repo
+#   inheriting the developer's GLOBAL commit.gpgsign; with the signing key absent
+#   every commit died. Not TTY, not Windows, not benchmark, not an env leak.
+#   Fixed in #115 by an autouse fixture pinning GIT_CONFIG_GLOBAL/SYSTEM to
+#   os.devnull. CI never saw it because CI has no signing config.
+#   (tests/doctor left this exclusion list on 2026-07-06; tests/benchmark was
+#   listed as red until 2026-08-03, when it measured 27 passed.)
+#   The full suite is now a candidate for the gate - see the widening follow-up.
 # - The gate needs a working Docker daemon: the pg-backed tests guard with
 #   pytest.importorskip("testcontainers.postgres"), which skips on a missing
 #   PACKAGE, not a missing daemon. Without Docker they ERROR rather than skip.
