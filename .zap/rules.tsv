@@ -1,0 +1,13 @@
+# ZAP baseline rules for the AXON HTTP server (#74).
+# Format: <pluginid>\t<IGNORE|WARN|FAIL>\t<comment>
+#
+# 10049 fires in BOTH directions: "Storable and Cacheable Content" when a
+# response has no cache directive, and "Non-Storable Content" when it does.
+# axon/http/app.py sets Cache-Control: no-store globally, so this plugin now
+# reports the desired behaviour and would fail the gate for being correct.
+#
+# Cache regression is NOT left uncovered by this line: tests/http/test_cache_headers.py
+# asserts no-store on /health, /api/gain, /api/activity, /api/promotion-candidates,
+# /dashboard and the 404 — wider coverage than the baseline scan, which only
+# reaches the root. That test runs on every PR; this scan runs once per push.
+10049	IGNORE	both directions of this alert are non-actionable here; see tests/http/test_cache_headers.py
