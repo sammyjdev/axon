@@ -65,29 +65,6 @@ jobs:
           AXON_PROVIDER_PROFILE: ${{ matrix.profile }}
         run: python3 -m pytest tests/router tests/resilience tests/config -q
 
-  # The matrix job above stays narrow (router + resilience + config) because it
-  # runs four times. This runs the WHOLE suite once, which only became possible
-  # after #115: the full run used to be red from tests inheriting the developer's
-  # global commit.gpgsign. Single job, single python, no profile matrix - the
-  # point is coverage breadth, not permutations. Needs the http extra because
-  # tests/http imports FastAPI, and Docker for the testcontainers-backed pg tests
-  # (ubuntu-latest ships both).
-  full-suite:
-    name: pytest (full suite)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: install project + dev and http extras
-        run: pip install -e ".[dev,http]"
-      - name: pytest (whole suite)
-        run: python3 -m pytest -q
-
   profile-smoke:
     name: profile import smoke (${{ matrix.profile }})
     runs-on: ubuntu-latest

@@ -10,7 +10,7 @@ default_branch: master            # axon uses master, not main
 # 2026-07-06 before being added here - see issue #60, which touches both dirs.
 # tests/config was verified fully green (82 passed) on 2026-07-18 and is included
 # without exclusions.
-# 2026-08-04: the per-directory list is gone - the gate now runs the WHOLE suite.
+# 2026-08-04: the per-directory list is gone - the local gate runs the WHOLE suite.
 # It could not before because the full run was red; the cause turned out to be
 # tests inheriting the developer's global commit.gpgsign, fixed in #115. With
 # that gone the full suite is green (1558 passed, 6 skipped, 7 xfailed, ~170s),
@@ -18,6 +18,11 @@ default_branch: master            # axon uses master, not main
 # EMB-1 had to close. Anything genuinely unfit for the gate should be marked
 # skip/xfail at the test, not omitted from a list here.
 # The live-DB recall sweep in tests/recall remains opt-in via its own env guard.
+# NOTE: the matching ci.yml job is NOT on yet. Widening CI surfaced two real
+# dependency bugs (mcp>=2 and the undeclared PyMuPDF, both fixed) plus four
+# CLI tests that fail on ubuntu and pass on macOS - tracked as DEBT-3. Turn the
+# CI job on in the same pass that fixes those four, not before: do not widen
+# onto red.
 # See the "test-debt + expand CI" backlog item before widening further.
 gate_cmd: "ruff check src/axon/router src/axon/resilience tests/router tests/resilience && pytest -q"
 setup_cmd: "pip install -e \".[dev]\""   # same as CI (ci.yml); shared venv already provisioned

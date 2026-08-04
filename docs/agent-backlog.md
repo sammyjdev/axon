@@ -683,3 +683,43 @@ running `pip install axon-context-mcp` today would get a non-importable server.
 **Related.** Other unbounded `>=` floors in `pyproject.toml` carry the same
 latent risk. Worth a scan in the same pass; a floor with no ceiling on a
 dependency imported at module level is the shape to look for.
+
+---
+
+## DEBT-3 - Four CLI tests fail under CI, pass locally
+
+- Priority: P2 | Size: M | Status: ready | Depends-on: none
+- **Blocks** turning on the `full-suite` CI job.
+
+**Problem.** With the dependency bugs fixed (mcp cap, PyMuPDF), a full `pytest -q`
+on ubuntu-latest still fails four tests that are green on macOS:
+
+```
+tests/cli/test_axon_cli.py::test_doctor_runs_and_reports_presence
+    assert 'AXON doctor' in ''     <- Result carries FileNotFoundError(2)
+tests/cli/test_axon_cli.py::test_bootstrap_scaffolds_env_and_config
+    exit_code 1, Result carries FileNotFoundError(2)
+tests/cli/test_axon_cli.py::test_session_save_alias_is_bound_to_session_save_not_note
+    '--cwd' not in help output (output is present but rendered at 80 columns)
+tests/doctor/test_cli_doctor.py::TestDefaultMode::test_runs_and_shows_checks_section
+    assert 'capture & adr checks' in ''   <- same FileNotFoundError(2)
+```
+
+Two distinct shapes, both unproven:
+- Three carry `FileNotFoundError(2)` out of `CliRunner.invoke`, so the command is
+  reaching for a path or executable that exists on the dev machine and not on the
+  runner. Find what, then decide whether the CLI should degrade or the test should
+  provide it.
+- One asserts on typer help text; the CI output is rendered at 80 columns and may
+  simply be truncating the option. If so the test should assert on the parsed
+  command, not on wrapped help text.
+
+**Do not** resolve this by narrowing the job or marking it `continue-on-error`.
+The two dependency bugs found on 2026-08-04 (a broken `pip install` for both the
+MCP server and the Obsidian importer) are what this job is for.
+
+**Acceptance criteria.**
+- [ ] Each of the four classified as "test was wrong" or "code was wrong", with the
+      reason recorded - no blind skips.
+- [ ] `pytest -q` green on ubuntu-latest.
+- [ ] The `full-suite` job added to `ci.yml` in the same pass.
