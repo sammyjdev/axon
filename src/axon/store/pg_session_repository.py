@@ -47,13 +47,13 @@ class PostgresSessionRepository:
                 " VALUES ($1, $2, $3, $4)"
                 " ON CONFLICT (project, md5(summary), raw_turns, created_at) DO NOTHING"
                 " RETURNING id",
-                mem.project, mem.summary, mem.raw_turns, mem.created_at.isoformat(),
+                mem.project, mem.summary, mem.raw_turns, mem.created_at,
             )
             if new_id is None:
                 new_id = await con.fetchval(
                     "SELECT id FROM session_memory"
                     " WHERE project=$1 AND summary=$2 AND raw_turns=$3 AND created_at=$4",
-                    mem.project, mem.summary, mem.raw_turns, mem.created_at.isoformat(),
+                    mem.project, mem.summary, mem.raw_turns, mem.created_at,
                 )
             return new_id
 
@@ -75,13 +75,13 @@ class PostgresSessionRepository:
                 " VALUES ($1, $2, $3)"
                 " ON CONFLICT (project, md5(body), created_at) DO NOTHING"
                 " RETURNING id",
-                note.project, note.body, note.created_at.isoformat(),
+                note.project, note.body, note.created_at,
             )
             if new_id is None:
                 new_id = await con.fetchval(
                     "SELECT id FROM session_note"
                     " WHERE project=$1 AND body=$2 AND created_at=$3",
-                    note.project, note.body, note.created_at.isoformat(),
+                    note.project, note.body, note.created_at,
                 )
             return new_id
 
@@ -105,7 +105,7 @@ class PostgresSessionRepository:
                 " diff_summary=excluded.diff_summary, why=excluded.why,"
                 " changed_at=excluded.changed_at",
                 change.commit_hash, change.file_path, change.diff_summary, change.why,
-                change.changed_at.isoformat(),
+                change.changed_at,
             )
 
     async def save_code_change(self, change: CodeChange) -> None:
@@ -131,7 +131,7 @@ class PostgresSessionRepository:
                 " VALUES ($1, $2, $3, $4, NULL, $5)"
                 " ON CONFLICT (id) DO UPDATE SET agent=excluded.agent, repo=excluded.repo,"
                 " context_payload=excluded.context_payload",
-                session_id, agent, repo, datetime.now(UTC).isoformat(),
+                session_id, agent, repo, datetime.now(UTC),
                 json.dumps({"recall": context_payload}),
             )
 
@@ -146,7 +146,7 @@ class PostgresSessionRepository:
                 " UNION ALL"
                 " SELECT repo FROM sessions WHERE id=$2 AND NOT EXISTS (SELECT 1 FROM upd)"
                 " LIMIT 1",
-                datetime.now(UTC).isoformat(), session_id,
+                datetime.now(UTC), session_id,
             )
 
     async def all_memories(self) -> list[SessionMemory]:
