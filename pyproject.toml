@@ -29,7 +29,13 @@ dependencies = [
     "tree-sitter-python>=0.23.0",
     "tree-sitter-typescript>=0.23.0",
     "litellm>=1.40.0",
-    "mcp[cli]>=1.0.0",
+    # Capped at <2: mcp 2.0.0 drops `mcp.server.fastmcp`, which
+    # src/axon/mcp/server.py imports at module level, so the whole MCP surface
+    # fails to import. The floor had no ceiling, so a fresh install resolved to
+    # 2.0.0 and broke - invisible until the full suite entered CI (2026-08-04),
+    # because no gated job imported axon.mcp.server. Migrating to the 2.x API is
+    # tracked as DEBT-2 in docs/agent-backlog.md.
+    "mcp[cli]>=1.0.0,<2.0.0",
     "typer>=0.12.0",
     "click>=8.2",
     "ollama>=0.2.0",
@@ -49,6 +55,13 @@ dependencies = [
     # tag pin - glyph-kg is now a normal PyPI dependency (GHSA-r7wg-f7r2-8wf7:
     # PyPI rejects direct git+https Requires-Dist entries outright).
     "glyph-kg[retrieval]==0.2.0",
+    # glyph's document extractor imports `fitz` at module level in
+    # glyph/extract/document/pdf.py, and axon/obsidian/importer.py imports that
+    # extractor - but neither glyph-kg nor axon declared PyMuPDF, so a clean
+    # install broke `axon obsidian import`. Only surfaced when the full suite
+    # entered CI (2026-08-04); it passed locally because PyMuPDF happened to be
+    # installed by an unrelated project.
+    "pymupdf>=1.24.0",
 ]
 
 [project.urls]

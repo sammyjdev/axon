@@ -215,6 +215,13 @@ class PgVectorStore:
         async with pool.acquire() as con:
             records = await con.fetch(sql, *params)
             lexical_records = []
+            # Measured 2026-08-04 on the 24-case NL golden set (see
+            # scripts/eval_nl_code_recall.py): enabling this changes recall by
+            # ZERO at k=3/5/10 and slightly worsens the doc-share of the top-k
+            # (0.069 -> 0.097 @3, 0.108 -> 0.125 @5). It was proposed as
+            # direction 3 on #45 for NL->code retrieval; it does not help there.
+            # Exact-term queries are a different question - see
+            # scripts/eval_exact_terms.py, which is what this arm was built for.
             if os.environ.get("AXON_HYBRID_SEARCH") == "1" and query:
                 lex_params: list = [query, list(collections)]
                 lex_where = _append_filter_clauses(lex_params, language=language, project=project)
