@@ -377,9 +377,22 @@ are `isinstance(..., SessionRepository)` and round-trip each model identically.
 
 ## MS-9 - Clear pre-existing test debt + widen the CI / loop gate
 
-- Priority: P2 | Size: L | Status: ready | Depends-on: none | Finding: infra (loop gate)
+- Priority: P2 | Size: L | Status: **done (2026-08-04)** | Depends-on: none | Finding: infra (loop gate)
 
-**Problem.** The full `pytest -q` is RED on master, but CI never caught it:
+**Resolved.** The premise below was wrong about the cause. The full suite was not
+red from scattered per-directory debt: 29 of the failures came from tests that
+`git init` a temp repo and inherited the developer's global `commit.gpgsign`,
+which fails whenever the signing key is absent (#115). CI never saw it because CI
+has no signing config. With that one fixture fixed the full suite is green
+(1558 passed, 6 skipped, 7 xfailed), and both gates were widened on 2026-08-04:
+`gate_cmd` now runs `pytest -q` with no directory list, and `ci.yml` gained a
+single `full-suite` job. The config/benchmark/doctor items enumerated below had
+already been fixed or were never failing; `tests/benchmark` measured 27 passed.
+The ~22 ruff findings outside router+resilience are NOT addressed - lint scope is
+unchanged and still carries its TODO in `ci.yml`.
+
+**Original problem statement, kept for the record.** The full `pytest -q` is RED
+on master, but CI never caught it:
 `.github/workflows/ci.yml` only runs `pytest tests/router tests/resilience` (the
 `ruff` job is likewise scoped to router+resilience, with a TODO noting ~22
 pre-existing lint findings). The loop gate is therefore scoped to a green subset
@@ -616,3 +629,29 @@ no source change expected beyond recorded constants.
 
 **Test plan.** The live `retrieval_eval` sweep IS the test: code recall@k must rise
 materially vs the recorded bge-small-en baseline.
+
+---
+
+## DEBT-1 - Remaining `text` timestamp columns
+
+- Priority: P3 | Size: S | Status: ready | Depends-on: #31 (must merge first)
+
+**Problem.** #31 / migration `0004` converted the five session timestamp columns
+to `timestamptz`. Three places still store instants as ISO text and carry the same
+ordering defect:
+
+- `schema_version.applied_at` - the migration runner's own bookkeeping, written by
+  `pg_migrations.apply_pg_migrations` via `datetime.now(UTC).isoformat()`.
+- the `graph`, `decisions` and `file_index` timestamp columns, written by their own
+  subsystems.
+
+**Ordering constraint.** This ships as migration `0005`, so it cannot be authored
+before `0004` lands on master - a `0005` applied to a database that has not yet
+seen `0004` would leave the runner's filename ordering violated.
+
+**Acceptance criteria.**
+- [ ] `schema_version.applied_at` is `timestamptz`; the runner passes a `datetime`.
+- [ ] Same content check as #31: a pre-migration database with existing text rows
+      keeps its exact instants across the cast (values, not row counts).
+- [ ] graph / decisions / file_index columns converted, or explicitly deferred with
+      a reason recorded here.
