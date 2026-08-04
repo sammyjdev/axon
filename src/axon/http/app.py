@@ -103,6 +103,21 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def _no_store(request, call_next):
+    """Keep every response out of shared caches (#74).
+
+    Applied globally rather than per-route: the endpoints return session
+    activity, gain telemetry and promotion candidates, and a proxy cache that
+    stores any of it can serve one user's data to another. Also covers 404s,
+    which is what the ZAP baseline actually hit.
+    """
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 def _last_user_message(messages: list[_Message]) -> str:
     """Return the content of the last user-role message."""
     for msg in reversed(messages):
