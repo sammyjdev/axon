@@ -165,15 +165,23 @@ jobs:
           echo "✗ Server failed to start within 30 seconds"
           cat /tmp/axon-http.log
           exit 1
-      - name: run OWASP ZAP baseline scan (non-blocking)
+      # Blocking as of #74. The baseline was reviewed on 2026-08-04: its only
+      # finding was "Storable and Cacheable Content", fixed at the source by the
+      # no-store middleware in axon/http/app.py rather than allowlisted.
+      # Plugin 10049 then fires the INVERSE alert ("Non-Storable Content") on the
+      # very header that fixes it, so it is ignored in .zap/rules.tsv with the
+      # reasoning; cache regressions are covered by tests/http/test_cache_headers.py.
+      # Verified locally against the same image before flipping: WARN -> exit 2,
+      # with the rules file -> exit 0.
+      - name: run OWASP ZAP baseline scan
         uses: zaproxy/action-baseline@v0.15.0
         with:
           docker_name: "ghcr.io/zaproxy/zaproxy:2.17.0"
           target: "http://127.0.0.1:8765"
-          fail_action: false
+          fail_action: true
           allow_issue_writing: false
+          rules_file_name: ".zap/rules.tsv"
           artifact_name: "dast-zap-baseline-report"
-        continue-on-error: true
       - name: cleanup (stop server)
         if: always()
         run: |
