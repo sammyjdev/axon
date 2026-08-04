@@ -655,3 +655,31 @@ seen `0004` would leave the runner's filename ordering violated.
       keeps its exact instants across the cast (values, not row counts).
 - [ ] graph / decisions / file_index columns converted, or explicitly deferred with
       a reason recorded here.
+
+---
+
+## DEBT-2 - Evaluate migrating to mcp 2.x
+
+- Priority: P2 | Size: M | Status: ready | Depends-on: none
+
+**Problem.** `mcp[cli]` is pinned `<2.0.0` in `pyproject.toml`. mcp 2.0.0 removed
+`mcp.server.fastmcp`, which `src/axon/mcp/server.py` imports at module level, so
+the entire MCP surface fails to import under it.
+
+The pin is a stopgap, not a decision. It was applied on 2026-08-04 after the
+widened CI caught a fresh install resolving to 2.0.0 and failing 15 test modules
+at collection. Before that, `mcp[cli]>=1.0.0` had no ceiling and no gated job
+imported `axon.mcp.server`, so a broken install path shipped unnoticed - anyone
+running `pip install axon-context-mcp` today would get a non-importable server.
+
+**Acceptance criteria.**
+- [ ] Establish what mcp 2.x replaces `FastMCP` with, and whether the tool
+      registration / `@traced_tool` risk-class wiring survives the move.
+- [ ] Either migrate and lift the ceiling, or record why 1.x is the supported
+      line and keep the pin with an expiry condition.
+- [ ] Whichever way it goes, the full-suite CI job must stay green - it is what
+      caught this.
+
+**Related.** Other unbounded `>=` floors in `pyproject.toml` carry the same
+latent risk. Worth a scan in the same pass; a floor with no ceiling on a
+dependency imported at module level is the shape to look for.
