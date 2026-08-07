@@ -13,6 +13,7 @@ PATH_MAP: dict[str, str] = {
     "rpg-master-ai": "personal",
     "linkedin-tool": "personal",
     "avangrid": "work",
+    "dev/afya": "work",
     "vault/saas": "saas",
     "vault/work": "work",
     "vault/career": "career",
@@ -119,6 +120,19 @@ class ContextDetector:
         scores: dict[str, float] = {ctx: 0.0 for ctx in CONTEXTS}
 
         cwd_ctx = self._score_cwd(cwd)
+        if cwd_ctx == "work":
+            # Numa raiz work o path é prova, não pista: o conteúdo não vota.
+            # Com peso (0.4 do cwd), uma pergunta de vocabulário técnico genérico
+            # ("docker", "rag", "embedding", "vector") empata em 0.4 com knowledge
+            # e o desempate do max() — ordem do dict — manda material de trabalho
+            # para knowledge, onde busca sem ctx o alcança. É o mesmo risco que a
+            # proteção work abaixo cobre na direção oposta.
+            return ContextResult(
+                context="work",
+                confidence=1.0,
+                signals={"cwd": "work", "content": None, "session": None},
+                display="[work 100%]",
+            )
         if cwd_ctx:
             scores[cwd_ctx] += 0.4
 
