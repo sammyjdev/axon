@@ -47,13 +47,15 @@ dependencies = [
     "tree-sitter-python>=0.23.0,<1.0",
     "tree-sitter-typescript>=0.23.0,<1.0",
     "litellm>=1.40.0,<2",
-    # Capped at <2: mcp 2.0.0 drops `mcp.server.fastmcp`, which
-    # src/axon/mcp/server.py imports at module level, so the whole MCP surface
-    # fails to import. The floor had no ceiling, so a fresh install resolved to
-    # 2.0.0 and broke - invisible until the full suite entered CI (2026-08-04),
-    # because no gated job imported axon.mcp.server. Migrating to the 2.x API is
-    # tracked as DEBT-2 in docs/agent-backlog.md.
-    "mcp[cli]>=1.0.0,<2.0.0",
+    # Migrated to 2.x on 2026-08-07 (DEBT-2). 2.0 dropped `mcp.server.fastmcp`
+    # for `mcp.server.mcpserver.MCPServer`; the decorator API is unchanged, so
+    # the move was one import. Validated before committing, A/B against 1.29.0
+    # in a Linux container: 22/22 tools register, the serialised wire contract is
+    # identical for all 22, the dec-109 risk gate decides identically, and `ctx`
+    # still reaches traced_tool through call_tool. See tests/mcp/test_tool_contract.py
+    # and tests/mcp/test_risk_gate_through_protocol.py, which exist because
+    # nothing detected that class of drift before.
+    "mcp[cli]>=2.0.0,<3",
     "typer>=0.12.0,<1.0",
     "click>=8.2,<9",
     "ollama>=0.2.0,<1.0",

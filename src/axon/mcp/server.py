@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import litellm
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from axon.config.runtime import load_runtime_config
 from axon.context.compression_quality import compression_quality_note
@@ -74,7 +74,7 @@ _RERANK_CANDIDATES = 24
 _RERANK_TEXT_CHARS = 1200
 _RERANK_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
 
-mcp = FastMCP("axon-context-engine")
+mcp = MCPServer("axon-context-engine")
 
 # Stores são inicializados lazy no primeiro uso
 _vector_store: object | None = None

@@ -668,7 +668,30 @@ seen `0004` would leave the runner's filename ordering violated.
 
 ## DEBT-2 - Evaluate migrating to mcp 2.x
 
-- Priority: P2 | Size: M | Status: ready | Depends-on: none
+- Priority: P2 | Size: M | Status: **done (2026-08-07)** | Depends-on: none
+
+**Outcome: migrated.** The move was one import - `mcp.server.fastmcp.FastMCP`
+became `mcp.server.mcpserver.MCPServer`, with an unchanged decorator API. What
+took the time was proving it was safe, A/B against 1.29.0 in a Linux container:
+
+| checked | result |
+|---|---|
+| tools registered | 22/22 |
+| serialised wire contract | 0/22 differ |
+| suite (mcp/observability/http/adr/context/router/resilience) | 0 regressions |
+| dec-109 risk gate | 4/4 decisions identical |
+| `ctx` reaching traced_tool via call_tool | intact |
+
+**One real break, zero impact here:** `call_tool` returns `CallToolResult` in 2.0
+where 1.x returned `list[TextContent]`. Nothing in this repo calls `call_tool`
+directly (`grep` returns 0), so it affects only an external Python client
+embedding the server. Worth knowing before writing one.
+
+**Trap for the next person comparing versions:** `Tool.model_dump()` without
+`by_alias=True` shows all 22 tools as changed, because 2.0 renamed the model
+fields to snake_case while the wire alias stayed camelCase. That difference is
+what separates "trivial bump" from "protocol migration". `tests/mcp/test_tool_contract.py`
+now asserts on the aliased form.
 
 **Problem.** `mcp[cli]` is pinned `<2.0.0` in `pyproject.toml`. mcp 2.0.0 removed
 `mcp.server.fastmcp`, which `src/axon/mcp/server.py` imports at module level, so
