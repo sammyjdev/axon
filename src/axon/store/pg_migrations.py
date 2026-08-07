@@ -2,7 +2,7 @@
 
 Mirrors the SQLite ``SessionStore._apply_migrations`` contract for asyncpg:
 
-- a ``schema_version(version text PRIMARY KEY, applied_at text)`` table tracks
+- a ``schema_version(version text PRIMARY KEY, applied_at timestamptz)`` table tracks
   which migrations have run,
 - ``*.sql`` files in the migrations directory are applied in filename order,
 - each file's stem is recorded so re-running is a no-op (idempotent),
@@ -36,7 +36,7 @@ async def apply_pg_migrations(
     """
     await con.execute(
         "CREATE TABLE IF NOT EXISTS schema_version ("
-        " version text PRIMARY KEY, applied_at text NOT NULL)"
+        " version text PRIMARY KEY, applied_at timestamptz NOT NULL)"
     )
     rows = await con.fetch("SELECT version FROM schema_version")
     applied = {r["version"] for r in rows}
@@ -50,5 +50,5 @@ async def apply_pg_migrations(
             await con.execute(
                 "INSERT INTO schema_version (version, applied_at) VALUES ($1, $2)",
                 path.stem,
-                datetime.now(UTC).isoformat(),
+                datetime.now(UTC),
             )

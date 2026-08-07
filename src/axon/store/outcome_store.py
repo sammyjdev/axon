@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS outcome_record (
     summary     text NOT NULL,
     outcome     text NOT NULL,
     tags_json   text NOT NULL,
-    created_at  text NOT NULL
+    created_at  timestamptz NOT NULL
 )
 """
 
@@ -53,7 +53,7 @@ class OutcomeStore:
                 " (project, context, summary, outcome, tags_json, created_at)"
                 " VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
                 outcome.project, outcome.context, outcome.summary, outcome.outcome,
-                json.dumps(outcome.tags), outcome.created_at.isoformat(),
+                json.dumps(outcome.tags), outcome.created_at,
             )
         finally:
             await con.close()
@@ -106,7 +106,7 @@ class OutcomeStore:
             summary=row["summary"],
             outcome=row["outcome"],
             tags=json.loads(row["tags_json"]),
-            created_at=datetime.fromisoformat(row["created_at"]),
+            created_at=row["created_at"],
         )
 
     def _tag_pattern(self, tag: str) -> str:

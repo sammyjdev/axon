@@ -711,8 +711,8 @@ def doctor(
         store = SessionStore(_get_db_path())
         await store.init()
         try:
-            ts = await store.latest_decision_ts()
-            return datetime.fromisoformat(ts) if ts is not None else None
+            # timestamptz as of 0005 - asyncpg returns a datetime already.
+            return await store.latest_decision_ts()
         finally:
             await store.close()
 

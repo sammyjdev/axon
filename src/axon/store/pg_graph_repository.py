@@ -38,8 +38,8 @@ class PostgresGraphRepository:
                     type       text NOT NULL,
                     label      text NOT NULL DEFAULT '',
                     payload    text,
-                    created_at text NOT NULL,
-                    updated_at text NOT NULL
+                    created_at timestamptz NOT NULL,
+                    updated_at timestamptz NOT NULL
                 )
                 """
             )
@@ -50,7 +50,7 @@ class PostgresGraphRepository:
                     target_id  text NOT NULL,
                     type       text NOT NULL,
                     payload    text,
-                    created_at text NOT NULL,
+                    created_at timestamptz NOT NULL,
                     UNIQUE (source_id, target_id, type)
                 )
                 """
@@ -60,7 +60,7 @@ class PostgresGraphRepository:
             )
 
     async def add_node(self, node_id, node_type, *, label="", payload=None) -> None:
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(UTC)
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             await con.execute(
@@ -75,7 +75,7 @@ class PostgresGraphRepository:
             )
 
     async def add_edge(self, edge: Edge) -> None:
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(UTC)
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             await con.execute(

@@ -52,7 +52,7 @@ async def test_latest_decision_ts_returns_max_created_at(repo):
     await repo.save_decision(_dec("dec-003", repo="other",
                                   ts=datetime(2026, 2, 1, tzinfo=UTC), judged=True, score=5.0))
 
-    assert await repo.latest_decision_ts() == datetime(2026, 3, 1, tzinfo=UTC).isoformat()
+    assert await repo.latest_decision_ts() == datetime(2026, 3, 1, tzinfo=UTC)
 
 
 async def test_latest_decision_ts_none_when_empty(repo):

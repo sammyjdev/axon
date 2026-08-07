@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS failure_record (
     error_message   text NOT NULL,
     probable_cause  text NOT NULL,
     tags_json       text NOT NULL,
-    created_at      text NOT NULL
+    created_at      timestamptz NOT NULL
 )
 """
 
@@ -56,7 +56,7 @@ class FailureStore:
                 " (project, operation, error_message, probable_cause, tags_json, created_at)"
                 " VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
                 failure.project, failure.operation, failure.error_message,
-                failure.probable_cause, json.dumps(failure.tags), failure.created_at.isoformat(),
+                failure.probable_cause, json.dumps(failure.tags), failure.created_at,
             )
         finally:
             await con.close()
@@ -114,7 +114,7 @@ class FailureStore:
             error_message=row["error_message"],
             probable_cause=row["probable_cause"],
             tags=json.loads(row["tags_json"]),
-            created_at=datetime.fromisoformat(row["created_at"]),
+            created_at=row["created_at"],
         )
 
     def _tag_pattern(self, tag: str) -> str:
