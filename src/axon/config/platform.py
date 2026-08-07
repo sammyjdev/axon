@@ -84,15 +84,22 @@ def _get_mac_memory() -> int:
 
 
 def _get_nvidia_vram() -> int:
-    result = subprocess.run(
-        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],  # noqa: S607
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        # nvidia-smi ausente — assume VRAM insuficiente para gemma4:26b
+    # Missing nvidia-smi raises out of subprocess.run rather than returning a
+    # non-zero code, so the returncode check below never saw it and the error
+    # escaped through detect_platform() and out of `axon doctor`. Mirrors the
+    # guard _get_mac_memory already had. Every failure means the same thing here:
+    # no usable NVIDIA VRAM.
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],  # noqa: S607
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return 0
+        return int(result.stdout.strip()) // 1024
+    except (OSError, ValueError):
         return 0
-    return int(result.stdout.strip()) // 1024
 
 
 def build_doctor_report(

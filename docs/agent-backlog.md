@@ -688,8 +688,19 @@ dependency imported at module level is the shape to look for.
 
 ## DEBT-3 - Four CLI tests fail under CI, pass locally
 
-- Priority: P2 | Size: M | Status: ready | Depends-on: none
-- **Blocks** turning on the `full-suite` CI job.
+- Priority: P2 | Size: M | Status: **done (2026-08-07)** | Depends-on: none
+- The `full-suite` CI job it blocked is now on.
+
+**Outcome.** Three of the four were one production bug, not test debt:
+`_get_nvidia_vram` guarded on `returncode != 0`, but a missing `nvidia-smi`
+raises FileNotFoundError before any returncode exists, so `axon doctor` crashed
+on every Linux/Windows machine without an NVIDIA GPU. macOS never reached that
+branch. The fourth was a genuinely fragile test asserting on rich-coloured help
+text; it now inspects the parsed click command instead.
+
+Diagnosed by reproducing the CI environment in a Linux container and reading the
+traceback, rather than guessing from the assertion message - every hypothesis
+formed before that (the rtk subprocess call, terminal width) was wrong.
 
 **Problem.** With the dependency bugs fixed (mcp cap, PyMuPDF), a full `pytest -q`
 on ubuntu-latest still fails four tests that are green on macOS:
