@@ -20,15 +20,33 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+# Dependency policy (2026-08-07): every runtime and [http] dependency carries a
+# MAJOR ceiling. Two production bugs in one week came from unbounded floors -
+# mcp>=1.0.0 resolving to 2.0.0, which removed mcp.server.fastmcp and left the
+# MCP server non-importable, and undeclared PyMuPDF breaking the Obsidian
+# importer. Neither was visible until the full suite entered CI.
+#
+# Ceilings are the next major above the version this project is actually tested
+# on, so patches and minors still float. 0.x pins to <1.0: for those projects the
+# 1.0 step is the breaking one, and their minors have shipped fine here (typer
+# 0.12 -> 0.25, fastembed 0.4 -> 0.8, tree-sitter 0.23 -> 0.25 all without issue,
+# which is why this is a ceiling and not a freeze).
+#
+# [dev], [bench] and [bedrock] are deliberately NOT capped: a break there fails
+# CI loudly and gets fixed in the same session, while a runtime break ships to
+# whoever runs pip install.
+#
+# Raising a ceiling is a normal change - bump it, let the full-suite CI job run,
+# and keep it if green.
 dependencies = [
-    "defusedxml>=0.7.1",
-    "fastembed>=0.4.0",
-    "watchdog>=4.0.0",
-    "tree-sitter>=0.23.0",
-    "tree-sitter-java>=0.23.0",
-    "tree-sitter-python>=0.23.0",
-    "tree-sitter-typescript>=0.23.0",
-    "litellm>=1.40.0",
+    "defusedxml>=0.7.1,<1.0",
+    "fastembed>=0.4.0,<1.0",
+    "watchdog>=4.0.0,<7",
+    "tree-sitter>=0.23.0,<1.0",
+    "tree-sitter-java>=0.23.0,<1.0",
+    "tree-sitter-python>=0.23.0,<1.0",
+    "tree-sitter-typescript>=0.23.0,<1.0",
+    "litellm>=1.40.0,<2",
     # Capped at <2: mcp 2.0.0 drops `mcp.server.fastmcp`, which
     # src/axon/mcp/server.py imports at module level, so the whole MCP surface
     # fails to import. The floor had no ceiling, so a fresh install resolved to
@@ -36,15 +54,15 @@ dependencies = [
     # because no gated job imported axon.mcp.server. Migrating to the 2.x API is
     # tracked as DEBT-2 in docs/agent-backlog.md.
     "mcp[cli]>=1.0.0,<2.0.0",
-    "typer>=0.12.0",
-    "click>=8.2",
-    "ollama>=0.2.0",
-    "python-dotenv>=1.0.0",
-    "pydantic>=2.0",
-    "structlog>=24.0",
-    "pyyaml>=6.0",
-    "asyncpg>=0.29",
-    "pgvector>=0.3",
+    "typer>=0.12.0,<1.0",
+    "click>=8.2,<9",
+    "ollama>=0.2.0,<1.0",
+    "python-dotenv>=1.0.0,<2",
+    "pydantic>=2.0,<3",
+    "structlog>=24.0,<27",
+    "pyyaml>=6.0,<7",
+    "asyncpg>=0.29,<1.0",
+    "pgvector>=0.3,<1.0",
     # GLYPH is the canonical knowledge-graph retrieval lib (dec-116). AXON wires
     # GraphRetriever/NetworkXStore through their constructors (not the
     # file-based facade), which are stable across the 0.1.0 -> 0.2.0 jump.
@@ -61,7 +79,7 @@ dependencies = [
     # install broke `axon obsidian import`. Only surfaced when the full suite
     # entered CI (2026-08-04); it passed locally because PyMuPDF happened to be
     # installed by an unrelated project.
-    "pymupdf>=1.24.0",
+    "pymupdf>=1.24.0,<2",
 ]
 
 [project.urls]
@@ -76,8 +94,8 @@ axon = "axon.__main__:app"
 http = [
     # OpenAI-compatible HTTP endpoint (axon serve-http).
     # Install with: pip install axon-context-mcp[http]
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.29.0",
+    "fastapi>=0.111.0,<1.0",
+    "uvicorn[standard]>=0.29.0,<1.0",
 ]
 bedrock = [
     # AWS Bedrock generation backend (AXON_PROVIDER_BEDROCK=1). litellm
