@@ -323,16 +323,23 @@ def test_session_save_alias_is_bound_to_session_save_not_note():
     wired to the wrong function. This asserts on option surface and help text
     that are unique to session_save's real signature/docstring.
     """
-    result = runner.invoke(app, ["session-save", "--help"])
-    assert result.exit_code == 0
-    # session_save's own options - `note` takes a positional TEXT argument
-    # and has neither of these, so this fails under an alias-to-`note` miswiring.
-    assert "--cwd" in result.stdout
-    assert "--transcript" in result.stdout
+    # Inspect the parsed command rather than rendered --help text: the help is
+    # rendered differently depending on whether rich colouring is active, and CI
+    # emits ANSI escapes that broke the old substring assertions while the
+    # wiring itself was fine.
+    from typer.main import get_command
+
+    command = get_command(app).commands["session-save"]
+
+    # session_save's own options - `note` takes a positional TEXT argument and
+    # has neither of these, so this fails under an alias-to-`note` miswiring.
+    param_names = {p.name for p in command.params}
+    assert {"cwd", "transcript"} <= param_names, param_names
     # Distinctive wording from session_save's docstring; note's docstring
     # ("Alias para pb session note.") shares none of it.
-    assert "session memory" in result.stdout
-    assert "PostStop" in result.stdout
+    help_text = command.help or ""
+    assert "session memory" in help_text
+    assert "PostStop" in help_text
 
 
 def test_hooks_pending_portability_subapps_registered():
