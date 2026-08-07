@@ -209,7 +209,7 @@ class SessionStore:
         decision_repo = await self._decisions()
         return await decision_repo.find_decisions_by_repo(repo, limit)
 
-    async def latest_decision_ts(self) -> str | None:
+    async def latest_decision_ts(self) -> datetime | None:
         decision_repo = await self._decisions()
         return await decision_repo.latest_decision_ts()
 

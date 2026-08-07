@@ -33,7 +33,7 @@ class PostgresFileCache:
                     sha1        text    NOT NULL,
                     status      text    NOT NULL DEFAULT 'done',
                     chunk_count integer NOT NULL DEFAULT 0,
-                    indexed_at  text    NOT NULL,
+                    indexed_at  timestamptz NOT NULL,
                     PRIMARY KEY (file_path, ctx)
                 )
                 """
@@ -64,7 +64,7 @@ class PostgresFileCache:
         status: str = "done",
     ) -> None:
         fp = Path(file_path.replace("\\", "/")).as_posix()
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(UTC)
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             await con.execute(

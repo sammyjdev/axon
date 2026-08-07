@@ -48,7 +48,7 @@ class PostgresDecisionRepository:
                     frontmatter jsonb NOT NULL,
                     body        text,
                     vault_path  text,
-                    created_at  text NOT NULL
+                    created_at  timestamptz NOT NULL
                 )
                 """
             )
@@ -64,7 +64,7 @@ class PostgresDecisionRepository:
                     context    text NOT NULL,
                     decision   text NOT NULL,
                     rationale  text NOT NULL,
-                    created_at text NOT NULL
+                    created_at timestamptz NOT NULL
                 )
                 """
             )
@@ -85,7 +85,7 @@ class PostgresDecisionRepository:
                     vault_path=excluded.vault_path, created_at=excluded.created_at
                 """,
                 decision.id, decision.model_dump(mode="json"), decision.summary,
-                None, decision.timestamp.isoformat(),
+                None, decision.timestamp,
             )
 
     async def find_decisions_by_symbol(self, symbol_id: str) -> list[Decision]:
@@ -132,7 +132,7 @@ class PostgresDecisionRepository:
             rows = await con.fetch("SELECT frontmatter FROM decisions ORDER BY created_at")
         return [Decision(**r["frontmatter"]) for r in rows]
 
-    async def latest_decision_ts(self) -> str | None:
+    async def latest_decision_ts(self) -> datetime | None:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             return await con.fetchval("SELECT MAX(created_at) FROM decisions")
@@ -181,13 +181,13 @@ class PostgresDecisionRepository:
                 " ON CONFLICT (project, title, created_at) DO NOTHING"
                 " RETURNING id",
                 adr.project, adr.title, adr.context, adr.decision, adr.rationale,
-                adr.created_at.isoformat(),
+                adr.created_at,
             )
             if new_id is None:
                 # Row already existed - fetch its id.
                 new_id = await con.fetchval(
                     "SELECT id FROM adr WHERE project=$1 AND title=$2 AND created_at=$3",
-                    adr.project, adr.title, adr.created_at.isoformat(),
+                    adr.project, adr.title, adr.created_at,
                 )
             return new_id
 
@@ -207,7 +207,7 @@ class PostgresDecisionRepository:
             ADR(
                 id=r["id"], project=r["project"], title=r["title"], context=r["context"],
                 decision=r["decision"], rationale=r["rationale"],
-                created_at=datetime.fromisoformat(r["created_at"]),
+                created_at=r["created_at"],
             )
             for r in rows
         ]

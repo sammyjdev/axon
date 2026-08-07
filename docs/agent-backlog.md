@@ -634,7 +634,15 @@ materially vs the recorded bge-small-en baseline.
 
 ## DEBT-1 - Remaining `text` timestamp columns
 
-- Priority: P3 | Size: S | Status: ready | Depends-on: #31 (must merge first)
+- Priority: P3 | Size: S | Status: **done (2026-08-07)** | Depends-on: #31 (merged)
+
+**Outcome.** Migration `0005` converted all nine, including
+`schema_version.applied_at`. Two design points worth keeping in mind for any
+future migration here: it uses `ALTER TABLE IF EXISTS` because the repositories
+are lazy and a table may not exist yet when the migration runs, and the inline
+DDL in all six repositories changed too - migrating only existing rows would let
+a fresh database be created wrong. Applied to the live database: 14/14 columns,
+row counts and instants unchanged.
 
 **Problem.** #31 / migration `0004` converted the five session timestamp columns
 to `timestamptz`. Three places still store instants as ISO text and carry the same
