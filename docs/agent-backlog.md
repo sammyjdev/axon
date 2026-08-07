@@ -680,9 +680,13 @@ running `pip install axon-context-mcp` today would get a non-importable server.
 - [ ] Whichever way it goes, the full-suite CI job must stay green - it is what
       caught this.
 
-**Related.** Other unbounded `>=` floors in `pyproject.toml` carry the same
-latent risk. Worth a scan in the same pass; a floor with no ceiling on a
-dependency imported at module level is the shape to look for.
+**Related.** The scan this item asked for was done on 2026-08-07: 31 of 33 specs
+had a floor and no ceiling. All 20 runtime + `[http]` specs are now capped at
+their next major (`[dev]`/`[bench]`/`[bedrock]` deliberately left open - a break
+there fails CI loudly rather than shipping). Policy and the procedure for raising
+a ceiling are documented at the top of `dependencies` in `pyproject.toml`. That
+removes the *latent* version of this risk; migrating off the `mcp<2` pin is still
+open and is what this item now tracks.
 
 ---
 
