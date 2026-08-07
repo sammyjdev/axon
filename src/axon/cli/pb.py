@@ -1404,12 +1404,34 @@ def adr_sync(
 ) -> None:
     """Exporta ADRs do DB para arquivos Markdown no vault Obsidian."""
     import datetime
+    import json
 
     from axon.store.session_store import SessionStore
 
     vault_root = _RUNTIME.vault_root
-    adrs_dir = vault_root / "personal" / "adrs"
-    adrs_dir.mkdir(parents=True, exist_ok=True)
+
+    # A pasta do vault decide o ctx: `infer_ctx_from_path` classifica pelo primeiro
+    # componente do path relativo ao vault. Cravar "personal" mandava o ADR de um
+    # projeto `work` para vault/personal/adrs/, onde a indexação o trata como
+    # pessoal e ele passa a aparecer em busca sem ctx. Fora do manifesto, mantém o
+    # destino anterior.
+    #
+    # Lê o JSON direto, e não `load_project_manifest`: o loader exige que TODO path
+    # do manifesto exista no disco e falha inteiro quando um projeto foi movido —
+    # o mapa ficaria vazio e todos os ADRs voltariam para "personal". Aqui só o par
+    # nome->ctx importa, e um projeto movido ainda tem ADR para sincronizar.
+    manifest_path = _RUNTIME.engine_root / "config" / "projects.json"
+    ctx_by_project: dict[str, str] = {}
+    if manifest_path.exists():
+        try:
+            raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+            ctx_by_project = {
+                str(p["name"]): str(p["ctx"])
+                for p in raw.get("projects", [])
+                if p.get("name") and p.get("ctx") in VALID_CONTEXTS
+            }
+        except Exception:  # noqa: S110
+            pass
 
     async def _sync() -> None:
         db = _get_db_path()
@@ -1427,6 +1449,8 @@ def adr_sync(
 
         synced = 0
         for proj in projects_to_sync:
+            adrs_dir = vault_root / ctx_by_project.get(proj, "personal") / "adrs"
+            adrs_dir.mkdir(parents=True, exist_ok=True)
             adrs = await store.get_adrs(proj, limit=100)
             lines = [f"# ADRs — {proj}\n\n_Last synced: {datetime.date.today().isoformat()}_\n"]
             for adr in adrs:
