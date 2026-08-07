@@ -5,5 +5,10 @@
   "/Users/samdev/dev/glyph-kg": "/Users/samdev/dev/products/glyph-kg",
   "/Users/samdev/dev/lume": "/Users/samdev/dev/products/lume",
   "/Users/samdev/dev/Pharos": "/Users/samdev/dev/products/pharos",
-  "/Users/samdev/dev/lina": "/Users/samdev/dev/products/lina"
+  "/Users/samdev/dev/lina": "/Users/samdev/dev/products/lina",
+  "/Users/samdev/dev/linkedin_content_manager": "/Users/samdev/dev/products/linkedin-content-manager",
+  "/Users/samdev/dev/PitStopOS": "/Users/samdev/dev/products/pitstop-os",
+  "/Users/samdev/dev/piloto_revvo": "/Users/samdev/dev/products/revvo",
+  "/Users/samdev/dev/gnomon-eval": "/Users/samdev/dev/tools/gnomon-eval",
+  "/Users/samdev/dev/claude-usage-bar-rs": "/Users/samdev/dev/tools/claude-usage-bar-rs"
 }
