@@ -1,0 +1,144 @@
+"""Postgres-backed store for the lessons corpus.
+
+Two patterns are borrowed deliberately, from two different places:
+
+* **A fresh connection per call**, like ``FailureStore``. This store is
+  low-traffic and its callers are independent ``asyncio.run`` invocations; an
+  asyncpg pool is bound to the loop that created it, so a pool could not be
+  reused across them.
+* **Extension bootstrap then dimension guard before any DDL**, like
+  ``PgVectorStore._ensure_pool``. The table is created here rather than by a
+  numbered migration: the migration chain belongs to the SESSION store and runs
+  against databases where pgvector was never installed, so a vector column in it
+  breaks every one of them (measured on the Wave A merge: 18 tests, ``type
+  "vector" does not exist``).
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+import asyncpg
+from pgvector.asyncpg import register_vector
+
+from axon.models.lesson import LessonRecord
+from axon.store.vector_common import VECTOR_SIZE
+
+TABLE = "lessons"
+
+_DDL = f"""
+CREATE TABLE IF NOT EXISTS {TABLE} (
+    id          uuid PRIMARY KEY,
+    kind        text NOT NULL,
+    triggers    text[] NOT NULL,
+    mistake     text NOT NULL,
+    tell        text NOT NULL,
+    fix         text NOT NULL,
+    source      text NOT NULL,
+    created_at  timestamptz NOT NULL,
+    vector      vector({VECTOR_SIZE})
+)
+"""
+
+
+class LessonStore:
+    """Insert and fetch lessons. Search by cosine distance is Task 6."""
+
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
+
+    async def init(self) -> None:
+        """Bootstrap the extension, refuse a mismatched table, then create it.
+
+        The bootstrap runs on a plain connection because ``register_vector``
+        introspects the type codec and cannot do so before the extension exists.
+        """
+        con = await asyncpg.connect(self._dsn)
+        try:
+            await con.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            await self._check_dimension_guard(con)
+            await con.execute(_DDL)
+        finally:
+            await con.close()
+
+    async def _check_dimension_guard(self, con: asyncpg.Connection) -> None:
+        """Refuse an existing table whose vector dim is not the current one.
+
+        pgvector stores the declared dimension in ``atttypmod`` as-is (no
+        VARHDRSZ-style offset). An absent table is a no-op: the DDL below
+        creates it at VECTOR_SIZE.
+        """
+        existing_dim = await con.fetchval(
+            """
+            SELECT atttypmod FROM pg_attribute
+            WHERE attrelid = to_regclass($1) AND attname = 'vector' AND NOT attisdropped
+            """,
+            TABLE,
+        )
+        if existing_dim is not None and existing_dim != VECTOR_SIZE:
+            raise ValueError(
+                f"{TABLE}.vector is dim {existing_dim} but the embedder now produces "
+                f"{VECTOR_SIZE}; mixed dims are not allowed."
+            )
+
+    async def insert(self, lesson: LessonRecord) -> UUID:
+        """Store ``lesson`` and return its id."""
+        con = await self._connect()
+        try:
+            await con.execute(
+                "INSERT INTO lessons"
+                " (id, kind, triggers, mistake, tell, fix, source, created_at, vector)"
+                " VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                lesson.id, lesson.kind, lesson.triggers, lesson.mistake, lesson.tell,
+                lesson.fix, lesson.source, lesson.created_at, self._as_vector(lesson.embedding),
+            )
+        finally:
+            await con.close()
+        return lesson.id
+
+    async def get(self, lesson_id: UUID) -> LessonRecord | None:
+        """Return the lesson with ``lesson_id``, or None if there is none."""
+        con = await self._connect()
+        try:
+            row = await con.fetchrow(
+                "SELECT id, kind, triggers, mistake, tell, fix, source, created_at, vector"
+                " FROM lessons WHERE id = $1",
+                lesson_id,
+            )
+        finally:
+            await con.close()
+        return self._row_to_lesson(row) if row is not None else None
+
+    async def _connect(self) -> asyncpg.Connection:
+        con = await asyncpg.connect(self._dsn)
+        await register_vector(con)
+        return con
+
+    @staticmethod
+    def _as_vector(embedding: list[float] | None) -> list[float] | None:
+        if embedding is None:
+            return None
+        if len(embedding) != VECTOR_SIZE:
+            raise ValueError(
+                f"embedding has {len(embedding)} dims but the table is {VECTOR_SIZE}"
+            )
+        return embedding
+
+    @staticmethod
+    def _row_to_lesson(row: asyncpg.Record) -> LessonRecord:
+        # register_vector decodes the column into a pgvector Vector, not a list.
+        vector = row["vector"]
+        return LessonRecord(
+            id=row["id"],
+            kind=row["kind"],
+            triggers=list(row["triggers"]),
+            mistake=row["mistake"],
+            tell=row["tell"],
+            fix=row["fix"],
+            source=row["source"],
+            created_at=row["created_at"],
+            embedding=None if vector is None else [float(v) for v in vector.to_list()],
+        )
+
+    async def close(self) -> None:
+        """No-op: connections are opened and closed per call."""
