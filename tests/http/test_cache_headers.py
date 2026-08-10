@@ -8,6 +8,13 @@ else.
 from __future__ import annotations
 
 import pytest
+
+# fastapi ships in the `http` extra, not `dev`. Without this guard the import fails
+# at COLLECTION, which aborts the entire run - not just this module - and reads as a
+# red baseline rather than a missing optional dependency. Same shape as the existing
+# guards for `glyph` and `testcontainers.postgres`.
+pytest.importorskip("fastapi", reason="install the `http` extra to run these")
+
 from fastapi.testclient import TestClient
 
 from axon.http.app import app

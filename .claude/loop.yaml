@@ -25,7 +25,7 @@ default_branch: master            # axon uses master, not main
 # onto red.
 # See the "test-debt + expand CI" backlog item before widening further.
 gate_cmd: "ruff check src/axon/router src/axon/resilience tests/router tests/resilience && pytest -q"
-setup_cmd: "pip install -e \".[dev]\""   # same as CI (ci.yml); shared venv already provisioned
+setup_cmd: "pip install -e \".[dev,http]\""   # matches the CI job that runs the WHOLE suite (ci.yml); [dev] alone cannot satisfy `pytest -q`
 labels:
   ready: agent:ready
   blocked: agent:blocked
