@@ -21,6 +21,7 @@ from uuid import UUID
 import asyncpg
 from pgvector.asyncpg import register_vector
 
+from axon.embedder.lesson_embedding import SupportsEmbedOne
 from axon.models.lesson import LessonRecord
 from axon.store.vector_common import VECTOR_SIZE
 
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
 
 
 class LessonStore:
-    """Insert and fetch lessons. Search by cosine distance is Task 6."""
+    """Insert, fetch and search lessons by cosine distance."""
 
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
@@ -108,6 +109,41 @@ class LessonStore:
         finally:
             await con.close()
         return self._row_to_lesson(row) if row is not None else None
+
+    async def search(
+        self,
+        query: str,
+        *,
+        engine: SupportsEmbedOne,
+        kind: str | None = None,
+        triggers: list[str] | None = None,
+        limit: int = 5,
+    ) -> list[LessonRecord]:
+        """Return up to ``limit`` lessons nearest ``query`` by cosine distance.
+
+        ``query`` is embedded through ``engine`` - the same injected protocol
+        Task 5 uses for lessons themselves - so storage and retrieval share one
+        text-to-vector path rather than growing a second one here. A lesson
+        with no vector can never be nearest to anything and is excluded.
+        """
+        vector = self._as_vector(engine.embed_one(query))
+        con = await self._connect()
+        try:
+            params: list = [vector]
+            clauses = ["vector IS NOT NULL"]
+            if kind is not None:
+                params.append(kind)
+                clauses.append(f"kind = ${len(params)}")
+            if triggers is not None:
+                params.append(triggers)
+                clauses.append(f"triggers && ${len(params)}::text[]")
+            where = " AND ".join(clauses)
+            select_cols = "id, kind, triggers, mistake, tell, fix, source, created_at, vector"
+            sql = f"SELECT {select_cols} FROM {TABLE} WHERE {where} ORDER BY vector <=> $1 LIMIT {int(limit)}"  # noqa: S608, E501
+            rows = await con.fetch(sql, *params)
+        finally:
+            await con.close()
+        return [self._row_to_lesson(row) for row in rows]
 
     async def _connect(self) -> asyncpg.Connection:
         con = await asyncpg.connect(self._dsn)
