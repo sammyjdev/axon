@@ -1,0 +1,131 @@
+{
+  "_comment": "Errors the ORCHESTRATOR made, not language traps the maker hits - those live in references/craft-lessons.md and are read verbatim every pass. This file is retrieved BY TRIGGER instead, because a corpus read verbatim is a context tax that grows forever and buries the two entries that matter under thirty that do not.",
+
+  "_status": "DATA AWAITING A MECHANISM. Nothing reads this file yet. A keyword-matching selector was written and removed the same day: shipping it would have made a provisional lookup look like a finished feature, and it was orphaned - no reference, no script and no mode called it. The retrieval belongs in a vectorised AXON node alongside craft-lessons under one schema; until that exists this is a corpus, not a capability, and it says so here rather than in a commit nobody will read.",
+  "_why_not_axon": "The original plan was to store these in AXON under a `_common-errors` block, vectorised. Measured 2026-08-07: axon_capture accepts the block (repo namespace works), but axon_search matches a TRUNCATED ~100-char summary, not the body - `axon_search('mapfile')` misses an entry whose text contains `mapfile`, and a semantic paraphrase misses entirely. pgvector reports ok but that tool does not route through it. So the corpus lives here, where it also works with FORGE_MEMORY_PROVIDER=none, and each entry is mirrored to AXON for cross-project recall once its retrieval is fixed.",
+
+  "_triggers": "A trigger is the SHAPE OF THE TASK IN HAND, not the topic of the error. `shell-script` fires when about to write bash - which is when the bash-3.2 lesson is worth the tokens, and every other moment it is noise.",
+
+  "lessons": [
+    {
+      "id": "bash32-no-mapfile",
+      "triggers": ["shell-script", "bash"],
+      "mistake": "Used `mapfile` to read output into an array, in a codebase that runs on macOS.",
+      "tell": "It does not error. The array is empty and the script proceeds with nothing, so the failure surfaces far from the cause.",
+      "fix": "`while IFS= read -r -d '' x; do arr+=(\"$x\"); done < file`. Also avoid `source <(...)`: on bash 3.2 the fd reads empty and every function is silently undefined.",
+      "seen": "2026-08, macOS ships bash 3.2.57 and has since 2007"
+    },
+    {
+      "id": "nul-join-drops-last-field",
+      "triggers": ["shell-script", "argv", "serialization"],
+      "mistake": "Serialised an argv list with `\"\\0\".join(args)`, which leaves the LAST field unterminated.",
+      "tell": "The reader loop drops the final element. The final element was the prompt, so every dispatch ran with no prompt and still exited 0.",
+      "fix": "Terminate, do not separate: `\"\".join(a + \"\\0\" for a in args)`. Any framing where the last field is special deserves a test that asserts the last field survives.",
+      "seen": "2026-07, role_argv.py"
+    },
+    {
+      "id": "heredoc-binds-to-last-command",
+      "triggers": ["shell-script", "git", "bash"],
+      "mistake": "Wrote `git commit -F - <<'EOF'` followed by `&& git log` - the heredoc attached to the LAST command in the chain, not the one that needed stdin.",
+      "tell": "The command hangs waiting on stdin until the tool times out. No error message names the cause.",
+      "fix": "Give the heredoc to its own command and put follow-ups on the next line.",
+      "seen": "2026-08"
+    },
+    {
+      "id": "test-helper-clobbers-the-fixture",
+      "triggers": ["python-test", "test-harness", "fixture"],
+      "mistake": "A shared test helper wrote a default fixture unconditionally, overwriting what the test had deliberately written.",
+      "tell": "The test passes for the wrong reason, or fails with an assertion about content it never actually used. Happened twice in the same suite.",
+      "fix": "`if not path.exists(): path.write_text(default)`. A helper that sets up state must never overwrite state the caller established.",
+      "seen": "2026-07, twice"
+    },
+    {
+      "id": "test-contains-what-it-searches-for",
+      "triggers": ["python-test", "lint-rule", "grep-assertion"],
+      "mistake": "Wrote a test asserting no tracked file contains a personal path - and the test file itself contained the literal path as its search pattern.",
+      "tell": "The suite fails on the very commit that adds the check, pointing at the checker.",
+      "fix": "Match a general pattern rather than the specific string, and exclude the checking file by pathspec. Same class: a doc test forbidding a construct the doc must mention to explain it.",
+      "seen": "2026-08"
+    },
+    {
+      "id": "network-inside-the-test-suite",
+      "triggers": ["python-test", "flaky", "test-harness"],
+      "mistake": "Diagnosed a test that failed once and passed alone as an ordering bug. It was a live `curl` probe inside the code under test.",
+      "tell": "The assertion message named an unrelated cause - 'split-maker was never called' reads as a routing regression and was a three-second network timeout.",
+      "fix": "Before blaming order, check for a plugin that randomises it. Reproduce by making the environment hostile (a stub binary that fails) rather than by re-running and hoping.",
+      "seen": "2026-08"
+    },
+    {
+      "id": "over-literal-assertion-on-a-schematic",
+      "triggers": ["python-test", "doc-assertion"],
+      "mistake": "Asserted a doc contains the literal `Task N` when `N` is schematic and the emitter correctly writes `Task 1`.",
+      "tell": "A red test on correct output. The instinct is to change the output; the bug is in the test.",
+      "fix": "When a spec uses a placeholder, the assertion has to accept both spellings.",
+      "seen": "2026-08"
+    },
+    {
+      "id": "reading-a-reordered-diff-as-a-deletion",
+      "triggers": ["git", "diff-review", "claim-about-state"],
+      "mistake": "Read a diff where blocks had been reordered and announced that a load-bearing hook had been removed. It was intact.",
+      "tell": "Nothing - the diff genuinely looks like a deletion plus an unrelated addition.",
+      "fix": "Before claiming something was removed, query the END STATE for it (parse the file, grep the result), not the diff.",
+      "seen": "2026-08, settings.json"
+    },
+    {
+      "id": "quota-reported-as-spend",
+      "triggers": ["cost-claim", "benchmark", "model-dispatch"],
+      "mistake": "Reported `total_cost_usd` from a subscription-backed run as money spent. Repeated it across a whole session.",
+      "tell": "None from the number itself. `apiKeySource: \"none\"` and `overageStatus: \"rejected\"` are what distinguish quota-equivalent from a charge.",
+      "fix": "Before any cost claim, check how the rail authenticates. Subscription rails cost zero; the binding resource is plan quota.",
+      "seen": "2026-07"
+    },
+    {
+      "id": "cross-arm-comparison",
+      "triggers": ["benchmark", "measurement", "model-comparison"],
+      "mistake": "Compared a result measured on one arm against a result measured on another and called the difference a regression.",
+      "tell": "The numbers are both real and the comparison is meaningless. Nothing in the output says which arm produced it.",
+      "fix": "Every recorded result names its arm. Compare only within an arm, and state the arm when quoting.",
+      "seen": "2026-07-30, the error that cost a day"
+    },
+    {
+      "id": "generalising-from-half-the-archive",
+      "triggers": ["benchmark", "oracle", "labelling"],
+      "mistake": "Proposed widening two oracle items on the same reasoning. The archived labels supported one and contradicted the other 21-to-1.",
+      "tell": "The reasoning is sound and general, which is exactly why it gets applied where the data does not support it.",
+      "fix": "Check the archive per item before changing per item. A rule that fits one case is not a rule.",
+      "seen": "2026-07"
+    },
+    {
+      "id": "cannot-be-automated-was-backwards",
+      "triggers": ["design-decision", "automation", "config-generation"],
+      "mistake": "Argued a mapping could not be automated because the target was keyed more finely than the evidence. Concluded 'leave it manual'.",
+      "tell": "The argument sounds appropriately humble, which stops it being re-examined.",
+      "fix": "Applying coarse evidence UNIFORMLY is the faithful choice; inventing a finer distinction is the unfaithful one. Ask which action adds a claim the evidence does not make.",
+      "seen": "2026-08, models.json handle pins"
+    },
+    {
+      "id": "rivals-that-are-actually-upstream",
+      "triggers": ["positioning", "competitive-analysis", "docs"],
+      "mistake": "Built a competitor table mixing tools that do a different job. The codebase already had an entry point built to CONSUME their output.",
+      "tell": "The table looks complete and every row is individually true.",
+      "fix": "Separate the axes first, then place each tool. Check whether your own code already integrates with something before calling it a rival.",
+      "seen": "2026-08, SDD frameworks"
+    },
+    {
+      "id": "silent-degradation-instead-of-refusal",
+      "triggers": ["config-resolution", "fallback", "design-decision"],
+      "mistake": "Reached for a fallback default when a lookup failed, in a system whose value is that its numbers describe what actually ran.",
+      "tell": "Everything keeps working, which is the problem.",
+      "fix": "Raise. A loop running on an unmeasured substitute, with nothing saying so, is worse than one that stops.",
+      "seen": "recurring"
+    },
+    {
+      "id": "checkout-deletes-a-generated-file",
+      "triggers": ["git", "generated-artifact"],
+      "mistake": "Ran `git switch main` in a repo where a GENERATED file was gitignored on the branch but still TRACKED on the other ref. The checkout overwrote the generated copy with the old tracked version, and the pull that followed - carrying the commit that untracks it - deleted it outright.",
+      "tell": "Nothing from git. The 'would be overwritten by checkout' guard does not fire for ignored files. The loss shows up later as a missing capability, never as a git message.",
+      "fix": "Ask whether the artifact changed tracked-ness between the two refs (`git log --oneline <a>..<b> -- <path>`) before switching. After any switch or pull, re-run the emitter instead of trusting the file survived.",
+      "seen": "2026-08, .claude/agents/forge.md - the forge agent vanished mid-session"
+    }
+  ]
+}

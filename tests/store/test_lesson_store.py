@@ -90,3 +90,36 @@ async def test_a_lesson_without_an_embedding_is_allowed(store):
 
 async def test_get_returns_none_for_an_unknown_id(store):
     assert await store.get(uuid4()) is None
+
+
+async def test_get_by_source_finds_the_matching_row(store):
+    lesson = _lesson(source="agent-errors.json#bash32-no-mapfile")
+    await store.insert(lesson)
+
+    got = await store.get_by_source("agent-errors.json#bash32-no-mapfile")
+
+    assert got is not None
+    assert got.id == lesson.id
+
+
+async def test_get_by_source_returns_none_for_an_unknown_source(store):
+    assert await store.get_by_source("agent-errors.json#nope") is None
+
+
+async def test_update_overwrites_content_but_keeps_id_and_created_at(store):
+    lesson = _lesson(source="agent-errors.json#bash32-no-mapfile")
+    await store.insert(lesson)
+
+    updated = _lesson(
+        id=lesson.id,
+        created_at=lesson.created_at,
+        source="agent-errors.json#bash32-no-mapfile",
+        fix="a corrected fix",
+    )
+    await store.update(updated)
+    got = await store.get(lesson.id)
+
+    assert got is not None
+    assert got.id == lesson.id
+    assert got.created_at == lesson.created_at
+    assert got.fix == "a corrected fix"
