@@ -12,10 +12,17 @@ Two patterns are borrowed deliberately, from two different places:
   against databases where pgvector was never installed, so a vector column in it
   breaks every one of them (measured on the Wave A merge: 18 tests, ``type
   "vector" does not exist``).
+
+The DSN is its own config, ``AXON_LESSONS_PG_URL`` - not ``rt.pg_url`` /
+``AXON_PG_URL``, the DSN every other store here shares. Reusing the shared
+one would put a client's lessons in whatever database every other store
+already writes to, purely because nobody set a lessons-specific value; see
+``resolve_lessons_dsn``.
 """
 
 from __future__ import annotations
 
+import os
 from uuid import UUID
 
 import asyncpg
@@ -26,6 +33,25 @@ from axon.models.lesson import LessonRecord
 from axon.store.vector_common import VECTOR_SIZE
 
 TABLE = "lessons"
+
+_DSN_ENV_VAR = "AXON_LESSONS_PG_URL"
+
+
+def resolve_lessons_dsn() -> str:
+    """Resolve the lessons DSN from config, with no fallback.
+
+    Isolation here is the connection, not a permission check: a missing
+    ``AXON_LESSONS_PG_URL`` must refuse, not quietly reuse ``AXON_PG_URL``
+    (the DSN every other store shares) or a hardcoded default - either would
+    silently put a client's lessons in the same database as everything else.
+    """
+    dsn = os.environ.get(_DSN_ENV_VAR)
+    if not dsn:
+        raise RuntimeError(
+            f"{_DSN_ENV_VAR} is not set. There is no fallback: set it to the "
+            f"database that should hold this client's lessons."
+        )
+    return dsn
 
 _DDL = f"""
 CREATE TABLE IF NOT EXISTS {TABLE} (
