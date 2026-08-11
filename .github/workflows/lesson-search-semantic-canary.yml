@@ -1,0 +1,47 @@
+name: lesson-search-semantic-canary
+
+# Nightly-only. Task 6's real bge-m3 paraphrase test
+# (tests/store/test_lesson_search.py::test_paraphrased_query_ranks_the_paraphrased_lesson_first)
+# is opt-in via AXON_RUN_LESSON_SEARCH=1 and SKIPPED by every job in ci.yml -
+# nothing in the normal gate proves lesson search is actually semantic, only
+# that its SQL and wiring are correct (see tests/store/test_lesson_search_metric.py
+# and tests/mcp/test_lesson_tools.py for what the gate DOES cover). This job
+# is the one place that real claim gets checked, against the live bge-m3
+# provider chain (Ollama is unavailable in CI, so this falls through to
+# DeepInfra - see src/axon/embedder/providers.py and
+# src/axon/config/runtime.py::_DEFAULT_EMBEDDER_CHAIN_ORDER).
+#
+# Operator action item: this job needs a `DEEPINFRA_API_KEY` repository
+# secret. As of this workflow's introduction the repo has no such secret
+# (only ANTHROPIC_API_KEY exists) - until it is added, this job will fail on
+# every run with a clear "provider failed" error rather than silently
+# reporting green, which is the point: a canary that cannot authenticate is
+# worse than no canary, because it trains everyone to ignore it. Add the key
+# at https://github.com/sammyjdev/axon/settings/secrets/actions.
+
+on:
+  schedule:
+    - cron: "17 5 * * *" # nightly, off the hour to avoid GH Actions congestion
+  workflow_dispatch: {}
+
+jobs:
+  semantic-canary:
+    name: SEMANTIC CANARY - lesson search paraphrase (real bge-m3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: install project + dev deps
+        run: pip install -e ".[dev]"
+      - name: pytest - real paraphrase retrieval (bge-m3 via DeepInfra)
+        env:
+          AXON_RUN_LESSON_SEARCH: "1"
+          DEEPINFRA_API_KEY: ${{ secrets.DEEPINFRA_API_KEY }}
+        run: >
+          python3 -m pytest tests/store/test_lesson_search.py::test_paraphrased_query_ranks_the_paraphrased_lesson_first
+          -v
