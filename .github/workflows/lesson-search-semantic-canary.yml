@@ -1,6 +1,29 @@
 name: lesson-search-semantic-canary
 
-# Nightly-only. Task 6's real bge-m3 paraphrase test
+# MANUAL ONLY. The nightly schedule was removed before it ever ran, for two
+# reasons that both have to be fixed before it comes back:
+#
+# 1. IT HAS NOTHING WORTH CHECKING YET. The paraphrase test it runs stores TWO
+#    invented lessons - one about `mapfile`, one about `imaplib` - which are
+#    semantically opposite. Any working embedder separates them, so the test
+#    cannot fail for a reason anyone would care about. The real corpus is
+#    clustered: 4 lessons under `python-test`, 3 under `shell-script`, 3 under
+#    `git`, 3 under `benchmark`, and 16 of its 105 pairs share a trigger. The
+#    question that matters is whether a paraphrase about heredocs retrieves
+#    `heredoc-binds-to-last-command` rather than `bash32-no-mapfile` - both
+#    bash, both shell, both about a command behaving unexpectedly. Until the
+#    canary asks THAT, against a seeded corpus, a green light means nothing.
+# 2. It needs a DEEPINFRA_API_KEY repository secret, which does not exist. On a
+#    PUBLIC repo that is a decision about exposing a paid key, not a chore.
+#
+# Bring the schedule back when the corpus is seeded AND the assertions
+# discriminate within a cluster - ideally scored as recall@1 or MRR over a
+# question set, the way gnomon-eval scores retrieval, rather than one pass/fail.
+#
+# Until then, run the same check locally when touching the embedding path:
+#   AXON_RUN_LESSON_SEARCH=1 .venv/bin/python -m pytest tests/store/test_lesson_search.py -v
+#
+# Original rationale, still accurate. Task 6's real bge-m3 paraphrase test
 # (tests/store/test_lesson_search.py::test_paraphrased_query_ranks_the_paraphrased_lesson_first)
 # is opt-in via AXON_RUN_LESSON_SEARCH=1 and SKIPPED by every job in ci.yml -
 # nothing in the normal gate proves lesson search is actually semantic, only
@@ -20,8 +43,6 @@ name: lesson-search-semantic-canary
 # at https://github.com/sammyjdev/axon/settings/secrets/actions.
 
 on:
-  schedule:
-    - cron: "17 5 * * *" # nightly, off the hour to avoid GH Actions congestion
   workflow_dispatch: {}
 
 jobs:
