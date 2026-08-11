@@ -22,6 +22,7 @@ landing there.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -47,9 +48,23 @@ class _FakeLessonStore:
         self.saved.append(lesson)
         return lesson.id
 
+    async def get_by_source(self, source: str) -> LessonRecord | None:
+        return next((lesson for lesson in self.saved if lesson.source == source), None)
+
+    async def update(self, lesson: LessonRecord) -> None:
+        for i, existing in enumerate(self.saved):
+            if existing.id == lesson.id:
+                self.saved[i] = lesson
+                return
+        raise AssertionError(f"update() called for unknown id {lesson.id}")
+
 
 class _FakeEngine:
+    def __init__(self) -> None:
+        self.calls = 0
+
     def embed_one(self, text: str) -> list[float]:
+        self.calls += 1
         vector = [0.0] * VECTOR_SIZE
         vector[0] = 1.0
         return vector
@@ -60,21 +75,30 @@ def lesson_store() -> _FakeLessonStore:
     return _FakeLessonStore()
 
 
+@pytest.fixture
+def engine() -> _FakeEngine:
+    return _FakeEngine()
+
+
 @pytest.fixture(autouse=True)
 def _use_test_doubles(
-    lesson_store: _FakeLessonStore, monkeypatch: pytest.MonkeyPatch
+    lesson_store: _FakeLessonStore, engine: _FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(server, "_get_lesson_store", lambda: lesson_store)
-    monkeypatch.setattr(server, "_get_embedder", lambda: _FakeEngine())
+    monkeypatch.setattr(server, "_get_embedder", lambda: engine)
+
+
+async def _seed(lesson_store: _FakeLessonStore, engine: _FakeEngine) -> list[str]:
+    return await seed_corpus(FIXTURE, server.axon_record_lesson, store=lesson_store, engine=engine)
 
 
 async def test_every_corpus_entry_round_trips_through_axon_record_lesson(
-    lesson_store: _FakeLessonStore,
+    lesson_store: _FakeLessonStore, engine: _FakeEngine
 ) -> None:
     entries = load_corpus(FIXTURE)
     assert entries, "fixture must not be empty, or this test proves nothing"
 
-    out = await seed_corpus(FIXTURE, server.axon_record_lesson)
+    out = await _seed(lesson_store, engine)
 
     assert len(out) == len(entries)
     assert len(lesson_store.saved) == len(entries)
@@ -89,6 +113,54 @@ async def test_every_corpus_entry_round_trips_through_axon_record_lesson(
         assert saved.tell == entry["tell"]
         assert saved.fix == entry["fix"]
         assert saved.embedding is not None
+
+
+async def test_seeding_twice_does_not_duplicate(
+    lesson_store: _FakeLessonStore, engine: _FakeEngine
+) -> None:
+    entries = load_corpus(FIXTURE)
+
+    await _seed(lesson_store, engine)
+    await _seed(lesson_store, engine)
+
+    assert len(lesson_store.saved) == len(entries)
+
+
+async def test_seeding_changed_content_updates_the_stored_record(
+    lesson_store: _FakeLessonStore, engine: _FakeEngine, tmp_path: Path
+) -> None:
+    await _seed(lesson_store, engine)
+
+    data = json.loads(FIXTURE.read_text())
+    changed_id = data["lessons"][0]["id"]
+    data["lessons"][0]["fix"] = "a brand new fix that was not in the original corpus"
+    corpus_copy = tmp_path / FIXTURE.name
+    corpus_copy.write_text(json.dumps(data))
+
+    out = await seed_corpus(
+        corpus_copy, server.axon_record_lesson, store=lesson_store, engine=engine
+    )
+
+    source = f"{FIXTURE.name}#{changed_id}"
+    updated = await lesson_store.get_by_source(source)
+    assert updated is not None
+    assert updated.fix == "a brand new fix that was not in the original corpus"
+    assert len(lesson_store.saved) == len(data["lessons"]), "must update in place, not insert"
+    assert out[0] == f"updated lesson {updated.id} (agent-error)."
+
+
+async def test_seeding_unchanged_content_does_not_reembed(
+    lesson_store: _FakeLessonStore, engine: _FakeEngine
+) -> None:
+    await _seed(lesson_store, engine)
+    calls_after_first_run = engine.calls
+
+    await _seed(lesson_store, engine)
+
+    assert calls_after_first_run > 0, (
+        "first run must have embedded something, or this proves nothing"
+    )
+    assert engine.calls == calls_after_first_run
 
 
 @pytest.mark.skipif(

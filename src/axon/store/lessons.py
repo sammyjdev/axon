@@ -136,6 +136,43 @@ class LessonStore:
             await con.close()
         return self._row_to_lesson(row) if row is not None else None
 
+    async def get_by_source(self, source: str) -> LessonRecord | None:
+        """Return a lesson with this exact ``source``, or None if there is none.
+
+        ``source`` is not unique in this table (see the module docstring on
+        why no UNIQUE constraint exists), so this returns whichever match
+        Postgres hands back first. Callers that mint their own stable,
+        collision-free ``source`` keys - like the corpus seed - are the
+        only ones for whom "a match" and "the match" coincide.
+        """
+        con = await self._connect()
+        try:
+            row = await con.fetchrow(
+                "SELECT id, kind, triggers, mistake, tell, fix, source, created_at, vector"
+                " FROM lessons WHERE source = $1 LIMIT 1",
+                source,
+            )
+        finally:
+            await con.close()
+        return self._row_to_lesson(row) if row is not None else None
+
+    async def update(self, lesson: LessonRecord) -> None:
+        """Overwrite the content and vector of the row at ``lesson.id``.
+
+        ``id`` and ``created_at`` are not among the SET columns: an update
+        corrects an existing entry, it does not mint a new one.
+        """
+        con = await self._connect()
+        try:
+            await con.execute(
+                "UPDATE lessons SET kind = $2, triggers = $3, mistake = $4, tell = $5,"
+                " fix = $6, source = $7, vector = $8 WHERE id = $1",
+                lesson.id, lesson.kind, lesson.triggers, lesson.mistake, lesson.tell,
+                lesson.fix, lesson.source, self._as_vector(lesson.embedding),
+            )
+        finally:
+            await con.close()
+
     async def search(
         self,
         query: str,
