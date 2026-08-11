@@ -1183,6 +1183,36 @@ async def axon_record_lesson(
     return f"recorded lesson {lesson_id} ({kind})."
 
 
+@mcp.tool()
+@traced_tool(risk="read")
+async def axon_search_lessons(
+    query: str,
+    kind: str | None = None,
+    triggers: list[str] | None = None,
+    limit: int = 5,
+) -> str:
+    """Search recorded lessons by paraphrase, not literal text.
+
+    Unlike ``axon_search`` (substring match on decision summaries), this
+    embeds ``query`` through the same chain lessons were stored with and
+    ranks by cosine distance, so a query sharing no distinctive vocabulary
+    with a lesson can still retrieve it - e.g. ``axon_search("mapfile")``
+    misses a record whose body contains "mapfile", but a paraphrase of its
+    ``mistake``/``tell``/``fix`` still ranks it first. Optionally filter by
+    ``kind`` (``agent-error`` / ``craft-lesson``) or by ``triggers`` overlap.
+    """
+    engine = _get_embedder()
+    store = _get_lesson_store()
+    await store.init()
+    results = await store.search(query, engine=engine, kind=kind, triggers=triggers, limit=limit)
+    if not results:
+        return f"no lessons matching {query!r}."
+    return "\n".join(
+        f"- {r.id} ({r.kind}, triggers={r.triggers}): {r.mistake} | tell: {r.tell} | fix: {r.fix}"
+        for r in results
+    )
+
+
 # ---------------------------------------------------------------------------
 # Cross-agent tools (T6.1)
 # ---------------------------------------------------------------------------

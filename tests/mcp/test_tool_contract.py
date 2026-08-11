@@ -31,6 +31,7 @@ EXPECTED_TOOLS = {
     "axon_record_lesson",
     "axon_record_outcome",
     "axon_search",
+    "axon_search_lessons",
     "axon_session_end",
     "axon_session_start",
     "axon_validation_stats",
