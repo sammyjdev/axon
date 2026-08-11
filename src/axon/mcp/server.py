@@ -24,7 +24,9 @@ from axon.context.rtk import (
 )
 from axon.core.decision import Decision
 from axon.embedder.engine import EmbedderEngine
+from axon.embedder.lesson_embedding import embed_lesson
 from axon.hooks.file_bridge import update_context_file
+from axon.models.lesson import LessonCreate, LessonRecord
 from axon.observability.compression_telemetry import (
     CompressionRecord,
     CompressionTelemetryStore,
@@ -42,6 +44,7 @@ from axon.router.compressor import caveman_compress_guarded
 from axon.router.engine import _bottom_tier_model
 from axon.router.llm_backend import litellm_kwargs
 from axon.store.collections import get_search_collections
+from axon.store.lessons import LessonStore, resolve_lessons_dsn
 from axon.store.outcome_store import OutcomeRecord, OutcomeStore
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.session_store import ADR, SessionNote, SessionStore
@@ -83,6 +86,7 @@ _outcome_store: OutcomeStore | None = None
 _session_store: SessionStore | None = None
 _embedder: EmbedderEngine | None = None
 _reranker: object | None = None
+_lesson_store: LessonStore | None = None
 
 
 def _get_embedder() -> EmbedderEngine:
@@ -144,6 +148,18 @@ def _get_session_store() -> SessionStore:
         _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         _session_store = SessionStore(_DB_PATH)
     return _session_store
+
+
+def _get_lesson_store() -> LessonStore:
+    """DSN comes from ``resolve_lessons_dsn()`` - AXON_LESSONS_PG_URL, no
+    fallback. Reusing ``_RUNTIME.pg_url`` here (like the other stores above)
+    would put a client's lessons in the same database as everything else,
+    which is exactly what Task 7's isolation exists to prevent.
+    """
+    global _lesson_store
+    if _lesson_store is None:
+        _lesson_store = LessonStore(dsn=resolve_lessons_dsn())
+    return _lesson_store
 
 
 def _truncate(text: str, budget: int) -> str:
@@ -1127,6 +1143,44 @@ async def axon_record_outcome(
         )
     )
     return f"recorded outcome {rid} for {repo} ({context})."
+
+
+@mcp.tool()
+@traced_tool(risk="write")
+async def axon_record_lesson(
+    kind: str,
+    triggers: list[str],
+    mistake: str,
+    tell: str,
+    fix: str,
+    source: str,
+) -> str:
+    """Record a lesson (agent-error or craft-lesson) for paraphrase retrieval.
+
+    ``kind`` is either ``agent-error`` or ``craft-lesson``; ``triggers`` are the
+    signals that should surface this lesson again. The lesson is embedded
+    through the same chain (Ollama -> NIM -> DeepInfra) every other vector in
+    this repo goes through, and stored in the lessons-only database resolved
+    by ``resolve_lessons_dsn()`` - never the shared ``AXON_PG_URL`` - so one
+    client's lessons cannot land in another's database. Returns the new
+    lesson's id.
+    """
+    create = LessonCreate(
+        kind=kind,
+        triggers=triggers,
+        mistake=mistake,
+        tell=tell,
+        fix=fix,
+        source=source,
+    )
+    engine = _get_embedder()
+    embedding = embed_lesson(create, engine=engine)
+    record = LessonRecord(**create.model_dump(), embedding=embedding)
+
+    store = _get_lesson_store()
+    await store.init()
+    lesson_id = await store.insert(record)
+    return f"recorded lesson {lesson_id} ({kind})."
 
 
 # ---------------------------------------------------------------------------

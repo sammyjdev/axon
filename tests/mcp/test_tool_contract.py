@@ -28,6 +28,7 @@ EXPECTED_TOOLS = {
     "axon_handoff",
     "axon_health",
     "axon_mark_done",
+    "axon_record_lesson",
     "axon_record_outcome",
     "axon_search",
     "axon_session_end",
