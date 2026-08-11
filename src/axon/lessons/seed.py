@@ -21,15 +21,20 @@ each is a decision, not a rename:
   questions; anyone who wants the original date has the corpus file, which
   is the source of truth for that.
 
-Idempotency: NOT enforced here. ``axon_record_lesson`` always mints a fresh
-UUID and ``LessonStore.insert`` has no dedup-by-source check, and neither is
-this module's place to add one - the DSN, the store and the tool boundary
-belong to earlier tasks, and reaching into ``mcp/server.py`` here would
-collide with Task 10, in flight on this same corpus concurrently. Re-running
-``seed_corpus`` against a live database WILL duplicate every row. The
-``source`` field is deliberately built as a stable, greppable key
-(``file#id``) so a future dedup check - ``SELECT 1 FROM lessons WHERE
-source = $1`` - has something to key on; that check does not exist yet.
+Idempotency: enforced here, not with a database constraint. A UNIQUE index
+on ``source`` would be wrong - ``axon_record_lesson`` accepts an arbitrary
+``source`` from any caller, so two agents legitimately recording different
+lessons under the same free-text ``source`` would collide on it. Instead,
+``seed_corpus`` looks up each entry by its own stable ``file#id`` source key
+before deciding what to do:
+
+* No existing row -> insert, through ``axon_record_lesson`` (embeds once).
+* An existing row whose content differs -> re-embed and overwrite it in
+  place (same id, same ``created_at``): the corpus is the source of truth,
+  so a corrected entry corrects the stored lesson too.
+* An existing row whose content is identical -> skip. No write, and no
+  embedding call - re-embedding unchanged rows would cost a network call
+  per entry, every run, for nothing.
 """
 
 from __future__ import annotations
@@ -38,6 +43,10 @@ import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+
+from axon.embedder.lesson_embedding import SupportsEmbedOne, embed_lesson
+from axon.models.lesson import LessonCreate, LessonRecord
+from axon.store.lessons import LessonStore
 
 CorpusEntry = dict[str, Any]
 
@@ -60,15 +69,52 @@ def corpus_entry_to_lesson_kwargs(entry: CorpusEntry, corpus_path: Path) -> dict
     }
 
 
+def _unchanged(existing: LessonRecord, kwargs: dict[str, Any]) -> bool:
+    """True if ``kwargs`` (a corpus entry's fields) match the stored row.
+
+    ``source`` is the lookup key, already equal by construction.
+    """
+    return (
+        existing.kind == kwargs["kind"]
+        and existing.triggers == kwargs["triggers"]
+        and existing.mistake == kwargs["mistake"]
+        and existing.tell == kwargs["tell"]
+        and existing.fix == kwargs["fix"]
+    )
+
+
 async def seed_corpus(
     path: Path,
     record: Callable[..., Awaitable[str]],
+    *,
+    store: LessonStore,
+    engine: SupportsEmbedOne,
 ) -> list[str]:
-    """Call ``record`` (``axon_record_lesson``) once per entry in the corpus at ``path``.
+    """Upsert each entry of the corpus at ``path`` into ``store``, by ``source``.
 
-    Returns the tool's return values, one per entry, in file order.
+    New entries go through ``record`` (``axon_record_lesson``), which embeds
+    and inserts. Existing entries are looked up directly in ``store``: an
+    unchanged one is skipped (no write, no embedding call); a changed one is
+    re-embedded and overwritten in place. Returns one status string per
+    entry, in file order.
     """
-    return [
-        await record(**corpus_entry_to_lesson_kwargs(entry, path))
-        for entry in load_corpus(path)
-    ]
+    results = []
+    for entry in load_corpus(path):
+        kwargs = corpus_entry_to_lesson_kwargs(entry, path)
+        existing = await store.get_by_source(kwargs["source"])
+
+        if existing is None:
+            results.append(await record(**kwargs))
+            continue
+
+        if _unchanged(existing, kwargs):
+            results.append(f"lesson {existing.id} unchanged, skipped.")
+            continue
+
+        embedding = embed_lesson(LessonCreate(**kwargs), engine=engine)
+        updated = LessonRecord(
+            **kwargs, id=existing.id, created_at=existing.created_at, embedding=embedding
+        )
+        await store.update(updated)
+        results.append(f"updated lesson {existing.id} ({kwargs['kind']}).")
+    return results
