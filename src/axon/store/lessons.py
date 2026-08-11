@@ -12,19 +12,46 @@ Two patterns are borrowed deliberately, from two different places:
   against databases where pgvector was never installed, so a vector column in it
   breaks every one of them (measured on the Wave A merge: 18 tests, ``type
   "vector" does not exist``).
+
+The DSN is its own config, ``AXON_LESSONS_PG_URL`` - not ``rt.pg_url`` /
+``AXON_PG_URL``, the DSN every other store here shares. Reusing the shared
+one would put a client's lessons in whatever database every other store
+already writes to, purely because nobody set a lessons-specific value; see
+``resolve_lessons_dsn``.
 """
 
 from __future__ import annotations
 
+import os
 from uuid import UUID
 
 import asyncpg
 from pgvector.asyncpg import register_vector
 
+from axon.embedder.lesson_embedding import SupportsEmbedOne
 from axon.models.lesson import LessonRecord
 from axon.store.vector_common import VECTOR_SIZE
 
 TABLE = "lessons"
+
+_DSN_ENV_VAR = "AXON_LESSONS_PG_URL"
+
+
+def resolve_lessons_dsn() -> str:
+    """Resolve the lessons DSN from config, with no fallback.
+
+    Isolation here is the connection, not a permission check: a missing
+    ``AXON_LESSONS_PG_URL`` must refuse, not quietly reuse ``AXON_PG_URL``
+    (the DSN every other store shares) or a hardcoded default - either would
+    silently put a client's lessons in the same database as everything else.
+    """
+    dsn = os.environ.get(_DSN_ENV_VAR)
+    if not dsn:
+        raise RuntimeError(
+            f"{_DSN_ENV_VAR} is not set. There is no fallback: set it to the "
+            f"database that should hold this client's lessons."
+        )
+    return dsn
 
 _DDL = f"""
 CREATE TABLE IF NOT EXISTS {TABLE} (
@@ -42,7 +69,7 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
 
 
 class LessonStore:
-    """Insert and fetch lessons. Search by cosine distance is Task 6."""
+    """Insert, fetch and search lessons by cosine distance."""
 
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
@@ -108,6 +135,78 @@ class LessonStore:
         finally:
             await con.close()
         return self._row_to_lesson(row) if row is not None else None
+
+    async def get_by_source(self, source: str) -> LessonRecord | None:
+        """Return a lesson with this exact ``source``, or None if there is none.
+
+        ``source`` is not unique in this table (see the module docstring on
+        why no UNIQUE constraint exists), so this returns whichever match
+        Postgres hands back first. Callers that mint their own stable,
+        collision-free ``source`` keys - like the corpus seed - are the
+        only ones for whom "a match" and "the match" coincide.
+        """
+        con = await self._connect()
+        try:
+            row = await con.fetchrow(
+                "SELECT id, kind, triggers, mistake, tell, fix, source, created_at, vector"
+                " FROM lessons WHERE source = $1 LIMIT 1",
+                source,
+            )
+        finally:
+            await con.close()
+        return self._row_to_lesson(row) if row is not None else None
+
+    async def update(self, lesson: LessonRecord) -> None:
+        """Overwrite the content and vector of the row at ``lesson.id``.
+
+        ``id`` and ``created_at`` are not among the SET columns: an update
+        corrects an existing entry, it does not mint a new one.
+        """
+        con = await self._connect()
+        try:
+            await con.execute(
+                "UPDATE lessons SET kind = $2, triggers = $3, mistake = $4, tell = $5,"
+                " fix = $6, source = $7, vector = $8 WHERE id = $1",
+                lesson.id, lesson.kind, lesson.triggers, lesson.mistake, lesson.tell,
+                lesson.fix, lesson.source, self._as_vector(lesson.embedding),
+            )
+        finally:
+            await con.close()
+
+    async def search(
+        self,
+        query: str,
+        *,
+        engine: SupportsEmbedOne,
+        kind: str | None = None,
+        triggers: list[str] | None = None,
+        limit: int = 5,
+    ) -> list[LessonRecord]:
+        """Return up to ``limit`` lessons nearest ``query`` by cosine distance.
+
+        ``query`` is embedded through ``engine`` - the same injected protocol
+        Task 5 uses for lessons themselves - so storage and retrieval share one
+        text-to-vector path rather than growing a second one here. A lesson
+        with no vector can never be nearest to anything and is excluded.
+        """
+        vector = self._as_vector(engine.embed_one(query))
+        con = await self._connect()
+        try:
+            params: list = [vector]
+            clauses = ["vector IS NOT NULL"]
+            if kind is not None:
+                params.append(kind)
+                clauses.append(f"kind = ${len(params)}")
+            if triggers is not None:
+                params.append(triggers)
+                clauses.append(f"triggers && ${len(params)}::text[]")
+            where = " AND ".join(clauses)
+            select_cols = "id, kind, triggers, mistake, tell, fix, source, created_at, vector"
+            sql = f"SELECT {select_cols} FROM {TABLE} WHERE {where} ORDER BY vector <=> $1 LIMIT {int(limit)}"  # noqa: S608, E501
+            rows = await con.fetch(sql, *params)
+        finally:
+            await con.close()
+        return [self._row_to_lesson(row) for row in rows]
 
     async def _connect(self) -> asyncpg.Connection:
         con = await asyncpg.connect(self._dsn)
