@@ -40,6 +40,7 @@ class _FakeLessonStore:
         self.inited = False
         self.search_calls: list[dict] = []
         self.search_results: list[LessonRecord] = []
+        self.query_vectors: list[list[float]] = []
 
     async def init(self) -> None:
         self.inited = True
@@ -61,7 +62,7 @@ class _FakeLessonStore:
         # Otherwise just records the call: the tests assert the tool is a
         # thin, faithful wrapper, not that search itself ranks correctly
         # (Task 6 owns that, against real Postgres).
-        engine.embed_one(query)
+        self.query_vectors.append(engine.embed_one(query))
         self.search_calls.append(
             {"query": query, "kind": kind, "triggers": triggers, "limit": limit}
         )
@@ -204,3 +205,57 @@ async def test_search_lessons_with_no_hits_says_so(
     out = await server.axon_search_lessons(query="nothing matches this")
 
     assert "no lesson" in out.lower()
+
+
+class _MarkedEngine:
+    """Distinguishable by ``marker``, planted in dim 0 of every vector it emits."""
+
+    def __init__(self, marker: float) -> None:
+        self.marker = marker
+
+    def embed_one(self, text: str) -> list[float]:
+        v = [0.0] * VECTOR_SIZE
+        v[0] = self.marker
+        return v
+
+
+async def test_record_and_search_resolve_their_engine_from_the_same_accessor(
+    lesson_store: _FakeLessonStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If ``axon_record_lesson`` and ``axon_search_lessons`` embedded through
+    different engines (e.g. one calling ``_get_embedder()`` and the other
+    holding its own ``EmbedderEngine()``), the two tools would write and read
+    different vector spaces and every result would be silently wrong - while
+    every test that fakes a single shared engine (as the fixture above does)
+    would stay green, since it can't tell "both called the one fake" apart
+    from "both happen to resolve to a fake that looks the same".
+
+    Swapping in a spy that hands out a NEW, distinguishable engine on every
+    call to ``_get_embedder()`` closes that gap: each tool must pick up
+    whichever engine is current *at call time*, which only happens if it
+    resolves the engine through that accessor rather than some other cached
+    reference.
+    """
+    engines: list[_MarkedEngine] = []
+
+    def _spy() -> _MarkedEngine:
+        e = _MarkedEngine(marker=float(len(engines) + 1))
+        engines.append(e)
+        return e
+
+    monkeypatch.setattr(server, "_get_embedder", _spy)
+
+    await server.axon_record_lesson(
+        kind="agent-error",
+        triggers=["bash"],
+        mistake="m",
+        tell="t",
+        fix="f",
+        source="s",
+    )
+    lesson_store.search_results = []
+    await server.axon_search_lessons(query="q")
+
+    assert len(engines) == 2, "each tool must call _get_embedder() to get its own engine"
+    assert lesson_store.saved[0].embedding[0] == engines[0].marker
+    assert lesson_store.query_vectors[0][0] == engines[1].marker
