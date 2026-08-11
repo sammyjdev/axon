@@ -372,3 +372,70 @@ async def test_on_push_skips_export_when_scope_open(
 def test_main_unknown_event_returns_zero() -> None:
     assert main(["bogus"]) == 0
     assert main([]) == 0
+
+
+async def test_on_commit_enqueues_lesson_draft(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from axon.adr.lesson_pool import list_drafts
+
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / "data-root" / ".axon"))
+    repo = tmp_path / "lessonrepo"
+    repo.mkdir()
+    _git(["init"], repo)
+    _git(["config", "user.email", "test@axon.dev"], repo)
+    _git(["config", "user.name", "AXON Test"], repo)
+    (repo / "client.py").write_text("x = 1\n", encoding="utf-8")
+    _git(["add", "."], repo)
+    _git(
+        [
+            "commit",
+            "-m",
+            "fix: retry the flaky client",
+            "-m",
+            "Lesson: retries without jitter thundering-herd the upstream",
+        ],
+        repo,
+    )
+
+    await on_commit(store=store, cwd=repo)
+
+    drafts = list_drafts(draft_dir=tmp_path / "data-root" / ".axon" / "lesson-draft")
+    assert len(drafts) == 1
+    assert drafts[0].title == "retries without jitter thundering-herd the upstream"
+    assert "client.py" in drafts[0].context
+
+
+async def test_on_commit_without_lesson_trailer_enqueues_nothing(
+    store: SessionStore, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from axon.adr.lesson_pool import list_drafts
+
+    monkeypatch.setenv("AXON_DATA_ROOT", str(git_repo / ".axon"))
+    await on_commit(store=store, cwd=git_repo)
+    assert list_drafts(draft_dir=git_repo / ".axon" / "lesson-draft") == []
+
+
+async def test_on_commit_idempotent_skip_does_not_duplicate_lesson_draft(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from axon.adr.lesson_pool import list_drafts
+
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))
+    repo = tmp_path / "lessonrepo2"
+    repo.mkdir()
+    _git(["init"], repo)
+    _git(["config", "user.email", "test@axon.dev"], repo)
+    _git(["config", "user.name", "AXON Test"], repo)
+    (repo / "client.py").write_text("x = 1\n", encoding="utf-8")
+    _git(["add", "."], repo)
+    _git(
+        ["commit", "-m", "fix: retry", "-m", "Lesson: retries need jitter"],
+        repo,
+    )
+
+    await on_commit(store=store, cwd=repo)
+    await on_commit(store=store, cwd=repo)  # idempotent skip path
+
+    drafts = list_drafts(draft_dir=tmp_path / ".axon" / "lesson-draft")
+    assert len(drafts) == 1

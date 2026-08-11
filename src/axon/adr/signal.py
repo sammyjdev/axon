@@ -95,3 +95,51 @@ def _extract_body(lines: list[str]) -> str:
     if blank_idx is None:
         return ""
     return "\n".join(lines[blank_idx + 1 :])
+
+
+@dataclass(frozen=True)
+class LessonSignal:
+    """A lesson signal extracted from a commit message (``Lesson:`` trailer).
+
+    Kept as its own type rather than a new ``SignalKind`` on ``Signal``:
+    the ADR signal has a real precedence rule (subject prefix beats
+    trailer) because only one ADR signal can win per commit. A lesson
+    has no subject-prefix form and no precedence question — a commit's
+    ``Lesson:`` trailer and its ``ADR-Decision:`` trailer are unrelated
+    claims that can both be true at once, so folding them into one
+    ``Signal`` type would invent a precedence rule that doesn't exist.
+    """
+
+    title: str
+
+
+# Trailer in body (Git trailer convention, case-insensitive):
+#   Lesson: <title>
+_LESSON_TRAILER_RE = re.compile(
+    r"^Lesson:\s*(?P<title>\S.*?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def detect_lesson(commit_message: str) -> LessonSignal | None:
+    """Return a ``LessonSignal`` if the message carries a ``Lesson:`` trailer.
+
+    Independent of ``detect()`` — callers that want both an ADR signal
+    and a lesson signal call both functions; this one never inspects
+    the subject line or the ``ADR-Decision:`` trailer.
+    """
+    if not commit_message or not commit_message.strip():
+        return None
+
+    lines = commit_message.split("\n")
+    body = _extract_body(lines)
+    if not body:
+        return None
+
+    match = _LESSON_TRAILER_RE.search(body)
+    if not match:
+        return None
+    title = match.group("title").strip()
+    if not title:
+        return None
+    return LessonSignal(title=title)

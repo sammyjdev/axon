@@ -159,6 +159,30 @@ async def on_commit(
         except Exception as exc:  # best-effort; never block git
             logger.warning("ADR inference skipped: %s", exc)
 
+        # Lesson: <title> trailer: enqueue a lesson draft directly, no
+        # LLM/gate pipeline involved (there is none for lessons yet) -
+        # the draft is just the trailer title plus the files touched,
+        # for a human to flesh out via a future `pb lesson review`.
+        try:
+            from axon.adr.signal import detect_lesson
+
+            full_message = _git(["log", "-1", "--pretty=%B"], root)
+            lesson_signal = detect_lesson(full_message)
+            if lesson_signal is not None:
+                from axon.adr.lesson_pool import LessonDraftRecord
+                from axon.adr.lesson_pool import write_draft as write_lesson_draft
+
+                write_lesson_draft(
+                    LessonDraftRecord(
+                        commit_hash=commit_hash,
+                        title=lesson_signal.title,
+                        context="\n".join(files),
+                    )
+                )
+                logger.info("captured lesson draft: %s", lesson_signal.title)
+        except Exception as exc:  # best-effort; never block git
+            logger.warning("lesson capture skipped: %s", exc)
+
         logger.info("captured draft decision %s from commit %s", decision.id, commit_hash[:8])
         return decision.id
     finally:

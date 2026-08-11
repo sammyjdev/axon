@@ -1,50 +1,58 @@
-"""Draft pool for ADRs that failed at least one gate (dec-111).
+"""Draft pool for lessons captured via the ``Lesson:`` commit trailer.
 
-Drafts live in ``.axon/adr-draft/{commit_hash}.md`` as plain Markdown
-with YAML frontmatter. They are not indexed by the default retriever.
-After ``dormancy_days`` (default 30), a draft is marked ``dormant`` in
-its frontmatter — still recoverable via ``pb adr review --dormant``,
-just out of the hot path.
+Sibling to ``draft_pool.py`` (ADR drafts), not a variant record folded
+into it: a lesson draft has no LLM-inferred payload and no gate outcome
+to carry — it's written straight from ``on_commit`` the moment the
+trailer is seen. An ADR draft only exists because the LLM's proposal
+*failed* a gate; a lesson draft is the trailer itself, immediately.
+Reusing ``DraftRecord`` would mean every reader reasons about
+``failed_layer``/``structural_mode``/``last_l1_full_at`` fields that are
+always empty for lessons, and vice versa.
 
-The pool never expires destructively. Cleanup is opt-in via
-``pb adr review --purge-dormant``.
+The one thing genuinely shared with the ADR pool — the 30-day dormancy
+rule — lives in ``draft_dormancy.py`` and is reused here, not
+reimplemented.
+
+A draft is a file with the commit hash, the trailer title, the files
+touched (as machine-supplied context, no LLM involved), and a ``tell``
+field left as an explicit prompt: what did the author SEE while still
+confused, not the diagnosis after the fact. That's what makes a lesson
+retrievable later — a blank template produces a badly-written lesson,
+which is worse than no draft at all.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from axon.adr.draft_dormancy import DEFAULT_DORMANCY_DAYS, due_for_dormancy
 from axon.config.data_root import data_root
 
-STALE_TTL_HOURS = 24
+TELL_PROMPT = (
+    "TODO: what did you SEE while still confused - not the diagnosis afterward"
+)
 
 
 @dataclass
-class DraftRecord:
-    """Persisted draft state."""
+class LessonDraftRecord:
+    """Persisted lesson-draft state."""
 
     commit_hash: str
     title: str
     context: str
-    decision: str
-    rationale: str
-    failed_layer: str
-    failed_reason: str
-    structural_mode: bool = False
+    tell: str = TELL_PROMPT
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    last_l1_full_at: datetime | None = None
     dormant: bool = False
 
 
 def _draft_dir() -> Path:
-    return data_root() / "adr-draft"
+    return data_root() / "lesson-draft"
 
 
-def write_draft(record: DraftRecord, *, draft_dir: Path | None = None) -> Path:
-    """Persist a draft to ``adr-draft/{commit_hash}.md``."""
+def write_draft(record: LessonDraftRecord, *, draft_dir: Path | None = None) -> Path:
+    """Persist a draft to ``lesson-draft/{commit_hash}.md``."""
     target_dir = draft_dir or _draft_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"{record.commit_hash}.md"
@@ -52,16 +60,15 @@ def write_draft(record: DraftRecord, *, draft_dir: Path | None = None) -> Path:
     frontmatter = _serialize_frontmatter(record)
     body = (
         f"# {record.title}\n\n"
-        f"## Context\n\n{record.context}\n\n"
-        f"## Decision\n\n{record.decision}\n\n"
-        f"## Rationale\n\n{record.rationale}\n"
+        f"## Tell\n\n{record.tell}\n\n"
+        f"## Context\n\n{record.context}\n"
     )
     path.write_text(f"---\n{frontmatter}---\n\n{body}", encoding="utf-8")
     return path
 
 
-def read_draft(path: Path) -> DraftRecord:
-    """Parse a draft Markdown file back into a ``DraftRecord``."""
+def read_draft(path: Path) -> LessonDraftRecord:
+    """Parse a draft Markdown file back into a ``LessonDraftRecord``."""
     raw = path.read_text(encoding="utf-8")
     if not raw.startswith("---\n"):
         raise ValueError(f"draft missing frontmatter: {path}")
@@ -72,25 +79,13 @@ def read_draft(path: Path) -> DraftRecord:
     fm = _parse_frontmatter(fm_block)
     body = raw[end + 5 :]
 
-    title = fm.get("title", "")
-    context = _extract_section(body, "Context")
-    decision = _extract_section(body, "Decision")
-    rationale = _extract_section(body, "Rationale")
-
-    return DraftRecord(
+    return LessonDraftRecord(
         commit_hash=fm.get("commit_hash", ""),
-        title=title,
-        context=context,
-        decision=decision,
-        rationale=rationale,
-        failed_layer=fm.get("failed_layer", ""),
-        failed_reason=fm.get("failed_reason", ""),
-        structural_mode=fm.get("structural_mode", "false") == "true",
-        created_at=datetime.fromisoformat(fm.get("created_at", datetime.now(UTC).isoformat())),
-        last_l1_full_at=(
-            datetime.fromisoformat(fm["last_l1_full_at"])
-            if fm.get("last_l1_full_at")
-            else None
+        title=fm.get("title", ""),
+        context=_extract_section(body, "Context"),
+        tell=_extract_section(body, "Tell") or TELL_PROMPT,
+        created_at=datetime.fromisoformat(
+            fm.get("created_at", datetime.now(UTC).isoformat())
         ),
         dormant=fm.get("dormant", "false") == "true",
     )
@@ -98,12 +93,12 @@ def read_draft(path: Path) -> DraftRecord:
 
 def list_drafts(
     *, draft_dir: Path | None = None, include_dormant: bool = False
-) -> list[DraftRecord]:
-    """Return all drafts in the pool. Filters dormant unless requested."""
+) -> list[LessonDraftRecord]:
+    """Return all lesson drafts in the pool. Filters dormant unless requested."""
     target_dir = draft_dir or _draft_dir()
     if not target_dir.exists():
         return []
-    records: list[DraftRecord] = []
+    records: list[LessonDraftRecord] = []
     for path in sorted(target_dir.glob("*.md")):
         try:
             record = read_draft(path)
@@ -116,7 +111,7 @@ def list_drafts(
 
 
 def mark_dormant(commit_hash: str, *, draft_dir: Path | None = None) -> bool:
-    """Set ``dormant=true`` on a draft. Returns True if applied."""
+    """Set ``dormant=true`` on a lesson draft. Returns True if applied."""
     target_dir = draft_dir or _draft_dir()
     path = target_dir / f"{commit_hash}.md"
     if not path.exists():
@@ -127,25 +122,12 @@ def mark_dormant(commit_hash: str, *, draft_dir: Path | None = None) -> bool:
     return True
 
 
-def find_stale(
-    *, draft_dir: Path | None = None, ttl_hours: int = STALE_TTL_HOURS
-) -> list[DraftRecord]:
-    """Drafts whose last L1-full check is older than ``ttl_hours`` (or never)."""
-    threshold = datetime.now(UTC) - timedelta(hours=ttl_hours)
-    stale: list[DraftRecord] = []
-    for record in list_drafts(draft_dir=draft_dir, include_dormant=False):
-        last = record.last_l1_full_at
-        if last is None or last < threshold:
-            stale.append(record)
-    return stale
-
-
 def auto_dormancy_sweep(
     *,
     draft_dir: Path | None = None,
     dormancy_days: int = DEFAULT_DORMANCY_DAYS,
 ) -> list[str]:
-    """Mark all drafts older than ``dormancy_days`` as dormant.
+    """Mark all lesson drafts older than ``dormancy_days`` as dormant.
 
     Returns the list of commit_hashes that were transitioned.
     """
@@ -158,21 +140,20 @@ def auto_dormancy_sweep(
     return transitioned
 
 
-# ── frontmatter helpers (tiny YAML subset; no PyYAML dep) ─────────────
+# ── frontmatter helpers (tiny YAML subset; no PyYAML dep). Mirrors
+# draft_pool.py's helpers but kept separate: the field sets diverge
+# (no failed_layer/structural_mode/last_l1_full_at here), so a shared
+# serializer would need dict-of-fields dispatch for two call sites —
+# not worth it for four small functions. ─────────────────────────────
 
 
-def _serialize_frontmatter(record: DraftRecord) -> str:
+def _serialize_frontmatter(record: LessonDraftRecord) -> str:
     lines = [
         f"commit_hash: {record.commit_hash}",
         f"title: {_quote(record.title)}",
-        f"failed_layer: {record.failed_layer}",
-        f"failed_reason: {_quote(record.failed_reason)}",
-        f"structural_mode: {'true' if record.structural_mode else 'false'}",
         f"created_at: {record.created_at.isoformat()}",
         f"dormant: {'true' if record.dormant else 'false'}",
     ]
-    if record.last_l1_full_at is not None:
-        lines.append(f"last_l1_full_at: {record.last_l1_full_at.isoformat()}")
     return "\n".join(lines) + "\n"
 
 
@@ -187,7 +168,6 @@ def _parse_frontmatter(block: str) -> dict[str, str]:
 
 
 def _quote(s: str) -> str:
-    # Minimal scalar: wrap in double quotes; escape backslash and quote
     escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
     return f'"{escaped}"'
 

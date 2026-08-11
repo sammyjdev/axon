@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from axon.adr.signal import Signal, SignalKind, detect
+from axon.adr.signal import LessonSignal, Signal, SignalKind, detect, detect_lesson
 
 
 class TestDetectSubjectPrefix:
@@ -105,3 +105,72 @@ class TestSignal:
         sig = Signal(kind=SignalKind.SUBJECT_PREFIX, title="foo")
         assert sig.kind == SignalKind.SUBJECT_PREFIX
         assert sig.title == "foo"
+
+
+class TestDetectLesson:
+    def test_trailer_in_body_returns_lesson_signal(self) -> None:
+        msg = "fix: retry the flaky client\n\nLesson: retries need jitter"
+        sig = detect_lesson(msg)
+        assert sig is not None
+        assert isinstance(sig, LessonSignal)
+        assert sig.title == "retries need jitter"
+
+    def test_trailer_alone_in_subject_does_not_match(self) -> None:
+        assert detect_lesson("Lesson: foo") is None
+
+    def test_trailer_case_insensitive(self) -> None:
+        msg = "x\n\nlesson: lower case trailer"
+        sig = detect_lesson(msg)
+        assert sig is not None
+        assert sig.title == "lower case trailer"
+
+    def test_multiple_lesson_trailers_returns_first(self) -> None:
+        msg = "x\n\nLesson: first\nLesson: second"
+        sig = detect_lesson(msg)
+        assert sig is not None
+        assert sig.title == "first"
+
+    def test_empty_title_returns_none(self) -> None:
+        assert detect_lesson("x\n\nLesson:") is None
+        assert detect_lesson("x\n\nLesson: ") is None
+
+    def test_no_trailer_returns_none(self) -> None:
+        assert detect_lesson("fix: bug in login flow") is None
+
+    def test_empty_message_returns_none(self) -> None:
+        assert detect_lesson("") is None
+        assert detect_lesson("\n\n") is None
+
+    def test_does_not_match_adr_decision_trailer(self) -> None:
+        msg = "x\n\nADR-Decision: migrate to repository pattern"
+        assert detect_lesson(msg) is None
+
+
+class TestLessonAndAdrSignalsCoexist:
+    """A commit can carry both trailers - a design choice can also be a
+    hard-won lesson. The two detectors are independent: neither's
+    presence affects the other, and both may fire on the same commit.
+    """
+
+    def test_both_trailers_present_both_detected(self) -> None:
+        msg = (
+            "fix: swap the retry client\n\n"
+            "ADR-Decision: introduce a RetryPolicy abstraction\n"
+            "Lesson: retries without jitter thundering-herd the upstream"
+        )
+        adr_sig = detect(msg)
+        lesson_sig = detect_lesson(msg)
+
+        assert adr_sig is not None
+        assert adr_sig.kind == SignalKind.TRAILER
+        assert adr_sig.title == "introduce a RetryPolicy abstraction"
+
+        assert lesson_sig is not None
+        assert lesson_sig.title == (
+            "retries without jitter thundering-herd the upstream"
+        )
+
+    def test_lesson_only_leaves_adr_detect_none(self) -> None:
+        msg = "fix: retry the flaky client\n\nLesson: retries need jitter"
+        assert detect(msg) is None
+        assert detect_lesson(msg) is not None

@@ -118,6 +118,38 @@
       "tell": "Everything keeps working, which is the problem.",
       "fix": "Raise. A loop running on an unmeasured substitute, with nothing saying so, is worse than one that stops.",
       "seen": "recurring"
+    },
+    {
+      "id": "checkout-deletes-a-generated-file",
+      "triggers": ["git", "generated-artifact"],
+      "mistake": "Ran `git switch main` in a repo where a GENERATED file was gitignored on the branch but still TRACKED on the other ref. The checkout overwrote the generated copy with the old tracked version, and the pull that followed - carrying the commit that untracks it - deleted it outright.",
+      "tell": "Nothing from git. The 'would be overwritten by checkout' guard does not fire for ignored files. The loss shows up later as a missing capability, never as a git message.",
+      "fix": "Ask whether the artifact changed tracked-ness between the two refs (`git log --oneline <a>..<b> -- <path>`) before switching. After any switch or pull, re-run the emitter instead of trusting the file survived.",
+      "seen": "2026-08, .claude/agents/forge.md - the forge agent vanished mid-session"
+    },
+    {
+      "id": "unfamiliar-range-read-as-hostile",
+      "triggers": ["diagnosis", "claim-about-state", "network"],
+      "mistake": "Saw an IP range I did not recognise in a DNS answer and called it a corporate hijack. It was the service's own published range - `whois` settled it in one command, after I had already blamed a VPN, then a firewall, and had the user disable a security extension for nothing.",
+      "tell": "DNS keeps returning an IP I do not recognise, a 404 comes back from it, and every new fact fits the theory instead of testing it: the relay that still works reads as `selective blocking`, the extension that is off reads as `still loaded`. The story gets more detailed while no check has confirmed any part of it.",
+      "fix": "Before naming a culprit for a network symptom, establish two facts. WHOSE addresses are these (`whois`) - an unfamiliar range is usually the service's own. And did the connection COMPLETE - a 404 over a valid TLS certificate is a working connection, not a block. Both cost one command and precede any theory.",
+      "seen": "2026-08, tailscale controlplane 192.200.0.0/24"
+    },
+    {
+      "id": "number-written-from-memory-not-from-the-run",
+      "triggers": ["measurement", "claim-about-state", "parallel-work"],
+      "mistake": "Wrote a gate result into a commit message from memory while eight branches each had their own result. Put 1583 where that branch had measured 1581 - the 1583 belonged to a different branch entirely.",
+      "tell": "Several near-identical numbers are in flight at once, one per branch or per run (1568, 1572, 1577, 1581, 1583), and you are typing one of them into a commit, a PR body or a doc from recall. Nothing looks wrong afterwards: a plausible number in a durable artifact is indistinguishable from a correct one, and no reviewer re-runs it to check.",
+      "fix": "Paste measurements from the run output, never from recall - re-read the log file or re-run the command in the same breath as writing the claim. `cross-arm-comparison` is the same failure at comparison time; this is it at citation time.",
+      "seen": "2026-08, commit 209ec3b - caught on re-read, amended"
+    },
+    {
+      "id": "exit-code-belonged-to-the-wrong-command",
+      "triggers": ["shell-script", "measurement", "claim-about-state"],
+      "mistake": "Chained `git pull && pytest > log` and reported the gate as FAILED on exit code 1. The pull had failed on a missing upstream, `&&` never ran pytest, and the exit code was git's. I announced a broken test suite that had not run at all.",
+      "tell": "A command that ends in a check reports failure, and the failure message is about something else entirely - a branch, a path, a missing file - or the output file the run was supposed to write does not exist. The tail of the log shows setup output, not test output.",
+      "fix": "When a chain both prepares and measures, read WHICH link failed before naming the result: run the setup on its own line, or echo the status of each step. An exit code from `a && b` says nothing about `b` unless `a` succeeded.",
+      "seen": "2026-08, axon gate reported red when pytest never ran"
     }
   ]
 }
