@@ -23,6 +23,7 @@ landing there.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -33,7 +34,38 @@ from axon.models.lesson import LessonRecord
 from axon.store.vector_common import VECTOR_SIZE
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "lessons" / "agent-errors.json"
-LIVE_CORPUS = Path.home() / ".claude" / "agents" / "forge" / "lessons" / "agent-errors.json"
+CORPUS_REPO = Path.home() / ".claude"
+CORPUS_PATH_IN_REPO = "agents/forge/lessons/agent-errors.json"
+CORPUS_REF = "main"
+
+
+def _corpus_at_stable_ref() -> str | None:
+    """Read the corpus from ``main``, not from that repo's working tree.
+
+    The working tree shows whichever branch the other repository happens to be
+    checked out on. Reading it made this gate fail whenever someone switched
+    branches there - a real occurrence, and one with nothing to do with this
+    repo. ``main`` is the shared answer to "what is the corpus", so drift means
+    the fixture and the published corpus disagree, not that a checkout moved.
+
+    Returns None when the repo, the ref or the file is absent, so the test
+    skips instead of failing on a machine that simply does not have it.
+    """
+    if not (CORPUS_REPO / ".git").exists():
+        return None
+    try:
+        # S603/S607: the argv is a literal plus two module constants, and `git`
+        # is resolved from PATH on purpose - no untrusted input reaches it.
+        done = subprocess.run(  # noqa: S603
+            ["git", "-C", str(CORPUS_REPO), "show", f"{CORPUS_REF}:{CORPUS_PATH_IN_REPO}"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
 
 
 class _FakeLessonStore:
@@ -163,11 +195,14 @@ async def test_seeding_unchanged_content_does_not_reembed(
     assert engine.calls == calls_after_first_run
 
 
-@pytest.mark.skipif(
-    not LIVE_CORPUS.exists(), reason="~/.claude/agents/forge is not on this machine"
-)
-def test_vendored_fixture_matches_the_live_corpus() -> None:
-    assert FIXTURE.read_text() == LIVE_CORPUS.read_text(), (
-        "the vendored fixture has drifted from the live corpus - copy "
-        f"{LIVE_CORPUS} over {FIXTURE} and re-run"
+def test_vendored_fixture_matches_the_published_corpus() -> None:
+    published = _corpus_at_stable_ref()
+    if published is None:
+        pytest.skip(f"{CORPUS_PATH_IN_REPO} is not readable at {CORPUS_REF} on this machine")
+
+    assert FIXTURE.read_text() == published, (
+        f"the vendored fixture has drifted from {CORPUS_REF}:{CORPUS_PATH_IN_REPO} - "
+        f"run `git -C {CORPUS_REPO} show {CORPUS_REF}:{CORPUS_PATH_IN_REPO} > {FIXTURE}`. "
+        "If the corpus has entries not yet merged to "
+        f"{CORPUS_REF}, the fixture is ahead on purpose and should wait for that merge."
     )

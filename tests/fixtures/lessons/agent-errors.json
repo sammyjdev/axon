@@ -118,14 +118,6 @@
       "tell": "Everything keeps working, which is the problem.",
       "fix": "Raise. A loop running on an unmeasured substitute, with nothing saying so, is worse than one that stops.",
       "seen": "recurring"
-    },
-    {
-      "id": "checkout-deletes-a-generated-file",
-      "triggers": ["git", "generated-artifact"],
-      "mistake": "Ran `git switch main` in a repo where a GENERATED file was gitignored on the branch but still TRACKED on the other ref. The checkout overwrote the generated copy with the old tracked version, and the pull that followed - carrying the commit that untracks it - deleted it outright.",
-      "tell": "Nothing from git. The 'would be overwritten by checkout' guard does not fire for ignored files. The loss shows up later as a missing capability, never as a git message.",
-      "fix": "Ask whether the artifact changed tracked-ness between the two refs (`git log --oneline <a>..<b> -- <path>`) before switching. After any switch or pull, re-run the emitter instead of trusting the file survived.",
-      "seen": "2026-08, .claude/agents/forge.md - the forge agent vanished mid-session"
     }
   ]
 }
