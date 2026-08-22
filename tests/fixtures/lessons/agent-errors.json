@@ -1,15 +1,15 @@
 {
   "_comment": "Errors the ORCHESTRATOR made, not language traps the maker hits - those live in references/craft-lessons.md and are read verbatim every pass. This file is retrieved BY TRIGGER instead, because a corpus read verbatim is a context tax that grows forever and buries the two entries that matter under thirty that do not.",
-
   "_status": "DATA AWAITING A MECHANISM. Nothing reads this file yet. A keyword-matching selector was written and removed the same day: shipping it would have made a provisional lookup look like a finished feature, and it was orphaned - no reference, no script and no mode called it. The retrieval belongs in a vectorised AXON node alongside craft-lessons under one schema; until that exists this is a corpus, not a capability, and it says so here rather than in a commit nobody will read.",
   "_why_not_axon": "The original plan was to store these in AXON under a `_common-errors` block, vectorised. Measured 2026-08-07: axon_capture accepts the block (repo namespace works), but axon_search matches a TRUNCATED ~100-char summary, not the body - `axon_search('mapfile')` misses an entry whose text contains `mapfile`, and a semantic paraphrase misses entirely. pgvector reports ok but that tool does not route through it. So the corpus lives here, where it also works with FORGE_MEMORY_PROVIDER=none, and each entry is mirrored to AXON for cross-project recall once its retrieval is fixed.",
-
   "_triggers": "A trigger is the SHAPE OF THE TASK IN HAND, not the topic of the error. `shell-script` fires when about to write bash - which is when the bash-3.2 lesson is worth the tokens, and every other moment it is noise.",
-
   "lessons": [
     {
       "id": "bash32-no-mapfile",
-      "triggers": ["shell-script", "bash"],
+      "triggers": [
+        "shell-script",
+        "bash"
+      ],
       "mistake": "Used `mapfile` to read output into an array, in a codebase that runs on macOS.",
       "tell": "It does not error. The array is empty and the script proceeds with nothing, so the failure surfaces far from the cause.",
       "fix": "`while IFS= read -r -d '' x; do arr+=(\"$x\"); done < file`. Also avoid `source <(...)`: on bash 3.2 the fd reads empty and every function is silently undefined.",
@@ -17,7 +17,11 @@
     },
     {
       "id": "nul-join-drops-last-field",
-      "triggers": ["shell-script", "argv", "serialization"],
+      "triggers": [
+        "shell-script",
+        "argv",
+        "serialization"
+      ],
       "mistake": "Serialised an argv list with `\"\\0\".join(args)`, which leaves the LAST field unterminated.",
       "tell": "The reader loop drops the final element. The final element was the prompt, so every dispatch ran with no prompt and still exited 0.",
       "fix": "Terminate, do not separate: `\"\".join(a + \"\\0\" for a in args)`. Any framing where the last field is special deserves a test that asserts the last field survives.",
@@ -25,7 +29,11 @@
     },
     {
       "id": "heredoc-binds-to-last-command",
-      "triggers": ["shell-script", "git", "bash"],
+      "triggers": [
+        "shell-script",
+        "git",
+        "bash"
+      ],
       "mistake": "Wrote `git commit -F - <<'EOF'` followed by `&& git log` - the heredoc attached to the LAST command in the chain, not the one that needed stdin.",
       "tell": "The command hangs waiting on stdin until the tool times out. No error message names the cause.",
       "fix": "Give the heredoc to its own command and put follow-ups on the next line.",
@@ -33,7 +41,11 @@
     },
     {
       "id": "test-helper-clobbers-the-fixture",
-      "triggers": ["python-test", "test-harness", "fixture"],
+      "triggers": [
+        "python-test",
+        "test-harness",
+        "fixture"
+      ],
       "mistake": "A shared test helper wrote a default fixture unconditionally, overwriting what the test had deliberately written.",
       "tell": "The test passes for the wrong reason, or fails with an assertion about content it never actually used. Happened twice in the same suite.",
       "fix": "`if not path.exists(): path.write_text(default)`. A helper that sets up state must never overwrite state the caller established.",
@@ -41,7 +53,11 @@
     },
     {
       "id": "test-contains-what-it-searches-for",
-      "triggers": ["python-test", "lint-rule", "grep-assertion"],
+      "triggers": [
+        "python-test",
+        "lint-rule",
+        "grep-assertion"
+      ],
       "mistake": "Wrote a test asserting no tracked file contains a personal path - and the test file itself contained the literal path as its search pattern.",
       "tell": "The suite fails on the very commit that adds the check, pointing at the checker.",
       "fix": "Match a general pattern rather than the specific string, and exclude the checking file by pathspec. Same class: a doc test forbidding a construct the doc must mention to explain it.",
@@ -49,7 +65,11 @@
     },
     {
       "id": "network-inside-the-test-suite",
-      "triggers": ["python-test", "flaky", "test-harness"],
+      "triggers": [
+        "python-test",
+        "flaky",
+        "test-harness"
+      ],
       "mistake": "Diagnosed a test that failed once and passed alone as an ordering bug. It was a live `curl` probe inside the code under test.",
       "tell": "The assertion message named an unrelated cause - 'split-maker was never called' reads as a routing regression and was a three-second network timeout.",
       "fix": "Before blaming order, check for a plugin that randomises it. Reproduce by making the environment hostile (a stub binary that fails) rather than by re-running and hoping.",
@@ -57,7 +77,10 @@
     },
     {
       "id": "over-literal-assertion-on-a-schematic",
-      "triggers": ["python-test", "doc-assertion"],
+      "triggers": [
+        "python-test",
+        "doc-assertion"
+      ],
       "mistake": "Asserted a doc contains the literal `Task N` when `N` is schematic and the emitter correctly writes `Task 1`.",
       "tell": "A red test on correct output. The instinct is to change the output; the bug is in the test.",
       "fix": "When a spec uses a placeholder, the assertion has to accept both spellings.",
@@ -65,7 +88,11 @@
     },
     {
       "id": "reading-a-reordered-diff-as-a-deletion",
-      "triggers": ["git", "diff-review", "claim-about-state"],
+      "triggers": [
+        "git",
+        "diff-review",
+        "claim-about-state"
+      ],
       "mistake": "Read a diff where blocks had been reordered and announced that a load-bearing hook had been removed. It was intact.",
       "tell": "Nothing - the diff genuinely looks like a deletion plus an unrelated addition.",
       "fix": "Before claiming something was removed, query the END STATE for it (parse the file, grep the result), not the diff.",
@@ -73,7 +100,11 @@
     },
     {
       "id": "quota-reported-as-spend",
-      "triggers": ["cost-claim", "benchmark", "model-dispatch"],
+      "triggers": [
+        "cost-claim",
+        "benchmark",
+        "model-dispatch"
+      ],
       "mistake": "Reported `total_cost_usd` from a subscription-backed run as money spent. Repeated it across a whole session.",
       "tell": "None from the number itself. `apiKeySource: \"none\"` and `overageStatus: \"rejected\"` are what distinguish quota-equivalent from a charge.",
       "fix": "Before any cost claim, check how the rail authenticates. Subscription rails cost zero; the binding resource is plan quota.",
@@ -81,7 +112,11 @@
     },
     {
       "id": "cross-arm-comparison",
-      "triggers": ["benchmark", "measurement", "model-comparison"],
+      "triggers": [
+        "benchmark",
+        "measurement",
+        "model-comparison"
+      ],
       "mistake": "Compared a result measured on one arm against a result measured on another and called the difference a regression.",
       "tell": "The numbers are both real and the comparison is meaningless. Nothing in the output says which arm produced it.",
       "fix": "Every recorded result names its arm. Compare only within an arm, and state the arm when quoting.",
@@ -89,7 +124,11 @@
     },
     {
       "id": "generalising-from-half-the-archive",
-      "triggers": ["benchmark", "oracle", "labelling"],
+      "triggers": [
+        "benchmark",
+        "oracle",
+        "labelling"
+      ],
       "mistake": "Proposed widening two oracle items on the same reasoning. The archived labels supported one and contradicted the other 21-to-1.",
       "tell": "The reasoning is sound and general, which is exactly why it gets applied where the data does not support it.",
       "fix": "Check the archive per item before changing per item. A rule that fits one case is not a rule.",
@@ -97,7 +136,11 @@
     },
     {
       "id": "cannot-be-automated-was-backwards",
-      "triggers": ["design-decision", "automation", "config-generation"],
+      "triggers": [
+        "design-decision",
+        "automation",
+        "config-generation"
+      ],
       "mistake": "Argued a mapping could not be automated because the target was keyed more finely than the evidence. Concluded 'leave it manual'.",
       "tell": "The argument sounds appropriately humble, which stops it being re-examined.",
       "fix": "Applying coarse evidence UNIFORMLY is the faithful choice; inventing a finer distinction is the unfaithful one. Ask which action adds a claim the evidence does not make.",
@@ -105,7 +148,11 @@
     },
     {
       "id": "rivals-that-are-actually-upstream",
-      "triggers": ["positioning", "competitive-analysis", "docs"],
+      "triggers": [
+        "positioning",
+        "competitive-analysis",
+        "docs"
+      ],
       "mistake": "Built a competitor table mixing tools that do a different job. The codebase already had an entry point built to CONSUME their output.",
       "tell": "The table looks complete and every row is individually true.",
       "fix": "Separate the axes first, then place each tool. Check whether your own code already integrates with something before calling it a rival.",
@@ -113,7 +160,11 @@
     },
     {
       "id": "silent-degradation-instead-of-refusal",
-      "triggers": ["config-resolution", "fallback", "design-decision"],
+      "triggers": [
+        "config-resolution",
+        "fallback",
+        "design-decision"
+      ],
       "mistake": "Reached for a fallback default when a lookup failed, in a system whose value is that its numbers describe what actually ran.",
       "tell": "Everything keeps working, which is the problem.",
       "fix": "Raise. A loop running on an unmeasured substitute, with nothing saying so, is worse than one that stops.",
@@ -121,7 +172,10 @@
     },
     {
       "id": "checkout-deletes-a-generated-file",
-      "triggers": ["git", "generated-artifact"],
+      "triggers": [
+        "git",
+        "generated-artifact"
+      ],
       "mistake": "Ran `git switch main` in a repo where a GENERATED file was gitignored on the branch but still TRACKED on the other ref. The checkout overwrote the generated copy with the old tracked version, and the pull that followed - carrying the commit that untracks it - deleted it outright.",
       "tell": "Nothing from git. The 'would be overwritten by checkout' guard does not fire for ignored files. The loss shows up later as a missing capability, never as a git message.",
       "fix": "Ask whether the artifact changed tracked-ness between the two refs (`git log --oneline <a>..<b> -- <path>`) before switching. After any switch or pull, re-run the emitter instead of trusting the file survived.",
@@ -129,7 +183,11 @@
     },
     {
       "id": "unfamiliar-range-read-as-hostile",
-      "triggers": ["diagnosis", "claim-about-state", "network"],
+      "triggers": [
+        "diagnosis",
+        "claim-about-state",
+        "network"
+      ],
       "mistake": "Saw an IP range I did not recognise in a DNS answer and called it a corporate hijack. It was the service's own published range - `whois` settled it in one command, after I had already blamed a VPN, then a firewall, and had the user disable a security extension for nothing.",
       "tell": "DNS keeps returning an IP I do not recognise, a 404 comes back from it, and every new fact fits the theory instead of testing it: the relay that still works reads as `selective blocking`, the extension that is off reads as `still loaded`. The story gets more detailed while no check has confirmed any part of it.",
       "fix": "Before naming a culprit for a network symptom, establish two facts. WHOSE addresses are these (`whois`) - an unfamiliar range is usually the service's own. And did the connection COMPLETE - a 404 over a valid TLS certificate is a working connection, not a block. Both cost one command and precede any theory.",
@@ -137,7 +195,11 @@
     },
     {
       "id": "number-written-from-memory-not-from-the-run",
-      "triggers": ["measurement", "claim-about-state", "parallel-work"],
+      "triggers": [
+        "measurement",
+        "claim-about-state",
+        "parallel-work"
+      ],
       "mistake": "Wrote a gate result into a commit message from memory while eight branches each had their own result. Put 1583 where that branch had measured 1581 - the 1583 belonged to a different branch entirely.",
       "tell": "Several near-identical numbers are in flight at once, one per branch or per run (1568, 1572, 1577, 1581, 1583), and you are typing one of them into a commit, a PR body or a doc from recall. Nothing looks wrong afterwards: a plausible number in a durable artifact is indistinguishable from a correct one, and no reviewer re-runs it to check.",
       "fix": "Paste measurements from the run output, never from recall - re-read the log file or re-run the command in the same breath as writing the claim. `cross-arm-comparison` is the same failure at comparison time; this is it at citation time.",
@@ -145,11 +207,69 @@
     },
     {
       "id": "exit-code-belonged-to-the-wrong-command",
-      "triggers": ["shell-script", "measurement", "claim-about-state"],
+      "triggers": [
+        "shell-script",
+        "measurement",
+        "claim-about-state"
+      ],
       "mistake": "Chained `git pull && pytest > log` and reported the gate as FAILED on exit code 1. The pull had failed on a missing upstream, `&&` never ran pytest, and the exit code was git's. I announced a broken test suite that had not run at all.",
       "tell": "A command that ends in a check reports failure, and the failure message is about something else entirely - a branch, a path, a missing file - or the output file the run was supposed to write does not exist. The tail of the log shows setup output, not test output.",
       "fix": "When a chain both prepares and measures, read WHICH link failed before naming the result: run the setup on its own line, or echo the status of each step. An exit code from `a && b` says nothing about `b` unless `a` succeeded.",
       "seen": "2026-08, axon gate reported red when pytest never ran"
+    },
+    {
+      "id": "low-tier-subagent-reports-what-it-did-not-verify",
+      "triggers": [
+        "delegation",
+        "measurement",
+        "claim-about-state",
+        "audit"
+      ],
+      "mistake": "Dispatched Haiku subagents to collect numbers and classify artifacts for a metrics audit. They returned well-formed JSON with exit_code 0 on a pytest run that had 106 failures and 92 setup errors, 50 commits where the real count was 377, 13 ADRs where only 8 were ADRs, and read a commit subject 'verdict REVERT' as a code revert when the diff was purely additive. Every error was caught later by a stronger validator, none by the output itself.",
+      "tell": "A subagent's report has a clean exit code, a round count and a confident category, and you never saw the raw output it summarised. The number is plausible and nothing in the JSON looks wrong - that is the whole symptom.",
+      "fix": "Small models are for transcription, not judgement: ask them for the raw listing (the lines, the file names, the command output) and do the counting, classifying and interpreting in the model that owns the conclusion. Any count is an interpretation. Related: `number-written-from-memory-not-from-the-run` (same failure at citation time).",
+      "seen": "2026-08, CV metrics audit of axon/gnomon/glyph/merit - four Haiku lanes, every count wrong"
+    },
+    {
+      "id": "audit-scoped-to-head-misses-the-refs",
+      "triggers": [
+        "audit",
+        "git",
+        "claim-about-state",
+        "measurement"
+      ],
+      "mistake": "Audited four repositories for the presence of artifacts and staleness by looking only at HEAD of the checked-out branch. A comparison artifact marked 'no evidence' for three phases was committed and visible on HEAD of another branch; the 'last production commit' was wrong, which skewed every staleness count; a production bug hidden by a skip-worktree bit never surfaced. The user, not the validator, pointed out the scope.",
+      "tell": "You are answering 'does X exist in this repo' or 'when was Y last touched' with `ls`, `git log` and `git status` on the current checkout, and the answer feels final. Nothing prompts you to ask which refs you did not look at.",
+      "fix": "A repo is all its refs: `git log --all`, `git for-each-ref`, worktrees (`git worktree list`), stash, reflog, and `git log -S`/pickaxe for content. Check `git ls-files -v | grep ^S` for skip-worktree and compare `git hash-object` against the index before trusting a clean status. Write the scope you searched into the report so the hole is visible.",
+      "seen": "2026-08, metrics audit phases 2-3 scoped to HEAD; phase 4 (all refs) found three errors"
+    },
+    {
+      "id": "mechanism-installed-to-silence-a-complaint-hides-the-signal",
+      "triggers": [
+        "config-resolution",
+        "hook",
+        "automation",
+        "audit",
+        "claim-about-state"
+      ],
+      "mistake": "Trusted clean signals produced by mechanisms that had been installed to suppress an annoyance: a skip-worktree bit made `git status` lie for three audit phases; a PostCompact hook with a shebang to a renamed venv 'ran' for weeks without executing; a monthly cron appended 'Not logged in' to a log and exited 0, so the memory recorded the audit as automated; an MCP hint hook that 'never fails the Read' was swallowing every error. Each one was reported as working because nothing complained.",
+      "tell": "Something that should occasionally be noisy is perfectly quiet: `git status` clean on a file you know changed, a hook that has never once failed, a cron whose log only has one line, a pipeline step wrapped in `|| true` or `except: pass`, an interpreter path with a version or venv name baked in. Silence here is the symptom, not the reassurance.",
+      "fix": "Before believing a quiet mechanism, make it prove it ran: look for the artifact it should have produced (a row, a file, a timestamp), run it by hand once (`echo '{}' | hook`), and grep its wrapper for `|| true`, `exit 0`, bare `except`. When you install a silencer, write down what signal it removes and where the real one now lives. Related: `silent-degradation-instead-of-refusal` (same failure at design time, this is it at audit time).",
+      "seen": "2026-08, skip-worktree on stats.jsonl; axon-compact-save dead since venv rename; usage-triage cron failing silently since 08-01"
+    },
+    {
+      "id": "mirror-pruned-but-pointers-not",
+      "triggers": [
+        "migration",
+        "config",
+        "symlink",
+        "refactor",
+        "audit"
+      ],
+      "mistake": "A skills store was unified (real copies replaced by symlinks into a single source) and the git index cleaned up, but the files that named those skills by path or by name were never swept: an agent definition loading a skill that was now unreachable (the second most used skill of the window), a CLAUDE.md include, a design router with a hardcoded script path, a README listing twelve skills that no longer existed. Nothing failed loudly; the skills simply stopped being offered.",
+      "tell": "After moving, renaming or symlinking a directory the tree looks right and git is clean, but you have not grepped for the old path or the old name outside the directory you moved. A consumer of the thing (an agent file, a router, a README, a hook) still says the old location, and the first sign is 'skill not found' days later in someone else's session.",
+      "fix": "Every store migration ends with `grep -rn '<old-path>\\|<name>' ~/.claude ~/.agents ~/.codex` (or the equivalent roots) and a fix or an explicit 'intentionally stale' note per hit. Treat consumers as part of the migration diff, not as follow-up.",
+      "seen": "2026-08, ~/.claude skills migration of 08-04 left codex-lane, CLAUDE.md, design-stack and skills/README pointing at nothing until 08-22"
     }
   ]
 }
