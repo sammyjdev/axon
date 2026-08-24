@@ -39,6 +39,9 @@ app.add_typer(pending_app, name="pending")
 app.add_typer(hooks_app, name="hooks")
 
 _MAX_CHUNK_INPUT_CHARS = 4_000
+_DEFAULT_LESSON_CORPUS_PATH = (
+    Path.home() / ".claude" / "agents" / "forge" / "lessons" / "agent-errors.json"
+)
 _RUNTIME = load_runtime_config()
 _CTX_HELP = f"Contexto: {'|'.join(VALID_CONTEXTS)}"
 _RUNTIME_MODES = ("full-local", "hybrid-local", "remote-infra", "minimal")
@@ -1860,6 +1863,37 @@ def pending_drain() -> None:
             await store.close()
 
     asyncio.run(_drain())
+
+
+@app.command("seed-lessons")
+def seed_lessons(
+    corpus: Annotated[
+        Path,
+        typer.Option("--corpus", help="Corpus path (JSON, agent-errors.json schema)"),
+    ] = _DEFAULT_LESSON_CORPUS_PATH,
+) -> None:
+    """Seed the lessons store from the agent-error corpus (issue #142).
+
+    Idempotent: an unchanged entry is skipped with no embedding call, a
+    changed entry is re-embedded and updated in place, and a new entry is
+    inserted. Prints one status line per corpus entry.
+    """
+    from axon.lessons.seed import seed_corpus
+    from axon.mcp import server
+
+    async def _seed() -> None:
+        store = server._get_lesson_store()
+        await store.init()
+        try:
+            results = await seed_corpus(
+                corpus, server.axon_record_lesson, store=store, engine=server._get_embedder()
+            )
+            for line in results:
+                typer.echo(line)
+        finally:
+            await store.close()
+
+    asyncio.run(_seed())
 
 
 @pending_app.command("recover")
