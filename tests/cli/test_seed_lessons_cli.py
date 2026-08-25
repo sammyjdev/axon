@@ -16,6 +16,7 @@ import typer.main
 from typer.testing import CliRunner
 
 import axon.lessons.seed as seed_module
+from axon.__main__ import app as cli_app
 from axon.cli import pb
 from axon.mcp import server
 from axon.models.lesson import LessonRecord
@@ -73,7 +74,7 @@ def test_exposes_a_corpus_option() -> None:
     Click's own parameter list answers the actual question - does the command
     accept --corpus - and cannot drift with a renderer.
     """
-    command = typer.main.get_command(pb.app)
+    command = typer.main.get_command(cli_app)
     seed_command = command.commands["seed-lessons"]  # type: ignore[attr-defined]
 
     corpus_option = next(
@@ -82,7 +83,7 @@ def test_exposes_a_corpus_option() -> None:
     )
 
     assert corpus_option is not None, "seed-lessons must accept --corpus"
-    assert runner.invoke(pb.app, ["seed-lessons", "--help"]).exit_code == 0
+    assert runner.invoke(cli_app, ["seed-lessons", "--help"]).exit_code == 0
 
 
 def test_defaults_to_the_shipped_corpus_path_when_corpus_omitted(
@@ -100,7 +101,7 @@ def test_defaults_to_the_shipped_corpus_path_when_corpus_omitted(
     monkeypatch.setattr(server, "_get_embedder", lambda: fake_engine)
     monkeypatch.setattr(seed_module, "seed_corpus", fake_seed_corpus)
 
-    result = runner.invoke(pb.app, ["seed-lessons"])
+    result = runner.invoke(cli_app, ["seed-lessons"])
 
     assert result.exit_code == 0, result.output
     assert captured["path"] == pb._DEFAULT_LESSON_CORPUS_PATH
@@ -112,7 +113,7 @@ def test_prints_one_status_line_per_corpus_entry(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(server, "_get_lesson_store", lambda: fake_store)
     monkeypatch.setattr(server, "_get_embedder", lambda: fake_engine)
 
-    result = runner.invoke(pb.app, ["seed-lessons", "--corpus", str(FIXTURE)])
+    result = runner.invoke(cli_app, ["seed-lessons", "--corpus", str(FIXTURE)])
 
     assert result.exit_code == 0, result.output
     lines = [line for line in result.output.splitlines() if line.strip()]
@@ -130,12 +131,12 @@ def test_second_run_reports_unchanged_and_issues_zero_embedding_calls(
     monkeypatch.setattr(server, "_get_lesson_store", lambda: fake_store)
     monkeypatch.setattr(server, "_get_embedder", lambda: fake_engine)
 
-    first = runner.invoke(pb.app, ["seed-lessons", "--corpus", str(FIXTURE)])
+    first = runner.invoke(cli_app, ["seed-lessons", "--corpus", str(FIXTURE)])
     assert first.exit_code == 0, first.output
     calls_after_first_run = fake_engine.calls
     assert calls_after_first_run > 0, "first run must have embedded something"
 
-    second = runner.invoke(pb.app, ["seed-lessons", "--corpus", str(FIXTURE)])
+    second = runner.invoke(cli_app, ["seed-lessons", "--corpus", str(FIXTURE)])
     assert second.exit_code == 0, second.output
 
     lines = [line for line in second.output.splitlines() if line.strip()]

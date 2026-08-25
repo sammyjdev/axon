@@ -453,6 +453,7 @@ from axon.cli.pb import (  # noqa: E402
     run_proxy,
     scan,
     search,
+    seed_lessons,
     session_app,
     session_save,
     setup,
@@ -483,6 +484,7 @@ app.command("configure")(configure)
 app.command("index-dev")(index_dev)
 app.command("note")(note)
 app.command("session-save")(session_save)
+app.command("seed-lessons")(seed_lessons)
 
 if __name__ == "__main__":
     app()
