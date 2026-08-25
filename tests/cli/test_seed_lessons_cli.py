@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import typer.main
 from typer.testing import CliRunner
 
 import axon.lessons.seed as seed_module
@@ -62,11 +63,26 @@ class _FakeEngine:
         return vector
 
 
-def test_help_mentions_corpus_option() -> None:
-    result = runner.invoke(pb.app, ["seed-lessons", "--help"])
+def test_exposes_a_corpus_option() -> None:
+    """The option is asserted on the command, not on the rendered help text.
 
-    assert result.exit_code == 0
-    assert "--corpus" in result.output
+    Asserting `"--corpus" in result.output` passed locally and failed on the
+    full-suite CI job: the help goes through Rich, so the string is at the
+    mercy of terminal width, TTY detection and the Typer/Rich versions that a
+    fresh install happens to resolve. None of that is what this test is about.
+    Click's own parameter list answers the actual question - does the command
+    accept --corpus - and cannot drift with a renderer.
+    """
+    command = typer.main.get_command(pb.app)
+    seed_command = command.commands["seed-lessons"]  # type: ignore[attr-defined]
+
+    corpus_option = next(
+        (p for p in seed_command.params if "--corpus" in p.opts),
+        None,
+    )
+
+    assert corpus_option is not None, "seed-lessons must accept --corpus"
+    assert runner.invoke(pb.app, ["seed-lessons", "--help"]).exit_code == 0
 
 
 def test_defaults_to_the_shipped_corpus_path_when_corpus_omitted(
