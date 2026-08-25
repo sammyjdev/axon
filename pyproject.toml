@@ -74,7 +74,7 @@ dependencies = [
     # (not a range) for the same determinism dec-116 wanted from the old git
     # tag pin - glyph-kg is now a normal PyPI dependency (GHSA-r7wg-f7r2-8wf7:
     # PyPI rejects direct git+https Requires-Dist entries outright).
-    "glyph-kg[retrieval]==0.2.0",
+    "glyph-kg[retrieval]==0.2.1",
     # glyph's document extractor imports `fitz` at module level in
     # glyph/extract/document/pdf.py, and axon/obsidian/importer.py imports that
     # extractor - but neither glyph-kg nor axon declared PyMuPDF, so a clean
