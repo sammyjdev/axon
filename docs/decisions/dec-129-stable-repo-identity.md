@@ -59,17 +59,35 @@ from the supplied checkout. It updates rows in place and preserves all other fie
 
 ## Consequences
 
-Operators migrate the known worktree rows with:
+A dry run against the live Postgres store on 2026-08-26 measured the actual population:
 
 ```
 axon rekey-repo ~/dev/axon
-axon rekey-repo ~/dev/axon --apply --only-key 'agent-*'
-axon rekey-repo ~/dev/gnomon-eval
-axon rekey-repo ~/dev/gnomon-eval --apply --only-key 'agent-*'
 ```
 
-The expected population is about 77 rows across 25 AXON worktree keys and 8 rows across
-6 gnomon-eval keys. PitStopOS rename drift is a separate cause and remains unchanged.
-Dry runs preview every provably reachable source key. Applying requires an explicit
-`--only-key` glob or `--all`, so a shared commit hash cannot move a legitimately keyed
-row by default.
+reported 102 decisions to re-key across 31 distinct source keys, not 25. FORGE worktree
+names have changed shape over time (`agent-issue-*`, `agent-plan-*`,
+`axon-promotion-*`, `degrau0-*`, `benchmark-*-security`, plus one-off names like
+`fix-platform-gpu`), so no single glob covers the real population: `--only-key
+'agent-*'` reaches only about half of the 102 rows (52).
+
+Operators migrate the known worktree rows by running the dry run first, reading its
+grouped per-key summary, then applying with `--all` once that list has been eyeballed:
+
+```
+axon rekey-repo ~/dev/axon                 # dry run, read the grouped key summary
+axon rekey-repo ~/dev/axon --apply --all   # after confirming the list above
+axon rekey-repo ~/dev/gnomon-eval
+axon rekey-repo ~/dev/gnomon-eval --apply --all
+```
+
+`--only-key` remains available as the narrower option for moving one key at a time.
+
+The gnomon-eval figure (about 8 rows across 6 keys) is still an estimate: the dry run
+above was only executed against `~/dev/axon`, not `~/dev/gnomon-eval`. PitStopOS rename
+drift is a separate cause and remains unchanged. Dry runs preview every provably
+reachable source key. Applying requires an explicit `--only-key` glob or `--all`, so a
+shared commit hash cannot move a legitimately keyed row by default. `git cat-file -e`
+against a candidate hash proves the object is present in the target repo, not that the
+row was mis-filed under its current key - that gap is exactly why `--apply` refuses to
+run without an explicit `--only-key` or `--all`.
