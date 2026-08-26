@@ -4,11 +4,24 @@ import logging
 import platform
 from dataclasses import dataclass, field
 from pathlib import Path
-
-import onnxruntime as _ort
-from fastembed import TextEmbedding
+from typing import TYPE_CHECKING
 
 from axon.embedder.providers import embed_via_chain
+
+if TYPE_CHECKING:
+    import onnxruntime as _ort
+    from fastembed import TextEmbedding
+else:
+    # onnxruntime/fastembed load a C++ runtime (onnxruntime_pybind11_state.so)
+    # that every axon CLI process was paying for at import time even when it
+    # never creates an ONNX session (the default model routes through
+    # embed_via_chain, an HTTP path with no ONNX involvement). That C++
+    # runtime's exit-time static-destructor teardown is what crashed
+    # interpreter shutdown with "libc++abi ... recursive_mutex lock failed"
+    # (issue #149). Both names are populated lazily, on first real use, by
+    # _ensure_model()/_detect_providers() - the only places that need them.
+    _ort = None
+    TextEmbedding = None
 
 logger = logging.getLogger(__name__)
 
@@ -16,17 +29,6 @@ logger = logging.getLogger(__name__)
 # (Ollama -> NIM -> DeepInfra) instead of the in-process fastembed/onnx path.
 # This is the DEFAULT model as of EMB-3 (dim 1024).
 _CHAIN_MODEL_NAME = "bge-m3"
-
-# Call preload_dlls at import time so pip-installed nvidia-cudnn-cu12 /
-# nvidia-cublas-cu12 / nvidia-cuda-runtime-cu12 DLLs are on the DLL search
-# path before any ONNX session is created. Guarded by hasattr because
-# CPU-only onnxruntime builds do not expose this function.
-if hasattr(_ort, "preload_dlls"):
-    try:
-        _ort.preload_dlls()
-        logger.debug("onnxruntime.preload_dlls() succeeded")
-    except Exception as _exc:  # noqa: BLE001
-        logger.warning("onnxruntime.preload_dlls() failed: %s", _exc)
 
 # Static dimension map - avoids loading any model just to learn its output size.
 # Add entries here when new models are introduced.
@@ -58,9 +60,13 @@ def _detect_providers() -> list[str]:
     Priority: CUDAExecutionProvider (NVIDIA GPU) -> CoreMLExecutionProvider
     (Apple Silicon) -> CPUExecutionProvider (universal fallback).
 
-    preload_dlls() is already called at module import time so pip-installed
-    CUDA DLLs are visible when ort.get_available_providers() enumerates them.
+    Imports onnxruntime lazily (see the module-level comment on _ort) so
+    calling this does not pull the C++ runtime into a process that never
+    needed it.
     """
+    global _ort
+    if _ort is None:
+        import onnxruntime as _ort
     available = set(_ort.get_available_providers())
     # Priority: CUDA -> CoreML -> CPU (CUDA wins globally, even on Darwin arm64)
     if "CUDAExecutionProvider" in available:
@@ -95,6 +101,23 @@ class EmbedderEngine:
 
     def _ensure_model(self) -> TextEmbedding:
         if self._model is None:
+            global _ort, TextEmbedding
+            if _ort is None:
+                import onnxruntime as _ort
+            # preload_dlls() must run before the session is constructed so
+            # pip-installed nvidia-cudnn-cu12 / nvidia-cublas-cu12 /
+            # nvidia-cuda-runtime-cu12 DLLs are on the DLL search path before
+            # any ONNX session is created. Guarded by hasattr because
+            # CPU-only onnxruntime builds do not expose this function.
+            if hasattr(_ort, "preload_dlls"):
+                try:
+                    _ort.preload_dlls()
+                    logger.debug("onnxruntime.preload_dlls() succeeded")
+                except Exception as _exc:  # noqa: BLE001
+                    logger.warning("onnxruntime.preload_dlls() failed: %s", _exc)
+            if TextEmbedding is None:
+                from fastembed import TextEmbedding
+
             providers = _detect_providers()
             self._model = TextEmbedding(
                 model_name=self.model_name,

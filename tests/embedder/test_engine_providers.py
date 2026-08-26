@@ -103,25 +103,78 @@ def test_ensure_model_warns_on_silent_cpu_fallback(caplog: pytest.LogCaptureFixt
     )
 
 
-def test_preload_dlls_called_on_module_import() -> None:
-    """preload_dlls() must be called exactly once at module import time when hasattr is True.
+def test_preload_dlls_called_once_before_text_embedding_session() -> None:
+    """preload_dlls() must run exactly once, and before the TextEmbedding session
+    is constructed, on the first _ensure_model() call for a fastembed model.
 
-    Mocks onnxruntime.preload_dlls (adding it if absent), reloads the engine module,
-    and asserts the mock was called exactly once. If the real ort lacks the attribute,
-    asserts the mock was NOT called (guard kept it safe).
+    Ordering is asserted explicitly via a shared call-order list, not merely
+    "both happened".
     """
+    from axon.embedder.engine import EmbedderEngine
+
+    call_order: list[str] = []
+
+    mock_model = MagicMock()
+    mock_model.model.model.get_providers.return_value = ["CPUExecutionProvider"]
+
+    def _record_preload() -> None:
+        call_order.append("preload_dlls")
+
+    def _record_text_embedding(*args: object, **kwargs: object) -> MagicMock:
+        call_order.append("TextEmbedding")
+        return mock_model
+
+    with (
+        patch("onnxruntime.preload_dlls", create=True, side_effect=_record_preload) as mock_preload,
+        patch("axon.embedder.engine._detect_providers", return_value=["CPUExecutionProvider"]),
+        patch(
+            "axon.embedder.engine.TextEmbedding", side_effect=_record_text_embedding
+        ) as mock_cls,
+    ):
+        eng = EmbedderEngine(model_name="BAAI/bge-small-en-v1.5")
+        eng._ensure_model()
+
+    mock_preload.assert_called_once()
+    mock_cls.assert_called_once()
+    assert call_order == ["preload_dlls", "TextEmbedding"], (
+        f"Expected preload_dlls before TextEmbedding, got {call_order}"
+    )
+
+
+def test_preload_dlls_guard_skips_call_when_attribute_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """hasattr guard: an onnxruntime build without preload_dlls must not get it
+    called, and _ensure_model() must still build the session without error."""
     import onnxruntime as ort
 
+    from axon.embedder.engine import EmbedderEngine
+
+    monkeypatch.delattr(ort, "preload_dlls", raising=False)
+    assert not hasattr(ort, "preload_dlls")
+
+    mock_model = MagicMock()
+    mock_model.model.model.get_providers.return_value = ["CPUExecutionProvider"]
+
+    with (
+        patch("axon.embedder.engine._detect_providers", return_value=["CPUExecutionProvider"]),
+        patch("axon.embedder.engine.TextEmbedding", return_value=mock_model) as mock_cls,
+    ):
+        eng = EmbedderEngine(model_name="BAAI/bge-small-en-v1.5")
+        eng._ensure_model()
+
+    mock_cls.assert_called_once()
+
+
+def test_importing_engine_module_does_not_call_preload_dlls() -> None:
+    """Importing/reloading axon.embedder.engine must not touch onnxruntime at
+    all - preload_dlls() only runs inside _ensure_model(), on first real
+    model use, not at import time (issue #149)."""
     from axon.embedder import engine as eng_module
 
-    real_has_preload = hasattr(ort, "preload_dlls")
-
-    with patch.object(ort, "preload_dlls", create=True) as mock_preload:
+    with patch("onnxruntime.preload_dlls", create=True) as mock_preload:
         importlib.reload(eng_module)
-        if real_has_preload:
-            mock_preload.assert_called_once()
-        else:
-            mock_preload.assert_not_called()
+        mock_preload.assert_not_called()
 
 
 def test_idempotencia_provider_fallback() -> None:

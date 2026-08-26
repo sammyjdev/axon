@@ -150,3 +150,18 @@ promotes them into a section above after curation.
   `.parent` or higher) takes an injectable override AND has a test proving the default
   path is inert when no such directory exists - do not rely on the per-test `AXON_ENGINE`
   pin, which isolates the engine dir but not its parent. (FORGE #141)
+- **A module-scope import that loads a native runtime is paid by every `axon`
+  CLI process, including the ones whose default path never touches it.**
+  `axon/embedder/engine.py` imported `onnxruntime` and `fastembed` at module
+  scope, so the onnxruntime C++ runtime loaded on every invocation of every
+  command - while the default embedder model (`bge-m3`) routes through
+  `embed_via_chain()`, an HTTP path that never creates an ONNX session. Beyond
+  the startup cost, the process inherited that runtime's exit-time
+  static-destructor teardown, which is what crashed interpreter shutdown in
+  issue #149 with `libc++abi ... recursive_mutex lock failed` AFTER the command
+  had printed correct output and returned 0. Check: a heavy native import
+  (`onnxruntime`, `torch`, `fastembed`) is imported inside the function that
+  builds the session/model, not at module scope, and a subprocess test asserts
+  `'<lib>' not in sys.modules` after importing the module - an in-process test
+  cannot see this, because the suite has already imported the library.
+  (FORGE #149)
