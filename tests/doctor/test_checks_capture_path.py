@@ -103,7 +103,7 @@ def _make_capture_repo(dev_root: Path, name: str, commits: int) -> list[str]:
     (hooks / "post-commit").write_text(_hook_text(sys.executable), encoding="utf-8")
     hashes: list[str] = []
     for i in range(commits):
-        (repo / f"f{i}.txt").write_text(f"content {i}\n")
+        (repo / f"f{i}.txt").write_text(f"{repo} content {i}\n")
         _git(repo, "add", "-A")
         _git(repo, "commit", "-m", f"commit {i}")
         hashes.append(_head(repo))
@@ -161,6 +161,17 @@ def _install_fake_store(
             if error is not None:
                 raise error
             return [SimpleNamespace(git_hash=h) for h in decisions.get(repo, [])]
+
+        async def find_decision_by_git_hash(
+            self, git_hash: str, *, repo: str | None = None
+        ) -> object | None:
+            if error is not None:
+                raise error
+            pools = [decisions.get(repo, [])] if repo is not None else decisions.values()
+            for hashes in pools:
+                if git_hash in hashes:
+                    return SimpleNamespace(git_hash=git_hash)
+            return None
 
     monkeypatch.setattr(capture_path, "SessionStore", _FakeSessionStore)
 

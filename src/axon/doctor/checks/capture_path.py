@@ -285,16 +285,18 @@ def _recent_commit_hashes(repo: Path, recent_commits: int) -> list[str] | None:
     return hashes
 
 
-async def _decision_hashes_by_repo(
-    repo_names: list[str],
-) -> dict[str, set[str]]:
+async def _repos_with_captured_commits(
+    commits_by_repo: dict[Path, list[str]],
+) -> set[Path]:
     store = SessionStore(load_runtime_config().data_root / "axon.db")
-    result: dict[str, set[str]] = {}
+    result: set[Path] = set()
     try:
         await store.init()
-        for name in repo_names:
-            decisions = await store.find_decisions_by_repo(name, limit=50)
-            result[name] = {d.git_hash for d in decisions if d.git_hash is not None}
+        for repo, hashes in commits_by_repo.items():
+            for git_hash in hashes:
+                if await store.find_decision_by_git_hash(git_hash) is not None:
+                    result.add(repo)
+                    break
     finally:
         await store.close()
     return result
@@ -308,15 +310,11 @@ def check_capture_gap(
     if not repos:
         return CheckResult(name="capture.gap", status=CheckStatus.OK, detail=_SKIP_NO_REPOS)
 
-    # ponytail: keyed by repo.name (basename), same as SessionStore's
-    # find_decisions_by_repo lookup. Two onboarded repos sharing a basename
-    # under different groups (e.g. products/foo and tools/foo) would collide
-    # here; no such pair exists in the current dev tree, so no dedup scheme.
-    commits_by_repo: dict[str, list[str]] = {}
+    commits_by_repo: dict[Path, list[str]] = {}
     for repo in repos:
         hashes = _recent_commit_hashes(repo, recent_commits)
         if hashes is not None:
-            commits_by_repo[repo.name] = hashes
+            commits_by_repo[repo] = hashes
 
     if not commits_by_repo:
         return CheckResult(
@@ -328,9 +326,11 @@ def check_capture_gap(
         )
 
     try:
-        decision_hashes = asyncio.run(
+        # ponytail: Commit hashes are globally unique, so omit repo=. Basename lookup made renamed,
+        # worktree, and suffix-changed repos appear gapped (#146).
+        repos_with_captured_commits = asyncio.run(
             asyncio.wait_for(
-                _decision_hashes_by_repo(list(commits_by_repo)), timeout=_STORE_TIMEOUT_S
+                _repos_with_captured_commits(commits_by_repo), timeout=_STORE_TIMEOUT_S
             )
         )
     except Exception:  # noqa: BLE001 - any store failure degrades, never raises
@@ -341,9 +341,9 @@ def check_capture_gap(
         )
 
     gapped = [
-        name
-        for name, hashes in commits_by_repo.items()
-        if decision_hashes.get(name, set()).isdisjoint(hashes)
+        str(repo.relative_to(resolved_dev_root))
+        for repo in commits_by_repo
+        if repo not in repos_with_captured_commits
     ]
 
     if gapped:
