@@ -35,7 +35,7 @@ def test_route_uses_classifier_result_under_free_profile(monkeypatch) -> None:
     result = route(TaskRequest(content="qual comando usar?", ctx="knowledge"))
 
     assert result.task_type is TaskType.TRIVIAL_COMPLETION
-    assert result.model == "groq/llama-3.1-8b-instant"
+    assert result.model == "deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
     assert result.classifier_source == "cloud"
     assert result.reason_code == "ALLOW_PUBLIC"
     assert result.policy_version

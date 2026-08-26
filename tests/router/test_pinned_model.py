@@ -99,7 +99,7 @@ def test_route_normal_uses_classifier_when_env_unset(monkeypatch) -> None:
     result = route(TaskRequest(content="what is 2+2?", ctx="knowledge"))
 
     assert result.task_type is TaskType.TRIVIAL_COMPLETION
-    assert result.model == "groq/llama-3.1-8b-instant"
+    assert result.model == "deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
     assert result.classifier_source == "cloud"
 
 

@@ -99,22 +99,24 @@ Two are built in:
 
 | Profile | Models | When to use |
 |---|---|---|
-| `free` (default) | Groq Llama 3.1/3.3 + NVIDIA NIM Llama 3.1 70B (free tiers) | No API spend; rate-limited; fine on a 16 GB laptop without local models |
+| `budget` (default, alias `free`) | DeepInfra Llama 3.1 8B / 3.3 70B with an OpenRouter Llama 3.3 70B rung | Spend is cents per month; rate-limited; fine on a 16 GB laptop without local models |
 | `paid` | OpenRouter Claude Haiku/Sonnet/Opus (D2 tiers) + Groq paid | Higher quality and quotas; unified billing via OpenRouter |
 
-Minimum setup (free):
+Minimum setup (budget):
 
 ```bash
-export AXON_PROVIDER_PROFILE=free
+export AXON_PROVIDER_PROFILE=budget
 export GROQ_API_KEY=gsk_...
-export NVIDIA_NIM_API_KEY=nvapi-...
+export DEEPINFRA_API_KEY=your-deepinfra-api-key
+export OPENROUTER_API_KEY=your-openrouter-api-key
 ```
 
-Each provider has a **rate-limit gate** (defaults: Groq 25/min and 13000/day,
-NIM 50/min and 950/day) configurable via `AXON_<PROVIDER>_MAX_RPM` /
-`AXON_<PROVIDER>_MAX_RPD`. When a cap is hit, calls fail with
-`DENY_RATE_LIMIT` instead of being swallowed as model failures. See
-[`dec-106`](docs/decisions/dec-106-routing-profiles.md) and
+Each provider has a **rate-limit gate** configurable via `AXON_<PROVIDER>_MAX_RPM` /
+`AXON_<PROVIDER>_MAX_RPD`. Groq ships defaults of 25/min and 13000/day; DeepInfra and
+OpenRouter have no default caps, so they run uncapped until you set those knobs. When a
+cap is hit, calls fail with `DENY_RATE_LIMIT` instead of being swallowed as model
+failures. See [`dec-106`](docs/decisions/dec-106-routing-profiles.md),
+[`dec-128`](docs/decisions/dec-128-budget-profile-model-substitution.md) and
 [`.env.example`](.env.example) for the full configuration surface.
 
 Local Ollama is **opt-in** as of dec-106 (`AXON_PROVIDER_OLLAMA=1`). It remains

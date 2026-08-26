@@ -2,10 +2,11 @@
 
 > **Disambiguation.** This document describes **operating-mode profiles**
 > (`solo-dev`, `team-dev`, `privacy-first`) stored in `axon.toml`.
-> These are different from **provider profiles** (`free`, `paid`) selected
+> These are different from **provider profiles** (`budget` - alias `free` - and `paid`) selected
 > via `AXON_PROVIDER_PROFILE`, which choose the LLM provider mapping
-> (Groq + NIM vs. OpenRouter Claude). See
-> [`dec-106`](decisions/dec-106-routing-profiles.md) for provider profiles.
+> (DeepInfra + OpenRouter Llama vs. OpenRouter Claude).
+> See [`dec-106`](decisions/dec-106-routing-profiles.md) for provider profiles, superseded in
+> part by [`dec-128`](decisions/dec-128-budget-profile-model-substitution.md).
 
 Profiles are named setup presets stored in `axon.toml`.
 
@@ -318,12 +319,12 @@ model dynamically:
 
 ### Avoiding paid APIs entirely
 
-The default classifier needs `GROQ_API_KEY`. If you prefer NVIDIA NIM
-(also free-tier, slower but capable of heavier reasoning):
+The default classifier needs `GROQ_API_KEY`. If you prefer to run ADR inference on the
+same DeepInfra 70B the budget profile uses for architecture tasks:
 
 ```bash
-export NVIDIA_NIM_API_KEY=nvapi-...
-export AXON_ADR_MODEL=nvidia_nim/meta/llama-3.1-70b-instruct
+export DEEPINFRA_API_KEY=...
+export AXON_ADR_MODEL=deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo
 ```
 
 For a local-only path (no cloud at all), enable Ollama (dec-106 opt-in)

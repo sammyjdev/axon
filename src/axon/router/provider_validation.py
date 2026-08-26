@@ -10,6 +10,8 @@ def provider_for_model(model: str) -> str:
         return "groq"
     if model.startswith("bedrock/"):
         return "bedrock"
+    if model.startswith("deepinfra/"):
+        return "deepinfra"
     if model.startswith("nvidia_nim/"):
         return "nvidia_nim"
     return "anthropic"

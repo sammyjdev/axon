@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-05-25
+- Superseded in part by [dec-128](dec-128-budget-profile-model-substitution.md): the FREE profile's model table is dead and the profile is renamed `budget` (alias `free`). The rationale below still stands.
 
 ## Context
 

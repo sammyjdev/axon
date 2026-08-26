@@ -150,6 +150,35 @@ promotes them into a section above after curation.
   `.parent` or higher) takes an injectable override AND has a test proving the default
   path is inert when no such directory exists - do not rely on the per-test `AXON_ENGINE`
   pin, which isolates the engine dir but not its parent. (FORGE #141)
+- **A routing profile's three tier rungs must be three pairwise-DISTINCT model
+  ids, and nothing in `profiles.py` says so.** `engine._fallback_model_for` is a
+  tier downgrade reused as the completion failover (issue #100): top
+  (ARCHITECTURE/DEEP_REASONING) falls to mid (CODE_ANALYSIS), mid falls to
+  bottom (TRIVIAL_COMPLETION), and it returns `None` when the candidate equals
+  the primary so no model is blind-retried against itself. Point two rungs at
+  the same id and that guard silently disables the failover for that tier - no
+  error, no failing assertion in `profiles.py`, just a tier that no longer has
+  a fallback. Measured on #154: a plan that put one DeepInfra 70B on both
+  CODE_ANALYSIS and ARCHITECTURE broke 8 existing tests in
+  `tests/router/test_engine_completion_fallback{,_usage_shape}.py`, which pin
+  the invariant only indirectly via `assert _top_tier_model() != _mid_tier_model()`
+  inside individual test bodies. Check: `tests/router/test_profiles_budget.py::
+  test_every_profile_has_three_distinct_tier_rungs` now asserts it directly for
+  every key in `available_profiles()`; any new profile must satisfy it, and with
+  only two model sizes available the third rung is expressed by putting one on a
+  different PROVIDER (see dec-128). (FORGE #154)
+- **A `provider_for_model` prefix branch must match a slash-terminated prefix,
+  and needs a test that says so.** The function falls through to `"anthropic"`
+  for anything unrecognised, so a branch written `startswith("deepinfra")`
+  instead of `startswith("deepinfra/")` misroutes a lookalike vendor id
+  (`deepinfrax/...`) into that provider's rate-limit bucket
+  (`AXON_<PROVIDER>_MAX_RPM`) and past its provider-enabled gate, with the whole
+  suite green. Check: every prefix branch has a negative assertion for a
+  lookalike without the slash boundary - the mutation sensor on #154 found the
+  `deepinfra` branch surviving `startswith("deepinfra")` until
+  `test_provider_for_model_requires_the_slash_boundary` was added. The
+  pre-existing `ollama/`, `openrouter/`, `groq/`, `bedrock/` and `nvidia_nim/`
+  branches still have no such test. (FORGE #154)
 - **A module-scope import that loads a native runtime is paid by every `axon`
   CLI process, including the ones whose default path never touches it.**
   `axon/embedder/engine.py` imported `onnxruntime` and `fastembed` at module

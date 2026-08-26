@@ -115,7 +115,8 @@ jobs:
           python3 -c "
           from axon.router.profiles import get_profile, available_profiles
           from axon.router.engine import _MODEL_MAP, _COST_PER_1K, _PROFILE
-          assert _PROFILE.name == '${{ matrix.profile }}'
+          # identity, not name: free is a kept alias for the budget spec (dec-128).
+          assert _PROFILE is get_profile('${{ matrix.profile }}')
           assert _MODEL_MAP, 'model map empty'
           assert all(v for v in _MODEL_MAP.values()), 'unmapped task type'
           print('profile:', _PROFILE.name)

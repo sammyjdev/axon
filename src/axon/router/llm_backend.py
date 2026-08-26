@@ -48,6 +48,7 @@ _KNOWN_PROVIDERS = (
     "anthropic/",
     "openai/",
     "nvidia_nim/",
+    "deepinfra/",
 )
 
 

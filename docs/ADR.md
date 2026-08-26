@@ -28,11 +28,12 @@ project.
   - fallback -> Haiku-class model
 - Concrete models per profile:
   - PAID: `openrouter/anthropic/claude-{haiku,sonnet,opus}-4` (D2 verbatim)
-  - FREE: `groq/llama-3.1-8b-instant`, `groq/llama-3.3-70b-versatile`,
-    `nvidia_nim/meta/llama-3.1-70b-instruct`
+  - BUDGET (alias free): `deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo`,
+    `openrouter/meta-llama/llama-3.3-70b-instruct`,
+    `deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo`
 - Rationale: keeps cost and quality predictable; profile system lets users
-  pick between zero-spend free tiers and paid Claude tiers without changing
-  the tier semantics.
+  pick between a low-cost open-weight Llama tier (cents per month) and the
+  paid Claude tiers, without changing the tier semantics.
 
 ## ADR-003: Local Ollama models
 
@@ -202,3 +203,6 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
   envs, boto3 as the `[bedrock]` extra) instead of a parallel boto3 adapter
   path, so breaker/rate/budget/usage capture apply unchanged; reachable via
   the pinned-model escape hatch, not the D2 tiers.
+- [dec-128](decisions/dec-128-budget-profile-model-substitution.md): the FREE profile's
+  model table is dead; it is renamed `budget` (alias `free`) and repointed to
+  live DeepInfra and OpenRouter Llama models.

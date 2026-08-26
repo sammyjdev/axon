@@ -34,14 +34,14 @@ external Markdown vault, typically configured through:
 
 D2 defines the **tiering shape** (trivial → mid → top). The concrete model per
 tier is selected by the active provider profile (see dec-106). The PAID profile
-preserves D2 verbatim via OpenRouter; the FREE profile substitutes equivalent
-free-tier models.
+preserves D2 verbatim via OpenRouter; the budget profile substitutes cheap live
+models on DeepInfra with an OpenRouter rung (see dec-128).
 
-| Task type | PAID profile (D2 verbatim) | FREE profile |
+| Task type | PAID profile (D2 verbatim) | BUDGET profile (alias `free`) |
 | --- | --- | --- |
-| trivial/completion | `openrouter/anthropic/claude-haiku-4` | `groq/llama-3.1-8b-instant` |
-| code analysis | `openrouter/anthropic/claude-sonnet-4` | `groq/llama-3.3-70b-versatile` |
-| architecture/deep reasoning | `openrouter/anthropic/claude-opus-4` | `nvidia_nim/meta/llama-3.1-70b-instruct` |
+| trivial/completion | `openrouter/anthropic/claude-haiku-4` | `deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` |
+| code analysis | `openrouter/anthropic/claude-sonnet-4` | `openrouter/meta-llama/llama-3.3-70b-instruct` |
+| architecture/deep reasoning | `openrouter/anthropic/claude-opus-4` | `deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
 | fallback | trivial of the active profile | trivial of the active profile |
 
 Downgrade is task-type-driven (top→mid when Opus budget is exceeded; mid→bottom

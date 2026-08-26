@@ -104,11 +104,11 @@ dependency bans + deleted-module assertions — all currently passing).
 **Routing (dec-106, accepted):** tier shape is fixed (D2); concrete models come
 from `AXON_PROVIDER_PROFILE`:
 
-| Tier | `free` (default) | `paid` |
+| Tier | `budget` (alias `free`) | `paid` |
 |---|---|---|
-| trivial | `groq/llama-3.1-8b-instant` | `openrouter/anthropic/claude-haiku-4` |
-| code analysis | `groq/llama-3.3-70b-versatile` | `openrouter/anthropic/claude-sonnet-4` |
-| architecture | `nvidia_nim/meta/llama-3.1-70b-instruct` | `openrouter/anthropic/claude-opus-4` |
+| trivial | `deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` | `openrouter/anthropic/claude-haiku-4` |
+| code analysis | `openrouter/meta-llama/llama-3.3-70b-instruct` | `openrouter/anthropic/claude-sonnet-4` |
+| architecture | `deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo` | `openrouter/anthropic/claude-opus-4` |
 
 Local Ollama is opt-in (`AXON_PROVIDER_OLLAMA=1`, default off). `ctx=work` is
 never routed to cloud. Rate-limit breaches raise `DENY_RATE_LIMIT` (not a model
