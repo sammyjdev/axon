@@ -441,6 +441,7 @@ from axon.cli.pb import (  # noqa: E402
     graph_app,
     hooks_app,
     index_dev,
+    index_vault,
     note,
     pending_app,
     portability_app,
@@ -482,6 +483,7 @@ app.command("bootstrap")(pb_bootstrap)
 app.command("setup")(setup)
 app.command("configure")(configure)
 app.command("index-dev")(index_dev)
+app.command("index-vault")(index_vault)
 app.command("note")(note)
 app.command("session-save")(session_save)
 app.command("seed-lessons")(seed_lessons)

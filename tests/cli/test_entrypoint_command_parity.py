@@ -9,6 +9,11 @@ explicitly. Every test drove `pb.app`, so the gate stayed green while
 names, so a rename (pb's `init` is exposed as `bootstrap`) does not
 false-positive while a genuinely unregistered function still does.
 
+The parity assertion is strict - there is NO allowlist. Issue #147 closed
+the last known gap (`index-vault` was registered only on pb's app): any
+function reachable on `pb.app` but not on the entry-point app fails here
+immediately instead of hiding behind an exclusion list that can go stale.
+
 Never assert on Rich-rendered help text here (see
 tests/cli/test_seed_lessons_cli.py): help output depends on terminal width,
 TTY detection and resolved Typer/Rich versions. Click's command registry is
@@ -22,12 +27,6 @@ import typer.main
 from axon.__main__ import app as main_app
 from axon.cli import pb
 
-# Known gap tracked as a follow-up, NOT a design decision: pb's `index-vault`
-# is not re-registered on the entry-point app yet. The assertions below fail
-# the moment this allowlist goes stale (index-vault becomes reachable, or the
-# pb callback disappears), so a fixed gap cannot linger here silently.
-_KNOWN_UNREACHABLE_FROM_ENTRYPOINT = {pb.index_vault}
-
 
 def _callbacks(app: typer.Typer) -> set[object]:
     return {ci.callback for ci in app.registered_commands}
@@ -35,14 +34,9 @@ def _callbacks(app: typer.Typer) -> set[object]:
 
 def test_every_pb_command_is_reachable_from_the_entrypoint() -> None:
     missing = _callbacks(pb.app) - _callbacks(main_app)
-
-    assert missing <= _KNOWN_UNREACHABLE_FROM_ENTRYPOINT
-    # Not vacuous: pb registers real commands beyond the allowlist...
-    assert _callbacks(pb.app) - _KNOWN_UNREACHABLE_FROM_ENTRYPOINT
-    # ...the allowlist stays a subset of pb's callbacks (no stale entry)...
-    assert _KNOWN_UNREACHABLE_FROM_ENTRYPOINT <= _callbacks(pb.app)
-    # ...and today it holds exactly the one known gap.
-    assert _KNOWN_UNREACHABLE_FROM_ENTRYPOINT == {pb.index_vault}
+    assert missing == set(), f"unreachable from `axon`: {missing}"
+    # Not vacuous: pb registers real commands.
+    assert _callbacks(pb.app)
 
 
 def test_every_pb_group_is_reachable_from_the_entrypoint() -> None:
