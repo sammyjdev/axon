@@ -1,0 +1,5 @@
+## Validation: issue #158 - PASS
+Spec-anchored check: no spec.md for this issue - fallback applied: assertion exists and covers the criterion (3/3 "Done when" criteria: worktree commit hook keys Decision.repo to the parent repo - tests/hooks/test_worktree_identity.py; on_push counts the parent repo's decisions for detect_scope_end - tests/hooks/test_worktree_identity.py; rekey-repo backfill re-keys without deleting and preserves judged/validation_score - tests/cli/test_rekey_repo_cli.py)
+Mutation sensor (mandatory): EMPTY_RETURN=KILLED, IDENTITY_RETURN=KILLED, NEGATE_CONDITIONAL=KILLED, DROP_SIDE_EFFECT=KILLED
+Mutation sensor (extras): [9 injected, 9 killed, 0 survived: X1_ORIGINAL_BUG_ON_COMMIT=KILLED, X2_RELATIVE_COMMON_DIR=KILLED, X3_EMPTY_FALLBACK=KILLED, X4_REACHABLE_ALWAYS_TRUE=KILLED, X5_DRY_RUN_WRITES=KILLED, X6_DROP_JUDGED_INVARIANT=KILLED, X7_ON_PUSH_WORKTREE_KEY=KILLED, X8_APPLY_GUARD_GONE=KILLED, X9_GLOB_ALWAYS_MATCHES=KILLED]
+Report: .specs/features/issue-158/validation.md
