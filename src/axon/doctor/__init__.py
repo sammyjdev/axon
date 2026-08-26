@@ -39,6 +39,11 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_quarantine_size,
         check_warnings_log,
     )
+    from axon.doctor.checks.capture_path import (
+        check_capture_gap,
+        check_hook_interpreters,
+        check_install_freshness,
+    )
     from axon.doctor.checks.index_composition import check_index_composition
     from axon.doctor.checks.install_branch import check_install_branch
     from axon.doctor.checks.recall_coverage import check_recall_coverage
@@ -55,6 +60,9 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_recall_coverage(data_root=data_root),
         check_install_branch(),
         check_commitlint_compat(),
+        check_hook_interpreters(),
+        check_install_freshness(),
+        check_capture_gap(),
     ]
 
 

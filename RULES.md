@@ -137,3 +137,16 @@ promotes them into a section above after curation.
   on it being run periodically (not just at call sites in code) - a command with
   no direct caller in the codebase can still be the only thing that invokes a
   pipeline function against a real target. (FORGE #104)
+- **A check whose default path resolves through `load_runtime_config().engine_root`
+  reads the SHARED pytest basetemp under the suite, not a per-test directory.**
+  `tests/conftest.py` pins `AXON_ENGINE` to a fresh tmp dir per test, so anything
+  deriving a scan root from `engine_root.parent` lands in `tmp_path_factory`'s session
+  basetemp - which every other test in the run also writes into. Measured on issue #141:
+  `check_hook_interpreters()` called with no `dev_root` override picked up the fixture
+  repos that `tests/scripts/test_check_onboarding_drift.py` plants there (named `axon`
+  and `rtk`, carrying an AXON hook block), turning a status decision into an
+  order-dependent one and flipping an unrelated CLI test's exit code. Check: any new
+  doctor check or helper that walks a directory derived from `engine_root` (especially
+  `.parent` or higher) takes an injectable override AND has a test proving the default
+  path is inert when no such directory exists - do not rely on the per-test `AXON_ENGINE`
+  pin, which isolates the engine dir but not its parent. (FORGE #141)
