@@ -206,3 +206,6 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
 - [dec-128](decisions/dec-128-budget-profile-model-substitution.md): the FREE profile's
   model table is dead; it is renamed `budget` (alias `free`) and repointed to
   live DeepInfra and OpenRouter Llama models.
+- [dec-129](decisions/dec-129-stable-repo-identity.md): linked worktrees use the
+  parent repository's bare name from `git rev-parse --git-common-dir`, preserving
+  existing non-git fallback behaviour and making worktree decisions reachable.

@@ -23,6 +23,7 @@ from axon.context.rtk import (
     store_original_with_rtk,
 )
 from axon.core.decision import Decision
+from axon.core.repo_identity import repo_identity
 from axon.embedder.engine import EmbedderEngine
 from axon.embedder.lesson_embedding import embed_lesson
 from axon.hooks.file_bridge import update_context_file
@@ -1042,9 +1043,8 @@ def _detect_repo_root() -> Path | None:
 
 
 def _detect_repo() -> str:
-    """Best-effort repo name from the working directory."""
-    root = _detect_repo_root()
-    return root.name if root is not None else Path.cwd().name
+    """Best-effort repo name from the working directory (dec-129)."""
+    return repo_identity()
 
 
 _DECISION_AGENTS = {"claude-code", "codex", "cursor", "manual"}
@@ -1086,7 +1086,7 @@ async def axon_session_end(session_id: str, summary: str | None = None) -> str:
     if summary:
         await store.save_note(SessionNote(project=repo, body=summary))
     root = _detect_repo_root()
-    if root is not None and root.name == repo:
+    if root is not None and repo_identity(root) == repo:
         try:
             # ponytail: full-file JSONL scan (~5k lines today), partition by month if it grows.
             patterns = aggregate_friction(TraceStore().query(stage="policy"))

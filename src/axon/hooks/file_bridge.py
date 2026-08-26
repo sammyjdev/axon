@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from axon.core.decision import Decision
+from axon.core.repo_identity import repo_identity
 from axon.observability.friction import FrictionPattern
 from axon.store.session_store import SessionStore
 
@@ -62,8 +63,9 @@ async def update_context_file(
     The write is atomic. Returns the path written.
     """
     root = Path(repo_root)
-    decisions = await store.find_decisions_by_repo(root.name, limit=_RECENT_LIMIT)
-    content = _render(root.name, decisions, friction)
+    repo = repo_identity(root)
+    decisions = await store.find_decisions_by_repo(repo, limit=_RECENT_LIMIT)
+    content = _render(repo, decisions, friction)
 
     axon_dir = root / ".axon"
     axon_dir.mkdir(parents=True, exist_ok=True)

@@ -24,6 +24,7 @@ from axon.code.diff_symbols import symbols_touched_by_commit
 from axon.config.runtime import load_runtime_config
 from axon.core.decision import Decision
 from axon.core.edge import Edge
+from axon.core.repo_identity import repo_identity
 from axon.hooks.file_bridge import update_context_file
 from axon.observability.trace_store import TraceStore
 from axon.obsidian.discovery import discover_vault
@@ -98,8 +99,9 @@ async def on_commit(
     try:
         await store.init()
         root = _repo_root(cwd)
+        repo = repo_identity(root)
         commit_hash = _git(["log", "-1", "--pretty=%H"], root)
-        existing = await store.find_decision_by_git_hash(commit_hash, repo=root.name)
+        existing = await store.find_decision_by_git_hash(commit_hash, repo=repo)
         if existing is not None:
             current_agent = _detect_agent()
             if existing.agent != current_agent:
@@ -126,7 +128,7 @@ async def on_commit(
             id=await store.next_decision_id(),
             timestamp=datetime.now(UTC),
             agent=_detect_agent(),
-            repo=root.name,
+            repo=repo,
             files=[Path(f) for f in files if f],
             summary=subject[:80],
             git_hash=commit_hash,
@@ -147,7 +149,7 @@ async def on_commit(
             from axon.adr.inference import InferenceStatus, run_for_head_async
 
             result = await run_for_head_async(
-                project=root.name, repo_root=root, store=store
+                project=repo, repo_root=root, store=store
             )
             if result.status is InferenceStatus.SAVED_ADR:
                 logger.info("inferred ADR: %s", result.title)
@@ -191,7 +193,7 @@ async def on_commit(
 
 
 async def _judge_and_export(
-    store: SessionStore, root: Path, decisions: list[Decision]
+    store: SessionStore, decisions: list[Decision], repo: str
 ) -> None:
     """Score unjudged draft decisions and export the repo's docs to the vault."""
     trace_id = uuid.uuid4().hex
@@ -230,7 +232,7 @@ async def _judge_and_export(
         return
     for decision in scored:
         export_adr(decision, vault=vault)
-    export_architecture_doc(scored, vault=vault, name=root.name)
+    export_architecture_doc(scored, vault=vault, name=repo)
     logger.info("push: exported %d decision(s) to %s", len(scored), vault)
 
 
@@ -243,7 +245,8 @@ async def on_push(
     try:
         await store.init()
         root = _repo_root(cwd)
-        decisions = await store.find_decisions_by_repo(root.name)
+        repo = repo_identity(root)
+        decisions = await store.find_decisions_by_repo(repo)
         milestone = os.environ.get("AXON_MILESTONE", "") == "1"
         signal = detect_scope_end(
             root, milestone=milestone, decisions_since_export=len(decisions)
@@ -252,7 +255,7 @@ async def on_push(
             logger.info("push: scope still open, no export")
             return
         logger.info("push: scope ended (%s: %s)", signal.reason, signal.detail)
-        await _judge_and_export(store, root, decisions)
+        await _judge_and_export(store, decisions, repo)
     finally:
         if owns_store:
             await store.close()
@@ -309,6 +312,7 @@ async def _scan_pulled_range(
     would be noise. Local commits keep the richer on_commit path.
     """
     root = _repo_root(cwd)
+    repo = repo_identity(root)
     try:
         hashes = _git(["rev-list", "--reverse", "ORIG_HEAD..HEAD"], root).splitlines()
     except Exception:
@@ -328,7 +332,7 @@ async def _scan_pulled_range(
             if detect(message) is None:
                 continue
             existing = await store.find_decision_by_git_hash(
-                commit_hash, repo=root.name
+                commit_hash, repo=repo
             )
             if existing is not None:
                 continue
@@ -340,7 +344,7 @@ async def _scan_pulled_range(
                 id=await store.next_decision_id(),
                 timestamp=datetime.now(UTC),
                 agent="remote",
-                repo=root.name,
+                repo=repo,
                 files=[Path(f) for f in files if f],
                 summary=subject[:80],
                 git_hash=commit_hash,
@@ -352,7 +356,7 @@ async def _scan_pulled_range(
                 from axon.adr.inference import run_for_head_async
 
                 await run_for_head_async(
-                    project=root.name,
+                    project=repo,
                     repo_root=root,
                     store=store,
                     commit=commit_hash,

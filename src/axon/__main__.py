@@ -10,6 +10,9 @@ unsurfaced.
 from __future__ import annotations
 
 import asyncio
+import fnmatch
+import subprocess
+from collections import Counter
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
@@ -279,9 +282,10 @@ def status(
 ) -> None:
     """Show the current repo, its decision count, and the latest decision."""
     from axon.cli.pb import _get_db_path
+    from axon.core.repo_identity import repo_identity
     from axon.store.session_store import SessionStore
 
-    repo_name = repo or Path.cwd().name
+    repo_name = repo or repo_identity()
 
     async def _decisions():
         store = SessionStore(_get_db_path())
@@ -310,6 +314,7 @@ def export(
     from datetime import date
 
     from axon.cli.pb import _get_db_path
+    from axon.core.repo_identity import repo_identity
     from axon.obsidian.discovery import discover_vault
     from axon.obsidian.exporter import (
         export_adr,
@@ -323,7 +328,7 @@ def export(
         typer.echo("Obsidian vault not found (set AXON_VAULT).", err=True)
         raise typer.Exit(1)
 
-    repo_name = repo or Path.cwd().name
+    repo_name = repo or repo_identity()
 
     async def _decisions():
         store = SessionStore(_get_db_path())
@@ -350,6 +355,86 @@ def export(
     else:
         typer.echo(f"Unknown doc type: {doc_type} (adr|architecture|summary)", err=True)
         raise typer.Exit(1)
+
+
+@app.command("rekey-repo")
+def rekey_repo(
+    checkout: Path = typer.Argument(..., help="Checkout that owns the commits"),
+    apply: bool = typer.Option(False, "--apply", help="Write changes (default: dry run)"),
+    only_key: list[str] = typer.Option(
+        [], "--only-key", help="Move only source keys matching this glob (repeatable)"
+    ),
+    all: bool = typer.Option(False, "--all", help="Move every provably reachable source key"),
+) -> None:
+    """Re-key decisions mis-filed under a worktree directory name (dec-129).
+
+    Applying requires --only-key or --all. A row moves only when its git_hash
+    is provably reachable in CHECKOUT, so nothing is guessed. Rows are updated
+    in place, never deleted.
+    """
+    from axon.cli.pb import _get_db_path
+    from axon.core.decision import Decision
+    from axon.core.repo_identity import repo_identity
+    from axon.store.session_store import SessionStore
+
+    if apply and not only_key and not all:
+        typer.echo("Refusing to move rows: pass --only-key or --all with --apply.", err=True)
+        raise typer.Exit(2)
+
+    target = repo_identity(checkout)
+    moved: list[tuple[str, str]] = []
+
+    def _reachable(git_hash: str) -> bool:
+        return subprocess.run(  # noqa: S603, S607
+            [  # noqa: S607
+                "git",
+                "-C",
+                str(checkout),
+                "cat-file",
+                "-e",
+                f"{git_hash}^{{commit}}",
+            ],
+            capture_output=True,
+        ).returncode == 0
+
+    async def _run() -> None:
+        store = SessionStore(_get_db_path())
+        await store.init()
+        try:
+            # ponytail: one cat-file per row (~350 rows, one-off).
+            # --batch-check on stdin if it ever matters.
+            for decision in await store.all_decisions():
+                if (
+                    decision.repo == target
+                    or (not all and only_key and not any(
+                        fnmatch.fnmatch(decision.repo, pattern) for pattern in only_key
+                    ))
+                    or not decision.git_hash
+                    or not _reachable(decision.git_hash)
+                ):
+                    continue
+                moved.append((decision.id, decision.repo))
+                if apply:
+                    await store.save_decision(
+                        Decision.model_validate(
+                            {**decision.model_dump(mode="python"), "repo": target}
+                        )
+                    )
+        finally:
+            await store.close()
+
+    asyncio.run(_run())
+    for decision_id, source in moved:
+        typer.echo(f"{decision_id}: {source} -> {target}")
+    for source, count in sorted(Counter(source for _, source in moved).items()):
+        typer.echo(f"  {source}: {count} row(s)")
+    if apply:
+        typer.echo(f"re-keyed {len(moved)} decision(s) to '{target}'")
+    else:
+        typer.echo(
+            f"would re-key {len(moved)} decision(s) to '{target}' "
+            "(dry run; moving requires --apply with --only-key or --all)"
+        )
 
 
 @app.command("ingest-vault")
