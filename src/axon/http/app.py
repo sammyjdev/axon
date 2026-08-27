@@ -66,7 +66,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 try:
-    from fastapi import Depends, FastAPI, Header, HTTPException
+    from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request
     from fastapi.responses import HTMLResponse, JSONResponse
     from pydantic import BaseModel
 except ModuleNotFoundError as _exc:  # pragma: no cover
@@ -93,15 +93,47 @@ class ChatCompletionRequest(BaseModel):
     recall_max_tokens: int | None = None
 
 
-async def _require_bearer_token(authorization: str = Header(default="")) -> None:
+SESSION_COOKIE = "axon_dashboard"
+
+
+def _presented_token(authorization: str, cookie: str) -> str:
+    """The credential from either carrier: Bearer header, or session cookie.
+
+    The browser cannot attach an Authorization header to the ``fetch`` calls
+    the dashboard page makes on its own, so a header-only guard leaves the
+    dashboard reachable exactly in the configuration the bind guard refuses
+    (no token, loopback only). The cookie is set by ``GET /dashboard``, which
+    is itself behind this dependency - so it is issued only to a caller that
+    already presented the Bearer token. It is HttpOnly, so the page's own
+    JavaScript never reads it, which keeps a future XSS in the dashboard from
+    turning into credential theft.
+    """
+    parts = authorization.split(" ", 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return cookie
+
+
+#: Liveness only. Carries no data, and the project's own readiness check
+#: (`.github/workflows/ci.yml`) curls it without credentials. Listed here
+#: rather than via a per-route `dependencies=[]`, which ADDS to the app-level
+#: dependency instead of replacing it - the exemption has to be explicit.
+_UNAUTHENTICATED_PATHS = frozenset({"/health"})
+
+
+async def _require_bearer_token(
+    request: Request,
+    authorization: str = Header(default=""),
+    axon_dashboard: str = Cookie(default=""),
+) -> None:
+    if request.url.path in _UNAUTHENTICATED_PATHS:
+        return
     expected = os.environ.get("AXON_HTTP_TOKEN", "")
     if not expected:
         return
-    parts = authorization.split(" ", 1)
-    if len(parts) == 2 and parts[0].lower() == "bearer":
-        presented = parts[1]
-        if secrets.compare_digest(presented.encode(), expected.encode()):
-            return
+    presented = _presented_token(authorization, axon_dashboard)
+    if presented and secrets.compare_digest(presented.encode(), expected.encode()):
+        return
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -275,7 +307,11 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
 
 @app.get("/health")
 async def health() -> JSONResponse:
-    """Liveness probe — returns ``{"status": "ok"}``."""
+    """Liveness probe — returns ``{"status": "ok"}``.
+
+    Deliberately unauthenticated: it carries no data, and the project's own
+    readiness check (`.github/workflows/ci.yml`) curls it without credentials.
+    """
     return JSONResponse(content={"status": "ok"})
 
 
@@ -346,7 +382,20 @@ async def dashboard() -> HTMLResponse:
     """
     from axon.http.dashboard import DASHBOARD_HTML  # noqa: PLC0415
 
-    return HTMLResponse(content=DASHBOARD_HTML)
+    response = HTMLResponse(content=DASHBOARD_HTML)
+    token = os.environ.get("AXON_HTTP_TOKEN", "")
+    if token:
+        # Reaching here means the Bearer token was already presented. Hand the
+        # browser a cookie so the page's own fetches carry the credential the
+        # browser cannot put in a header. HttpOnly keeps it out of reach of JS.
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            httponly=True,
+            samesite="strict",
+            path="/",
+        )
+    return response
 
 
 @app.get("/dashboard/promotions", response_class=HTMLResponse)

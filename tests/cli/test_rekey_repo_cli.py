@@ -125,14 +125,14 @@ def test_apply_moves_only_provably_reachable_rows(tmp_path: Path) -> None:
 
 def test_apply_preserves_judged_and_validation_score(tmp_path: Path) -> None:
     checkout = _main_checkout(tmp_path)
-    _save(_decision(git_hash=_head(checkout), judged=True, validation_score=0.0))
+    _save(_decision(git_hash=_head(checkout), judged=True, validation_score=3.5))
 
     result = runner.invoke(cli_app, ["rekey-repo", str(checkout), "--apply", "--all"])
 
     assert result.exit_code == 0, result.output
     decision = _get("dec-001")
     assert decision.judged is True
-    assert decision.validation_score == 0.0
+    assert decision.validation_score == 3.5
 
 
 def test_apply_without_a_key_filter_refuses(tmp_path: Path) -> None:

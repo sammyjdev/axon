@@ -68,11 +68,20 @@ async def test_get_adrs_tool_surfaces_the_machine_inferred_label(
     assert ADR_INFERRED_NOTICE not in human_block
 
 
-async def test_save_adr_tool_records_human_provenance(
+async def test_save_adr_tool_cannot_claim_human_authorship(
     store: SessionStore,
 ) -> None:
+    """`save_adr` is an MCP tool: the caller is an agent, not a person.
+
+    Its own docstring tells the calling model to use it "quando tomar uma
+    decisao de design relevante", so the writer is an LLM by construction.
+    Hardcoding provenance="human" here let any connected agent insert an ADR
+    labelled as human-authored with no human involved, which is exactly what
+    the provenance field exists to prevent. The only path that may claim
+    human authorship is `pb adr add`, which is gated behind a typer.prompt().
+    """
     proj = "test-save-adr"
-    title = "Human Saved ADR"
+    title = "Agent Saved ADR"
 
     msg = await server.save_adr(
         project=proj,
@@ -86,4 +95,4 @@ async def test_save_adr_tool_records_human_provenance(
     adrs = await store.get_adrs(proj)
     assert len(adrs) == 1
     assert adrs[0].title == title
-    assert adrs[0].provenance == "human"
+    assert adrs[0].provenance == "llm-inferred"

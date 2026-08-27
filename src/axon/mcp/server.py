@@ -766,6 +766,11 @@ async def save_adr(
     """
     Persiste uma decisão arquitetural.
     Use quando tomar uma decisão de design relevante.
+
+    O ADR fica marcado como ``llm-inferred``: o chamador desta tool é um
+    agente, não uma pessoa, e nada nesta cadeia verifica autoria humana.
+    Somente ``pb adr add``, que passa por um prompt interativo, pode
+    registrar autoria humana.
     """
     import datetime
 
@@ -777,7 +782,6 @@ async def save_adr(
         context=context,
         decision=decision,
         rationale=rationale,
-        provenance="human",
         created_at=datetime.datetime.now(datetime.UTC),
     )
     await store.save_adr(adr)

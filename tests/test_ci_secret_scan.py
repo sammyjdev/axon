@@ -59,4 +59,9 @@ def test_secret_scan_cannot_disarm_gitleaks():
 def test_gitleaks_download_is_verified():
     run = _install_step()["run"]
     assert "sha256sum -c" in run
+    # ...and it must not be defanged. The sibling anti-disarm test only
+    # inspects the scan step, so `sha256sum -c - || true` in the install
+    # step survived it: the binary would run unverified.
+    for defang in ("|| true", "|| :", "continue-on-error"):
+        assert defang not in run, f"checksum verification disarmed with {defang}"
     assert "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb" in run

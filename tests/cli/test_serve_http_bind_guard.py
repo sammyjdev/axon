@@ -146,12 +146,22 @@ def test_serve_http_exposes_allow_unauthenticated_on_the_entrypoint_app() -> Non
     assert {p.name for p in cmd.params} >= {"port", "host", "reload", "allow_unauthenticated"}
 
 
-def test_the_refusal_message_never_echoes_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_serve_http_never_echoes_the_token_on_the_path_that_starts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Not the refusal path - a token being set is what DISABLES the refusal.
+
+    The earlier name claimed this covered the refusal message, which it cannot:
+    the guard only refuses when no token is set, so on the refusal path there is
+    no token to leak. What is worth asserting is that the path which does start
+    the server, with a token in the environment, keeps it out of every stream.
+    """
     token_val = "SECRET_TOKEN_XYZ_123"  # noqa: S105
     monkeypatch.setenv("AXON_HTTP_TOKEN", token_val)
-    _spy_uvicorn(monkeypatch)
+    spy = _spy_uvicorn(monkeypatch)
     result = runner.invoke(app, ["serve-http", "--host", "0.0.0.0"])  # noqa: S104
 
+    assert spy, "server must actually have started, or this asserts nothing"
     output = _get_output(result)
     assert token_val not in output
     assert token_val not in result.output
