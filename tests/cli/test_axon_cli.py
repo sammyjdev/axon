@@ -339,7 +339,9 @@ def test_session_save_alias_is_bound_to_session_save_not_note():
     # ("Alias para pb session note.") shares none of it.
     help_text = command.help or ""
     assert "session memory" in help_text
-    assert "PostStop" in help_text
+    # "Stop/SessionEnd" are the real Claude Code hook events; the docstring
+    # used to name a "PostStop" hook that does not exist in any harness.
+    assert "Stop/SessionEnd" in help_text
 
 
 def test_hooks_pending_portability_subapps_registered():

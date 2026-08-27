@@ -1274,10 +1274,10 @@ def session_save(
         str | None, typer.Option("--transcript", help="Path do transcript JSON")
     ] = None,
 ) -> None:
-    """Comprime e salva session memory (chamado pelo PostStop hook do Claude Code)."""
-    import json
-
+    """Comprime e salva session memory (chamado pelo Stop/SessionEnd hook do Claude Code)."""
+    from axon.memory.digest import digest_turns
     from axon.memory.session_compressor import SessionCompressor
+    from axon.memory.transcript import parse_transcript_turns
     from axon.store.session_store import SessionMemory, SessionStore
 
     project = os.path.basename(cwd or os.getcwd())
@@ -1285,22 +1285,12 @@ def session_save(
     async def _save() -> None:
         turns: list[dict[str, str]] = []
 
+        # Claude Code delivers the path in the hook payload on stdin; the env
+        # var is only a manual-invocation convenience and is never set by the
+        # harness. Reading only the env var is why this never fired.
         transcript_path = transcript or os.environ.get("CLAUDE_TRANSCRIPT_PATH")
         if transcript_path and os.path.exists(transcript_path):
-            try:
-                data = json.loads(Path(transcript_path).read_text(encoding="utf-8"))
-                raw = data if isinstance(data, list) else data.get("messages", [])
-                for item in raw:
-                    role = item.get("role") or item.get("type", "")
-                    content = item.get("content", "")
-                    if isinstance(content, list):
-                        content = " ".join(
-                            c.get("text", "") for c in content if isinstance(c, dict)
-                        )
-                    if role and content and role in ("user", "assistant"):
-                        turns.append({"role": role, "content": str(content)})
-            except (json.JSONDecodeError, KeyError, TypeError):
-                pass
+            turns = parse_transcript_turns(transcript_path)
 
         if len(turns) < 2:
             typer.echo(f"[axon] Sessão muito curta ({len(turns)} turns), skip.", err=True)
@@ -1315,7 +1305,14 @@ def session_save(
         try:
             summary = await compressor.compress()
         except Exception as e:
-            typer.echo(f"[axon] Erro ao comprimir sessão: {e}", err=True)
+            # A hook runs with no API key, and a subscription machine has none.
+            # Losing the session to that is the bug this replaced: the digest
+            # is worse than an LLM summary and infinitely better than nothing.
+            typer.echo(f"[axon] Compressão indisponível ({e}); gravando digest.", err=True)
+            summary = digest_turns(turns)
+
+        if not summary.strip():
+            typer.echo("[axon] Nada a gravar (resumo vazio), skip.", err=True)
             return
 
         db = _get_db_path()
