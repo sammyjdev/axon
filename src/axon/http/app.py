@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -65,7 +66,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import Depends, FastAPI, Header, HTTPException
     from fastapi.responses import HTMLResponse, JSONResponse
     from pydantic import BaseModel
 except ModuleNotFoundError as _exc:  # pragma: no cover
@@ -92,6 +93,18 @@ class ChatCompletionRequest(BaseModel):
     recall_max_tokens: int | None = None
 
 
+async def _require_bearer_token(authorization: str = Header(default="")) -> None:
+    expected = os.environ.get("AXON_HTTP_TOKEN", "")
+    if not expected:
+        return
+    parts = authorization.split(" ", 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        presented = parts[1]
+        if secrets.compare_digest(presented.encode(), expected.encode()):
+            return
+    raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 # ---------------------------------------------------------------------------
 # FastAPI application
 # ---------------------------------------------------------------------------
@@ -100,6 +113,7 @@ app = FastAPI(
     title="AXON OpenAI-compatible API",
     description="Exposes AXON retrieval as an OpenAI chat-completions endpoint.",
     version="0.1.0",
+    dependencies=[Depends(_require_bearer_token)],
 )
 
 

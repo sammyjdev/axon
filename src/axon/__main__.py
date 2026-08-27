@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import ipaddress
+import os
 import subprocess
 from collections import Counter
 from importlib.metadata import PackageNotFoundError
@@ -18,6 +20,15 @@ from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 import typer
+
+
+def _is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 app = typer.Typer(
     name="axon",
@@ -162,11 +173,18 @@ def serve() -> None:
     mcp_main()
 
 
+# Note: This bind guard cannot cover a direct `uvicorn axon.http.app:app` invocation,
+# because the bind host only exists at the CLI layer.
 @app.command("serve-http")
 def serve_http(
     port: int = typer.Option(8765, "--port", "-p", help="TCP port to listen on."),
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address."),
     reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev only)."),
+    allow_unauthenticated: bool = typer.Option(
+        False,
+        "--allow-unauthenticated",
+        help="Permit a non-loopback bind with no AXON_HTTP_TOKEN set.",
+    ),
 ) -> None:
     """Start the AXON OpenAI-compatible HTTP server.
 
@@ -179,6 +197,20 @@ def serve_http(
 
     Point gnomon at it with base_url = http://localhost:8765/v1
     """
+    token = os.environ.get("AXON_HTTP_TOKEN", "")
+    env_allow = (
+        os.environ.get("AXON_HTTP_ALLOW_UNAUTHENTICATED", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    if not _is_loopback(host) and not token and not allow_unauthenticated and not env_allow:
+        typer.echo(
+            f"Refusing to bind to non-loopback host '{host}' without authentication. "
+            "Set AXON_HTTP_TOKEN, or pass --allow-unauthenticated "
+            "or set AXON_HTTP_ALLOW_UNAUTHENTICATED=1.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
     try:
         import uvicorn
     except ModuleNotFoundError:
