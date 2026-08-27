@@ -194,3 +194,18 @@ promotes them into a section above after curation.
   `'<lib>' not in sys.modules` after importing the module - an in-process test
   cannot see this, because the suite has already imported the library.
   (FORGE #149)
+- **A security-gate CI job is not proven by its presence, and a workflow edit is
+  not proven by the gate.** Two independent holes, both measured on issue #97.
+  (1) `pytest` never parses `.github/workflows/ci.yml`, so a workflow edit that
+  makes the file unparseable is invisible to the local gate - a value quoted as
+  `run: "$RUNNER_TEMP/gitleaks" git ...` is a YAML scalar with trailing content
+  and takes ALL 8 jobs down, not just its own step. (2) The gitleaks job's
+  entire purpose is to exit non-zero on a finding, and appending `|| true` (or
+  `continue-on-error: true`, or `set +e`) disarms it while every test stays
+  green - that mutation SURVIVED the first mutation battery on this branch.
+  Check: a repo-invariant test parses the workflow with `yaml.safe_load` and,
+  for each job whose job is to fail on something, asserts the scan step carries
+  no `|| true` / `|| exit 0` / `set +e` / status-masking pipe and that neither
+  step nor job sets `continue-on-error`. `tests/test_ci_secret_scan.py` does
+  this for `secret-scan`; `bandit`, `pip-audit` and `dast` have no such guard
+  and can each be silently disarmed today. (FORGE #97)
