@@ -196,9 +196,7 @@ def _normalize_configure_value(
     normalized = value.strip().lower()
     if normalized not in allowed:
         allowed_values = "|".join(allowed)
-        raise typer.BadParameter(
-            f"{field} must be one of: {allowed_values}. Received: {value}"
-        )
+        raise typer.BadParameter(f"{field} must be one of: {allowed_values}. Received: {value}")
     return normalized
 
 
@@ -485,11 +483,7 @@ def rtk_install_cmd(
     from axon.context import rtk_bootstrap as boot
 
     try:
-        tag = (
-            version
-            if version != "latest"
-            else boot.resolve_latest_tag(include_prerelease=pre)
-        )
+        tag = version if version != "latest" else boot.resolve_latest_tag(include_prerelease=pre)
     except boot.BootstrapError as exc:
         typer.echo(f"rtkx: falha ao resolver release ({exc})")
         raise typer.Exit(1) from exc
@@ -587,9 +581,7 @@ def doctor(
         except (OSError, ValueError):
             tty = False
         if not tty:
-            typer.echo(
-                "Erro: --apply requer TTY interativo.", err=True
-            )
+            typer.echo("Erro: --apply requer TTY interativo.", err=True)
             raise typer.Exit(1)
 
     if ci:
@@ -793,9 +785,7 @@ def doctor(
 def init(
     engine: Annotated[str, typer.Option("--engine", help="Diretório do engine AXON")],
     vault: Annotated[str, typer.Option("--vault", help="Diretório do vault externo")],
-    mode: Annotated[
-        str, typer.Option("--mode", help="Modo operacional")
-    ] = "full-local",
+    mode: Annotated[str, typer.Option("--mode", help="Modo operacional")] = "full-local",
     force: Annotated[
         bool, typer.Option("--force", help="Sobrescreve .env.local existente")
     ] = False,
@@ -934,9 +924,7 @@ def profile_create(
     infra_strategy: Annotated[
         str | None, typer.Option("--infra-strategy", help="local|remote")
     ] = None,
-    memory_tier: Annotated[
-        str | None, typer.Option("--memory-tier", help="light|full")
-    ] = None,
+    memory_tier: Annotated[str | None, typer.Option("--memory-tier", help="light|full")] = None,
     enabled_features: Annotated[
         str | None, typer.Option("--enabled-features", help="Lista separada por vírgulas")
     ] = None,
@@ -987,9 +975,7 @@ def profile_export(
 
 @app.command()
 def configure(
-    use_case: Annotated[
-        str | None, typer.Option("--use-case", help="solo|team|corporate")
-    ] = None,
+    use_case: Annotated[str | None, typer.Option("--use-case", help="solo|team|corporate")] = None,
     privacy: Annotated[
         str | None, typer.Option("--privacy", help="public|internal|confidential|restricted")
     ] = None,
@@ -998,19 +984,11 @@ def configure(
     ] = None,
     preferred_mode: Annotated[
         str | None,
-        typer.Option(
-            "--preferred-mode", help="full-local|hybrid-local|remote-infra|minimal"
-        ),
+        typer.Option("--preferred-mode", help="full-local|hybrid-local|remote-infra|minimal"),
     ] = None,
-    cloud: Annotated[
-        str | None, typer.Option("--cloud", help="ok|avoid|deny")
-    ] = None,
-    infra: Annotated[
-        str | None, typer.Option("--infra", help="local|remote")
-    ] = None,
-    memory: Annotated[
-        str | None, typer.Option("--memory", help="light|full")
-    ] = None,
+    cloud: Annotated[str | None, typer.Option("--cloud", help="ok|avoid|deny")] = None,
+    infra: Annotated[str | None, typer.Option("--infra", help="local|remote")] = None,
+    memory: Annotated[str | None, typer.Option("--memory", help="light|full")] = None,
 ) -> None:
     """Recomenda e aplica um profile mínimo com base em uso, privacidade e hardware."""
     from axon.config.runtime import recommend_profile, select_capabilities, use_profile
@@ -1028,12 +1006,8 @@ def configure(
     normalized_preferred_mode = _normalize_configure_value(
         "preferred_mode", preferred_mode, allowed=_RUNTIME_MODES
     )
-    normalized_cloud = _normalize_configure_value(
-        "cloud", cloud, allowed=_CONFIGURE_CLOUD_POLICIES
-    )
-    normalized_infra = _normalize_configure_value(
-        "infra", infra, allowed=_CONFIGURE_INFRA_OPTIONS
-    )
+    normalized_cloud = _normalize_configure_value("cloud", cloud, allowed=_CONFIGURE_CLOUD_POLICIES)
+    normalized_infra = _normalize_configure_value("infra", infra, allowed=_CONFIGURE_INFRA_OPTIONS)
     normalized_memory = _normalize_configure_value(
         "memory", memory, allowed=_CONFIGURE_MEMORY_OPTIONS
     )
@@ -1134,9 +1108,7 @@ def configure(
 @app.command()
 def search(
     query: Annotated[str, typer.Argument(help="Query de busca semântica")],
-    ctx: Annotated[
-        str | None, typer.Option("--ctx", help=_CTX_HELP)
-    ] = None,
+    ctx: Annotated[str | None, typer.Option("--ctx", help=_CTX_HELP)] = None,
     language: Annotated[str | None, typer.Option("--lang", help="Filtrar por linguagem")] = None,
     top_k: Annotated[int, typer.Option("--top", help="Número de resultados")] = 5,
 ) -> None:
@@ -1221,9 +1193,7 @@ def search(
 
 @session_app.callback(invoke_without_command=True)
 def session_root(
-    ctx_name: Annotated[
-        str | None, typer.Option("--ctx", help=_CTX_HELP)
-    ] = None,
+    ctx_name: Annotated[str | None, typer.Option("--ctx", help=_CTX_HELP)] = None,
 ) -> None:
     """Inicia ou exibe sessão ativa."""
     if ctx_name is None:
@@ -1309,10 +1279,17 @@ def session_save(
             # Losing the session to that is the bug this replaced: the digest
             # is worse than an LLM summary and infinitely better than nothing.
             typer.echo(f"[axon] Compressão indisponível ({e}); gravando digest.", err=True)
-            summary = digest_turns(turns)
+            summary = ""
 
         if not summary.strip():
-            typer.echo("[axon] Nada a gravar (resumo vazio), skip.", err=True)
+            # An empty summary is a compression failure that did not raise: a
+            # reasoning model can spend the whole max_tokens budget on reasoning
+            # and return nothing. Either way the session must not be lost.
+            summary = digest_turns(turns)
+            typer.echo("[axon] Resumo vazio; gravando digest.", err=True)
+
+        if not summary.strip():
+            typer.echo("[axon] Nada a gravar, skip.", err=True)
             return
 
         db = _get_db_path()
@@ -1492,12 +1469,11 @@ def adr_hook_install(
         DeprecationWarning,
         stacklevel=2,
     )
-    typer.echo(
-        "[axon] `axon adr hook` is deprecated — use `axon hooks install --apply`."
-    )
+    typer.echo("[axon] `axon adr hook` is deprecated — use `axon hooks install --apply`.")
     # Backwards-compatible behaviour: keep installing the old single hook
     # so existing users don't break mid-upgrade.
     import stat
+
     repo_path = Path(path or os.getcwd())
     hooks_dir = repo_path / ".git" / "hooks"
 
@@ -1602,6 +1578,7 @@ def hooks_install(
             "AXON manually using the snippet below:\n"
         )
         from axon.hooks.husky_integration import wrapper_text
+
         for event in ("post-commit", "pre-push", "post-merge", "post-checkout"):
             typer.echo(f"# .git/hooks/{event}:")
             typer.echo(wrapper_text(event).rstrip())
@@ -1617,6 +1594,7 @@ def hooks_install(
     )
     if apply:
         from axon.hooks.git_installer import install_hooks
+
         installed = install_hooks(repo_root)
         typer.echo(f"[axon] Installed: {', '.join(installed) or '(none new)'}")
     else:
@@ -1659,18 +1637,12 @@ def adr_infer_commit(
     )
 
     async def _run() -> None:
-        result = await run_for_head_async(
-            project=project, force=force
-        )
+        result = await run_for_head_async(project=project, force=force)
         if result.status is InferenceStatus.SAVED_ADR:
             typer.echo(f"[axon] ADR salvo: {result.title}")
         elif result.status is InferenceStatus.GATE_FAILED:
-            layer = (
-                result.outcome.failed_layer if result.outcome else None
-            )
-            typer.echo(
-                f"[axon] ADR rebaixado para draft ({layer}): {result.title}"
-            )
+            layer = result.outcome.failed_layer if result.outcome else None
+            typer.echo(f"[axon] ADR rebaixado para draft ({layer}): {result.title}")
         # NO_SIGNAL / LLM_UNAVAILABLE / LLM_NULL / LLM_PARSE_ERROR
         # are silent by design — hook-friendly.
 
@@ -1698,7 +1670,8 @@ def adr_review(
     project: Annotated[
         str,
         typer.Option(
-            "--project", "-p",
+            "--project",
+            "-p",
             help="Project name used when promoting (defaults to 'axon').",
         ),
     ] = "axon",
@@ -1751,8 +1724,7 @@ def adr_review(
             tag = "[DORMANT]" if record.dormant else "[ACTIVE]"
             mode = " [STRUCTURAL]" if record.structural_mode else ""
             typer.echo(
-                f"{tag}{mode} {record.commit_hash[:10]}  "
-                f"{record.failed_layer:>10}  {record.title}"
+                f"{tag}{mode} {record.commit_hash[:10]}  {record.failed_layer:>10}  {record.title}"
             )
 
     if weak_passes:
@@ -1801,8 +1773,7 @@ def adr_audit(
         layer = e.get("layer", "")
         sm = " STRUCT" if e.get("structural_mode") else ""
         typer.echo(
-            f"  [{kind:>10}{sm}] {e.get('commit_hash', '')[:10]} "
-            f"{layer:>10}  {e.get('title', '')}"
+            f"  [{kind:>10}{sm}] {e.get('commit_hash', '')[:10]} {layer:>10}  {e.get('title', '')}"
         )
 
 
@@ -1842,9 +1813,7 @@ def adr_validate_drafts() -> None:
             held += 1
         write_draft(record)
 
-    typer.echo(
-        f"validate-drafts: promoted={promoted} demoted={demoted} held={held}"
-    )
+    typer.echo(f"validate-drafts: promoted={promoted} demoted={demoted} held={held}")
 
 
 @pending_app.command("drain")
@@ -1931,6 +1900,7 @@ def pending_recover(
 # ---------------------------------------------------------------------------
 # pb graph
 # ---------------------------------------------------------------------------
+
 
 @graph_app.command("index")
 def graph_index(
@@ -2225,6 +2195,7 @@ def scan(
     if manifest_path.exists():
         try:
             from axon.config.projects import load_project_manifest
+
             existing = load_project_manifest(manifest_path)
             existing_names = {e.name for e in existing}
         except Exception:  # noqa: S110

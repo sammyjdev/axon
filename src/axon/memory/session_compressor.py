@@ -10,10 +10,15 @@ from dataclasses import dataclass, field
 
 import litellm
 
+from axon.router.llm_backend import (
+    default_compressor_model,
+    litellm_kwargs,
+    resolve_litellm_model,
+)
+
 logger = logging.getLogger(__name__)
 
 _COMPRESS_INTERVAL = 10
-_COMPRESS_MODEL = "claude-haiku-4-5-20251001"
 _MAX_SUMMARY_TOKENS = 400
 # The context is bounded by size, not by a turn count: slicing a fixed tail
 # silently dropped every turn before it, however short those turns were.
@@ -56,6 +61,24 @@ class SessionCompressor:
         lines.reverse()
         return lines
 
+    @staticmethod
+    def _backend() -> dict[str, object]:
+        """Route through the compressor role the router already resolves
+        (dec-122). The old hardcoded Anthropic id made session capture depend
+        on an API key that a subscription machine has no reason to hold."""
+        import os
+
+        model = resolve_litellm_model(
+            os.environ.get("AXON_SESSION_COMPRESSOR_MODEL")
+            or os.environ.get("AXON_CAVEMAN_MODEL")
+            or default_compressor_model()
+        )
+        return litellm_kwargs(
+            model,
+            ollama_host=os.environ.get("AXON_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434"),
+            num_ctx=int(os.environ.get("AXON_CAVEMAN_NUM_CTX", "4096")),
+        )
+
     async def compress(self) -> str:
         """Compresses current turns into a summary, replacing stored turns."""
         if not self.turns:
@@ -66,7 +89,7 @@ class SessionCompressor:
             context = f"PREVIOUS SUMMARY:\n{self.compressed_summary}\n\nNEW TURNS:\n{context}"
 
         response = await litellm.acompletion(
-            model=_COMPRESS_MODEL,
+            **self._backend(),
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": context},

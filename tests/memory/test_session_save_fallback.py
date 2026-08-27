@@ -118,3 +118,49 @@ async def test_context_stops_at_the_char_budget_dropping_the_oldest(monkeypatch)
     assert len(seen["context"]) <= sc._MAX_CONTEXT_CHARS
     assert "0000" not in seen["context"], "oldest turn survived the budget"
     assert f"{n - 1:04d}" in seen["context"], "newest turn was dropped instead"
+
+
+def test_an_empty_summary_falls_back_to_the_digest_instead_of_dropping_the_session(
+    tmp_path, monkeypatch
+):
+    """A reasoning model can spend the whole max_tokens budget on reasoning and
+    return empty content without raising. That is a compression failure like
+    any other - it must not cost the session."""
+    from axon.cli import pb
+
+    transcript = tmp_path / "s.jsonl"
+    transcript.write_text(
+        "".join(
+            json.dumps({"type": r, "message": {"role": r, "content": c}}) + "\n"
+            for r, c in (
+                ("user", "the prompt that must survive"),
+                ("assistant", "touched src/axon/memory/digest.py"),
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    async def empty(self):
+        return "   "
+
+    monkeypatch.setattr(SessionCompressor, "compress", empty)
+
+    saved = []
+
+    class _Store:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        async def init(self):
+            return None
+
+        async def save_session_memory(self, mem):
+            saved.append(mem)
+            return 1
+
+    monkeypatch.setattr("axon.store.session_store.SessionStore", _Store)
+
+    pb.session_save(cwd=str(tmp_path), transcript=str(transcript))
+
+    assert len(saved) == 1, "an empty summary dropped the session"
+    assert "the prompt that must survive" in saved[0].summary
