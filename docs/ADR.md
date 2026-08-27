@@ -209,3 +209,24 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
 - [dec-129](decisions/dec-129-stable-repo-identity.md): linked worktrees use the
   parent repository's bare name from `git rev-parse --git-common-dir`, preserving
   existing non-git fallback behaviour and making worktree decisions reachable.
+- [dec-130](decisions/dec-130-adr-provenance-fail-closed.md): ADR provenance is
+  fail-closed (`llm-inferred` by default) and only an interactive prompt may
+  claim human authorship; prompt fencing is mitigation by convention, the label
+  is what holds.
+- [dec-100](decisions/dec-100-rename-prometheus-to-axon.md): rename Prometheus to AXON.
+- [dec-101](decisions/dec-101-revoke-d4-drop-neo4j.md): drop Neo4j.
+- [dec-102](decisions/dec-102-cut-scope-router-cloud-profiles.md): freeze router cloud profiles.
+- [dec-103](decisions/dec-103-cross-agent-mcp-primary.md): MCP primary, file-based fallback.
+- [dec-104](decisions/dec-104-event-driven-not-time-driven.md): event-driven capture, not time-driven.
+- [dec-105](decisions/dec-105-migrate-domain-models-to-pydantic.md): migrate domain models to Pydantic v2.
+- [dec-106](decisions/dec-106-routing-profiles.md): FREE (Groq + NIM) and PAID (OpenRouter + paid Groq).
+- [dec-107](decisions/dec-107-validation-strategy.md): validation strategy via GitHub Actions.
+- [dec-108](decisions/dec-108-complete-axon-rename.md): complete Prometheus -> AXON rename (closes dec-100 followups).
+- [dec-115](decisions/dec-115-supersession-ranking-penalty.md): soft supersession via ranking penalty in recall.
+- [dec-116](decisions/dec-116-glyph-graph-delegation.md): delegate graph-aware context retrieval to GLYPH.
+- [dec-117](decisions/dec-117-glyph-vs-graphiti-graph-layer.md): keep GLYPH for the code graph; borrow Graphiti's bi-temporal model for decision supersession.
+- [dec-118](decisions/dec-118-rtkx-vs-llmlingua-compression-baseline.md): keep rtkx for reversible compression; use LLMLingua-2 as the lossy benchmark baseline.
+- [dec-119](decisions/dec-119-canonical-activity-stores-for-live-renderers.md): canonical activity/savings stores as the single source for live renderers (familiar, gain, dashboard).
+- [dec-120](decisions/dec-120-no-langchain-langgraph-chat.md): no LangChain / LangGraph / built-in chat; keep the governed router and lean deps.
+- [dec-121](decisions/dec-121-postgres-unified-storage.md): unify persistence on PostgreSQL (pgvector + JSONB); keep GLYPH as the graph retrieval layer.
+- [dec-126](decisions/dec-126-adr-classifier-gpt-oss-contract.md): ADR classifier moves to gpt-oss-120b with a 2000-token output contract.

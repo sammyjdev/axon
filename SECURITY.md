@@ -23,22 +23,28 @@ there is no backport policy yet.
 
 ## Scope
 
-AXON runs locally and integrates with cloud LLM providers (Groq, NVIDIA NIM,
-OpenRouter) via API keys supplied through environment variables. Relevant
+AXON runs locally and integrates with cloud LLM providers (DeepInfra and
+OpenRouter for the routing tiers, Groq for the classifier; see dec-128) via API
+keys supplied through environment variables. Relevant
 security surface includes:
 
 - Secret handling (`.env`, provider API keys)
 - The `ctx=work` restricted-context isolation (see `docs/decisions/dec-109-*.md`)
 - MCP tool risk gating (`read` / `write` / `destructive`, see ADR-013)
+- HTTP surface authentication (`axon serve-http`): every route except
+  `/health` requires a bearer token when `AXON_HTTP_TOKEN` is set, and the
+  command refuses to bind a non-loopback address without one. The escape hatch
+  is `--allow-unauthenticated` / `AXON_HTTP_ALLOW_UNAUTHENTICATED=1`, for
+  deployments that already authenticate in front of it
 - Git hook installation (`axon hooks install`)
 - Pre-commit hooks (`.pre-commit-config.yaml`): `ruff` lint and `gitleaks`
   secret scanning via the standard `pre-commit` framework
-- CI secret scanning (`.github/workflows/ci.yml`): `gitleaks` re-scans every
-  pull request's full commit range as a safety net for commits that bypass
+- CI secret scanning (`.github/workflows/ci.yml`): `gitleaks` re-scans the
+  repository's full history on every pull request as a safety net for commits that bypass
   the pre-commit hook (`--no-verify`, or `pre-commit` not installed)
 - CI dynamic security testing (`.github/workflows/ci.yml`): OWASP ZAP baseline
-  scan runs against the FastAPI/MCP server on every pull request (non-blocking;
-  scan report available as CI artifact `dast-zap-baseline-report`)
+  scan runs against the FastAPI/MCP server on every pull request (blocking as of
+  #74; scan report available as CI artifact `dast-zap-baseline-report`)
 
 Issues outside this scope (e.g. vulnerabilities in a pinned third-party
 dependency) should be reported upstream, but feel free to flag them here too
