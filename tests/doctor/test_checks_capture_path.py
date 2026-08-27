@@ -515,3 +515,19 @@ class TestCaptureGapDormantRepos:
         result = check_capture_gap(dev_root=dev_root)
 
         assert "post-commit" in result.suggestion
+
+
+def test_doctor_no_longer_reports_recall_coverage(tmp_path: Path) -> None:
+    """recall.coverage measured adherence to a ritual (search before read), not
+    a result. It sat at 4.7% while recall.savings sat at 84%, and the one
+    intervention that could move it - injecting a search before every read -
+    would have driven it to 100% while saving nothing, because PreToolUse
+    cannot cancel the Read that follows. recall.savings, measured over real
+    usage, is the honest signal and stays.
+    """
+    from axon.doctor import run_all_checks
+
+    names = {result.name for result in run_all_checks(data_root=tmp_path)}
+
+    assert "recall.coverage" not in names
+    assert "recall.savings" in names
