@@ -42,6 +42,40 @@ _ARG_VALUE_ALLOWLIST: frozenset[str] = frozenset(
 
 _MAX_PAYLOAD_KEYS = 16
 
+
+def _resolve_failure_store():
+    """The FailureStore for tool failures, or None when Postgres is not
+    configured. Indirection kept so tests can substitute a sink - and so a
+    missing DSN degrades to "no diagnostics" rather than an import error."""
+    from axon.config.runtime import load_runtime_config
+    from axon.store.failure_store import FailureStore
+
+    dsn = getattr(load_runtime_config(), "pg_url", None)
+    return FailureStore(dsn=dsn) if dsn else None
+
+
+async def _record_tool_failure(*, tool_name: str, ctx: str, exc: Exception) -> None:
+    """Best effort by construction: recording a failure must never become a
+    second failure. Any error here is swallowed so the caller still sees the
+    exception that actually happened."""
+    try:
+        store = _resolve_failure_store()
+        if store is None:
+            return
+        from axon.store.failure_store import FailureRecord
+
+        await store.save_failure(
+            FailureRecord(
+                project="axon",
+                operation=tool_name,
+                error_message=str(exc)[:500],
+                probable_cause=type(exc).__name__,
+                tags=["mcp-tool", f"ctx:{ctx}"],
+            )
+        )
+    except Exception:  # noqa: BLE001 - diagnostics never mask the real error
+        logger.debug("failure_record write failed for %s", tool_name, exc_info=True)
+
 _CURRENT_RECORDER: ContextVar[TraceRecorder | None] = ContextVar(
     "axon_current_trace_recorder", default=None
 )
@@ -221,6 +255,7 @@ def traced_tool(
                         "error_msg": str(exc)[:200],
                     },
                 )
+                await _record_tool_failure(tool_name=tool_name, ctx=ctx_str, exc=exc)
                 raise
             else:
                 latency_ms = int((time.perf_counter() - start) * 1000)
