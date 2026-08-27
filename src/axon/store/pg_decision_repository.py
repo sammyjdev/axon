@@ -72,6 +72,16 @@ class PostgresDecisionRepository:
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_adr_project_title_created"
                 " ON adr (project, title, created_at)"
             )
+            # A column declared inline in CREATE TABLE IF NOT EXISTS never reaches an
+            # EXISTING table, so the retrofit has to be its own statement - same reason the
+            # unique index below is separate. Do not "tidy" this into the CREATE body.
+            # Existing rows backfill to 'llm-inferred': provenance was never recorded, so it
+            # cannot be recovered, and over-labelling a human ADR is far cheaper than passing
+            # a poisoned inferred one off as authored.
+            await con.execute(
+                "ALTER TABLE adr ADD COLUMN IF NOT EXISTS"
+                " provenance text NOT NULL DEFAULT 'llm-inferred'"
+            )
 
     async def save_decision(self, decision: Decision) -> None:
         pool = await self._ensure_pool()
@@ -176,12 +186,13 @@ class PostgresDecisionRepository:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             new_id = await con.fetchval(
-                "INSERT INTO adr (project, title, context, decision, rationale, created_at)"
-                " VALUES ($1, $2, $3, $4, $5, $6)"
+                "INSERT INTO adr"
+                " (project, title, context, decision, rationale, created_at, provenance)"
+                " VALUES ($1, $2, $3, $4, $5, $6, $7)"
                 " ON CONFLICT (project, title, created_at) DO NOTHING"
                 " RETURNING id",
                 adr.project, adr.title, adr.context, adr.decision, adr.rationale,
-                adr.created_at,
+                adr.created_at, adr.provenance,
             )
             if new_id is None:
                 # Row already existed - fetch its id.
@@ -199,7 +210,7 @@ class PostgresDecisionRepository:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             rows = await con.fetch(
-                "SELECT id, project, title, context, decision, rationale, created_at"
+                "SELECT id, project, title, context, decision, rationale, created_at, provenance"
                 " FROM adr WHERE project=$1 ORDER BY created_at DESC LIMIT $2",
                 project, limit,
             )
@@ -207,7 +218,7 @@ class PostgresDecisionRepository:
             ADR(
                 id=r["id"], project=r["project"], title=r["title"], context=r["context"],
                 decision=r["decision"], rationale=r["rationale"],
-                created_at=r["created_at"],
+                created_at=r["created_at"], provenance=r["provenance"],
             )
             for r in rows
         ]

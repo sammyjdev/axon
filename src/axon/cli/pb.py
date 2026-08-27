@@ -1342,7 +1342,7 @@ def adr_list(
     _resolve_ctx(ctx)
 
     async def _list() -> None:
-        from axon.store.session_store import SessionStore
+        from axon.store.session_store import ADR_INFERRED_NOTICE, SessionStore
 
         db = _get_db_path()
         store = SessionStore(db)
@@ -1353,6 +1353,8 @@ def adr_list(
             return
         for adr in adrs:
             typer.echo(f"\n# {adr.title}")
+            if getattr(adr, "provenance", "llm-inferred") != "human":
+                typer.echo(f"  {ADR_INFERRED_NOTICE}")
             typer.echo(f"  Decisão:   {adr.decision}")
             typer.echo(f"  Racional:  {adr.rationale}")
             typer.echo(f"  Data:      {adr.created_at}")
@@ -1391,6 +1393,7 @@ def adr_add(
             context=context_text,
             decision=decision,
             rationale=rationale,
+            provenance="human",
             created_at=datetime.datetime.now(datetime.UTC),
         )
         await store.save_adr(adr)
@@ -1409,7 +1412,7 @@ def adr_sync(
     import datetime
     import json
 
-    from axon.store.session_store import SessionStore
+    from axon.store.session_store import ADR_INFERRED_NOTICE, SessionStore
 
     vault_root = _RUNTIME.vault_root
 
@@ -1458,6 +1461,8 @@ def adr_sync(
             lines = [f"# ADRs — {proj}\n\n_Last synced: {datetime.date.today().isoformat()}_\n"]
             for adr in adrs:
                 lines.append(f"\n## {adr.title}\n")
+                if getattr(adr, "provenance", "llm-inferred") != "human":
+                    lines.append(f"{ADR_INFERRED_NOTICE}\n")
                 created = adr.created_at.strftime("%Y-%m-%d") if adr.created_at else "N/A"
                 lines.append(f"**Data:** {created}\n")
                 lines.append(

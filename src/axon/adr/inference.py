@@ -19,6 +19,7 @@ returns, so the hook can log diagnostically without surfacing noise.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -221,6 +222,17 @@ def _adr_model() -> str:
     return get_profile(load_runtime_config().provider_profile).classifier_model
 
 
+def _fence(tag: str, text: str) -> str:
+    """Wrap untrusted text in a named span, neutralising a forged closing tag.
+
+    ponytail: fixed tag + escape, not a per-call random nonce. A nonce is strictly
+    stronger but forces the sentinel through the template as a third placeholder.
+    Upgrade to a nonce if the fixed tag ever proves insufficient.
+    """
+    safe = re.sub(re.escape(f"</{tag}>"), f"</{tag}_>", text, flags=re.IGNORECASE)
+    return f"<{tag}>\n{safe}\n</{tag}>"
+
+
 async def _call_llm(commit_msg: str, diff_summary: str) -> str | None:
     """Call the ADR classifier LLM. Returns ``None`` on any failure.
 
@@ -230,7 +242,8 @@ async def _call_llm(commit_msg: str, diff_summary: str) -> str | None:
     """
     template = _TEMPLATE_PATH.read_text(encoding="utf-8")
     prompt = template.format(
-        commit_message=commit_msg, diff_summary=diff_summary
+        commit_message=_fence("untrusted_commit_message", commit_msg),
+        diff_summary=_fence("untrusted_diff", diff_summary),
     )
     try:
         import litellm
@@ -242,5 +255,5 @@ async def _call_llm(commit_msg: str, diff_summary: str) -> str | None:
             max_tokens=2000,
         )
         return (response.choices[0].message.content or "").strip()
-    except Exception:  # noqa: BLE001 — best-effort, every error is recoverable
+    except Exception:  # noqa: BLE001 - best-effort, every error is recoverable
         return None

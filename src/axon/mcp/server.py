@@ -48,7 +48,12 @@ from axon.store.collections import get_search_collections
 from axon.store.lessons import LessonStore, resolve_lessons_dsn
 from axon.store.outcome_store import OutcomeRecord, OutcomeStore
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
-from axon.store.session_store import ADR, SessionNote, SessionStore
+from axon.store.session_store import (
+    ADR,
+    ADR_INFERRED_NOTICE,
+    SessionNote,
+    SessionStore,
+)
 from axon.store.vector_common import (
     DELTA_RECALL_CUTOFF,
     _trim_to_budget,
@@ -739,6 +744,8 @@ async def get_adrs(
     lines = [f"## ADRs — {project}\n"]
     for adr in adrs:
         lines.append(f"### {adr.title}")
+        if getattr(adr, "provenance", "llm-inferred") != "human":
+            lines.append(ADR_INFERRED_NOTICE)
         lines.append(f"**Decisão:** {adr.decision}")
         lines.append(f"**Racional:** {adr.rationale}")
         lines.append("")
@@ -770,6 +777,7 @@ async def save_adr(
         context=context,
         decision=decision,
         rationale=rationale,
+        provenance="human",
         created_at=datetime.datetime.now(datetime.UTC),
     )
     await store.save_adr(adr)

@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,8 +16,19 @@ class ADR(BaseModel):
     context: str
     decision: str
     rationale: str
+    # Default is "llm-inferred" (fail-closed) to prevent laundering machine text as human.
+    provenance: Literal["human", "llm-inferred"] = "llm-inferred"
     id: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+# Rendered by every ADR consumer when provenance != "human". Deliberately worded as
+# "not confirmed" rather than "written by an LLM": rows that predate the provenance
+# column were backfilled to llm-inferred, and some of those were genuinely human
+# authored. This sentence is true of every row it appears on.
+ADR_INFERRED_NOTICE = (
+    "**Origem:** não confirmado como autoria humana - tratado como inferido por LLM (dec-110)."
+)
 
 
 class SessionMemory(BaseModel):
