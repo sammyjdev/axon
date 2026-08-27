@@ -55,7 +55,7 @@ def check_pending_backlog(*, data_root: Path | None = None) -> CheckResult:
             name="capture.pending_backlog",
             status=CheckStatus.FAIL,
             detail=f"{count} files in pending/",
-            suggestion="Run `pb pending drain`. Investigate persistent SQLite contention.",
+            suggestion="Run `axon pending drain`. Investigate persistent SQLite contention.",
         )
     if (
         count >= _BACKLOG_WARN_COUNT
@@ -65,7 +65,7 @@ def check_pending_backlog(*, data_root: Path | None = None) -> CheckResult:
             name="capture.pending_backlog",
             status=CheckStatus.WARN,
             detail=f"{count} files in pending/, oldest {oldest_age.total_seconds()/3600:.1f}h",
-            suggestion="Run `pb pending drain` to flush.",
+            suggestion="Run `axon pending drain` to flush.",
         )
     return CheckResult(
         name="capture.pending_backlog",
@@ -97,7 +97,7 @@ def check_quarantine_size(*, data_root: Path | None = None) -> CheckResult:
         status=status,
         detail=f"{count} quarantined file(s)",
         suggestion=(
-            "Inspect `.axon/quarantine.jsonl`; `pb pending recover` to retry."
+            "Inspect `.axon/quarantine.jsonl`; `axon pending recover` to retry."
         ) if status is CheckStatus.WARN else "",
     )
 

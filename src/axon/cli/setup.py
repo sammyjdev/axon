@@ -212,31 +212,31 @@ def format_next_steps(session: SetupSession) -> str:
             '  {\n'
             '    "mcpServers": {\n'
             '      "axon": {\n'
-            '        "command": "pb",\n'
-            '        "args": ["mcp", "serve"]\n'
+            '        "command": "axon",\n'
+            '        "args": ["serve"]\n'
             '      }\n'
             '    }\n'
             '  }\n\n'
-            'Then run: pb index'
+            'Then run: axon index-dev'
         )
 
     port = session.http_port or 8080
     if session.http_host is None:
         return (
             f"Start the server and expose it:\n\n"
-            f"  pb mcp serve --transport http --port {port}\n"
+            f"  axon serve-http --port {port}\n"
             f"  # in another terminal:\n"
             f"  ngrok http {port}          # or: cloudflare tunnel\n\n"
             f"Add the public URL to Claude Web → Settings → Integrations → MCP.\n"
-            f"Then run: pb index"
+            f"Then run: axon index-dev"
         )
 
     return (
         f"Start the server:\n\n"
-        f"  pb mcp serve --transport http --host 0.0.0.0 --port {port}\n\n"
+        f"  axon serve-http --host 0.0.0.0 --port {port}\n\n"
         f"Configure your reverse proxy to forward to port {port}.\n"
         f"Add the public URL to Claude Web → Settings → Integrations → MCP.\n"
-        f"Then run: pb index"
+        f"Then run: axon index-dev"
     )
 
 

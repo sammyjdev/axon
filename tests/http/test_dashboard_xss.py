@@ -20,6 +20,7 @@ import json
 import shutil
 import subprocess
 from html.parser import HTMLParser
+from pathlib import Path
 
 import pytest
 
@@ -372,3 +373,22 @@ def test_dashboard_page_avoids_innerhtml(client: TestClient) -> None:
         "the dashboard script must not use innerHTML at all "
         "(see promotions_dashboard.py for the DOM-construction pattern)"
     )
+
+
+def test_promotions_dashboard_also_avoids_innerhtml() -> None:
+    """The sibling page had no XSS coverage at all.
+
+    `promotions_dashboard.py` already renders through createElement/textContent
+    — it is what #94 copied. But nothing held it there, so a regression on this
+    page would have shipped silently while /dashboard stayed green. This is a
+    structural tripwire, not a behavioural test: it cannot prove escaping, only
+    that the unsafe sink has not come back.
+    """
+    from axon.http import promotions_dashboard
+
+    source = promotions_dashboard.__file__
+    assert source is not None
+    js = Path(source).read_text()
+
+    for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
+        assert sink not in js, f"{sink} reintroduced in promotions_dashboard.py"

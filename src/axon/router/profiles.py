@@ -48,6 +48,12 @@ _BUDGET = ProfileSpec(
         "deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo": 4e-05,
         "deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo": 3.2e-04,
         "openrouter/meta-llama/llama-3.3-70b-instruct": 7.1e-04,
+        # The classifier runs on EVERY classification, so a missing entry is not
+        # dead data - `_COST_PER_1K.get(model, 0.0)` bills it as free and the
+        # budget guard undercounts every call. dec-128 removed a price for a model
+        # nothing routes to; this is the same rule applied in the other direction.
+        # Priced from the live provider list: max(3.7e-05 in, 1.7e-04 out) per 1K.
+        "groq/openai/gpt-oss-120b": 1.7e-04,
     },
 )
 
@@ -68,6 +74,8 @@ _PAID = ProfileSpec(
         "openrouter/anthropic/claude-haiku-4": 0.0008,
         "openrouter/anthropic/claude-sonnet-4": 0.009,
         "openrouter/anthropic/claude-opus-4": 0.045,
+        # Same classifier, same reason - PAID declares the same classifier_model.
+        "groq/openai/gpt-oss-120b": 1.7e-04,
     },
 )
 

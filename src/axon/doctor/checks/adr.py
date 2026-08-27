@@ -29,11 +29,11 @@ def check_stale_pending(*, data_root: Path | None = None) -> CheckResult:
             name="adr.stale_pending",
             status=CheckStatus.FAIL,
             detail=f"{count} drafts stale (no L1-full > TTL)",
-            suggestion="Run `pb adr validate-drafts`.",
+            suggestion="Run `axon adr validate-drafts`.",
         )
     return CheckResult(
         name="adr.stale_pending",
         status=CheckStatus.WARN,
         detail=f"{count} stale draft(s)",
-        suggestion="Run `pb adr validate-drafts` to refresh L1-full status.",
+        suggestion="Run `axon adr validate-drafts` to refresh L1-full status.",
     )

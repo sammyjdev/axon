@@ -174,8 +174,10 @@ def test_next_steps_stdio():
     session = SetupSession(transport="stdio")
     text = format_next_steps(session)
     assert "mcpServers" in text
-    assert "pb" in text
-    assert "pb index" in text
+    # dec-125 retired `pb` and deleted `index` outright; setup was still
+    # printing both as the next step an operator should type.
+    assert "axon" in text
+    assert "axon index-dev" in text
 
 
 def test_next_steps_http_local():
@@ -183,7 +185,7 @@ def test_next_steps_http_local():
     text = format_next_steps(session)
     assert "8080" in text
     assert "ngrok" in text
-    assert "pb index" in text
+    assert "axon index-dev" in text
 
 
 def test_next_steps_http_server():
@@ -191,4 +193,4 @@ def test_next_steps_http_server():
     text = format_next_steps(session)
     assert "9000" in text
     assert "reverse proxy" in text
-    assert "pb index" in text
+    assert "axon index-dev" in text

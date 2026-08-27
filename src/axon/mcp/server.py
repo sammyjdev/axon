@@ -769,7 +769,7 @@ async def save_adr(
 
     O ADR fica marcado como ``llm-inferred``: o chamador desta tool é um
     agente, não uma pessoa, e nada nesta cadeia verifica autoria humana.
-    Somente ``pb adr add``, que passa por um prompt interativo, pode
+    Somente ``axon adr add``, que passa por um prompt interativo, pode
     registrar autoria humana.
     """
     import datetime

@@ -61,6 +61,11 @@ def test_budget_cost_per_1k_measured_values() -> None:
         "deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo": 4e-05,
         "deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo": 3.2e-04,
         "openrouter/meta-llama/llama-3.3-70b-instruct": 7.1e-04,
+        # The classifier is routed to on every classification but was absent
+        # here, so the budget guard billed it at 0.0 (engine.py uses
+        # `_COST_PER_1K.get(model, 0.0)`). The sibling test below only walked
+        # `models.values()`, which is how it went unnoticed.
+        "groq/openai/gpt-oss-120b": 1.7e-04,
     }
     assert budget.cost_per_1k == expected_costs
 
@@ -99,3 +104,31 @@ def test_budget_top_tier_downgrade_crosses_providers() -> None:
     mid = budget.models["CODE_ANALYSIS"]
     assert provider_for_model(top) == "deepinfra"
     assert provider_for_model(mid) == "openrouter"
+
+
+@pytest.mark.parametrize("profile_name", ["budget", "paid"])
+def test_every_model_a_profile_routes_to_carries_a_price(profile_name: str) -> None:
+    """Including the classifier, which runs on every single classification.
+
+    `engine.py` reads costs as `_COST_PER_1K.get(model, 0.0)`, so a model with
+    no entry is billed as free and the budget guard undercounts it silently.
+    dec-128 deleted a price for a model nothing routes to; the same rule in the
+    other direction says a model that IS routed to must carry one.
+    """
+    profile = get_profile(profile_name)
+
+    routed = set(profile.models.values()) | {profile.classifier_model}
+    missing = sorted(m for m in routed if m not in profile.cost_per_1k)
+
+    assert not missing, f"{profile_name} routes to unpriced models: {missing}"
+
+
+@pytest.mark.parametrize("profile_name", ["budget", "paid"])
+def test_no_price_is_carried_for_a_model_nothing_routes_to(profile_name: str) -> None:
+    """The dec-128 rule itself: a price for an unroutable model is dead data."""
+    profile = get_profile(profile_name)
+
+    routed = set(profile.models.values()) | {profile.classifier_model}
+    orphaned = sorted(m for m in profile.cost_per_1k if m not in routed)
+
+    assert not orphaned, f"{profile_name} prices models it never routes to: {orphaned}"

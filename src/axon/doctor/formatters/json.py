@@ -1,4 +1,4 @@
-"""JSON formatter for ``pb doctor --ci`` (dec-114).
+"""JSON formatter for ``axon doctor --ci`` (dec-114).
 
 Stable schema. ``version`` is incremented on any breaking change to the
 shape so downstream parsers can pin.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 
@@ -71,3 +72,48 @@ def test_non_git_directory_falls_back_to_the_basename(tmp_path: Path) -> None:
     plain.mkdir()
 
     assert repo_identity(plain) == "plainrepo"
+
+
+def test_a_non_repo_falls_back_quietly(tmp_path, caplog) -> None:
+    """The documented fallback: not a repository at all, nothing to warn about."""
+    with caplog.at_level(logging.WARNING):
+        assert repo_identity(tmp_path) == tmp_path.name
+    assert not caplog.records, "a plain non-repo must not warn"
+
+
+def test_an_environmental_git_failure_warns_before_falling_back(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    """A git that fails for any OTHER reason must not degrade in silence.
+
+    safe.directory refusals, an unreadable .git, a locked repo: in all of those
+    we ARE in a repository, and returning the basename puts us straight back
+    into the bug dec-129 fixed - a worktree filing decisions under a repo that
+    does not exist. Silent is the part that made the original outage last
+    twelve days, so the fallback has to say something.
+    """
+
+    def _refuse(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(
+            128, "git", stderr="fatal: detected dubious ownership in repository"
+        )
+
+    monkeypatch.setattr(subprocess, "check_output", _refuse)
+
+    with caplog.at_level(logging.WARNING):
+        assert repo_identity(tmp_path) == tmp_path.name
+
+    assert caplog.records, "an environmental git failure must warn"
+    assert "dubious ownership" in caplog.text
+
+
+def test_git_missing_from_path_warns(tmp_path, monkeypatch, caplog) -> None:
+    def _no_git(*_args, **_kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(subprocess, "check_output", _no_git)
+
+    with caplog.at_level(logging.WARNING):
+        assert repo_identity(tmp_path) == tmp_path.name
+
+    assert caplog.records, "a missing git binary must warn"

@@ -6,7 +6,7 @@ The public API is intentionally small:
 - ``CheckResult``: ``(name, status, detail, suggestion)``
 - ``run_all_checks(...)``: returns ``list[CheckResult]``
 
-Existing ``pb doctor`` keeps its current behaviour; this module adds
+Existing ``axon doctor`` keeps its current behaviour; this module adds
 the dec-114 capture/adr/toolchain checks alongside.
 """
 

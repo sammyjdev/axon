@@ -1,4 +1,4 @@
-"""Index composition drift check for ``pb doctor``.
+"""Index composition drift check for ``axon doctor``.
 
 Warn thresholds are anchored to the measured 2026-07-03 inversion where the
 active index was ~97% dev and only ~1.8% vault content.

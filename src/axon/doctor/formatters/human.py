@@ -1,4 +1,4 @@
-"""Human-readable formatter for ``pb doctor`` (dec-114)."""
+"""Human-readable formatter for ``axon doctor`` (dec-114)."""
 
 from __future__ import annotations
 
