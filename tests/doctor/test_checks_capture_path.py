@@ -15,6 +15,7 @@ the installer's ``_BEGIN``/``_END`` markers, never re-spelled.
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -371,7 +372,9 @@ class TestCaptureGap:
 
         assert result.status is CheckStatus.FAIL
         assert "gappedrepo" in result.detail
-        assert "install-hooks" in result.suggestion
+        # The suggestion no longer says "reinstall": the hooks were present and
+        # working every time this check fired in production.
+        assert "post-commit" in result.suggestion
 
     def test_repo_with_zero_decisions_is_gapped(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -451,3 +454,64 @@ class TestRegistration:
         assert by_name["capture.gap"].detail == _SKIP_NO_REPOS
         assert by_name["install.freshness"].status is CheckStatus.WARN
         assert by_name["install.freshness"].detail.startswith("skipped: ")
+
+
+class TestCaptureGapDormantRepos:
+    """A repo whose last commit predates the current hook install cannot have
+    been captured by it. Reporting that as a capture failure is a false
+    positive that never clears: on 2026-08-22 every hook was reinstalled, and
+    four dormant repos have failed the check on every run since, while the
+    hooks were provably healthy.
+    """
+
+    def _age_hook(self, dev_root: Path, name: str, *, newer_than_commits: bool) -> None:
+        hook = dev_root / name / ".git" / "hooks" / "post-commit"
+        head = subprocess.run(  # noqa: S603
+            ["git", "-C", str(dev_root / name), "log", "-1", "--pretty=%ct"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        last_commit = int(head.stdout.strip())
+        offset = 3600 if newer_than_commits else -3600
+        os.utime(hook, (last_commit + offset, last_commit + offset))
+
+    def test_a_repo_with_no_commits_since_the_hook_was_installed_is_not_gapped(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        dev_root = tmp_path / "dev"
+        _make_capture_repo(dev_root, "dormant", commits=2)
+        self._age_hook(dev_root, "dormant", newer_than_commits=True)
+        _install_fake_store(monkeypatch)
+
+        result = check_capture_gap(dev_root=dev_root)
+
+        assert result.status is not CheckStatus.FAIL, result.detail
+        assert "dormant" in result.detail
+
+    def test_a_repo_that_committed_after_the_hook_and_captured_nothing_is_still_gapped(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        dev_root = tmp_path / "dev"
+        _make_capture_repo(dev_root, "reallybroken", commits=2)
+        self._age_hook(dev_root, "reallybroken", newer_than_commits=False)
+        _install_fake_store(monkeypatch)
+
+        result = check_capture_gap(dev_root=dev_root)
+
+        assert result.status is CheckStatus.FAIL
+        assert "reallybroken" in result.detail
+
+    def test_the_suggestion_does_not_send_you_to_reinstall_healthy_hooks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The old text said "re-run axon install-hooks" for every failure,
+        which is the wrong move when the hook is present and working."""
+        dev_root = tmp_path / "dev"
+        _make_capture_repo(dev_root, "reallybroken", commits=2)
+        self._age_hook(dev_root, "reallybroken", newer_than_commits=False)
+        _install_fake_store(monkeypatch)
+
+        result = check_capture_gap(dev_root=dev_root)
+
+        assert "post-commit" in result.suggestion

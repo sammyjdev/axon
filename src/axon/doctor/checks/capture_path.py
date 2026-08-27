@@ -266,6 +266,20 @@ def check_install_freshness(
     )
 
 
+def _hook_installed_at(repo: Path) -> float | None:
+    """When the current post-commit hook was written. A commit older than this
+    was made by a different hook (or none), so its absence from the store says
+    nothing about whether capture works now."""
+    hook = repo / ".git" / "hooks" / "post-commit"
+    try:
+        # Floored to whole seconds: git commit timestamps have second
+        # granularity, so a fractional mtime makes a commit written in the same
+        # second as the hook compare as older than it.
+        return float(int(hook.stat().st_mtime))
+    except OSError:
+        return None
+
+
 def _recent_commit_hashes(repo: Path, recent_commits: int) -> list[str] | None:
     try:
         completed = subprocess.run(  # noqa: S603
@@ -302,6 +316,35 @@ async def _repos_with_captured_commits(
     return result
 
 
+def _commits_since(repo: Path, hashes: list[str], since: float | None) -> list[str]:
+    """The subset of `hashes` committed at or after `since`. With no timestamp
+    to compare against, every commit counts - failing open keeps a real gap
+    visible rather than hiding it behind a missing stat()."""
+    if since is None:
+        return hashes
+    fresh: list[str] = []
+    for git_hash in hashes:
+        try:
+            completed = subprocess.run(  # noqa: S603
+                ["git", "-C", str(repo), "show", "-s", "--format=%ct", git_hash],  # noqa: S607
+                capture_output=True,
+                text=True,
+                timeout=_GIT_TIMEOUT_S,
+                check=False,
+            )
+        except (OSError, TimeoutExpired):
+            return hashes
+        if completed.returncode != 0:
+            return hashes
+        try:
+            committed_at = int(completed.stdout.strip())
+        except ValueError:
+            return hashes
+        if committed_at >= since:
+            fresh.append(git_hash)
+    return fresh
+
+
 def check_capture_gap(
     *, dev_root: Path | None = None, recent_commits: int = 5
 ) -> CheckResult:
@@ -311,12 +354,26 @@ def check_capture_gap(
         return CheckResult(name="capture.gap", status=CheckStatus.OK, detail=_SKIP_NO_REPOS)
 
     commits_by_repo: dict[Path, list[str]] = {}
+    dormant: list[Path] = []
     for repo in repos:
         hashes = _recent_commit_hashes(repo, recent_commits)
-        if hashes is not None:
-            commits_by_repo[repo] = hashes
+        if hashes is None:
+            continue
+        installed_at = _hook_installed_at(repo)
+        fresh = _commits_since(repo, hashes, installed_at)
+        if not fresh:
+            dormant.append(repo)
+            continue
+        commits_by_repo[repo] = fresh
 
     if not commits_by_repo:
+        if dormant:
+            names = ", ".join(sorted(repo.name for repo in dormant))
+            return CheckResult(
+                name="capture.gap",
+                status=CheckStatus.OK,
+                detail=f"skipped: no commits since hook install in {len(dormant)} repo(s): {names}",
+            )
         return CheckResult(
             name="capture.gap",
             status=CheckStatus.OK,
@@ -354,13 +411,18 @@ def check_capture_gap(
                 f"{len(gapped)} of {len(commits_by_repo)} repo(s) gapped: {', '.join(gapped)}"
             ),
             suggestion=(
-                "Re-run `axon install-hooks` and check the hook interpreter "
-                "for the affected repo(s)."
+                "These repos committed after their post-commit hook was installed "
+                "and still wrote no decision. Run the hook by hand "
+                "(`bash .git/hooks/post-commit`) in one of them and read the error "
+                "before reinstalling anything."
             ),
         )
 
     return CheckResult(
         name="capture.gap",
         status=CheckStatus.OK,
-        detail=f"{len(commits_by_repo)} repo(s) checked, none gapped",
+        detail=(
+            f"{len(commits_by_repo)} repo(s) checked, none gapped"
+            + (f"; {len(dormant)} dormant" if dormant else "")
+        ),
     )

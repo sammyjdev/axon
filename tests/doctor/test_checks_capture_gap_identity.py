@@ -154,7 +154,9 @@ def test_repo_with_no_decision_anywhere_still_fails(
 
     assert result.status is CheckStatus.FAIL
     assert "gnomon-eval" in result.detail
-    assert "install-hooks" in result.suggestion
+    # The suggestion no longer says "reinstall": the hooks were present and
+    # working every time this check fired in production.
+    assert "post-commit" in result.suggestion
 
 
 def test_store_failure_on_hash_lookup_degrades_to_warn(
