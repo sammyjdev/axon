@@ -119,6 +119,14 @@ DASHBOARD_HTML = """\
     return d.length > 19 ? d.slice(0, 19) : d;
   }
 
+  function addText(parent, tag, className, value) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    node.textContent = value == null ? "" : String(value);
+    parent.appendChild(node);
+    return node;
+  }
+
   function renderGain(data) {
     document.getElementById("saved-tokens").textContent =
       fmt(data.saved_tokens) + " tokens saved";
@@ -130,34 +138,46 @@ DASHBOARD_HTML = """\
 
     var spark = document.getElementById("sparkline");
     var daily = data.daily_saved || [];
+    while (spark.firstChild) spark.removeChild(spark.firstChild);
     if (daily.length === 0) {
-      spark.innerHTML = '<span class="spark-empty">no daily data</span>';
+      addText(spark, "span", "spark-empty", "no daily data");
       return;
     }
     var values = daily.map(function (d) { return d[1]; });
     var maxVal = Math.max.apply(null, values) || 1;
-    spark.innerHTML = values.map(function (v) {
-      var h = Math.max(4, Math.round((v / maxVal) * 44));
-      return '<div class="spark-bar" style="height:' + h + 'px" title="' + v + '"></div>';
-    }).join("");
+    values.forEach(function (v) {
+      var bar = document.createElement("div");
+      bar.className = "spark-bar";
+      bar.style.height = Math.max(4, Math.round((v / maxVal) * 44)) + "px";
+      bar.setAttribute("title", String(v));
+      spark.appendChild(bar);
+    });
   }
 
   function renderActivity(records) {
     var list = document.getElementById("feed-list");
+    while (list.firstChild) list.removeChild(list.firstChild);
     if (!records || records.length === 0) {
-      list.innerHTML = '<li class="empty-feed">no activity yet</li>';
+      addText(list, "li", "empty-feed", "no activity yet");
       return;
     }
-    list.innerHTML = records.map(function (r) {
-      var parts = [
-        '<span class="ts">' + shortTs(r.ts) + '</span>',
-        ' <span class="stage">' + (r.stage || "") + '</span>',
-        ' <span class="caller">' + (r.caller || "") + '</span>'
-      ];
-      if (r.route) parts.push(' <span class="route">' + r.route + '</span>');
-      if (r.model) parts.push(' <span class="model">[' + r.model + ']</span>');
-      return "<li>" + parts.join("") + "</li>";
-    }).join("");
+    records.forEach(function (r) {
+      var li = document.createElement("li");
+      addText(li, "span", "ts", shortTs(r.ts));
+      li.appendChild(document.createTextNode(" "));
+      addText(li, "span", "stage", r.stage || "");
+      li.appendChild(document.createTextNode(" "));
+      addText(li, "span", "caller", r.caller || "");
+      if (r.route) {
+        li.appendChild(document.createTextNode(" "));
+        addText(li, "span", "route", r.route);
+      }
+      if (r.model) {
+        li.appendChild(document.createTextNode(" "));
+        addText(li, "span", "model", "[" + r.model + "]");
+      }
+      list.appendChild(li);
+    });
   }
 
   function refresh() {
