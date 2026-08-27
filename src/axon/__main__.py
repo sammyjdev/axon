@@ -30,6 +30,7 @@ def _is_loopback(host: str) -> bool:
     except ValueError:
         return False
 
+
 app = typer.Typer(
     name="axon",
     help="AXON — same context, any AI coding agent.",
@@ -198,10 +199,12 @@ def serve_http(
     Point gnomon at it with base_url = http://localhost:8765/v1
     """
     token = os.environ.get("AXON_HTTP_TOKEN", "")
-    env_allow = (
-        os.environ.get("AXON_HTTP_ALLOW_UNAUTHENTICATED", "").strip().lower()
-        in {"1", "true", "yes", "on"}
-    )
+    env_allow = os.environ.get("AXON_HTTP_ALLOW_UNAUTHENTICATED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     if not _is_loopback(host) and not token and not allow_unauthenticated and not env_allow:
         typer.echo(
             f"Refusing to bind to non-loopback host '{host}' without authentication. "
@@ -239,9 +242,7 @@ def health() -> None:
 
 @app.command()
 def gain(
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit raw GainSummary as JSON."
-    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit raw GainSummary as JSON."),
 ) -> None:
     """Show compression-gain statistics: windows, saved tokens, and daily trend."""
     from axon.observability.gain import load_gain
@@ -300,8 +301,7 @@ def gain(
         else:
             # Normalize to [0, 7] range for 8 block chars (indices 0-7)
             sparkline = "".join(
-                block_chars[int((v - min_val) * 7 / (max_val - min_val))]
-                for v in values
+                block_chars[int((v - min_val) * 7 / (max_val - min_val))] for v in values
             )
         lines.append(f"  {sparkline}")
 
@@ -417,17 +417,20 @@ def rekey_repo(
     moved: list[tuple[str, str]] = []
 
     def _reachable(git_hash: str) -> bool:
-        return subprocess.run(  # noqa: S603, S607
-            [  # noqa: S607
-                "git",
-                "-C",
-                str(checkout),
-                "cat-file",
-                "-e",
-                f"{git_hash}^{{commit}}",
-            ],
-            capture_output=True,
-        ).returncode == 0
+        return (
+            subprocess.run(  # noqa: S603, S607
+                [  # noqa: S607
+                    "git",
+                    "-C",
+                    str(checkout),
+                    "cat-file",
+                    "-e",
+                    f"{git_hash}^{{commit}}",
+                ],
+                capture_output=True,
+            ).returncode
+            == 0
+        )
 
     async def _run() -> None:
         store = SessionStore(_get_db_path())
@@ -438,9 +441,11 @@ def rekey_repo(
             for decision in await store.all_decisions():
                 if (
                     decision.repo == target
-                    or (not all and only_key and not any(
-                        fnmatch.fnmatch(decision.repo, pattern) for pattern in only_key
-                    ))
+                    or (
+                        not all
+                        and only_key
+                        and not any(fnmatch.fnmatch(decision.repo, pattern) for pattern in only_key)
+                    )
                     or not decision.git_hash
                     or not _reachable(decision.git_hash)
                 ):
@@ -552,6 +557,7 @@ def ingest_vault_cmd(
 # ---------------------------------------------------------------------------
 from axon.cli.pb import (  # noqa: E402
     adr_app,
+    compact_hook,
     configure,
     doctor,
     git_proxy,
@@ -573,6 +579,7 @@ from axon.cli.pb import (  # noqa: E402
     search,
     seed_lessons,
     session_app,
+    session_hook,
     session_save,
     setup,
 )
@@ -604,6 +611,8 @@ app.command("index-vault")(index_vault)
 app.command("note")(note)
 app.command("session-save")(session_save)
 app.command("seed-lessons")(seed_lessons)
+app.command("session-hook")(session_hook)
+app.command("compact-hook")(compact_hook)
 
 if __name__ == "__main__":
     app()

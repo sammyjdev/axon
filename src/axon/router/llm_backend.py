@@ -1,7 +1,7 @@
 """Provider-aware litellm kwargs for the local roles (scoring, compressor).
 
 A role's model is a full litellm id: ``ollama/phi3:mini`` (local) or
-``groq/openai/gpt-oss-120b`` / ``cerebras/gpt-oss-120b`` (hosted). Only the
+``groq/openai/gpt-oss-120b`` / ``deepinfra/...`` (hosted). Only the
 ollama path needs ``api_base`` (the endpoint) and ``num_ctx`` (KV-cache size,
 which otherwise inherits the host's huge default and OOMs). Hosted providers
 take neither.
@@ -17,7 +17,11 @@ from __future__ import annotations
 USE_HOSTED_LOCAL_ROLES = True
 
 _HOSTED_SCORING_MODEL = "groq/openai/gpt-oss-120b"
-_HOSTED_COMPRESSOR_MODEL = "cerebras/gpt-oss-120b"
+# DeepInfra, not Cerebras: the dec-122 default named a provider whose key no
+# install ever carried, so the compressor role fell back on every machine. This
+# one is also not a reasoning model - gpt-oss spends the whole max_tokens
+# budget reasoning on a long context and returns empty content.
+_HOSTED_COMPRESSOR_MODEL = "deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct"
 _LOCAL_SCORING_MODEL = "gemma4:e4b"
 _LOCAL_COMPRESSOR_MODEL = "phi3:mini"
 

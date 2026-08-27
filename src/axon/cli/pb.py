@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shlex
 import shutil
 import subprocess
+import sys
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -1497,6 +1499,77 @@ def adr_hook_install(
         typer.echo(f"Hook instalado: {target}")
 
     target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def _save_compact_summary(*, project: str, summary: str) -> None:
+    """Persist a harness-produced compact summary as SessionMemory."""
+    from axon.store.session_store import SessionMemory, SessionStore
+
+    async def _save() -> None:
+        store = SessionStore(_get_db_path())
+        await store.init()
+        await store.save_session_memory(
+            SessionMemory(project=project, summary=summary, raw_turns=0)
+        )
+
+    asyncio.run(_save())
+
+
+@app.command("compact-hook")
+def compact_hook() -> None:
+    """PostCompact hook: persist the harness's own compact summary (stdin payload)."""
+    from axon.memory.transcript import last_compact_summary
+
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except (json.JSONDecodeError, ValueError):
+        typer.echo("[axon] compact-hook: payload ilegivel, skip.", err=True)
+        return
+    if not isinstance(payload, dict):
+        return
+
+    transcript_path = payload.get("transcript_path") or ""
+    cwd = payload.get("cwd") or os.getcwd()
+    if not transcript_path or not os.path.exists(transcript_path):
+        typer.echo(f"[axon] compact-hook: sem transcript ({transcript_path!r}).", err=True)
+        return
+    try:
+        summary = last_compact_summary(transcript_path)
+        if not summary:
+            typer.echo("[axon] compact-hook: sem compact summary, skip.", err=True)
+            return
+        _save_compact_summary(project=os.path.basename(cwd), summary=summary)
+        typer.echo(f"[axon] Compact summary salvo: {os.path.basename(cwd)}", err=True)
+    except Exception as exc:  # a hook must never interrupt the agent
+        typer.echo(f"[axon] compact-hook: {exc}", err=True)
+
+
+@app.command("session-hook")
+def session_hook() -> None:
+    """Stop / SessionEnd hook: persist the session (payload on stdin).
+
+    A CLI command rather than a script in ~/.local/bin: this ships with the
+    package, is covered by the suite, and carries no venv path in a shebang -
+    renaming a venv once silently killed the hooks in thirteen repos.
+    """
+    payload: dict = {}
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except (json.JSONDecodeError, ValueError):
+        typer.echo("[axon] session-hook: payload ilegivel, skip.", err=True)
+        return
+    if not isinstance(payload, dict):
+        return
+
+    transcript_path = payload.get("transcript_path") or ""
+    cwd = payload.get("cwd") or os.getcwd()
+    if not transcript_path or not os.path.exists(transcript_path):
+        typer.echo(f"[axon] session-hook: sem transcript ({transcript_path!r}).", err=True)
+        return
+    try:
+        session_save(cwd=cwd, transcript=transcript_path)
+    except Exception as exc:  # a hook must never interrupt the agent
+        typer.echo(f"[axon] session-hook: {exc}", err=True)
 
 
 @hooks_app.command("install")

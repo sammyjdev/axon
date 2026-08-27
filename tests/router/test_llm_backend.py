@@ -11,7 +11,9 @@ from axon.router.llm_backend import (
 def test_hosted_defaults_when_flag_on() -> None:
     # dec-122: the decided hosted backends are active by default, no env needed.
     assert default_scoring_model() == "groq/openai/gpt-oss-120b"
-    assert default_compressor_model() == "cerebras/gpt-oss-120b"
+    # Cerebras was the dec-122 default but no install ever carried a
+    # CEREBRAS_API_KEY, so the compressor role silently fell back everywhere.
+    assert default_compressor_model() == "deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct"
 
 
 def test_local_defaults_when_flag_off(monkeypatch) -> None:

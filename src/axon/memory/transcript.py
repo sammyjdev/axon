@@ -51,3 +51,31 @@ def parse_transcript_turns(path: str | Path) -> list[dict[str, str]]:
             if text:
                 turns.append({"role": role, "content": text})
     return turns
+
+
+def last_compact_summary(path: str | Path) -> str:
+    """The most recent `/compact` summary in a transcript, or "".
+
+    The harness already produced a dense summary during compaction; reusing it
+    costs no model call and beats anything we would generate from the turns it
+    replaced.
+    """
+    summary = ""
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not entry.get("isCompactSummary"):
+                continue
+            message = entry.get("message")
+            if not isinstance(message, dict):
+                continue
+            text = _text_of(message.get("content", "")).strip()
+            if text:
+                summary = text
+    return summary
