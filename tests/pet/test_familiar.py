@@ -244,7 +244,9 @@ class TestNoHardCodedPaths:
         assert total == 6
         assert len(moments) == 4  # most-recent 4
         assert moments[0].kind == "adr"
-        assert moments[0].text == "title-5"  # latest by created_at
+        # "~" marks a machine-inferred ADR: these fixtures omit provenance, so
+        # they inherit the fail-closed llm-inferred default (dec-130).
+        assert moments[0].text == "~title-5"  # latest by created_at
 
     def test_activity_poller_path_is_configurable(self, tmp_path: Path) -> None:
         custom_file = tmp_path / "custom_records.jsonl"

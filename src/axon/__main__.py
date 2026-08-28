@@ -412,6 +412,16 @@ def rekey_repo(
     if apply and not only_key and not all:
         typer.echo("Refusing to move rows: pass --only-key or --all with --apply.", err=True)
         raise typer.Exit(2)
+    if all and only_key:
+        # They read as "everything" and "only these", and the selection below
+        # let --all win: an operator narrowing an already-destructive run with
+        # --only-key would silently get the widest possible scope instead.
+        typer.echo(
+            "--all and --only-key are mutually exclusive: --all moves every "
+            "reachable key, --only-key moves just the ones you name.",
+            err=True,
+        )
+        raise typer.Exit(2)
 
     target = repo_identity(checkout)
     moved: list[tuple[str, str]] = []

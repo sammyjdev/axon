@@ -228,8 +228,14 @@ def _fence(tag: str, text: str) -> str:
     ponytail: fixed tag + escape, not a per-call random nonce. A nonce is strictly
     stronger but forces the sentinel through the template as a third placeholder.
     Upgrade to a nonce if the fixed tag ever proves insufficient.
+
+    The pattern tolerates whitespace the way a model reading pseudo-XML does.
+    A literal match on `</tag>` let `</tag >` through untouched - one space
+    defeated the whole guard, while still reading as a closing tag to the very
+    consumer this protects. Cross-review, GPT/Gemini pass 2026-08-27.
     """
-    safe = re.sub(re.escape(f"</{tag}>"), f"</{tag}_>", text, flags=re.IGNORECASE)
+    pattern = rf"<\s*/\s*{re.escape(tag)}\s*>"
+    safe = re.sub(pattern, f"</{tag}_>", text, flags=re.IGNORECASE)
     return f"<{tag}>\n{safe}\n</{tag}>"
 
 

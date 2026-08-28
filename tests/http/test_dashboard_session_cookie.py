@@ -22,7 +22,10 @@ TOKEN = "test-token-value"  # noqa: S105
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("AXON_HTTP_TOKEN", TOKEN)
-    return TestClient(app)
+    # https base_url on purpose: the cookie is Secure, so a browser would not
+    # replay it over plain HTTP to a non-loopback origin. Testing against http
+    # here would quietly assert the unsupported deployment shape.
+    return TestClient(app, base_url="https://testserver")
 
 
 def test_dashboard_still_requires_the_bearer_token(client: TestClient) -> None:
@@ -41,6 +44,10 @@ def test_dashboard_issues_an_httponly_cookie_to_an_authorised_caller(
     set_cookie = response.headers["set-cookie"].lower()
     assert "httponly" in set_cookie, "JS must not be able to read the credential"
     assert "samesite=strict" in set_cookie
+    # The cookie carries the token itself, and #93's use case is a non-loopback
+    # bind with no TLS in front. Without Secure the credential crosses the wire
+    # in the clear on every poll - the exact exposure the auth exists to close.
+    assert "secure" in set_cookie, "the credential must not travel over plain HTTP"
 
 
 def test_api_routes_accept_the_cookie_so_the_page_can_poll(client: TestClient) -> None:
@@ -60,7 +67,7 @@ def test_a_wrong_cookie_is_still_rejected(client: TestClient) -> None:
 
 def test_no_cookie_is_issued_when_auth_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AXON_HTTP_TOKEN", raising=False)
-    unauthenticated = TestClient(app)
+    unauthenticated = TestClient(app, base_url="https://testserver")
 
     response = unauthenticated.get("/dashboard")
 

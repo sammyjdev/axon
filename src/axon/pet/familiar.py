@@ -194,8 +194,17 @@ async def fetch_adr_data(runtime: RuntimeConfig | None = None) -> tuple[int, lis
     adrs.sort(key=lambda a: a.created_at, reverse=True)
     moments = []
     for adr in adrs[:4]:
-        text = adr.title if len(adr.title) <= 26 else adr.title[:24] + "…"
-        moments.append(Moment(ts=adr.created_at.isoformat(), kind="adr", text=text))
+        # A machine-inferred ADR must not read as an authored one, here too.
+        # `get_adrs` and `adr list` carry the full ADR_INFERRED_NOTICE; 26
+        # columns do not, so this timeline uses a `~` marker for the same fact.
+        # Without it a poisoned title showed up looking exactly like a decision
+        # a person wrote. Found by the GPT/Gemini cross-review, 2026-08-27.
+        marker = "" if getattr(adr, "provenance", "llm-inferred") == "human" else "~"
+        room = 26 - len(marker)
+        title = adr.title if len(adr.title) <= room else adr.title[: room - 2] + "…"
+        moments.append(
+            Moment(ts=adr.created_at.isoformat(), kind="adr", text=f"{marker}{title}")
+        )
     return (len(adrs), moments)
 
 

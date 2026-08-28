@@ -388,10 +388,21 @@ async def dashboard() -> HTMLResponse:
         # Reaching here means the Bearer token was already presented. Hand the
         # browser a cookie so the page's own fetches carry the credential the
         # browser cannot put in a header. HttpOnly keeps it out of reach of JS.
+        #
+        # Secure, because this cookie carries the token itself, not a derived
+        # session id. The use case #93 was written for is `--host 0.0.0.0` so a
+        # remote client can reach the service, and uvicorn speaks no TLS: without
+        # this flag the full credential would cross the network in the clear on
+        # every dashboard poll, which is the very thing the auth exists to stop.
+        # Browsers treat http://localhost and http://127.0.0.1 as trustworthy
+        # origins, so the loopback case keeps working; a plain-HTTP bind on a LAN
+        # address loses the dashboard, and that is the correct trade - put TLS in
+        # front of it. API clients are unaffected: they send the Bearer header.
         response.set_cookie(
             SESSION_COOKIE,
             token,
             httponly=True,
+            secure=True,
             samesite="strict",
             path="/",
         )

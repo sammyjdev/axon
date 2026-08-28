@@ -177,3 +177,20 @@ def test_all_moves_every_provable_row(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert _get("dec-001").repo == "myrepo"
     assert _get("dec-002").repo == "myrepo"
+
+
+def test_all_and_only_key_together_are_refused() -> None:
+    """They contradict each other, and the selection logic let --all win.
+
+    An operator passing both is narrowing a destructive run, not widening it -
+    but `not all and only_key and ...` short-circuits the pattern check when
+    --all is set, so every reachable key moved. Refusing is the only reading
+    that cannot surprise. Found by the GPT/Gemini cross-review, 2026-08-27.
+    """
+    result = CliRunner().invoke(
+        cli_app,
+        ["rekey-repo", ".", "--all", "--only-key", "agent-*", "--apply"],
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "mutually exclusive" in result.output
