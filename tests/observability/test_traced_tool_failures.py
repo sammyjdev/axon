@@ -28,6 +28,14 @@ class _Sink:
     def __init__(self, *, explode: bool = False) -> None:
         self.saved: list = []
         self._explode = explode
+        self.inited = False
+
+    async def init(self) -> None:
+        # Part of the store contract as of the fix for the cold-schema defect:
+        # init() is what runs CREATE TABLE IF NOT EXISTS, and _record_tool_failure
+        # now calls it. A fake that omits it lets the real path fail while the
+        # test stays green - which is exactly how that defect shipped.
+        self.inited = True
 
     async def save_failure(self, record) -> None:
         if self._explode:

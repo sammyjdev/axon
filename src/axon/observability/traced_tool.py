@@ -64,6 +64,14 @@ async def _record_tool_failure(*, tool_name: str, ctx: str, exc: Exception) -> N
             return
         from axon.store.failure_store import FailureRecord
 
+        # init() is what runs the CREATE TABLE IF NOT EXISTS, and nothing else on
+        # this path calls it: the only other caller is ExpansionService, which is
+        # constructed nowhere in src/. Without this every failure hit
+        # UndefinedTableError and was swallowed by the except below, so the
+        # feature persisted nothing on any real install while its tests - which
+        # all substitute a sink for the store - stayed green.
+        await store.init()
+
         await store.save_failure(
             FailureRecord(
                 project="axon",

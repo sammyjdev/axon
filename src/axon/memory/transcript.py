@@ -41,6 +41,13 @@ def parse_transcript_turns(path: str | Path) -> list[dict[str, str]]:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            # A line can be valid JSON and still not be an entry: `42`, `null`,
+            # `[1,2]`. Catching only JSONDecodeError let those reach .get() and
+            # raise AttributeError, which contradicts this function's own
+            # promise that a malformed line is skipped and never fatal - and
+            # `axon session save` calls it with no guard of its own.
+            if not isinstance(entry, dict):
+                continue
             message = entry.get("message")
             if not isinstance(message, dict):
                 continue
@@ -69,6 +76,9 @@ def last_compact_summary(path: str | Path) -> str:
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
+                continue
+            # Same shape as the sibling parser above, same fix.
+            if not isinstance(entry, dict):
                 continue
             if not entry.get("isCompactSummary"):
                 continue

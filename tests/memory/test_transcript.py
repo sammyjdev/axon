@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from axon.memory.transcript import parse_transcript_turns
+from axon.memory.transcript import last_compact_summary, parse_transcript_turns
 
 
 def _line(**kw) -> str:
@@ -104,3 +104,40 @@ def test_a_thinking_block_carrying_a_text_key_is_still_not_the_turn(tmp_path):
     )
 
     assert parse_transcript_turns(path) == [{"role": "assistant", "content": "the answer"}]
+
+
+@pytest.mark.parametrize("line", ["42", "null", "true", '"a string"', "[1, 2]"])
+def test_a_json_line_that_is_not_an_object_is_skipped(tmp_path, line: str) -> None:
+    """The docstring promises a malformed line is skipped, never fatal.
+
+    It only caught JSONDecodeError, so a line that parses as valid JSON but is
+    not an object reached `entry.get("message")` and raised AttributeError. The
+    `axon session save` path calls this with no guard, turning "capture the
+    session, not nothing" into a traceback. Found by the GPT-family
+    cross-review, 2026-08-27.
+    """
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text(
+        f'{line}\n'
+        '{"message": {"role": "user", "content": "kept"}}\n',
+        encoding="utf-8",
+    )
+
+    turns = parse_transcript_turns(transcript)
+
+    assert turns == [{"role": "user", "content": "kept"}], (
+        "the bad line must be skipped and the good one still returned"
+    )
+
+
+@pytest.mark.parametrize("line", ["42", "null", "[1, 2]"])
+def test_last_compact_summary_also_skips_non_object_lines(tmp_path, line: str) -> None:
+    """Same defect, same file: the sibling parser had the identical shape."""
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text(
+        f'{line}\n'
+        '{"isCompactSummary": true, "message": {"role": "user", "content": "sum"}}\n',
+        encoding="utf-8",
+    )
+
+    assert last_compact_summary(transcript) == "sum"
