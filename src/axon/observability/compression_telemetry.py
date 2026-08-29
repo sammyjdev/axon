@@ -20,6 +20,12 @@ class CompressionRecord(BaseModel):
     after_tokens: int
     reduction_tokens: int
     reduction_pct: float
+    #: Why the compressor returned the text unchanged, when it did. A guarded
+    #: rejection used to land as reduction_pct=0.0 with a live engine name -
+    #: indistinguishable from "compressed and gained nothing". Every real event
+    #: from 2026-06-26 to 2026-08-29 was such a rejection and nobody could tell,
+    #: because caveman_compress_guarded's note stopped at the caller (#168).
+    rejection_note: str | None = None
     # "compression" = a real compression pipeline record;
     # "tool_io" = instrumented MCP graph/tool I/O (T-104 pollution).
     # Default keeps legacy JSON lines (which lack the field) parsing fine.

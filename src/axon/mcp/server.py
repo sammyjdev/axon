@@ -900,7 +900,10 @@ async def ask(
                 compressed_context = f"{compressed_context}\n\n[[ccr:{handle}]]"
 
         after_tokens = _estimate_tokens(compressed_context)
-        reduction = max(0, before_tokens - after_tokens)
+        # No max(0, ...): flooring at zero made a compressor that EXPANDS its
+        # input indistinguishable from one that did nothing. A negative value is
+        # the honest reading and the only one a reader can act on.
+        reduction = before_tokens - after_tokens
         reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
     else:
         compressed_context = pack.text
@@ -939,6 +942,7 @@ async def ask(
             reduction_tokens=reduction,
             reduction_pct=round(reduction_pct, 1),
             kind="compression",
+            rejection_note=caveman_err or rtk_err or None,
         )
     )
 
