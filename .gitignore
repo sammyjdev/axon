@@ -27,6 +27,16 @@ venv/
 /data/*
 # Exception: commit the compression telemetry snapshot so the metrics in
 # docs/METRICS.md are reproducible from a fresh checkout.
+#
+# Do NOT set skip-worktree on this file. It was set to stop the growing log
+# from showing up in `git status`, and the cost was two months of blindness:
+# the file grew from 209 to 862 lines while `git status` and `git diff` both
+# reported the tree clean, and the compression figures in METRICS.md went stale
+# without a single signal. Only `git ls-files -v` showed the `S`.
+#
+# The noise is the point. This file is the evidence behind a published number,
+# so every change to it should be seen and committed deliberately - that is
+# what forces someone to ask whether the number still holds.
 !/data/compression/
 /data/compression/*
 !/data/compression/stats.jsonl

@@ -23,10 +23,10 @@ Savings claims name their counterfactual per gnomon-eval ADR-0011.
 | Real-usage savings vs full-file reads (committed snapshot) | 90.7% exact-count (330,590 vs 3,537,838 tokens, n=333); 88.6% conservative floor over all n=448 | benchmarks/recall_savings_snapshot.jsonl via scripts/recall_savings_report.py --snapshot | whitelisted per-request snapshot (opaque ids, integer counts); directory moves declared in benchmarks/recall_savings_remap.json; exact = requests whose files all resolve; floor includes undercounted counterfactuals. Supersedes the 2026-07-28 cut (89.5% exact / n=271): five further declared moves resolved 62 more requests, each remap validated at 100% file-resolution before inclusion | 333 exact / 448 total | 2026-08-07 |
 | Baseline input tokens (benchmark) | 87000 | benchmarks/model.py | session_total mode=baseline | 20 turns | 2026-06-08 |
 | AXON input tokens (benchmark) | 41500 | benchmarks/model.py | session_total mode=axon | 20 turns | 2026-06-08 |
-| Compression p50 (measured telemetry) | 85.5% | data/compression/stats.jsonl | reduction_pct > 0 (compression fired) | 69 of 69 | 2026-06-16 |
-| Compression mean (measured telemetry) | 78.8% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
-| Compression p95 (measured telemetry) | 95.5% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
-| Compression max (measured telemetry) | 97.0% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
+| Compression p50 (measured telemetry) (June window, do not cite as current) | 85.5% | data/compression/stats.jsonl | reduction_pct > 0 (compression fired) | 69 of 69 | 2026-06-16 |
+| Compression mean (measured telemetry) (June window, do not cite as current) | 78.8% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
+| Compression p95 (measured telemetry) (June window, do not cite as current) | 95.5% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
+| Compression max (measured telemetry) (June window, do not cite as current) | 97.0% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
 | Test suite | 1355 passed, 0 failed, 5 skipped, 7 xfailed | pytest tests/ -q | full suite green; the 4 CLI/TTY-detection failures present through 2026-06-16 were fixed 2026-07-09 | 1367 total | 2026-07-09 |
 | ADRs | 13 | docs/ADR.md | count of ADR-NNN headers, ADR-001 to ADR-013 | 13 | 2026-06-08 |
 | Decision records | 24 | docs/decisions/ | count of dec-*.md, dec-100 to dec-125 | 24 | 2026-07-09 |
@@ -46,15 +46,30 @@ From `benchmarks/model.py` `DEFAULT_SESSION`:
 This is an explicit cost model, not a live measurement. It does not run inference
 or measure real token consumption (see benchmarks/README.md caveats).
 
-## Telemetry filter (live production data)
+## Telemetry filter (June 2026 window - see the caveat below)
 
-- Source: `data/compression/stats.jsonl`, N=110 total records as of the committed
-  HEAD snapshot (69 of which have `reduction_pct > 0`; the rest are legitimate
-  no-op calls, see filter below).
-- Filter: `reduction_pct > 0` (the compression pipeline actually fired). This
-  single filter already excludes every no-op: disabled engine, graph tools
-  (get_graph_path, get_graph_neighbors), and rtk-only paths all record
+- Source: `data/compression/stats.jsonl`, N=110 total records as of the 2026-06
+  snapshot (69 of which have `reduction_pct > 0`). The file has since grown to
+  862 records; the figures here were never recomputed over the newer ones.
+- Filter: `reduction_pct > 0` (the compression pipeline actually fired). When
+  this was written that filter excluded only no-ops: disabled engine, graph
+  tools (get_graph_path, get_graph_neighbors), and rtk-only paths all record
   reduction_pct=0.
+- **That premise no longer holds, and these figures describe a closed window.**
+  From 2026-07 onward a `reduction_pct` of 0 stopped meaning "no-op": 46 events
+  ran on a live engine (`caveman/phi3+rtkx`) and every one recorded 0, because
+  `caveman_compress_guarded` was rejecting its own output and returning the
+  original text. The filter counts those as no-ops and drops them, so the
+  numbers above cannot fall no matter how badly the compressor performs - a
+  selection effect, not a measurement. August adds 117 identical 26-token
+  probe events, all with the engine disabled.
+- Do not cite the four figures above as current. They are a valid June
+  measurement and nothing more, until the guard failure (#168) is resolved and
+  the series is recomputed over a window that includes its zeros.
+- `CompressionRecord.rejection_note` now records why a compression returned
+  unchanged text, so a rejection is distinguishable from a genuine no-op. Any
+  recomputation should split the three cases rather than filtering on the
+  outcome.
 - Filtered set: n=69, engines caveman/phi3+rtk (60) and caveman/phi3 (9);
   75,258 before tokens → 15,778 after (59,480 saved).
 - Generated by running the real pipeline (`phi3:mini` via Ollama) over source
