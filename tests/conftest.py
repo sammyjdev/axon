@@ -24,6 +24,17 @@ _AXON_TABLES = (
 )
 
 
+#: Deliberately unroutable: port 1 on loopback, and a database name that says
+#: why if it ever surfaces in an error. Used when no test container is
+#: available, so a missing docker degrades to a clear connection failure rather
+#: than silently borrowing the operator's database.
+_UNREACHABLE_PG_URL = "postgresql://axon:axon@127.0.0.1:1/axon_tests_have_no_database"
+
+#: The operator's real DSN as it looked before any fixture touched it. Kept so
+#: a test can assert the suite never points back at it.
+_OPERATOR_PG_URL = os.environ.get("AXON_PG_URL")
+
+
 @pytest.fixture(scope="session")
 def _shared_pg():
     """One Postgres container for the whole test session (or None if unavailable).
@@ -94,6 +105,15 @@ def _isolate_axon_engine(
     if _shared_pg is not None:
         monkeypatch.setenv("AXON_PG_URL", _shared_pg)
         asyncio.run(_truncate_all(_shared_pg))
+    else:
+        # No container: without this the operator's own AXON_PG_URL survives and
+        # the suite writes into the live decision store. It did - a 2026-08-29
+        # audit found rows keyed `myrepo`, `other`, `edgesrepo`, `linkrepo` and
+        # `openrouter_deepseek_deepseek-v4-flash-r2` in the real database, all
+        # fixture names. Point at a DSN that cannot resolve instead: tests that
+        # need Postgres fail loudly, tests that do not keep running, which is
+        # what the "non-Postgres environments still run" note above intends.
+        monkeypatch.setenv("AXON_PG_URL", _UNREACHABLE_PG_URL)
 
     # Best-effort redirect of the two module-level TraceStore singletons.
     # Import lazily so this conftest doesn't force a load when a test only
