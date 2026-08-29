@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 import os
 from collections.abc import Iterable
@@ -40,10 +41,36 @@ _EXCLUDED_PATH_PATTERNS: tuple[str, ...] = (
     "**/.venv/**",
 )
 _MAX_BATCH_TOKENS: int = int(os.environ.get("AXON_MAX_BATCH_TOKENS", "8192"))
+
+#: Files above this are generated, not written. Keyed on size rather than on a
+#: list of patterns (*.d.ts, *-lock.json, *.min.js) because such a list ages
+#: badly and never covers the next tool's output - the same name-independent
+#: reasoning EXCLUDED_DIR_NAMES uses for virtualenvs. Measured across revvo,
+#: axon and lina: exactly one file exceeds this, and it is
+#: worker-configuration.d.ts, 500 KB of wrangler output whose 422 took revvo's
+#: whole index down on 2026-08-29.
+MAX_INDEXABLE_FILE_BYTES: int = int(os.environ.get("AXON_MAX_FILE_BYTES", "200000"))
 # 0.35 chars/token is a deliberate OVERESTIMATE for input memory safety.
 # vector_store.py:153 uses len//4 (=0.25) for output budget where underestimate
 # is safe. Here we are bounding onnxruntime INPUT batches to avoid the CPU
 # activation arena blowup (Phase 0: batch 64 -> 4.1 GB RSS on CPU).
+
+
+def _truncate_to_budget(chunk: Chunk) -> Chunk:
+    """Return the chunk, shortened to _MAX_BATCH_TOKENS if it exceeds it."""
+    if _estimate_tokens(chunk.content) <= _MAX_BATCH_TOKENS:
+        return chunk
+    # 4 chars per token is the estimator this module uses; stay just under.
+    limit = _MAX_BATCH_TOKENS * 4
+    shortened = copy.copy(chunk)
+    shortened.content = chunk.content[:limit]
+    logger.warning(
+        "chunk truncated to the embedding budget: %d -> %d chars (%s)",
+        len(chunk.content),
+        len(shortened.content),
+        getattr(chunk, "file_path", "?"),
+    )
+    return shortened
 
 
 def _make_token_bounded_batches(
@@ -51,13 +78,21 @@ def _make_token_bounded_batches(
 ) -> list[list[Chunk]]:
     """Group chunks into batches that do not exceed _MAX_BATCH_TOKENS.
 
-    A chunk that on its own exceeds the budget is placed in its own batch
-    (never dropped). Preserves chunk order.
+    A chunk that on its own exceeds the budget is TRUNCATED to it, never
+    dropped. Preserves chunk order.
+
+    Capping the batch alone was not enough: a single chunk over budget got its
+    own batch and was sent whole, which the provider rejects. On 2026-08-29 that
+    cost the revvo project its entire index - `worker-configuration.d.ts`,
+    512,525 characters of wrangler-generated types, came back 422 and aborted
+    the run. Truncating keeps the file present, indexed by its head; dropping
+    would lose the file, and sending it whole loses the project.
     """
     batches: list[list[Chunk]] = []
     current: list[Chunk] = []
     current_tokens = 0
     for chunk in chunks:
+        chunk = _truncate_to_budget(chunk)
         tokens = _estimate_tokens(chunk.content)
         if current and current_tokens + tokens > _MAX_BATCH_TOKENS:
             batches.append(current)
@@ -145,6 +180,23 @@ def is_ctx_indexable(ctx: str, forced_ctx: str | None) -> bool:
     return ctx != "work" or forced_ctx == "work"
 
 
+def _is_oversized(path: Path) -> bool:
+    """True when the file is too large to be hand-written source."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    if size <= MAX_INDEXABLE_FILE_BYTES:
+        return False
+    logger.info(
+        "skipping %s: %d bytes is past the indexable ceiling (%d)",
+        path,
+        size,
+        MAX_INDEXABLE_FILE_BYTES,
+    )
+    return True
+
+
 def iter_supported_files(
     target: Path,
     *,
@@ -155,7 +207,7 @@ def iter_supported_files(
 
     if target.is_file():
         language = _language_for_suffix(target.suffix)
-        if language and (languages is None or language in languages):
+        if language and (languages is None or language in languages) and not _is_oversized(target):
             yield target
         return
 
@@ -165,7 +217,7 @@ def iter_supported_files(
         if languages is None or lang in languages
     }
     for path in iter_git_files(target, suffixes=suffixes):
-        if not _is_excluded_path(path):
+        if not _is_excluded_path(path) and not _is_oversized(path):
             yield path
 
 
