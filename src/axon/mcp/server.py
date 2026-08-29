@@ -1288,18 +1288,56 @@ async def axon_search(query: str, repo: str | None = None) -> str:
 
 
 @mcp.tool()
-@traced_tool(risk="read")
-async def axon_handoff(to_agent: str, repo: str | None = None) -> str:
-    """Produce a handoff brief for another agent: recalled context + pointer."""
+@traced_tool(risk="write")
+async def axon_handoff(
+    to_agent: str, repo: str | None = None, notes: str | None = None
+) -> str:
+    """Write a handoff brief for another agent, and return it with its path.
+
+    ``notes`` is what the CALLER knows and the store does not: what this session
+    actually did, what is half-finished, what the next agent must not touch.
+    Recalled context alone only replays what the store already holds.
+
+    The brief is written to ``<vault>/knowledge/handoffs/`` because a handoff is
+    a document, not a decision. A decision is one line - "chose X because Y" -
+    and the seventeen handoffs already in the decision store are proof of what
+    happens when the two are conflated: summary and body both cap out around 80
+    characters, so every one of them is a title cut mid-sentence with the
+    content gone. Returning text and hoping someone pastes it somewhere is the
+    same failure one step earlier.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415
+
     store = _get_session_store()
     await store.init()
     repo = repo or _detect_repo()
     context = await recall_context(repo, store=store)
-    return (
+
+    brief = (
         f"# AXON handoff -> {to_agent}\n"
-        f"repo: {repo}\n\n{context}\n\n"
+        f"repo: {repo}\n"
+        f"date: {datetime.now(UTC).isoformat()}\n\n"
+    )
+    if notes:
+        brief += f"## From this session\n{notes}\n\n"
+    brief += (
+        f"## Recalled context\n{context}\n\n"
         "Continue via the AXON MCP server or by reading .axon/context.md."
     )
+
+    vault = discover_vault()
+    if vault is None:
+        # No vault is not a reason to lose the handoff - the caller still gets
+        # the text it asked for.
+        return brief
+
+    day = datetime.now(UTC).strftime("%Y-%m-%d")
+    stamp = datetime.now(UTC).strftime("%H%M%S")
+    target = vault / "knowledge" / "handoffs" / f"{day}-{repo}-{to_agent}-{stamp}.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(brief, encoding="utf-8")
+
+    return f"{brief}\n\n---\nwritten to: {target}"
 
 
 async def _export_repo_docs(store: SessionStore, repo: str) -> str:
