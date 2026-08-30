@@ -20,6 +20,13 @@
 - Model downloads need `HF_HUB_DISABLE_XET=1` on this machine or they hang forever.
 - Do not commit `data/**` telemetry files; `data/compression/stats.jsonl` carries `skip-worktree`.
 
+## Amendments (2026-08-30)
+
+- **The acceptance instrument was wrong, and it was a specification defect.** Task 3 Step 6 and Task 4 Step 8 both compare `scripts/eval_pack_quality.py` against the Task 1 baseline, but that script queries the store directly and never enters `_retrieve_context`, where `dedup_hits` and `_rerank_hits` live. It returned an identical 0.625 / 0.402 across Tasks 1-3. The script now has a `--pack-path` mode that routes through `_retrieve_context`; the default store-only arm is frozen so the 0.625 / 0.402 baseline stays comparable.
+- **Task 4's acceptance criterion, restated.** With `--pack-path`, hit rate must rise from about 0.625 to about 0.717. That ~+0.09 is above the noise floor for this corpus, which holds about 92 unique `(query, expected_files)` pairs out of 120 rows. The store-only arm must NOT move; if it does, something else changed. `scripts/eval_nl_code_recall.py` must stay at or above 18/24.
+- **Authorized edits to three pre-existing tests.** The plan changes `_RERANK_CANDIDATES` 24 -> 48, `_RERANK_TEXT_CHARS` 1200 -> 400 and the rerank default off -> on, and never named the tests pinning the old values: `tests/mcp/test_retrieval_tools.py` at line 352 (whose fixture relied on an unset `AXON_RERANK` meaning off), lines 431-432 and line 621. The repo owner authorized updating them to the new values without weakening what each detects; the off-test now proves the `AXON_RERANK=0` opt-out rather than a default. `tests/conftest.py` also pins `AXON_RERANK=0` for the suite so unit tests never load a real cross-encoder.
+- **The fixture is not reproducible, and that is a known limitation.** `gen_pack_quality_fixture.py` selects with `ORDER BY created_at DESC LIMIT` and no cutoff, so regenerating it later returns a different set of decisions - observed during this build, because the build's own commits wrote new ones. The committed file is the ruler; do not regenerate it to "refresh" it.
+
 ---
 
 ### Task 1: Pack-quality scoring module and fixture
