@@ -67,3 +67,24 @@ def test_write_cases_creates_missing_parent_directory(tmp_path: Path) -> None:
     assert out_file.parent.is_dir()
     assert out_file.is_file()
     assert json.loads(out_file.read_text(encoding="utf-8")) == cases
+
+
+def test_build_cases_reduces_absolute_paths_to_basename() -> None:
+    files_json = json.dumps(
+        ["/Users/samdev/.claude/docs/superpowers/specs/audit.md", "src/axon/auth.py"]
+    )
+    rows = [
+        {
+            "id": "dec-817",
+            "summary": "ecosystem security audit",
+            "files": files_json,
+        }
+    ]
+    assert build_cases(rows) == [
+        {
+            "query": "ecosystem security audit",
+            "expected_files": ["audit.md", "src/axon/auth.py"],
+            "decision_id": "dec-817",
+        }
+    ]
+

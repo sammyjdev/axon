@@ -26,7 +26,7 @@ def dedup_hits(hits: list[dict], *, max_per_file: int = _DEFAULT_MAX_PER_FILE) -
     kept: list[dict] = []
     for hit in hits:
         payload = hit.get("payload") or {}
-        content = str(payload.get("content", ""))
+        content = str(payload.get("content") or "")
         file_path = str(payload.get("file_path", ""))
         if content in seen_content:
             continue

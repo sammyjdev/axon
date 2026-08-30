@@ -44,7 +44,13 @@ def build_cases(rows: Iterable[Mapping[str, Any]]) -> list[dict]:
     return [
         {
             "query": row["summary"],
-            "expected_files": json.loads(row["files"]),
+            # pack_eval.basenames() scores on the last path segment only, so the leading directories
+            # carry no scoring information and the reduction is metric-preserving by construction,
+            # while the absolute path carries a local username.
+            "expected_files": [
+                Path(f).name if f.startswith("/") else f
+                for f in json.loads(row["files"])
+            ],
             "decision_id": row["id"],
         }
         for row in rows

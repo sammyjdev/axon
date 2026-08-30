@@ -63,3 +63,19 @@ def test_returns_new_list_when_hits_are_dropped() -> None:
     assert out is not hits
     assert len(out) == 1
 
+
+def _hit_with_none_content(file_path: str, score: float = 0.5) -> dict:
+    return {"score": score, "payload": {"content": None, "file_path": file_path}}
+
+
+def test_none_content_behaves_like_missing_content() -> None:
+    from axon.context.pack_dedup import dedup_hits
+
+    none_hits = [_hit_with_none_content("a.py"), _hit_with_none_content("b.py")]
+    missing_hits = [{"score": 0.5}, {"score": 0.4}]
+    assert len(dedup_hits(none_hits)) == len(dedup_hits(missing_hits))
+
+    text_none_and_none = [_hit("None", "a.py"), _hit_with_none_content("b.py")]
+    assert len(dedup_hits(text_none_and_none)) == 2
+
+

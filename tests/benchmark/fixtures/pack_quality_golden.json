@@ -919,7 +919,7 @@
   {
     "query": "Ecosystem security audit 2026-07-18/19 (4 parallel auditors: axon/glyph/gnomon/F",
     "expected_files": [
-      "/Users/samdev/.claude/docs/superpowers/specs/2026-07-18-ecosystem-security-audit.md"
+      "2026-07-18-ecosystem-security-audit.md"
     ],
     "decision_id": "dec-817"
   },
