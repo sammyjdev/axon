@@ -1,0 +1,1010 @@
+[
+  {
+    "query": "docs: dec-131 - ctx partitions retrieval, and that is why compression looked bro",
+    "expected_files": [
+      "docs/ADR.md",
+      "docs/decisions/dec-131-ctx-partitions-retrieval.md"
+    ],
+    "decision_id": "dec-1080"
+  },
+  {
+    "query": "fix(embedder): one generated file could take a whole project's index down",
+    "expected_files": [
+      "src/axon/embedder/pipeline.py",
+      "tests/embedder/test_oversized_chunk_is_bounded.py",
+      "tests/embedder/test_oversized_files_are_skipped.py"
+    ],
+    "decision_id": "dec-1079"
+  },
+  {
+    "query": "feat(mcp): axon_handoff writes the brief, instead of hoping someone pastes it",
+    "expected_files": [
+      "src/axon/mcp/server.py",
+      "tests/mcp/test_handoff_persists.py"
+    ],
+    "decision_id": "dec-1078"
+  },
+  {
+    "query": "fix(embedder): one generated file could take a whole project's index down",
+    "expected_files": [
+      "src/axon/embedder/pipeline.py",
+      "tests/embedder/test_oversized_chunk_is_bounded.py",
+      "tests/embedder/test_oversized_files_are_skipped.py"
+    ],
+    "decision_id": "dec-1077"
+  },
+  {
+    "query": "feat(mcp): axon_handoff writes the brief, instead of hoping someone pastes it",
+    "expected_files": [
+      "src/axon/mcp/server.py",
+      "tests/mcp/test_handoff_persists.py"
+    ],
+    "decision_id": "dec-1076"
+  },
+  {
+    "query": "docs: the compression figures describe a window that closed, and the file provin",
+    "expected_files": [
+      ".gitignore",
+      "docs/METRICS.md",
+      "tests/test_no_hidden_evidence_files.py"
+    ],
+    "decision_id": "dec-1075"
+  },
+  {
+    "query": "feat(doctor): telemetry that stopped is a failure, not silence",
+    "expected_files": [
+      "src/axon/doctor/__init__.py",
+      "src/axon/doctor/checks/telemetry_freshness.py",
+      "src/axon/mcp/server.py",
+      "src/axon/observability/compression_telemetry.py",
+      "tests/doctor/test_telemetry_freshness.py",
+      "tests/observability/test_compression_rejection_is_visible.py"
+    ],
+    "decision_id": "dec-1074"
+  },
+  {
+    "query": "fix(tests): the suite wrote to the operator's live database when docker was abse",
+    "expected_files": [
+      "tests/conftest.py",
+      "tests/test_suite_never_writes_to_the_live_store.py"
+    ],
+    "decision_id": "dec-1073"
+  },
+  {
+    "query": "fix: the two cross-review findings that were in another session's code",
+    "expected_files": [
+      "src/axon/memory/transcript.py",
+      "src/axon/observability/traced_tool.py",
+      "tests/memory/test_transcript.py",
+      "tests/observability/test_traced_tool_failure_persists.py",
+      "tests/observability/test_traced_tool_failures.py"
+    ],
+    "decision_id": "dec-1072"
+  },
+  {
+    "query": "docs: order the ADR index by number and flag dec-106's superseded tier",
+    "expected_files": [
+      "docs/ADR.md"
+    ],
+    "decision_id": "dec-1067"
+  },
+  {
+    "query": "docs: order the ADR index by number and flag dec-106's superseded tier",
+    "expected_files": [
+      "docs/ADR.md"
+    ],
+    "decision_id": "dec-1065"
+  },
+  {
+    "query": "refactor(doctor): retire recall.coverage, keep recall.savings",
+    "expected_files": [
+      "src/axon/doctor/__init__.py",
+      "src/axon/doctor/checks/recall_coverage.py",
+      "src/axon/observability/coverage.py",
+      "tests/doctor/test_checks_capture_path.py",
+      "tests/doctor/test_checks_coverage.py",
+      "tests/observability/test_coverage.py"
+    ],
+    "decision_id": "dec-1064"
+  },
+  {
+    "query": "feat(observability): every tool failure leaves a failure_record",
+    "expected_files": [
+      "src/axon/observability/traced_tool.py",
+      "tests/observability/test_traced_tool_failures.py"
+    ],
+    "decision_id": "dec-1063"
+  },
+  {
+    "query": "fix(doctor): capture.gap needs a time anchor, and a suggestion that helps",
+    "expected_files": [
+      "src/axon/doctor/checks/capture_path.py",
+      "tests/doctor/test_checks_capture_gap_identity.py",
+      "tests/doctor/test_checks_capture_path.py"
+    ],
+    "decision_id": "dec-1062"
+  },
+  {
+    "query": "fix(hooks): agent hooks become CLI commands, and a default with a key",
+    "expected_files": [
+      "src/axon/__main__.py",
+      "src/axon/cli/pb.py",
+      "src/axon/memory/transcript.py",
+      "src/axon/router/llm_backend.py",
+      "tests/cli/test_agent_hooks.py",
+      "tests/router/test_llm_backend.py"
+    ],
+    "decision_id": "dec-1061"
+  },
+  {
+    "query": "fix(session): route the session compressor, drop the Anthropic dependency",
+    "expected_files": [
+      "src/axon/cli/pb.py",
+      "src/axon/memory/session_compressor.py",
+      "tests/memory/test_session_compressor_routing.py",
+      "tests/memory/test_session_save_fallback.py"
+    ],
+    "decision_id": "dec-1060"
+  },
+  {
+    "query": "refactor(doctor): retire recall.coverage, keep recall.savings",
+    "expected_files": [
+      "src/axon/doctor/__init__.py",
+      "src/axon/doctor/checks/recall_coverage.py",
+      "src/axon/observability/coverage.py",
+      "tests/doctor/test_checks_capture_path.py",
+      "tests/doctor/test_checks_coverage.py",
+      "tests/observability/test_coverage.py"
+    ],
+    "decision_id": "dec-1055"
+  },
+  {
+    "query": "feat(observability): every tool failure leaves a failure_record",
+    "expected_files": [
+      "src/axon/observability/traced_tool.py",
+      "tests/observability/test_traced_tool_failures.py"
+    ],
+    "decision_id": "dec-1054"
+  },
+  {
+    "query": "fix(doctor): capture.gap needs a time anchor, and a suggestion that helps",
+    "expected_files": [
+      "src/axon/doctor/checks/capture_path.py",
+      "tests/doctor/test_checks_capture_gap_identity.py",
+      "tests/doctor/test_checks_capture_path.py"
+    ],
+    "decision_id": "dec-1053"
+  },
+  {
+    "query": "fix(hooks): agent hooks become CLI commands, and a default with a key",
+    "expected_files": [
+      "src/axon/__main__.py",
+      "src/axon/cli/pb.py",
+      "src/axon/memory/transcript.py",
+      "src/axon/router/llm_backend.py",
+      "tests/cli/test_agent_hooks.py",
+      "tests/router/test_llm_backend.py"
+    ],
+    "decision_id": "dec-1051"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #163",
+    "expected_files": [
+      ".forge/cross-review/pr-163.md"
+    ],
+    "decision_id": "dec-1049"
+  },
+  {
+    "query": "arch: scan for secrets with the pinned gitleaks CLI, not the action (fixes #97)",
+    "expected_files": [
+      ".github/workflows/ci.yml",
+      "RULES.md",
+      "tests/test_ci_secret_scan.py"
+    ],
+    "decision_id": "dec-1048"
+  },
+  {
+    "query": "arch: scan for secrets with the pinned gitleaks CLI, not the action (fixes #97)",
+    "expected_files": [
+      ".github/workflows/ci.yml",
+      "tests/test_ci_secret_scan.py"
+    ],
+    "decision_id": "dec-1047"
+  },
+  {
+    "query": "arch: scan for secrets with the pinned gitleaks CLI, not the action (fixes #97)",
+    "expected_files": [
+      ".github/workflows/ci.yml",
+      "tests/test_ci_secret_scan.py"
+    ],
+    "decision_id": "dec-1046"
+  },
+  {
+    "query": "fix(session): route the session compressor, drop the Anthropic dependency",
+    "expected_files": [
+      "src/axon/cli/pb.py",
+      "src/axon/memory/session_compressor.py",
+      "tests/memory/test_session_compressor_routing.py",
+      "tests/memory/test_session_save_fallback.py"
+    ],
+    "decision_id": "dec-1045"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #162",
+    "expected_files": [
+      ".forge/cross-review/pr-162.md"
+    ],
+    "decision_id": "dec-1044"
+  },
+  {
+    "query": "fix(http): render dashboard fields via textContent, not innerHTML (fixes #94)",
+    "expected_files": [
+      "src/axon/http/dashboard.py",
+      "tests/http/test_dashboard_xss.py"
+    ],
+    "decision_id": "dec-1043"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #161",
+    "expected_files": [
+      ".forge/cross-review/pr-161.md"
+    ],
+    "decision_id": "dec-1041"
+  },
+  {
+    "query": "arch: fail closed on a non-loopback serve-http bind without a token (fixes #93)",
+    "expected_files": [
+      "src/axon/__main__.py",
+      "src/axon/http/app.py",
+      "tests/cli/test_serve_http_bind_guard.py",
+      "tests/http/conftest.py",
+      "tests/http/test_bearer_auth.py"
+    ],
+    "decision_id": "dec-1040"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #160",
+    "expected_files": [
+      ".forge/cross-review/pr-160.md"
+    ],
+    "decision_id": "dec-1039"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #159",
+    "expected_files": [
+      ".forge/cross-review/pr-159.md"
+    ],
+    "decision_id": "dec-1036"
+  },
+  {
+    "query": "chore(loop): mutation-sensor, review and anneal artifacts for #158",
+    "expected_files": [
+      ".specs/features/issue-158/anneal.md",
+      ".specs/features/issue-158/review-quality-r2.md",
+      ".specs/features/issue-158/review-quality.md",
+      ".specs/features/issue-158/review-spec.md",
+      ".specs/features/issue-158/validation.md"
+    ],
+    "decision_id": "dec-1035"
+  },
+  {
+    "query": "docs: correct dec-129's migration counts with the measured dry run",
+    "expected_files": [
+      "docs/decisions/dec-129-stable-repo-identity.md"
+    ],
+    "decision_id": "dec-1034"
+  },
+  {
+    "query": "docs: execution plan re-sequenced after the 2026-08-25/26 round",
+    "expected_files": [
+      "docs/superpowers/plans/2026-08-22-axon-execution-plan.md",
+      "docs/superpowers/plans/2026-08-26-axon-execution-plan.md"
+    ],
+    "decision_id": "dec-1032"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #155",
+    "expected_files": [
+      ".forge/cross-review/pr-155.md"
+    ],
+    "decision_id": "dec-1030"
+  },
+  {
+    "query": "chore(loop): mutation-sensor and anneal artifacts for #154",
+    "expected_files": [
+      ".specs/features/154-budget-profile-model-substitution/anneal.md",
+      ".specs/features/154-budget-profile-model-substitution/validation.md"
+    ],
+    "decision_id": "dec-1029"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #153",
+    "expected_files": [
+      ".forge/cross-review/pr-153.md"
+    ],
+    "decision_id": "dec-1027"
+  },
+  {
+    "query": "fix(embedder): stop loading the onnxruntime C++ runtime in every CLI process (fi",
+    "expected_files": [
+      "RULES.md",
+      "src/axon/embedder/engine.py",
+      "tests/cli/test_embedder_lazy_import.py",
+      "tests/cli/test_seed_lessons_shutdown.py",
+      "tests/embedder/test_engine_providers.py"
+    ],
+    "decision_id": "dec-1026"
+  },
+  {
+    "query": "fix(doctor): identify captured commits by hash, not repo basename (fixes #146)",
+    "expected_files": [
+      "src/axon/doctor/checks/capture_path.py",
+      "tests/doctor/test_checks_capture_gap_identity.py",
+      "tests/doctor/test_checks_capture_path.py"
+    ],
+    "decision_id": "dec-1025"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #152",
+    "expected_files": [
+      ".forge/cross-review/pr-152.md"
+    ],
+    "decision_id": "dec-1024"
+  },
+  {
+    "query": "chore(loop): mutation-sensor artifact for #146",
+    "expected_files": [
+      ".specs/features/146-capture-gap-identity/validation.md"
+    ],
+    "decision_id": "dec-1023"
+  },
+  {
+    "query": "fix(doctor): identify captured commits by hash, not repo basename (fixes #146)",
+    "expected_files": [
+      "src/axon/doctor/checks/capture_path.py",
+      "tests/doctor/test_checks_capture_gap_identity.py",
+      "tests/doctor/test_checks_capture_path.py"
+    ],
+    "decision_id": "dec-1022"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #153",
+    "expected_files": [
+      ".forge/cross-review/pr-153.md"
+    ],
+    "decision_id": "dec-1021"
+  },
+  {
+    "query": "fix(embedder): stop loading the onnxruntime C++ runtime in every CLI process (fi",
+    "expected_files": [
+      "RULES.md",
+      "src/axon/embedder/engine.py",
+      "tests/cli/test_embedder_lazy_import.py",
+      "tests/cli/test_seed_lessons_shutdown.py",
+      "tests/embedder/test_engine_providers.py"
+    ],
+    "decision_id": "dec-1020"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #152",
+    "expected_files": [
+      ".forge/cross-review/pr-152.md"
+    ],
+    "decision_id": "dec-1019"
+  },
+  {
+    "query": "chore(loop): mutation-sensor artifact for #146",
+    "expected_files": [
+      ".specs/features/146-capture-gap-identity/validation.md"
+    ],
+    "decision_id": "dec-1018"
+  },
+  {
+    "query": "fix(doctor): identify captured commits by hash, not repo basename (fixes #146)",
+    "expected_files": [
+      "src/axon/doctor/checks/capture_path.py",
+      "tests/doctor/test_checks_capture_gap_identity.py",
+      "tests/doctor/test_checks_capture_path.py"
+    ],
+    "decision_id": "dec-1017"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #150",
+    "expected_files": [
+      ".forge/cross-review/pr-150.md"
+    ],
+    "decision_id": "dec-1016"
+  },
+  {
+    "query": "fix(cli): register index-vault on the entry-point app (fixes #147)",
+    "expected_files": [
+      "src/axon/__main__.py",
+      "tests/cli/test_entrypoint_command_parity.py",
+      "tests/cli/test_index_vault_entrypoint.py"
+    ],
+    "decision_id": "dec-1015"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #148",
+    "expected_files": [
+      ".forge/cross-review/pr-148.md"
+    ],
+    "decision_id": "dec-1014"
+  },
+  {
+    "query": "chore(forge): cross-review request for PR #148",
+    "expected_files": [
+      ".forge/cross-review/pr-148.md"
+    ],
+    "decision_id": "dec-1013"
+  },
+  {
+    "query": "deps: glyph-kg 0.2.0 -> 0.2.1 (symbol-granularity retrieval in production)",
+    "expected_files": [
+      "pyproject.toml"
+    ],
+    "decision_id": "dec-1008"
+  },
+  {
+    "query": "fix(cli): register seed-lessons on the entry-point app, not only on pb",
+    "expected_files": [
+      "src/axon/__main__.py",
+      "tests/cli/test_seed_lessons_cli.py"
+    ],
+    "decision_id": "dec-1007"
+  },
+  {
+    "query": "test(cli): assert the --corpus option on the command, not on rendered help",
+    "expected_files": [
+      "tests/cli/test_seed_lessons_cli.py"
+    ],
+    "decision_id": "dec-1005"
+  },
+  {
+    "query": "test(cli): assert the --corpus option on the command, not on rendered help",
+    "expected_files": [
+      "tests/cli/test_seed_lessons_cli.py"
+    ],
+    "decision_id": "dec-1004"
+  },
+  {
+    "query": "chore: drop cross-vendor review request for PR #144",
+    "expected_files": [
+      ".forge/cross-review/pr-144.md"
+    ],
+    "decision_id": "dec-1003"
+  },
+  {
+    "query": "feat(cli): add `axon seed-lessons` as the missing caller for seed_corpus (fixes ",
+    "expected_files": [
+      "src/axon/cli/pb.py",
+      "tests/cli/test_seed_lessons_cli.py"
+    ],
+    "decision_id": "dec-1002"
+  },
+  {
+    "query": "docs: execution plan rewritten against the 2026-08-22 state",
+    "expected_files": [
+      "docs/superpowers/plans/2026-08-22-axon-execution-plan.md"
+    ],
+    "decision_id": "dec-1000"
+  },
+  {
+    "query": "test(lessons): re-vendor the corpus after correcting mirror-pruned-but-pointers-",
+    "expected_files": [
+      "tests/fixtures/lessons/agent-errors.json"
+    ],
+    "decision_id": "dec-999"
+  },
+  {
+    "query": "feat(lessons): retraction detector enqueues drafts into the lesson pool (Wave D ",
+    "expected_files": [
+      "src/axon/adr/retraction.py",
+      "tests/adr/test_retraction.py"
+    ],
+    "decision_id": "dec-998"
+  },
+  {
+    "query": "Migrating to mcp 2.x broke the live MCP server, and the cause was environmental ",
+    "expected_files": [
+      "pyproject.toml",
+      "src/axon/mcp/server.py"
+    ],
+    "decision_id": "dec-996"
+  },
+  {
+    "query": "feat(contrib): version the Claude Code integration hooks",
+    "expected_files": [
+      "contrib/claude-code/README.md",
+      "contrib/claude-code/axon-search-first.py"
+    ],
+    "decision_id": "dec-994"
+  },
+  {
+    "query": "docs: record the adoption diagnosis, including where it contradicts us",
+    "expected_files": [
+      "docs/adoption-diagnosis-2026-08-07.md"
+    ],
+    "decision_id": "dec-992"
+  },
+  {
+    "query": "docs: record the adoption diagnosis, including where it contradicts us",
+    "expected_files": [
+      "docs/adoption-diagnosis-2026-08-07.md"
+    ],
+    "decision_id": "dec-991"
+  },
+  {
+    "query": "build: migrate to mcp 2.x (DEBT-2)",
+    "expected_files": [
+      "docs/agent-backlog.md",
+      "pyproject.toml",
+      "src/axon/mcp/server.py"
+    ],
+    "decision_id": "dec-987"
+  },
+  {
+    "query": "test(mcp): pin the tool contract and the risk gate through the protocol",
+    "expected_files": [
+      "tests/mcp/test_risk_gate_through_protocol.py",
+      "tests/mcp/test_tool_contract.py"
+    ],
+    "decision_id": "dec-986"
+  },
+  {
+    "query": "docs: record the dependency scan under DEBT-2",
+    "expected_files": [
+      "docs/agent-backlog.md"
+    ],
+    "decision_id": "dec-979"
+  },
+  {
+    "query": "build: cap every runtime dependency at its next major",
+    "expected_files": [
+      "pyproject.toml"
+    ],
+    "decision_id": "dec-978"
+  },
+  {
+    "query": "ci: turn on the full-suite job (DEBT-3 closed)",
+    "expected_files": [
+      ".github/workflows/ci.yml",
+      "docs/agent-backlog.md"
+    ],
+    "decision_id": "dec-976"
+  },
+  {
+    "query": "test(cli): assert on the parsed command, not on rendered help text",
+    "expected_files": [
+      "tests/cli/test_axon_cli.py"
+    ],
+    "decision_id": "dec-975"
+  },
+  {
+    "query": "fix(config): axon doctor crashed on any machine without nvidia-smi",
+    "expected_files": [
+      "src/axon/config/platform.py",
+      "tests/config/test_platform_without_nvidia.py"
+    ],
+    "decision_id": "dec-974"
+  },
+  {
+    "query": "fix(cli): route synced ADRs to their project's ctx folder, not always personal",
+    "expected_files": [
+      "src/axon/cli/pb.py",
+      "tests/cli/test_adr_sync_ctx_routing.py"
+    ],
+    "decision_id": "dec-973"
+  },
+  {
+    "query": "fix(context): a work root is proof, not a hint",
+    "expected_files": [
+      "src/axon/context/detector.py",
+      "tests/context/test_detector_work_paths.py"
+    ],
+    "decision_id": "dec-972"
+  },
+  {
+    "query": "Widening the CI gate to the full suite paid for itself immediately by exposing t",
+    "expected_files": [
+      "pyproject.toml",
+      ".claude/loop.yaml",
+      "docs/agent-backlog.md"
+    ],
+    "decision_id": "dec-962"
+  },
+  {
+    "query": "fix(deps): declare PyMuPDF; hold the CI widening until DEBT-3 is fixed",
+    "expected_files": [
+      ".claude/loop.yaml",
+      ".github/workflows/ci.yml",
+      "docs/agent-backlog.md",
+      "pyproject.toml"
+    ],
+    "decision_id": "dec-961"
+  },
+  {
+    "query": "fix(deps): declare PyMuPDF; hold the CI widening until DEBT-3 is fixed",
+    "expected_files": [
+      ".claude/loop.yaml",
+      ".github/workflows/ci.yml",
+      "docs/agent-backlog.md",
+      "pyproject.toml",
+      "src/axon/cli/pb.py",
+      "src/axon/context/detector.py"
+    ],
+    "decision_id": "dec-960"
+  },
+  {
+    "query": "fix(deps): cap mcp below 2.0, which drops mcp.server.fastmcp",
+    "expected_files": [
+      "docs/agent-backlog.md",
+      "pyproject.toml"
+    ],
+    "decision_id": "dec-958"
+  },
+  {
+    "query": "chore: widen both gates to the full suite, record the leftover debt",
+    "expected_files": [
+      ".claude/loop.yaml",
+      ".github/workflows/ci.yml",
+      "docs/agent-backlog.md",
+      "src/axon/store/pg_vector_store.py"
+    ],
+    "decision_id": "dec-957"
+  },
+  {
+    "query": "feat(store): session timestamps text -> timestamptz (#31 / MS-1)",
+    "expected_files": [
+      "src/axon/store/_session_columns.py",
+      "src/axon/store/migrations/pg/0004_session_timestamps_timestamptz.sql",
+      "src/axon/store/pg_session_repository.py",
+      "tests/store/test_session_timestamptz.py"
+    ],
+    "decision_id": "dec-955"
+  },
+  {
+    "query": "DAST gate (#74) made blocking, but only after running the ZAP image locally reve",
+    "expected_files": [
+      ".github/workflows/ci.yml",
+      ".zap/rules.tsv",
+      "src/axon/http/app.py",
+      "tests/http/test_cache_headers.py"
+    ],
+    "decision_id": "dec-950"
+  },
+  {
+    "query": "fix(ci): allowlist ZAP 10049, which fires on the fix for itself",
+    "expected_files": [
+      ".github/workflows/ci.yml",
+      ".zap/rules.tsv"
+    ],
+    "decision_id": "dec-949"
+  },
+  {
+    "query": "fix(http): no-store on every response, and make the DAST job blocking (#74)",
+    "expected_files": [
+      ".github/workflows/ci.yml",
+      "src/axon/http/app.py",
+      "tests/http/test_cache_headers.py"
+    ],
+    "decision_id": "dec-944"
+  },
+  {
+    "query": "Root-caused the long-standing red full test suite on dev machines: tests that gi",
+    "expected_files": [
+      "tests/conftest.py",
+      "tests/test_git_config_isolation.py",
+      ".claude/loop.yaml"
+    ],
+    "decision_id": "dec-943"
+  },
+  {
+    "query": "fix(tests): isolate temp git repos from the global git config (#115)",
+    "expected_files": [
+      ".claude/loop.yaml",
+      "tests/conftest.py",
+      "tests/test_git_config_isolation.py"
+    ],
+    "decision_id": "dec-942"
+  },
+  {
+    "query": "EMB-1 done: widened the FORGE gate_cmd to run tests/embedder + tests/benchmark/t",
+    "expected_files": [
+      ".claude/loop.yaml",
+      "docs/agent-backlog.md"
+    ],
+    "decision_id": "dec-941"
+  },
+  {
+    "query": "chore(loop): widen gate to cover the embedder + eval smoke (EMB-1)",
+    "expected_files": [
+      ".claude/loop.yaml",
+      "docs/agent-backlog.md"
+    ],
+    "decision_id": "dec-940"
+  },
+  {
+    "query": "Closed #45 (docs out-rank code for NL queries) as resolved by measurement, not n",
+    "expected_files": [
+      "scripts/eval_nl_code_recall.py",
+      "tests/benchmark/fixtures/retrieval_golden.json"
+    ],
+    "decision_id": "dec-939"
+  },
+  {
+    "query": "chore(bench): live NL->code recall sweep for #45",
+    "expected_files": [
+      "scripts/eval_nl_code_recall.py"
+    ],
+    "decision_id": "dec-938"
+  },
+  {
+    "query": "feat: axon_record_outcome MCP tool (close outcome->axon edge)",
+    "expected_files": [
+      "src/axon/mcp/server.py",
+      "tests/mcp/test_outcome_tool.py"
+    ],
+    "decision_id": "dec-864"
+  },
+  {
+    "query": "refactor(obsidian): rename vault Decisions dir to Journal",
+    "expected_files": [
+      "src/axon/obsidian/exporter.py",
+      "tests/hooks/test_git_event.py",
+      "tests/obsidian/test_exporter.py"
+    ],
+    "decision_id": "dec-863"
+  },
+  {
+    "query": "fix(store): hash natural-key indexes so large summaries/notes persist",
+    "expected_files": [
+      "src/axon/store/migrations/pg/0003_hash_natural_key_indexes.sql",
+      "src/axon/store/pg_session_repository.py",
+      "tests/store/test_pg_session_repository.py"
+    ],
+    "decision_id": "dec-862"
+  },
+  {
+    "query": "fix(store): hash natural-key indexes so large summaries/notes persist",
+    "expected_files": [
+      "src/axon/store/migrations/pg/0003_hash_natural_key_indexes.sql",
+      "src/axon/store/pg_session_repository.py",
+      "tests/store/test_pg_session_repository.py"
+    ],
+    "decision_id": "dec-861"
+  },
+  {
+    "query": "Closed outcome->axon edge: axon_record_outcome MCP tool + FORGE Ship emission",
+    "expected_files": [
+      "src/axon/mcp/server.py",
+      "tests/mcp/test_outcome_tool.py"
+    ],
+    "decision_id": "dec-860"
+  },
+  {
+    "query": "chore(loop): arm classifier tier-floor with per-area keywords",
+    "expected_files": [
+      ".claude/loop.yaml"
+    ],
+    "decision_id": "dec-850"
+  },
+  {
+    "query": "chore: derive backends-start paths from script location",
+    "expected_files": [
+      "scripts/axon-backends-start.sh"
+    ],
+    "decision_id": "dec-849"
+  },
+  {
+    "query": "chore: derive backends-start paths from script location",
+    "expected_files": [
+      "scripts/axon-backends-start.sh"
+    ],
+    "decision_id": "dec-848"
+  },
+  {
+    "query": "docs: dec-127 records the Bedrock-through-funnel decision",
+    "expected_files": [
+      "docs/ADR.md",
+      "docs/decisions/dec-127-bedrock-generation-backend.md"
+    ],
+    "decision_id": "dec-846"
+  },
+  {
+    "query": "docs: dec-127 records the Bedrock-through-funnel decision",
+    "expected_files": [
+      "docs/ADR.md",
+      "docs/decisions/dec-127-bedrock-generation-backend.md"
+    ],
+    "decision_id": "dec-841"
+  },
+  {
+    "query": "fix(router): tolerate litellm's dict-shaped usage on fallback recovery (#103)",
+    "expected_files": [
+      ".specs/features/103-usage-attribution-fallback-recovery/validation.md",
+      "src/axon/router/engine.py",
+      "tests/router/test_engine_completion_fallback_usage_shape.py"
+    ],
+    "decision_id": "dec-839"
+  },
+  {
+    "query": "fix(router): tolerate litellm's dict-shaped usage on fallback recovery (#103)",
+    "expected_files": [
+      ".specs/features/103-usage-attribution-fallback-recovery/validation.md",
+      "src/axon/router/engine.py",
+      "tests/router/test_engine_completion_fallback_usage_shape.py"
+    ],
+    "decision_id": "dec-838"
+  },
+  {
+    "query": "feat(cli): pb index-vault - restore vault bulk indexing retired by dec-125 (#104",
+    "expected_files": [
+      "RULES.md",
+      "src/axon/cli/pb.py",
+      "tests/cli/test_pb_cli.py",
+      "tests/embedder/test_vault_coverage.py"
+    ],
+    "decision_id": "dec-837"
+  },
+  {
+    "query": "fix(router): tolerate litellm's dict-shaped usage on fallback recovery (#103)",
+    "expected_files": [
+      ".specs/features/103-usage-attribution-fallback-recovery/validation.md",
+      "src/axon/router/engine.py",
+      "tests/router/test_engine_completion_fallback_usage_shape.py"
+    ],
+    "decision_id": "dec-836"
+  },
+  {
+    "query": "feat(cli): pb index-vault - restore vault bulk indexing retired by dec-125 (#104",
+    "expected_files": [
+      "RULES.md",
+      "src/axon/cli/pb.py",
+      "tests/cli/test_pb_cli.py",
+      "tests/embedder/test_vault_coverage.py"
+    ],
+    "decision_id": "dec-835"
+  },
+  {
+    "query": "fix(embedder): drop broken NIM from default bge-m3 chain - DeepInfra is the remo",
+    "expected_files": [
+      "src/axon/config/runtime.py",
+      "src/axon/embedder/providers.py",
+      "tests/embedder/test_embedder_chain.py"
+    ],
+    "decision_id": "dec-834"
+  },
+  {
+    "query": "fix(router): add completion failover with per-model breaker gating (#100)",
+    "expected_files": [
+      "src/axon/router/engine.py",
+      "tests/router/test_engine_completion_fallback.py"
+    ],
+    "decision_id": "dec-833"
+  },
+  {
+    "query": "fix(embedder): drop broken NIM from default bge-m3 chain - DeepInfra is the remo",
+    "expected_files": [
+      "src/axon/config/runtime.py",
+      "src/axon/embedder/providers.py",
+      "tests/embedder/test_embedder_chain.py"
+    ],
+    "decision_id": "dec-832"
+  },
+  {
+    "query": "fix(router): add completion failover with per-model breaker gating (#100)",
+    "expected_files": [
+      "src/axon/router/engine.py",
+      "tests/router/test_engine_completion_fallback.py"
+    ],
+    "decision_id": "dec-831"
+  },
+  {
+    "query": "fix(router): cap classifier reasoning effort so it stops burning its own budget ",
+    "expected_files": [
+      "src/axon/router/classifier.py",
+      "tests/router/test_classifier_reasoning_effort.py"
+    ],
+    "decision_id": "dec-830"
+  },
+  {
+    "query": "fix(router): cap classifier reasoning effort so it stops burning its own budget ",
+    "expected_files": [
+      "src/axon/router/classifier.py",
+      "tests/router/test_classifier_reasoning_effort.py"
+    ],
+    "decision_id": "dec-829"
+  },
+  {
+    "query": "Ecosystem security audit 2026-07-18/19 (4 parallel auditors: axon/glyph/gnomon/F",
+    "expected_files": [
+      "/Users/samdev/.claude/docs/superpowers/specs/2026-07-18-ecosystem-security-audit.md"
+    ],
+    "decision_id": "dec-817"
+  },
+  {
+    "query": "refactor(expansion): drop dead proxy-skip path from pinning handlers (#83)",
+    "expected_files": [
+      "src/axon/expansion/url_safety.py",
+      "tests/expansion/test_url_safety_pinning.py"
+    ],
+    "decision_id": "dec-814"
+  },
+  {
+    "query": "chore: cross-review for PR #95 resolved (both findings fixed)",
+    "expected_files": [
+      ".forge/cross-review/pr-95.response.md"
+    ],
+    "decision_id": "dec-811"
+  },
+  {
+    "query": "fix(expansion): block 3fff::/20 documentation prefix; document NAT64 coverage (#",
+    "expected_files": [
+      "src/axon/expansion/url_safety.py",
+      "tests/expansion/test_url_safety_special_use.py"
+    ],
+    "decision_id": "dec-810"
+  },
+  {
+    "query": "fix(expansion): close proxy-env pinning bypass + extend 6to4 special-use denylis",
+    "expected_files": [
+      "src/axon/expansion/url_safety.py",
+      "tests/expansion/test_guarded_opener_proxy.py",
+      "tests/expansion/test_url_safety_special_use.py"
+    ],
+    "decision_id": "dec-809"
+  },
+  {
+    "query": "chore: record Codex cross-review response for PR #95",
+    "expected_files": [
+      ".forge/cross-review/pr-95.response.md"
+    ],
+    "decision_id": "dec-808"
+  },
+  {
+    "query": "chore: cross-review request for PR #95 (issue #83)",
+    "expected_files": [
+      ".forge/cross-review/pr-95.md"
+    ],
+    "decision_id": "dec-807"
+  },
+  {
+    "query": "fix(expansion): SSRF hardening round 2 - IP-pinning, cross-origin header strip, ",
+    "expected_files": [
+      "src/axon/expansion/transport.py",
+      "src/axon/expansion/url_safety.py",
+      "tests/expansion/test_origin_header_scoping.py",
+      "tests/expansion/test_url_safety_pinning.py",
+      "tests/expansion/test_url_safety_special_use.py"
+    ],
+    "decision_id": "dec-806"
+  },
+  {
+    "query": "fix(expansion): SSRF hardening round 2 - IP-pinning, cross-origin header strip, ",
+    "expected_files": [
+      "src/axon/expansion/transport.py",
+      "src/axon/expansion/url_safety.py",
+      "tests/expansion/test_origin_header_scoping.py",
+      "tests/expansion/test_url_safety_pinning.py",
+      "tests/expansion/test_url_safety_special_use.py"
+    ],
+    "decision_id": "dec-805"
+  },
+  {
+    "query": "fix(platform): detect_platform must not assume CUDA on non-mac hosts",
+    "expected_files": [
+      "src/axon/config/platform.py",
+      "tests/config/test_platform.py"
+    ],
+    "decision_id": "dec-804"
+  },
+  {
+    "query": "ci: widen loop gate_cmd and CI to cover tests/config",
+    "expected_files": [
+      ".claude/loop.yaml",
+      ".github/workflows/ci.yml"
+    ],
+    "decision_id": "dec-803"
+  }
+]
