@@ -199,13 +199,14 @@ class PgVectorStore:
         max_depth: int = 1,
         max_nodes: int = 25,
         max_tokens: int = 1200,
+        prefer_ctx: str | None = None,
     ) -> list[dict]:
         _ = max_depth  # accepted for parity, unused (matches the vector backend interface)
         pool = await self._ensure_pool()
         params: list = [query_vector, list(collections)]
         where = _append_filter_clauses(params, language=language, project=project)
         sql = f"""
-            SELECT id, file_path, language, chunk_type, symbol, project, content,
+            SELECT id, ctx, file_path, language, chunk_type, symbol, project, content,
                    git_commit, modified_at, 1 - (vector <=> $1) AS score
             FROM {self._table}
             WHERE {where}
@@ -226,7 +227,7 @@ class PgVectorStore:
                 lex_params: list = [query, list(collections)]
                 lex_where = _append_filter_clauses(lex_params, language=language, project=project)
                 lex_sql = f"""
-                    SELECT id, file_path, language, chunk_type, symbol, project, content,
+                    SELECT id, ctx, file_path, language, chunk_type, symbol, project, content,
                            git_commit, modified_at, ts_rank(content_tsv, q.query) AS score
                     FROM {self._table}, websearch_to_tsquery('simple', $1) AS q(query)
                     WHERE content_tsv @@ q.query AND {lex_where}
@@ -243,6 +244,7 @@ class PgVectorStore:
             max_nodes=max_nodes,
             max_tokens=max_tokens,
             now=datetime.now(UTC),
+            prefer_ctx=prefer_ctx,
         )
 
     async def delete_by_file(self, ctx: str, file_path: str) -> None:
@@ -265,6 +267,7 @@ def _record_to_result(r) -> dict:
         "score": float(r["score"]),
         "id": r["id"],
         "payload": {
+            "ctx": r["ctx"],
             "file_path": r["file_path"],
             "language": r["language"],
             "chunk_type": r["chunk_type"],

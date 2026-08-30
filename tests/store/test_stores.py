@@ -27,12 +27,14 @@ class TestGetSearchCollections:
 
     def test_personal_ctx_excludes_work(self) -> None:
         result = get_search_collections("personal")
-        assert result == ["personal"]
+        assert "work" not in result
 
-    def test_explicit_non_work_ctx_returns_only_that_context(self) -> None:
-        assert get_search_collections("knowledge") == ["knowledge"]
-        assert get_search_collections("career") == ["career"]
-        assert get_search_collections("saas") == ["saas"]
+    def test_explicit_non_work_ctx_searches_every_non_protected_collection(self) -> None:
+        """dec-131: a non-protected ctx orders retrieval, it does not partition it."""
+        expected = ["personal", "career", "knowledge", "saas"]
+        assert get_search_collections("knowledge") == expected
+        assert get_search_collections("career") == expected
+        assert get_search_collections("saas") == expected
 
     def test_empty_string_ctx_excludes_work(self) -> None:
         result = get_search_collections("")

@@ -42,11 +42,20 @@ class FakeStore:
 
 
 def test_search_collections_hide_work_without_explicit_context() -> None:
+    """work is the only hard boundary; the other four never leak it (dec-109)."""
     assert get_search_collections(None) == ["personal", "career", "knowledge", "saas"]
-    assert get_search_collections("knowledge") == ["knowledge"]
-    assert get_search_collections("personal") == ["personal"]
-    assert get_search_collections("saas") == ["saas"]
     assert get_search_collections("work") == ["work"]
+    for ctx in ("knowledge", "personal", "saas", "career", "", "nonsense"):
+        assert "work" not in get_search_collections(ctx)
+
+
+def test_non_protected_ctx_widens_instead_of_partitioning() -> None:
+    """dec-131: asking with ctx=knowledge must still reach code indexed as
+    personal. Measured 2026-08-29: 'repo_identity git-common-dir' returned 0
+    hits under knowledge and 5 under personal, because ctx filtered the search.
+    """
+    for ctx in ("knowledge", "personal", "saas", "career"):
+        assert get_search_collections(ctx) == ["personal", "career", "knowledge", "saas"]
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 # dec-131: ctx partitions retrieval, and that is why compression looked broken
 
-- Status: Proposed
+- Status: Accepted (decision 1 implemented; 2 and 3 not yet enacted)
 - Date: 2026-08-29
 - Relates to: dec-118 (rtkx compression tier), dec-119 (canonical activity
   stores), dec-109 (restricted-context isolation), issue #168
@@ -119,8 +119,17 @@ believing it compresses.
 
 ## Consequences
 
-- A question about code asked with `ctx=knowledge` starts finding code. The 121
-  empty packs would have come back full.
+- A question about code asked with `ctx=knowledge` starts finding code. Measured
+  after the change: `repo_identity git-common-dir` under `ctx=knowledge` went
+  from 0 hits / a 26-token pack to 8 hits / 6,484 chars. The 121 empty packs
+  would have come back full.
+- The flat score curve was an artifact of the partition. On five queries, four
+  could not even produce 16 hits inside `knowledge` alone; the one that could
+  went from a 6.1% to a 9.3% drop between rank 1 and the mean of ranks 9-16,
+  with the top score rising 0.526 -> 0.553. Across all five the drop is now
+  6.1%-17.8%. It discriminates, but not enough to call a cut at 8 principled -
+  on `chunker java estrutura fixture` the mean of ranks 9-16 (0.547) still
+  edges out rank 8 (0.542).
 - Recall gets slower per call (four collections instead of one) and returns more
   candidates. The flat score curve should separate once the material that
   answers the query can actually be reached - and if it does not, the next

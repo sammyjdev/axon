@@ -19,6 +19,11 @@ VECTOR_SIZE = int(os.environ.get("AXON_VECTOR_SIZE", default_embedding_dimension
 # the on/off flag AXON_DELTA_RECALL is read per-request in http/app.py.
 DELTA_RECALL_CUTOFF = float(os.environ.get("AXON_DELTA_RECALL_CUTOFF", "0.6"))
 _STALE_RANKING_PENALTY = 0.2
+# dec-131: how much being in the requested ctx is worth when ranking. Measured
+# 2026-08-29 on this corpus, real scores spread only ~0.05 across 20 hits, so
+# 0.02 is worth several ranks - enough to order by context, not enough to
+# override a hit that is genuinely a better match from another collection.
+_CTX_PREFERENCE_BOOST = 0.02
 
 
 def transcript_shingle_set(transcript: list[str]) -> set[str]:
@@ -76,9 +81,10 @@ def _rank_and_limit(
     max_nodes: int,
     max_tokens: int,
     now: datetime,
+    prefer_ctx: str | None = None,
 ) -> list[dict]:
     """Used by the pgvector backend to rank and truncate search hits."""
-    ranked = _apply_staleness_ranking(results, now=now)
+    ranked = _apply_staleness_ranking(results, now=now, prefer_ctx=prefer_ctx)
     limited: list[dict] = []
     token_budget = max_tokens
     for item in ranked:
@@ -121,7 +127,9 @@ def _trim_to_budget(
     return limited
 
 
-def _apply_staleness_ranking(results: list[dict], *, now: datetime) -> list[dict]:
+def _apply_staleness_ranking(
+    results: list[dict], *, now: datetime, prefer_ctx: str | None = None
+) -> list[dict]:
     records = [_staleness_record(result) for result in results]
     replacements = {
         replacement.stale_id: replacement
@@ -134,6 +142,8 @@ def _apply_staleness_ranking(results: list[dict], *, now: datetime) -> list[dict
         assessment = assess_staleness(payload, now=now)
         replacement = replacements.get(str(result.get("id", "")))
         ranking_score = float(result["score"]) - (assessment.score * _STALE_RANKING_PENALTY)
+        if prefer_ctx and payload.get("ctx") == prefer_ctx:
+            ranking_score += _CTX_PREFERENCE_BOOST
 
         ranked_results.append(
             {

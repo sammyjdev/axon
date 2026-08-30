@@ -368,6 +368,7 @@ async def _semantic_search_hits(
     collections: list[str],
     language: str | None = None,
     top_k: int = 5,
+    prefer_ctx: str | None = None,
 ) -> list[dict]:
     from axon.embedder.engine import EmbedderEngine
     from axon.store.vector_store_factory import make_vector_store
@@ -382,6 +383,7 @@ async def _semantic_search_hits(
             collections=collections,
             language=language,
             top_k=top_k,
+            prefer_ctx=prefer_ctx,
         )
     finally:
         await store.close()
@@ -1132,6 +1134,7 @@ def search(
             collections=collections,
             language=language,
             top_k=top_k,
+            prefer_ctx=resolved_ctx,
         )
         trace.append_stage(
             "retrieval",

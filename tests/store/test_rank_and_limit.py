@@ -71,3 +71,33 @@ def test_trim_to_budget_keeps_top_hit_when_it_alone_exceeds_budget() -> None:
     out = _trim_to_budget(results, max_nodes=2, max_tokens=10)
 
     assert [item["id"] for item in out] == ["b"]
+
+
+def test_rank_and_limit_prefers_requested_ctx_when_scores_are_close() -> None:
+    """dec-131: a non-protected ctx orders retrieval instead of partitioning it.
+
+    Measured 2026-08-29: real scores spread only 0.05 across 20 hits, so a hit
+    from the requested ctx must outrank a marginally better hit from another
+    collection - and the other collection must still be reachable.
+    """
+    from axon.store.vector_common import _rank_and_limit
+
+    other = {**_r(0, "other"), "payload": {**_r(0, "other")["payload"], "ctx": "personal"}}
+    wanted = {**_r(1, "wanted"), "payload": {**_r(1, "wanted")["payload"], "ctx": "knowledge"}}
+    out = _rank_and_limit(
+        [other, wanted], top_k=2, max_nodes=25, max_tokens=10_000,
+        now=datetime(2025, 1, 2, tzinfo=UTC), prefer_ctx="knowledge",
+    )
+    assert [hit["id"] for hit in out] == ["1", "0"]
+
+
+def test_rank_and_limit_ctx_preference_does_not_override_a_clearly_better_hit() -> None:
+    from axon.store.vector_common import _rank_and_limit
+
+    strong = {**_r(0, "strong"), "payload": {**_r(0, "strong")["payload"], "ctx": "personal"}}
+    weak = {**_r(30, "weak"), "payload": {**_r(30, "weak")["payload"], "ctx": "knowledge"}}
+    out = _rank_and_limit(
+        [strong, weak], top_k=2, max_nodes=25, max_tokens=10_000,
+        now=datetime(2025, 1, 2, tzinfo=UTC), prefer_ctx="knowledge",
+    )
+    assert [hit["id"] for hit in out] == ["0", "30"]

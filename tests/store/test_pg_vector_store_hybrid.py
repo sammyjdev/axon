@@ -41,6 +41,7 @@ class _Con:
 def _record(cid: str, score: float, file_path: str | None = None, content: str = "content"):
     return {
         "id": cid,
+        "ctx": "knowledge",
         "file_path": file_path or f"{cid}.md",
         "language": "markdown",
         "chunk_type": "file",
@@ -90,7 +91,7 @@ async def test_flag_off_uses_the_old_dense_query_shape(monkeypatch) -> None:
     assert len(con.fetch_calls) == 1
     sql, params = con.fetch_calls[0]
     assert sql.strip() == """
-            SELECT id, file_path, language, chunk_type, symbol, project, content,
+            SELECT id, ctx, file_path, language, chunk_type, symbol, project, content,
                    git_commit, modified_at, 1 - (vector <=> $1) AS score
             FROM embeddings
             WHERE ctx = ANY($2) AND language = $3 AND project = $4

@@ -466,6 +466,7 @@ async def _retrieve_context(
         query=query,
         collections=collections,
         language=language,
+        prefer_ctx=ctx,
         top_k=_RERANK_CANDIDATES if rerank else strategy.max_segments,
         max_depth=max_depth,
         max_nodes=_RERANK_CANDIDATES if rerank else max_nodes,
