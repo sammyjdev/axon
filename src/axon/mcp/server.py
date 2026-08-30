@@ -16,6 +16,7 @@ from mcp.server.mcpserver import MCPServer
 from axon.config.runtime import load_runtime_config
 from axon.context.compression_quality import compression_quality_note
 from axon.context.contracts import ContextPack, select_default_retrieval_strategy
+from axon.context.pack_dedup import dedup_hits
 from axon.context.registry import PROTECTED_CONTEXTS, normalize_context
 from axon.context.rtk import (
     RTKError,
@@ -478,6 +479,7 @@ async def _retrieve_context(
             max_tokens * 4 if rerank else min(max_tokens, max(1, strategy.max_chars // 4))
         ),
     )
+    results = dedup_hits(results)
     if rerank:
         # Reorders whatever candidate list the store returns, hybrid search or not.
         results = _trim_to_budget(
