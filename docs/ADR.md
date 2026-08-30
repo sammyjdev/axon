@@ -229,4 +229,7 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
 - [dec-130](decisions/dec-130-adr-provenance-fail-closed.md): ADR provenance is
   fail-closed (`llm-inferred` by default) and only an interactive prompt may
   claim human authorship; prompt fencing is mitigation by convention, the label
-  is what holds.
+  is what holds.- [dec-131](decisions/dec-131-ctx-partitions-retrieval.md): a non-protected ctx
+  orders retrieval instead of partitioning it - code indexed as `personal` was
+  invisible to `ctx=knowledge`, which is what made 121 packs empty and
+  compression look broken; `work` isolation unchanged.
