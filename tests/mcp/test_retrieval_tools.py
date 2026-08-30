@@ -13,7 +13,7 @@ from axon.router.classifier import TaskType
 
 @pytest.fixture(autouse=True)
 def _isolate_chunk_telemetry(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("AXON_RERANK", raising=False)
+    monkeypatch.setenv("AXON_RERANK", "0")
     telemetry_store = RecallTelemetryStore(runtime=SimpleNamespace(data_root=tmp_path))
     monkeypatch.setattr(server, "RecallTelemetryStore", lambda: telemetry_store)
 
@@ -351,6 +351,7 @@ async def test_retrieve_context_rerank_flag_off_keeps_search_shape_and_skips_mod
     def _boom():
         raise AssertionError("reranker must not load when AXON_RERANK is off")
 
+    monkeypatch.setenv("AXON_RERANK", "0")
     monkeypatch.setattr(server, "_get_reranker", _boom, raising=False)
 
     response, pack, results = await server._retrieve_context(
@@ -428,8 +429,8 @@ async def test_retrieve_context_reranks_wide_candidates(monkeypatch) -> None:
         max_tokens=100,
     )
 
-    assert captured["top_k"] == 24
-    assert captured["max_nodes"] == 24
+    assert captured["top_k"] == 48
+    assert captured["max_nodes"] == 48
     assert captured["max_tokens"] == 400
     assert [hit["payload"]["symbol"] for hit in results] == ["beta", "gamma", "alpha"]
     assert [hit["rerank_score"] for hit in results] == [0.9, 0.2, 0.1]
@@ -618,7 +619,7 @@ async def test_retrieve_context_truncates_reranker_documents(monkeypatch) -> Non
     )
 
     assert len(captured_pairs) == 1
-    assert len(captured_pairs[0][1]) == 1200
+    assert len(captured_pairs[0][1]) == 400
 
 
 @pytest.mark.asyncio

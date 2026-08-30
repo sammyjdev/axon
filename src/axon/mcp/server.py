@@ -81,9 +81,15 @@ _DB_PATH = _RUNTIME.db_path
 _RTK_MAX_TOKENS = _RUNTIME.rtk_max_tokens
 _COMPRESSION_TELEMETRY = CompressionTelemetryStore(_RUNTIME)
 _TRACE_STORE = TraceStore(_RUNTIME)
-_RERANK_CANDIDATES = 24
-_RERANK_TEXT_CHARS = 1200
+# Measured 2026-08-29 (n=40): 48 candidates x 400 chars scores 0.700 hit rate /
+# 0.438 coverage in 4.6s. 1200 chars buys +0.05 for +20s; 256 chars degrades to
+# 0.650. See docs/superpowers/specs/2026-08-29-retrieval-pack-quality-design.md.
+_RERANK_CANDIDATES = 48
+_RERANK_TEXT_CHARS = 400
 _RERANK_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
+#: Cold-cache load is ~35s on this machine. Past this we give up: a stalled
+#: HF download hangs forever and `except Exception` does not catch a hang.
+_RERANK_LOAD_TIMEOUT_S = 120.0
 
 mcp = MCPServer("axon-context-engine")
 
@@ -94,6 +100,9 @@ _outcome_store: OutcomeStore | None = None
 _session_store: SessionStore | None = None
 _embedder: EmbedderEngine | None = None
 _reranker: object | None = None
+# Restart is the only reset; if a transient failure ever needs recovery
+# in-process that is when a cooldown earns its keep.
+_reranker_load_failed: bool = False
 _lesson_store: LessonStore | None = None
 
 
@@ -104,17 +113,48 @@ def _get_embedder() -> EmbedderEngine:
     return _embedder
 
 
-def _get_reranker() -> object:
-    """Load the cross-encoder lazily; first call can take about 32 seconds."""
-    global _reranker
-    if _reranker is None:
-        model_name = os.environ.get("AXON_RERANK_MODEL") or _RERANK_MODEL
-        try:
-            from fastembed import TextCrossEncoder
-        except ImportError:
-            from fastembed.rerank.cross_encoder import TextCrossEncoder
+def _text_cross_encoder_cls() -> type:
+    """Indirection so tests can substitute the encoder without touching fastembed."""
+    try:
+        from fastembed import TextCrossEncoder
+    except ImportError:
+        from fastembed.rerank.cross_encoder import TextCrossEncoder
+    return TextCrossEncoder
 
-        _reranker = TextCrossEncoder(model_name)
+
+def _get_reranker() -> object:
+    """Load the cross-encoder lazily and with a bound.
+
+    hf_xet's TLS handshake fails on some machines and the download then hangs
+    forever rather than raising, so the timeout is the only thing that keeps a
+    cold cache from pinning the server. XET is disabled here for the same reason.
+    """
+    global _reranker, _reranker_load_failed
+    if _reranker_load_failed:
+        raise RuntimeError("cross-encoder reranker previously failed to load in this process")
+    if _reranker is None:
+        import concurrent.futures
+
+        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+        model_name = os.environ.get("AXON_RERANK_MODEL") or _RERANK_MODEL
+        encoder_cls = _text_cross_encoder_cls()
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            future = pool.submit(encoder_cls, model_name)
+            try:
+                _reranker = future.result(timeout=_RERANK_LOAD_TIMEOUT_S)
+            except concurrent.futures.TimeoutError as exc:
+                _reranker_load_failed = True
+                # The worker thread is left running: fastembed offers no cancel,
+                # and abandoning it is better than blocking the caller.
+                raise TimeoutError(
+                    f"reranker load exceeded {_RERANK_LOAD_TIMEOUT_S}s"
+                ) from exc
+            except Exception:
+                _reranker_load_failed = True
+                raise
+        finally:
+            pool.shutdown(wait=False)
     return _reranker
 
 
@@ -194,6 +234,7 @@ def _record_chunk_recall(
     requested_max_tokens: int,
     hits: list[dict],
     ctx: str | None = None,
+    rerank_note: str | None = None,
 ) -> None:
     try:
         chunks: list[ChunkEntry] = []
@@ -219,6 +260,7 @@ def _record_chunk_recall(
             query=None if normalize_context(ctx) in PROTECTED_CONTEXTS else query,
             strategy=strategy_name,
             requested_max_tokens=requested_max_tokens,
+            rerank=rerank_note,
             chunks=chunks,
         )
         RecallTelemetryStore().append_chunks(record)
@@ -423,12 +465,19 @@ def _staleness_notes(hits: list[dict]) -> list[str]:
 
 
 def _rerank_enabled() -> bool:
-    return os.environ.get("AXON_RERANK") == "1"
+    """On by default since 2026-08-29; AXON_RERANK=0 opts out."""
+    return os.environ.get("AXON_RERANK", "1") != "0"
 
 
-def _rerank_hits(query: str, hits: list[dict]) -> list[dict]:
+def _rerank_hits(query: str, hits: list[dict]) -> tuple[list[dict], str | None]:
+    """Reorder hits by cross-encoder score.
+
+    Returns (hits, reason). reason is None when the rerank actually ran; when it
+    did not, the ORIGINAL order comes back with a reason, because a pack that
+    skipped the rerank must not be indistinguishable from one that passed it.
+    """
     if not hits:
-        return hits
+        return hits, None
     try:
         docs = [
             str((hit.get("payload") or {}).get("content", ""))[:_RERANK_TEXT_CHARS]
@@ -445,10 +494,10 @@ def _rerank_hits(query: str, hits: list[dict]) -> list[dict]:
             for index, (hit, score) in enumerate(zip(hits, scores, strict=True))
         ]
         scored.sort(key=lambda item: (-item[1], item[0]))
-        return [hit for _, _, hit in scored]
-    except Exception:
+        return [hit for _, _, hit in scored], None
+    except Exception as exc:  # noqa: BLE001 - never break retrieval
         logger.warning("cross-encoder rerank failed; using original order", exc_info=True)
-        return hits
+        return hits, f"{type(exc).__name__}: {str(exc)[:120]}"
 
 
 async def _retrieve_context(
@@ -480,10 +529,12 @@ async def _retrieve_context(
         ),
     )
     results = dedup_hits(results)
+    rerank_note: str | None = "disabled"
     if rerank:
         # Reorders whatever candidate list the store returns, hybrid search or not.
+        reranked, rerank_note = _rerank_hits(query, results)
         results = _trim_to_budget(
-            _rerank_hits(query, results),
+            reranked,
             max_nodes=max_nodes,
             max_tokens=max_tokens,
         )
@@ -513,6 +564,7 @@ async def _retrieve_context(
         requested_max_tokens=max_tokens,
         hits=telemetry_hits,
         ctx=ctx,
+        rerank_note=rerank_note,
     )
 
     pack = _build_context_pack(

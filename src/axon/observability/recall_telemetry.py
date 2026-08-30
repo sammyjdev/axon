@@ -52,6 +52,9 @@ class ChunkRecord(BaseModel):
     #: of derived cases. None for protected contexts (dec-109) and on legacy
     #: rows written before this field existed.
     query: str | None = None
+    #: Why the rerank did not run, when it did not: None means the rerank ran,
+    #: "disabled" means it was switched off, anything else is the failure reason.
+    rerank: str | None = None
     strategy: str
     requested_max_tokens: int
     chunks: list[ChunkEntry]

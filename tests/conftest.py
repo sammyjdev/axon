@@ -98,6 +98,9 @@ def _isolate_axon_engine(
     """
     engine_dir = tmp_path_factory.mktemp("axon_engine")
     monkeypatch.setenv("AXON_ENGINE", str(engine_dir))
+    # The test suite must never load a real cross-encoder; tests wanting
+    # rerank set it to "1" in their body.
+    monkeypatch.setenv("AXON_RERANK", "0")
 
     # dec-121 Phase 3: AXON is Postgres-only. Point every test at an isolated
     # shared container and wipe AXON tables before each test for per-test
