@@ -48,6 +48,10 @@ class ChunkRecord(BaseModel):
 
     ts: str
     query_hash: str
+    #: The query itself, so a later eval can be built from real traffic instead
+    #: of derived cases. None for protected contexts (dec-109) and on legacy
+    #: rows written before this field existed.
+    query: str | None = None
     strategy: str
     requested_max_tokens: int
     chunks: list[ChunkEntry]

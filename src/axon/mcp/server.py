@@ -16,6 +16,7 @@ from mcp.server.mcpserver import MCPServer
 from axon.config.runtime import load_runtime_config
 from axon.context.compression_quality import compression_quality_note
 from axon.context.contracts import ContextPack, select_default_retrieval_strategy
+from axon.context.registry import PROTECTED_CONTEXTS, normalize_context
 from axon.context.rtk import (
     RTKError,
     compress_text_with_rtk,
@@ -191,6 +192,7 @@ def _record_chunk_recall(
     strategy_name: str,
     requested_max_tokens: int,
     hits: list[dict],
+    ctx: str | None = None,
 ) -> None:
     try:
         chunks: list[ChunkEntry] = []
@@ -212,6 +214,8 @@ def _record_chunk_recall(
         record = ChunkRecord(
             ts=datetime.now(UTC).isoformat(),
             query_hash=_sha256_16(query),
+            # Never persist the text of a protected-context query.
+            query=None if normalize_context(ctx) in PROTECTED_CONTEXTS else query,
             strategy=strategy_name,
             requested_max_tokens=requested_max_tokens,
             chunks=chunks,
@@ -506,6 +510,7 @@ async def _retrieve_context(
         strategy_name=strategy.name,
         requested_max_tokens=max_tokens,
         hits=telemetry_hits,
+        ctx=ctx,
     )
 
     pack = _build_context_pack(
