@@ -90,6 +90,11 @@ _RERANK_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
 #: Cold-cache load is ~35s on this machine. Past this we give up: a stalled
 #: HF download hangs forever and `except Exception` does not catch a hang.
 _RERANK_LOAD_TIMEOUT_S = 120.0
+#: issue #177: dedup drops slots and, without the reranker's 48-candidate
+#: pool, nothing refills them. Over-fetch so dedup has slack to spend.
+#: 2x covers the measured waste (10.0% identical content, 13.4% repeated
+#: file) with room to spare; the extra rows cost only a larger LIMIT.
+_DEDUP_OVERFETCH = 2
 
 mcp = MCPServer("axon-context-engine")
 
@@ -521,11 +526,17 @@ async def _retrieve_context(
         collections=collections,
         language=language,
         prefer_ctx=ctx,
-        top_k=_RERANK_CANDIDATES if rerank else strategy.max_segments,
+        top_k=(
+            _RERANK_CANDIDATES if rerank else strategy.max_segments * _DEDUP_OVERFETCH
+        ),
         max_depth=max_depth,
-        max_nodes=_RERANK_CANDIDATES if rerank else max_nodes,
+        max_nodes=_RERANK_CANDIDATES if rerank else max_nodes * _DEDUP_OVERFETCH,
         max_tokens=(
-            max_tokens * 4 if rerank else min(max_tokens, max(1, strategy.max_chars // 4))
+            max_tokens * 4
+            if rerank
+            # The token budget has to grow with the row count, or _rank_and_limit
+            # truncates the over-fetch away before dedup ever sees it.
+            else min(max_tokens, max(1, strategy.max_chars // 4)) * _DEDUP_OVERFETCH
         ),
     )
     results = dedup_hits(results)
@@ -538,6 +549,9 @@ async def _retrieve_context(
             max_nodes=max_nodes,
             max_tokens=max_tokens,
         )
+    else:
+        # Give back the slack taken above: the caller asked for max_nodes.
+        results = _trim_to_budget(results, max_nodes=max_nodes, max_tokens=max_tokens)
 
     telemetry_hits = results
     pack_hits = results

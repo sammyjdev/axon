@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -95,3 +96,4 @@ async def test_retrieve_context_preserves_store_identity_when_no_duplicates(
 
     assert len(results) == 2
     assert results is hits
+

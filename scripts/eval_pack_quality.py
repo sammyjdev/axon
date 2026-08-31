@@ -51,7 +51,13 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    from axon.benchmark.pack_eval import basenames, load_cases, pack_coverage, pack_hit
+    from axon.benchmark.pack_eval import (
+        basenames,
+        load_cases,
+        pack_coverage,
+        pack_hit,
+        segment_file_paths,
+    )
 
     cases = load_cases(args.fixture)
     store = None
@@ -68,8 +74,8 @@ async def main() -> None:
 
         from axon.mcp import server
 
-        async def retrieve(query: str) -> list[dict]:
-            _, _, results = await server._retrieve_context(
+        async def retrieve(query: str) -> tuple[list[dict], list[str]]:
+            _, pack, results = await server._retrieve_context(
                 query=query,
                 ctx=None,
                 language=None,
@@ -77,7 +83,9 @@ async def main() -> None:
                 max_nodes=args.top_k,
                 max_tokens=10**9,
             )
-            return results
+            # issue #178: results is the hit list; pack.segments is what the
+            # agent actually receives, after max_segments and max_chars cut it.
+            return results, segment_file_paths(pack.segments)
     else:
         from axon.embedder.engine import EmbedderEngine
         from axon.store.pg_vector_store import PgVectorStore
@@ -85,7 +93,8 @@ async def main() -> None:
         engine = EmbedderEngine()
         store = PgVectorStore(dsn=args.dsn)
 
-        async def retrieve(query: str) -> list[dict]:
+        async def retrieve(query: str) -> tuple[list[dict], list[str]]:
+            # store-only stays frozen as the comparable baseline: no pack here.
             return await store.search(
                 query_vector=engine.embed_one(query),
                 query=query,
@@ -93,17 +102,22 @@ async def main() -> None:
                 top_k=args.top_k,
                 max_nodes=args.top_k,
                 max_tokens=10**9,
-            )
+            ), []
 
     hits = 0
     coverage = 0.0
+    pack_hits = 0
+    pack_coverage_sum = 0.0
     try:
         for case in cases:
-            results = await retrieve(case.query)
+            results, pack_paths = await retrieve(case.query)
             paths = [str((h.get("payload") or {}).get("file_path", "")) for h in results]
             expected = basenames(case.expected_files)
             hits += 1 if pack_hit(expected, paths) else 0
             coverage += pack_coverage(expected, paths)
+            if args.pack_path:
+                pack_hits += 1 if pack_hit(expected, pack_paths) else 0
+                pack_coverage_sum += pack_coverage(expected, pack_paths)
     finally:
         if store is not None:
             await store.close()
@@ -111,8 +125,12 @@ async def main() -> None:
     n = len(cases)
     mode = "pack-path" if args.pack_path else "store-only"
     print(f"mode: {mode}   cases: {n}   top_k: {args.top_k}")
-    print(f"hit rate: {hits}/{n} = {hits / n:.3f}")
-    print(f"coverage: {coverage / n:.3f}")
+    print(f"hits  - hit rate: {hits}/{n} = {hits / n:.3f}   coverage: {coverage / n:.3f}")
+    if args.pack_path:
+        print(
+            f"pack  - hit rate: {pack_hits}/{n} = {pack_hits / n:.3f}   "
+            f"coverage: {pack_coverage_sum / n:.3f}"
+        )
 
 
 if __name__ == "__main__":

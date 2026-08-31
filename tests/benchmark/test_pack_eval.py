@@ -60,3 +60,35 @@ def test_load_cases_reads_the_committed_fixture(tmp_path: Path) -> None:
     assert len(cases) == 1
     assert cases[0].query == "why does x break"
     assert cases[0].expected_files == ["a.py"]
+
+
+def test_segment_file_paths_reads_the_path_out_of_an_assembled_segment() -> None:
+    """issue #178: the eval must be able to score the pack, not only the hits."""
+    from axon.benchmark.pack_eval import segment_file_paths
+
+    segments = (
+        "### delete_by_file (python)\n"
+        "Arquivo: src/axon/store/pg_vector_store.py\n"
+        "Score: 0.553\n"
+        "Trecho: async def delete_by_file(...)",
+        "### dedup_hits (python)\nArquivo: src/axon/context/pack_dedup.py\nScore: 0.501\nTrecho: x",
+    )
+    assert segment_file_paths(segments) == [
+        "src/axon/store/pg_vector_store.py",
+        "src/axon/context/pack_dedup.py",
+    ]
+
+
+def test_segment_file_paths_ignores_the_word_in_the_excerpt_body() -> None:
+    """_build_context_pack flattens newlines out of content, so only the real
+    header line starts with Arquivo:."""
+    from axon.benchmark.pack_eval import segment_file_paths
+
+    segments = ("### s (python)\nArquivo: a.py\nScore: 0.5\nTrecho: veja Arquivo: b.py no doc",)
+    assert segment_file_paths(segments) == ["a.py"]
+
+
+def test_segment_file_paths_on_no_segments_is_empty() -> None:
+    from axon.benchmark.pack_eval import segment_file_paths
+
+    assert segment_file_paths(()) == []

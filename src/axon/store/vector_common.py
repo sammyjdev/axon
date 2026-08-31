@@ -109,7 +109,12 @@ def _trim_to_budget(
     max_nodes: int,
     max_tokens: int,
 ) -> list[dict]:
-    """Truncate hits without changing their order."""
+    """Truncate hits without changing their order.
+
+    When nothing is cut, the input list comes back unchanged - same object, not
+    a copy - so a caller that passes the store's own list through an unnecessary
+    trim still gets that list back (see dedup_hits, same contract).
+    """
     limited: list[dict] = []
     token_budget = max_tokens
     for item in items:
@@ -124,7 +129,7 @@ def _trim_to_budget(
             break
         token_budget -= estimated
         limited.append(item)
-    return limited
+    return items if len(limited) == len(items) else limited
 
 
 def _apply_staleness_ranking(

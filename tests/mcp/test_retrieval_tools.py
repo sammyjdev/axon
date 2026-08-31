@@ -137,7 +137,9 @@ async def test_search_code_applies_strategy_budget_and_returns_context_pack(monk
     )
 
     assert "trace_id:" in response
-    assert captured["top_k"] == 8
+    # issue #177: without the reranker's 48-candidate pool the search is
+    # over-fetched by _DEDUP_OVERFETCH so dedup has slack to spend.
+    assert captured["top_k"] == 8 * server._DEDUP_OVERFETCH
     assert "### upsert (python)" in response
     assert "## Context pack" in response
     assert "strategy: balanced" in response
@@ -204,7 +206,7 @@ async def test_ask_surfaces_context_pack_and_skips_compression_for_minimal_strat
     response = await server.ask(query="upsert?", ctx="knowledge", caller="claude-code")
 
     assert "trace_id:" in response
-    assert captured["top_k"] == 4
+    assert captured["top_k"] == 4 * server._DEDUP_OVERFETCH
     assert "## compression" in response
     assert "engine: disabled" in response
     assert "## Context pack" in response
@@ -366,9 +368,11 @@ async def test_retrieve_context_rerank_flag_off_keeps_search_shape_and_skips_mod
     assert "alpha content" in response
     assert len(pack.segments) == 1
     assert results is store._results
-    assert captured["top_k"] == 8
-    assert captured["max_nodes"] == 25
-    assert captured["max_tokens"] == 2000
+    # issue #177: without the reranker's 48-candidate pool the search is
+    # over-fetched by _DEDUP_OVERFETCH so dedup has slack to spend.
+    assert captured["top_k"] == 8 * server._DEDUP_OVERFETCH
+    assert captured["max_nodes"] == 25 * server._DEDUP_OVERFETCH
+    assert captured["max_tokens"] == 2000 * server._DEDUP_OVERFETCH
 
 
 @pytest.mark.asyncio
@@ -914,3 +918,39 @@ async def test_search_code_enriches_from_sqlite_not_redis(monkeypatch) -> None:
 
 async def _async_none():
     return None
+
+
+@pytest.mark.asyncio
+async def test_dedup_does_not_shrink_the_pack_when_rerank_is_off(monkeypatch) -> None:
+    """issue #177: with rerank off nothing refilled the slots dedup removed.
+
+    The store used to be asked for exactly strategy.max_segments rows, so every
+    duplicate cost a segment the pack never got back - measured at 5 of 8.
+    """
+    monkeypatch.setenv("AXON_RERANK", "0")
+    # Every other row is a duplicate of the same content.
+    rows = [
+        {
+            "score": 0.9 - index * 0.01,
+            "payload": {
+                "symbol": f"s{index}",
+                "language": "python",
+                "file_path": f"/tmp/f{index}.py",
+                "content": "same" if index % 2 else f"unique-{index}",
+            },
+        }
+        for index in range(16)
+    ]
+    store = _FakeVectorStore(rows, {})
+    _stub_retrieve_deps(monkeypatch, store)
+
+    _response, pack, _results = await server._retrieve_context(
+        query="q",
+        ctx="knowledge",
+        language=None,
+        max_depth=1,
+        max_nodes=8,
+        max_tokens=4000,
+    )
+
+    assert len(pack.segments) == pack.strategy.max_segments
