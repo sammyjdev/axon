@@ -731,10 +731,23 @@ class TestPythonChunker:
         syms = set(symbols(chunks))
         assert {"get", "add", "remove", "total_value"}.issubset(syms)
 
-    def test_simple_service_no_class_level_chunk(self):
+    def test_simple_service_emits_a_class_header_chunk_per_class(self):
+        """Inverted 2026-09-01 (dec-132), and deliberately not deleted.
+
+        This asserted `len(class_chunks) == 0` from the chunkers' first commit
+        (d4d7556, 2026-04-19), with no ADR behind it. Measurement overruled it:
+        on the METRON httpx corpus the walker emitted nothing for
+        class_definition, so 0 of 1144 chunks began with `class `, 33% of the
+        benchmark's expected anchors - every one a class declaration line - were
+        absent from the index, and the recall ceiling was pinned at 0.670.
+
+        The header is additive: the per-method chunks below are unchanged, which
+        is what keeps this a correction rather than a weakening (D5).
+        """
         chunks = self._chunks("simple_service.py")
         class_chunks = [c for c in chunks if c.chunk_type == "class"]
-        assert len(class_chunks) == 0, "Top-level class should not appear as a chunk"
+        assert {c.symbol for c in class_chunks} == {"Item", "ItemService"}
+        assert all("class " in c.content for c in class_chunks)
 
     def test_vector_store_methods(self):
         chunks = self._chunks("vector_store.py")
