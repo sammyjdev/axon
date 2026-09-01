@@ -54,7 +54,22 @@ def test_validation_score_out_of_range_rejected(score: float) -> None:
 
 def test_summary_max_length_enforced() -> None:
     with pytest.raises(PydanticValidationError):
-        _decision(summary="x" * 81)
+        _decision(summary="x" * 251)
+
+
+def test_a_summary_longer_than_the_old_cap_is_stored_whole() -> None:
+    """The cap was 80 and the capture path sliced to fit it, so 23% of the corpus lost its
+    tail at byte 81 - substring search, supersession and the embedding all worked on a
+    sentence cut mid-clause. 80 was never a storage limit: Postgres holds `decisions.body`
+    as text and the export names files by `decision.id`.
+
+    Raising the field alone would have been worse than leaving it: every caller slices to
+    the cap BEFORE constructing, so a wider field with narrower slices changes nothing, and
+    a wider slice against the old field turns every 81-250 char capture into a
+    ValidationError - capture failing instead of capturing lossily."""
+    text = "the retrieval pack refills the slots dedup removes " * 4
+    assert 80 < len(text) <= 250
+    assert _decision(summary=text).summary == text
 
 
 @pytest.mark.parametrize("bad_tag", ["UPPER", "has space", "trailing-", "-leading", "a--b"])

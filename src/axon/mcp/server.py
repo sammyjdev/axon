@@ -24,7 +24,7 @@ from axon.context.rtk import (
     restore_original_with_rtk,
     store_original_with_rtk,
 )
-from axon.core.decision import Decision
+from axon.core.decision import SUMMARY_MAX_LEN, Decision
 from axon.core.repo_identity import repo_identity
 from axon.embedder.engine import EmbedderEngine
 from axon.embedder.lesson_embedding import embed_lesson
@@ -1339,7 +1339,7 @@ async def axon_capture(
         repo=repo,
         files=[Path(f) for f in (files or [])],
         symbols=symbols or [],
-        summary=summary[:80],
+        summary=summary[:SUMMARY_MAX_LEN],
         status="draft",
     )
     await store.save_decision(decision)

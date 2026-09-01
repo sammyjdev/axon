@@ -235,6 +235,21 @@ def _mark_superseded(
                 stale.superseded = True
 
 
+# Storage and display are not the same width. `SUMMARY_MAX_LEN` is 250 so substring search,
+# supersession and the embedding see the whole sentence; recall renders less because the
+# budget below is a fixed 2000 tokens and full-width lines would buy depth by cutting the
+# number of decisions recalled - the opposite of what raising the cap was for.
+_RENDER_WIDTH = 120
+
+
+def _clip(summary: str) -> str:
+    if len(summary) <= _RENDER_WIDTH:
+        return summary
+    # Marked, not silently shortened: a summary that ends mid-clause with no sign reads as a
+    # decision someone recorded badly, which is exactly the wrong lesson to draw from it.
+    return summary[: _RENDER_WIDTH - 1].rstrip() + "…"
+
+
 def _render(repo: str, ranked: list[_Candidate], token_budget: int) -> str:
     header = f"## AXON recall — {repo}"
     if not ranked:
@@ -242,7 +257,7 @@ def _render(repo: str, ranked: list[_Candidate], token_budget: int) -> str:
     lines = [header]
     used = _estimate_tokens(header)
     for cand in ranked:
-        line = f"- {cand.decision_id} (rank {cand.rank:.2f}): {cand.summary}"
+        line = f"- {cand.decision_id} (rank {cand.rank:.2f}): {_clip(cand.summary)}"
         cost = _estimate_tokens(line)
         if used + cost > token_budget:
             break

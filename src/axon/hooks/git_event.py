@@ -22,7 +22,7 @@ from pathlib import Path
 from axon.adr.signal import detect
 from axon.code.diff_symbols import symbols_touched_by_commit
 from axon.config.runtime import load_runtime_config
-from axon.core.decision import Decision
+from axon.core.decision import SUMMARY_MAX_LEN, Decision
 from axon.core.edge import Edge
 from axon.core.repo_identity import repo_identity
 from axon.hooks.file_bridge import update_context_file
@@ -130,7 +130,7 @@ async def on_commit(
             agent=_detect_agent(),
             repo=repo,
             files=[Path(f) for f in files if f],
-            summary=subject[:80],
+            summary=subject[:SUMMARY_MAX_LEN],
             git_hash=commit_hash,
             status="draft",
         )
@@ -346,7 +346,7 @@ async def _scan_pulled_range(
                 agent="remote",
                 repo=repo,
                 files=[Path(f) for f in files if f],
-                summary=subject[:80],
+                summary=subject[:SUMMARY_MAX_LEN],
                 git_hash=commit_hash,
                 status="draft",
             )

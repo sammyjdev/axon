@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from axon.core.decision import Decision
+from axon.core.decision import SUMMARY_MAX_LEN, Decision
 from axon.hooks.git_event import main, on_commit, on_init, on_push
 from axon.store.session_store import SessionStore
 
@@ -58,10 +58,26 @@ async def test_on_commit_captures_draft_decision(
 async def test_on_commit_truncates_long_subject(
     store: SessionStore, git_repo: Path
 ) -> None:
-    _git(["commit", "--allow-empty", "-m", "x" * 120], git_repo)
+    _git(["commit", "--allow-empty", "-m", "x" * 400], git_repo)
     decision_id = await on_commit(store=store, cwd=git_repo)
     found = [d for d in await store.find_decisions_by_repo("myrepo") if d.id == decision_id]
-    assert len(found[0].summary) == 80
+    assert len(found[0].summary) == SUMMARY_MAX_LEN
+
+
+async def test_on_commit_keeps_a_subject_the_old_cap_would_have_cut(
+    store: SessionStore, git_repo: Path
+) -> None:
+    """The slice and the field's limit are one constant now. They were two, both 80, and the
+    hook path sliced before constructing - so this length was silently losing its tail on
+    every commit whose subject ran past byte 80."""
+    # rstrip: git strips trailing whitespace from a subject line, so the recorded value
+    # would differ from the argument for a reason that has nothing to do with the cap.
+    subject = ("fix: " + "the pack refills the slots dedup removes, " * 3).rstrip()
+    assert 80 < len(subject) <= SUMMARY_MAX_LEN
+    _git(["commit", "--allow-empty", "-m", subject], git_repo)
+    decision_id = await on_commit(store=store, cwd=git_repo)
+    found = [d for d in await store.find_decisions_by_repo("myrepo") if d.id == decision_id]
+    assert found[0].summary == subject
 
 
 async def test_on_commit_detects_agent_from_env(

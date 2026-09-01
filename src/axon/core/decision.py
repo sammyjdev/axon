@@ -15,6 +15,17 @@ from axon.exceptions import ValidationError
 Agent = Literal["claude-code", "codex", "cursor", "manual", "remote"]
 Status = Literal["draft", "active", "superseded", "deprecated"]
 
+# The cap every capture path slices to, and the field's own limit - one constant because
+# they were two numbers before and drifted: the field said 80, the callers sliced to 80, and
+# raising either one alone is a bug. A wider field with narrower slices changes nothing; a
+# wider slice against a narrower field turns every over-long capture into a ValidationError,
+# trading lossy capture for no capture. 80 truncated 23% of the corpus mid-clause (median
+# summary is 68), and it was never a storage limit - `decisions.body` is Postgres text and
+# the export names files by `decision.id`. Recall renders less than this; see _RENDER_WIDTH
+# in recall/strategy.py. Raising it does NOT recover the 869 already captured: byte 81 never
+# existed for them.
+SUMMARY_MAX_LEN = 250
+
 _ID_RE = re.compile(r"^dec-\d{3,}$")
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.DOTALL)
@@ -35,7 +46,7 @@ class Decision(BaseModel):
     repo: str
     files: list[Path] = Field(default_factory=list)
     symbols: list[str] = Field(default_factory=list)
-    summary: str = Field(max_length=80)
+    summary: str = Field(max_length=SUMMARY_MAX_LEN)
     validation_score: float = Field(default=0.0, ge=0.0, le=5.0)
     judged: bool = False
     git_hash: str | None = None
