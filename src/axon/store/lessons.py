@@ -22,6 +22,7 @@ already writes to, purely because nobody set a lessons-specific value; see
 
 from __future__ import annotations
 
+import logging
 import os
 from uuid import UUID
 
@@ -31,6 +32,8 @@ from pgvector.asyncpg import register_vector
 from axon.embedder.lesson_embedding import SupportsEmbedOne
 from axon.models.lesson import LessonRecord
 from axon.store.vector_common import VECTOR_SIZE
+
+logger = logging.getLogger(__name__)
 
 TABLE = "lessons"
 
@@ -63,7 +66,13 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
     fix         text NOT NULL,
     source      text NOT NULL,
     created_at  timestamptz NOT NULL,
-    vector      vector({VECTOR_SIZE})
+    vector      vector({VECTOR_SIZE}),
+    -- Delivery, not capture. Without these, a lesson nobody has ever read and one read
+    -- daily are the same row, so "does anything consume this?" has no answer and the
+    -- assumed answer is the flattering one. Measured 2026-09-01: 24 lessons, zero way to
+    -- tell. The corpus's own lesson about quiet mechanisms applies to the corpus.
+    retrieved_count   integer NOT NULL DEFAULT 0,
+    last_retrieved_at timestamptz
 )
 """
 
@@ -85,6 +94,17 @@ class LessonStore:
             await con.execute("CREATE EXTENSION IF NOT EXISTS vector")
             await self._check_dimension_guard(con)
             await con.execute(_DDL)
+            # CREATE TABLE IF NOT EXISTS is a no-op on a table that already exists, so the
+            # DDL above never reaches a deployment that predates these columns. Additive and
+            # idempotent: the counters start at 0, which is the truth for every row written
+            # before delivery was recorded.
+            await con.execute(
+                f"ALTER TABLE {TABLE} "
+                "ADD COLUMN IF NOT EXISTS retrieved_count integer NOT NULL DEFAULT 0"
+            )
+            await con.execute(
+                f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS last_retrieved_at timestamptz"
+            )
         finally:
             await con.close()
 
@@ -204,9 +224,42 @@ class LessonStore:
             select_cols = "id, kind, triggers, mistake, tell, fix, source, created_at, vector"
             sql = f"SELECT {select_cols} FROM {TABLE} WHERE {where} ORDER BY vector <=> $1 LIMIT {int(limit)}"  # noqa: S608, E501
             rows = await con.fetch(sql, *params)
+            # Guarded HERE as well as inside: the rule is that delivery never depends on
+            # measuring delivery, and a rule that only holds while the current
+            # implementation is in place is not the rule.
+            try:
+                await self._record_retrieval(con, [row["id"] for row in rows])
+            except Exception:  # noqa: BLE001 - never cost the caller its results
+                # Logged, not swallowed. A bare `except: pass` is precisely the quiet
+                # mechanism this bookkeeping exists to detect elsewhere; it must not be the
+                # shape of the bookkeeping itself.
+                logger.warning("lesson retrieval bookkeeping failed", exc_info=True)
         finally:
             await con.close()
         return [self._row_to_lesson(row) for row in rows]
+
+    async def _record_retrieval(self, con: asyncpg.Connection, ids: list) -> None:
+        """Credit exactly the lessons that came back, and never at the caller's expense.
+
+        Only the returned ids: crediting every row on every search would make the whole
+        corpus look used, which is the state this measurement exists to leave.
+
+        Failures are swallowed. Delivery must not depend on measuring delivery - a search
+        that returns nothing because a counter write failed is strictly worse than a search
+        with no counters at all.
+        """
+        if not ids:
+            return
+        try:
+            # S608: the only interpolation is TABLE, a module constant - the ids go
+            # through a bound parameter, same as every other query here.
+            await con.execute(
+                f"UPDATE {TABLE} SET retrieved_count = retrieved_count + 1, "  # noqa: S608
+                "last_retrieved_at = now() WHERE id = ANY($1::uuid[])",
+                ids,
+            )
+        except Exception:  # noqa: BLE001 - see the docstring: never cost the caller
+            logger.warning("could not record lesson retrieval", exc_info=True)
 
     async def _connect(self) -> asyncpg.Connection:
         con = await asyncpg.connect(self._dsn)
