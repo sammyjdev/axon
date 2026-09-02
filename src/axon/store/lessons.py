@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from uuid import UUID
 
 import asyncpg
@@ -34,6 +35,20 @@ from axon.models.lesson import LessonRecord
 from axon.store.vector_common import VECTOR_SIZE
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LessonHandle:
+    """What a lesson looks like from outside: enough to decide whether to ask for it.
+
+    Not a `LessonRecord`. The mistake/tell/fix ARE the lesson, and the whole point of a
+    catalogue is that they stay behind `search_lessons` - a list carrying them would cost
+    every session the entire corpus in tokens and leave nothing to retrieve.
+    """
+
+    id: UUID
+    kind: str
+    triggers: list[str]
 
 TABLE = "lessons"
 
@@ -237,6 +252,35 @@ class LessonStore:
         finally:
             await con.close()
         return [self._row_to_lesson(row) for row in rows]
+
+    async def catalog(self) -> list[LessonHandle]:
+        """Every lesson's id, kind and triggers - and NOT a delivery.
+
+        Deliberately not `search(limit=n)` with a throwaway query. `search()` credits
+        `retrieved_count` for the rows it returns, which is what turned "does anything read
+        this?" into an answerable question; a catalogue rendered on every session start
+        would credit five lessons per session and overwrite the 24-lessons/0-deliveries
+        baseline with a number that measures the hook instead of any agent's decision to
+        consult one. The counters must keep meaning what they mean.
+
+        No `vector IS NOT NULL` filter either, unlike `search()`. That filter is there
+        because an unembedded lesson can never be nearest to anything; a catalogue is not a
+        ranking, and omitting a lesson that exists is the exact failure this list is for.
+
+        Newest first: a corpus grows, the render truncates, and the lesson written today is
+        the one most likely to be about a mistake still being made.
+        """
+        con = await self._connect()
+        try:
+            rows = await con.fetch(
+                f"SELECT id, kind, triggers FROM {TABLE} ORDER BY created_at DESC"  # noqa: S608
+            )
+        finally:
+            await con.close()
+        return [
+            LessonHandle(id=r["id"], kind=r["kind"], triggers=list(r["triggers"]))
+            for r in rows
+        ]
 
     async def _record_retrieval(self, con: asyncpg.Connection, ids: list) -> None:
         """Credit exactly the lessons that came back, and never at the caller's expense.
