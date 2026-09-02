@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path, PurePath
 
 from axon.context.registry import VALID_CONTEXTS
-from axon.embedder.chunker import Chunk, chunk_source
+from axon.embedder.chunker import CHUNKER_VERSION, Chunk, chunk_source
 from axon.embedder.engine import EmbedderEngine
 from axon.embedder.graph_extractor import build_dependency_records
 from axon.embedder.tokens import estimate_tokens as _estimate_tokens
@@ -325,7 +325,9 @@ async def index_path(
         pending_batch.clear()
         # FIX 1: write done under each file's OWN ctx, not a single default ctx.
         for fp, fctx, s1, cc in pending_file_meta:
-            await file_cache.set_entry(fp, fctx, s1, cc, status="done")
+            await file_cache.set_entry(
+                fp, fctx, s1, cc, status="done", chunker_version=CHUNKER_VERSION
+            )
         pending_file_meta.clear()
         return batch_size
 
@@ -345,7 +347,9 @@ async def index_path(
 
         # FIX 2: load sha1 map for this ctx lazily (one SELECT per ctx per run).
         if file_ctx not in sha1_maps:
-            sha1_maps[file_ctx] = await file_cache.get_all_sha1s(file_ctx)
+            sha1_maps[file_ctx] = await file_cache.get_all_sha1s(
+                file_ctx, chunker_version=CHUNKER_VERSION
+            )
 
         # FIX 2: track seen files per-ctx for D6 reconcile.
         found_by_ctx.setdefault(file_ctx, set()).add(fp_posix)
@@ -358,7 +362,10 @@ async def index_path(
             continue  # file unchanged - skip
 
         # D2: write crash sentinel BEFORE any vector-store mutation.
-        await file_cache.set_entry(fp_posix, file_ctx, current_sha1, 0, status="pending")
+        await file_cache.set_entry(
+            fp_posix, file_ctx, current_sha1, 0, status="pending",
+            chunker_version=CHUNKER_VERSION,
+        )
 
         # D4: delete stale points for this file before re-adding.
         await store.delete_by_file(file_ctx, fp_posix)
@@ -366,7 +373,10 @@ async def index_path(
         chunks: list[Chunk] = chunk_source(source, language, str(file_path))
         if not chunks:
             # No chunks - mark done immediately (empty file is valid).
-            await file_cache.set_entry(fp_posix, file_ctx, current_sha1, 0, status="done")
+            await file_cache.set_entry(
+                fp_posix, file_ctx, current_sha1, 0, status="done",
+                chunker_version=CHUNKER_VERSION,
+            )
             continue
 
         # Embed in token-bounded batches to keep the onnxruntime activation

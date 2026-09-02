@@ -13,10 +13,12 @@ class _MockFileCache:
     def __init__(self, preloaded: dict[str, str]) -> None:
         self._data = dict(preloaded)
 
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None
+    ) -> dict[str, str]:
         return dict(self._data)
 
-    async def set_entry(self, fp, ctx, sha1, cc, *, status="done"):  # noqa: ANN001
+    async def set_entry(self, fp, ctx, sha1, cc, *, status="done", chunker_version=None):  # noqa: ANN001
         if status == "done":
             self._data[fp] = sha1
 

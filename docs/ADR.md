@@ -239,3 +239,7 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
   `class_definition` emitting nothing, so 33% of a benchmark's expected anchors
   were never indexed and the recall ceiling sat at 0.670; +0.181 recall for 19%
   fewer tokens.
+- [dec-133](decisions/dec-133-chunker-version-invalidates-cache.md): the file
+  cache keys on the chunker version as well as the file's sha1 - dec-132 shipped
+  and only 75 of 575 files reindexed, because unchanged source hid the improved
+  chunker behind the cache.

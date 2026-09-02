@@ -17,7 +17,9 @@ if TYPE_CHECKING:
 
 
 class FileCache(Protocol):
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None
+    ) -> dict[str, str]:
         """Return {file_path_posix: sha1} for all 'done' entries in ctx.
 
         Uses a single SELECT. Pending rows (crash sentinels) are excluded -
@@ -32,7 +34,7 @@ class FileCache(Protocol):
         sha1: str,
         chunk_count: int,
         *,
-        status: str = "done",
+        status: str = "done", chunker_version: str | None = None
     ) -> None:
         """Insert or update a file_index row. Use status='pending' before
         vector-store mutation; status='done' only after _flush_batch() succeeds.

@@ -16,11 +16,13 @@ class _SentinelTrackingCache:
         self.calls: list[dict] = []
         self._data: dict[str, str] = {}
 
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None
+    ) -> dict[str, str]:
         # Simulate crash: return empty (pending rows excluded)
         return {}
 
-    async def set_entry(self, fp, ctx, sha1, chunk_count, *, status="done"):
+    async def set_entry(self, fp, ctx, sha1, chunk_count, *, status="done", chunker_version=None):
         self.calls.append({"fp": fp, "status": status, "sha1": sha1})
         if status == "done":
             self._data[fp] = sha1

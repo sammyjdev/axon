@@ -92,10 +92,12 @@ class _MockFileCache:
     def __init__(self) -> None:
         self._data: dict[str, str] = {}
 
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None
+    ) -> dict[str, str]:
         return dict(self._data)
 
-    async def set_entry(self, file_path, ctx, sha1, chunk_count, *, status="done"):
+    async def set_entry(self, file_path, ctx, sha1, chunk_count, *, status="done", chunker_version=None):
         self._data[file_path] = sha1
 
     async def delete_entry(self, file_path, ctx):

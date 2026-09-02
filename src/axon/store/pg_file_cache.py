@@ -34,9 +34,15 @@ class PostgresFileCache:
                     status      text    NOT NULL DEFAULT 'done',
                     chunk_count integer NOT NULL DEFAULT 0,
                     indexed_at  timestamptz NOT NULL,
+                    chunker_version text,
                     PRIMARY KEY (file_path, ctx)
                 )
                 """
+            )
+            # Existing databases predate the column; legacy rows keep NULL,
+            # which reads as stale and reindexes once.
+            await con.execute(
+                "ALTER TABLE file_index ADD COLUMN IF NOT EXISTS chunker_version text"
             )
             await con.execute(
                 "CREATE INDEX IF NOT EXISTS ix_file_index_ctx ON file_index (ctx)"
@@ -45,13 +51,30 @@ class PostgresFileCache:
                 "CREATE INDEX IF NOT EXISTS ix_file_index_status ON file_index (status)"
             )
 
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None
+    ) -> dict[str, str]:
+        """Cached sha1s for ctx, excluding anything a different chunker produced.
+
+        A row whose chunker_version does not match is simply not reported, so
+        the caller reindexes it without needing to know why. NULL - a row
+        written before this column existed - never matches, so legacy entries
+        reindex once.
+        """
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            rows = await con.fetch(
-                "SELECT file_path, sha1 FROM file_index WHERE ctx=$1 AND status='done'",
-                ctx,
-            )
+            if chunker_version is None:
+                rows = await con.fetch(
+                    "SELECT file_path, sha1 FROM file_index"
+                    " WHERE ctx=$1 AND status='done'",
+                    ctx,
+                )
+            else:
+                rows = await con.fetch(
+                    "SELECT file_path, sha1 FROM file_index"
+                    " WHERE ctx=$1 AND status='done' AND chunker_version=$2",
+                    ctx, chunker_version,
+                )
         return {r["file_path"]: r["sha1"] for r in rows}
 
     async def set_entry(
@@ -62,6 +85,7 @@ class PostgresFileCache:
         chunk_count: int,
         *,
         status: str = "done",
+        chunker_version: str | None = None,
     ) -> None:
         fp = Path(file_path.replace("\\", "/")).as_posix()
         now = datetime.now(UTC)
@@ -70,15 +94,17 @@ class PostgresFileCache:
             await con.execute(
                 """
                 INSERT INTO file_index
-                    (file_path, ctx, sha1, status, chunk_count, indexed_at)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                    (file_path, ctx, sha1, status, chunk_count, indexed_at,
+                     chunker_version)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (file_path, ctx) DO UPDATE SET
-                    sha1        = excluded.sha1,
-                    status      = excluded.status,
-                    chunk_count = excluded.chunk_count,
-                    indexed_at  = excluded.indexed_at
+                    sha1            = excluded.sha1,
+                    status          = excluded.status,
+                    chunk_count     = excluded.chunk_count,
+                    indexed_at      = excluded.indexed_at,
+                    chunker_version = excluded.chunker_version
                 """,
-                fp, ctx, sha1, status, chunk_count, now,
+                fp, ctx, sha1, status, chunk_count, now, chunker_version,
             )
 
     async def delete_entry(self, file_path: str, ctx: str) -> None:

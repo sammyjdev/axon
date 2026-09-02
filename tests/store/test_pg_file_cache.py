@@ -63,3 +63,60 @@ async def test_delete_entry_removes_only_that_row(pg_dsn) -> None:
         assert remaining == {"y.py": "sy"}
     finally:
         await cache.close()
+
+
+async def test_a_stale_chunker_version_hides_the_entry(pg_dsn) -> None:
+    """A chunker improvement must invalidate what the old chunker produced.
+
+    The cache keys on the file's sha1, so a better chunker was invisible to
+    every file that did not change afterwards: the fix shipped in the binary
+    and the index kept the old output, with nothing signalling the drift.
+    Measured 2026-09-01 on the real index - after dec-132 landed, a full
+    `index-dev` run reprocessed 75 of 575 files and produced 78 of the 583
+    expected class chunks, and only a manual DELETE on file_index recovered it.
+    """
+    from axon.store.pg_file_cache import PostgresFileCache
+
+    cache = PostgresFileCache(dsn=pg_dsn)
+    await cache.ensure_schema()
+    # A distinct ctx per test: the container is module-scoped, so rows leak.
+    await cache.set_entry("/r/a.py", "ctx-stale", "sha-1", 3, chunker_version="v1")
+
+    assert await cache.get_all_sha1s("ctx-stale", chunker_version="v1") == {
+        "/r/a.py": "sha-1"
+    }
+    assert await cache.get_all_sha1s("ctx-stale", chunker_version="v2") == {}
+
+
+async def test_reindexing_under_a_new_version_refreshes_the_entry(pg_dsn) -> None:
+    from axon.store.pg_file_cache import PostgresFileCache
+
+    cache = PostgresFileCache(dsn=pg_dsn)
+    await cache.ensure_schema()
+    await cache.set_entry("/r/b.py", "ctx-refresh", "sha-1", 3, chunker_version="v1")
+    await cache.set_entry("/r/b.py", "ctx-refresh", "sha-1", 5, chunker_version="v2")
+
+    assert await cache.get_all_sha1s("ctx-refresh", chunker_version="v2") == {
+        "/r/b.py": "sha-1"
+    }
+    assert await cache.get_all_sha1s("ctx-refresh", chunker_version="v1") == {}
+
+
+async def test_rows_written_before_this_column_existed_are_treated_as_stale(
+    pg_dsn,
+) -> None:
+    """Legacy rows carry no version. They must reindex once, not be trusted."""
+    import asyncpg
+
+    from axon.store.pg_file_cache import PostgresFileCache
+
+    cache = PostgresFileCache(dsn=pg_dsn)
+    await cache.ensure_schema()
+    con = await asyncpg.connect(pg_dsn)
+    await con.execute(
+        "INSERT INTO file_index (file_path, ctx, sha1, status, chunk_count, indexed_at)"
+        " VALUES ('/r/legacy.py', 'career', 'sha-9', 'done', 2, now())"
+    )
+    await con.close()
+
+    assert await cache.get_all_sha1s("career", chunker_version="v1") == {}

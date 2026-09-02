@@ -21,10 +21,12 @@ class _FakeFileCache:
         self._sha1: dict[str, str] = {}
         self.entries: dict[str, tuple[str, int]] = {}
 
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None
+    ) -> dict[str, str]:
         return dict(self._sha1)
 
-    async def set_entry(self, file_path, ctx, sha1, chunk_count, *, status="done"):
+    async def set_entry(self, file_path, ctx, sha1, chunk_count, *, status="done", chunker_version=None):
         self._sha1[file_path] = sha1
         if status == "done":
             self.entries[file_path] = (ctx, chunk_count)

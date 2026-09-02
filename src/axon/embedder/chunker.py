@@ -19,6 +19,15 @@ _JAVA_LANGUAGE = Language(tsjava.language())
 _PARSER = Parser(_JAVA_LANGUAGE)
 
 _PY_LANGUAGE = Language(tspython.language())
+
+#: Bump whenever a change alters what this module emits for unchanged source.
+#: The file cache keys on the file's sha1, so without this a chunker improvement
+#: is invisible to every file that does not change afterwards - the fix ships in
+#: the binary and the index silently keeps the old output. dec-132 hit exactly
+#: that: a full reindex reprocessed 75 of 575 files because the sources were
+#: untouched.
+#: v2 = class declarations are emitted as their own chunk (dec-132).
+CHUNKER_VERSION = "v2"
 _PY_PARSER = Parser(_PY_LANGUAGE)
 
 _TS_LANGUAGE = Language(tsts.language_typescript())

@@ -9,11 +9,13 @@ class _Cache:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
 
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None
+    ) -> dict[str, str]:
         self.calls.append(("get", ctx))
         return {"file.md": "sha1"}
 
-    async def set_entry(self, file_path, ctx, sha1, chunk_count, *, status="done"):
+    async def set_entry(self, file_path, ctx, sha1, chunk_count, *, status="done", chunker_version=None):
         self.calls.append(("set", ctx))
 
     async def delete_entry(self, file_path, ctx):

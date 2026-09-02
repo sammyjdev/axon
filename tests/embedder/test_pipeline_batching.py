@@ -12,10 +12,14 @@ from axon.embedder.engine import default_embedding_dimension
 class _NullCache:
     """Minimal no-op FileCache for tests that do not need caching behaviour."""
 
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None
+    ) -> dict[str, str]:
         return {}
 
-    async def set_entry(self, fp, ctx, sha1, cc, *, status="done") -> None:
+    async def set_entry(
+        self, fp, ctx, sha1, cc, *, status: str = "done", chunker_version: str | None = None
+    ) -> None:
         pass
 
     async def delete_entry(self, fp, ctx) -> None:
