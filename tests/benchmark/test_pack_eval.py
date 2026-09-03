@@ -92,3 +92,52 @@ def test_segment_file_paths_on_no_segments_is_empty() -> None:
     from axon.benchmark.pack_eval import segment_file_paths
 
     assert segment_file_paths(()) == []
+
+
+# ── ruler precision: match on the relative path, not the basename ───────────
+
+
+def test_found_expected_matches_a_relative_path_against_an_absolute_hit() -> None:
+    from axon.benchmark.pack_eval import found_expected
+
+    found = found_expected(
+        {"src/axon/store/collections.py"},
+        ["/Users/x/dev/axon/src/axon/store/collections.py"],
+    )
+    assert found == {"src/axon/store/collections.py"}
+
+
+def test_found_expected_does_not_credit_a_same_named_file_elsewhere() -> None:
+    """The whole point: __init__.py appears 64 times in the corpus, and basename
+    matching credited any of them for the one that was expected."""
+    from axon.benchmark.pack_eval import found_expected
+
+    assert found_expected(
+        {"src/axon/store/__init__.py"},
+        ["/Users/x/dev/axon/src/axon/embedder/__init__.py"],
+    ) == set()
+
+
+def test_found_expected_requires_a_segment_boundary() -> None:
+    """`store/collections.py` must not be satisfied by `datastore/collections.py`."""
+    from axon.benchmark.pack_eval import found_expected
+
+    assert found_expected(
+        {"store/collections.py"},
+        ["/Users/x/dev/axon/src/axon/datastore/collections.py"],
+    ) == set()
+
+
+def test_found_expected_handles_an_exact_equal_path() -> None:
+    from axon.benchmark.pack_eval import found_expected
+
+    assert found_expected({"a/b.py"}, ["a/b.py"]) == {"a/b.py"}
+
+
+def test_pack_hit_and_coverage_use_path_matching() -> None:
+    from axon.benchmark.pack_eval import pack_coverage, pack_hit
+
+    expected = {"src/a/x.py", "src/b/y.py"}
+    hits = ["/repo/src/a/x.py", "/repo/src/c/y.py"]  # y.py is the WRONG y.py
+    assert pack_hit(expected, hits) is True
+    assert pack_coverage(expected, hits) == pytest.approx(0.5)

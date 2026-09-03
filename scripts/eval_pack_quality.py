@@ -52,7 +52,6 @@ async def main() -> None:
     args = parser.parse_args()
 
     from axon.benchmark.pack_eval import (
-        basenames,
         load_cases,
         pack_coverage,
         pack_hit,
@@ -112,7 +111,8 @@ async def main() -> None:
         for case in cases:
             results, pack_paths = await retrieve(case.query)
             paths = [str((h.get("payload") or {}).get("file_path", "")) for h in results]
-            expected = basenames(case.expected_files)
+            # Repo-relative paths, matched by path suffix - not basenames.
+            expected = set(case.expected_files)
             hits += 1 if pack_hit(expected, paths) else 0
             coverage += pack_coverage(expected, paths)
             if args.pack_path:
