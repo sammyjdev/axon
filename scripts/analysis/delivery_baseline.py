@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-derive every number dec-132 quotes, from the Claude Code transcripts.
+"""Re-derive every number dec-134 quotes, from the Claude Code transcripts.
 
 Committed because the ADR's first two drafts quoted figures nobody could
 reproduce - and two of them were wrong in the same way. Both bugs came from

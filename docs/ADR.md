@@ -243,3 +243,12 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
   cache keys on the chunker version as well as the file's sha1 - dec-132 shipped
   and only 75 of 575 files reindexed, because unchanged source hid the improved
   chunker behind the cache.
+- [dec-134](decisions/dec-134-prompt-time-delivery.md): a fourth delivery channel
+  for lessons at `UserPromptSubmit`, suspended by its own Step 0 - the
+  retrospective replay it required came back 2 of 6, and dec-135 explains what
+  that measurement actually found.
+- [dec-135](decisions/dec-135-corpus-coverage.md): coverage, not ranking, is the
+  larger gap in the lessons corpus - roughly 30% of real mistakes have a lesson
+  that would have prevented them, on n=13 with a 95% CI of [12.7%, 57.6%]; two
+  retrievers measured, neither discriminating, and no similarity threshold that
+  separates hits from misses.

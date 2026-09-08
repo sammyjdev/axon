@@ -1,4 +1,4 @@
-# dec-132: delivery is a position in the turn - and a shadow pilot before any injection
+# dec-134: delivery is a position in the turn - and a shadow pilot before any injection
 
 - Status: **Superseded by its own Step 0.** The retrieval quality this design
   depends on was measured 2026-09-02 and does not support it; the injection step
@@ -162,7 +162,7 @@ all made after the corpus existed, queried with the situation as it looked
 before each one. Read through its own vector query, never `search()`, so the
 delivery counters stay clean.
 
-**Precision@3: 2 of 6** - but see dec-133: split by whether a relevant lesson
+**Precision@3: 2 of 6** - but see dec-135: split by whether a relevant lesson
 existed at all, ranking scored 2 of 2 and COVERAGE scored 2 of 6. The reading
 below ("the retriever is bad") was the first and wrong one; the constraint is
 what was never written. What survives here unchanged is the score-separation

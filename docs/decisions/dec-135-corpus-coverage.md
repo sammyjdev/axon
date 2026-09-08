@@ -1,8 +1,8 @@
-# dec-133: coverage is the larger gap in the lessons corpus
+# dec-135: coverage is the larger gap in the lessons corpus
 
 - Status: Proposed
 - Date: 2026-09-02 (amended 2026-09-03 after external review)
-- Relates to: dec-132 (suspended by this measurement), the lesson-delivery
+- Relates to: dec-134 (suspended by this measurement), the lesson-delivery
   telemetry (`064898a`), the SessionStart catalogue (`8d04313`)
 - Evidence: `scripts/analysis/lesson_replay.py`, `scripts/analysis/delivery_baseline.py`
 - **Provenance of the figures, stated up front:** almost none of the numbers
@@ -13,16 +13,16 @@
   sample, the similarity aggregates (0.601, 0.465, 0.513, 0.705), the trigger
   counts and the `tell` re-embedding run have no committed script at all. Only
   the session counts in the last Limitations bullet are code-derived
-  (`delivery_baseline.py`). This is the same defect for which dec-132 was
+  (`delivery_baseline.py`). This is the same defect for which dec-134 was
   rewritten, and it is not fixed here - it is disclosed.
 
 ## Context
 
-dec-132 proposed a fourth delivery channel for lessons. Its Step 0 - a
+dec-134 proposed a fourth delivery channel for lessons. Its Step 0 - a
 retrospective replay against six real mistakes - was supposed to establish that
 a delivered lesson helps. It came back 2 of 6 and suspended the channel.
 
-The first reading of that result, including the one recorded in dec-132, was
+The first reading of that result, including the one recorded in dec-134, was
 "the retriever is bad". **Separating the two failure modes puts most of the
 weight elsewhere** - though, as the amendments below record, not with the
 confidence the first draft of this document claimed.
@@ -145,7 +145,7 @@ bound by construction - trigger matching was never run against the real queries.
 scores were 0.542 and 0.557; miss top-1 scores were 0.496, 0.528, 0.557 and
 0.575. The highest score in the run belongs to a miss, and a hit and a miss tie
 exactly at 0.557. Two limits on the scope: the hit/miss grouping is the author's
-labelling, so this property is not label-independent - dec-132's claim that it
+labelling, so this property is not label-independent - dec-134's claim that it
 "depends on no labelling at all" is wrong and is withdrawn here. And only an
 absolute top-1 threshold was tested; a margin (top1 - top2) or rank-stability
 feature was not.
@@ -200,7 +200,7 @@ Concretely:
 3. **Automatic injection needs a threshold this data does not offer.** No
    absolute top-1 similarity threshold separates these six hand-labelled pairs.
    That is six points, one embedding family, one author of queries, and only the
-   absolute-threshold family was tested - so it suspends dec-132 pending a real
+   absolute-threshold family was tested - so it suspends dec-134 pending a real
    threshold study, rather than settling the question.
 
 ## Limitations
