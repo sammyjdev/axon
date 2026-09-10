@@ -85,7 +85,10 @@ def test_retrieval_strategy_never_calls_the_llm_classifier(monkeypatch) -> None:
 def test_pb_retrieval_strategy_never_calls_the_llm_classifier(monkeypatch) -> None:
     from axon.cli import pb
 
-    monkeypatch.setattr(server, "_load_retrieval_profile", lambda: ("free", "auto", ()))
+    monkeypatch.setattr(
+        "axon.context.contracts.load_retrieval_profile",
+        lambda runtime=None: ("free", "auto", ()),
+    )
 
     def _boom(content, ctx=None):
         raise AssertionError("classifier must not be called for strategy selection")
