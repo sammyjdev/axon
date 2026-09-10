@@ -244,14 +244,14 @@ with 95% confidence intervals, and every claim names its counterfactual
 - **Session cost** (vs re-sending the conversation - 10-turn sessions, 3
   stable runs, 2026-07-04): cost parity (pooled +4%), crossing to net savings
   at turn 6-9, with final-turn faithfulness at parity or better.
-- **Real-usage savings** (vs reading each source file in full): **89.5%** -
-  275,222 tokens returned where the Read workflow would have cost 2,622,254,
-  over the 271 instrumented requests whose source files all resolve (exact
+- **Real-usage savings** (vs reading each source file in full): **90.7%** -
+  330,590 tokens returned where the Read workflow would have cost 3,537,838,
+  over the 333 instrumented requests whose source files all resolve (exact
   counting, after the declared directory-move remaps in
   [`benchmarks/recall_savings_remap.json`](benchmarks/recall_savings_remap.json)).
   Including the requests with permanently missing files - whose counterfactual
   is undercounted, biasing *against* the claim - the conservative floor over
-  all 418 requests is 87.1%. Reproducible from the committed snapshot alone:
+  all 448 requests is 88.6%. Reproducible from the committed snapshot alone:
   `python3 scripts/recall_savings_report.py --snapshot benchmarks/recall_savings_snapshot.jsonl`
   ([`benchmarks/recall_savings_snapshot.jsonl`](benchmarks/recall_savings_snapshot.jsonl):
   whitelisted integer counts and opaque ids only - raw telemetry with local
@@ -263,8 +263,10 @@ never a measurement (kept in [`benchmarks/model.py`](benchmarks/model.py) for
 provenance; see gnomon-eval ADR-0011). A later version cited **90.7%**
 (n=100, 2026-07-04) - a real measurement that validates in hindsight (its
 recoverable window reproduces at 90.5% under the declared remaps) but was
-computed live against local paths and is superseded by the committed-snapshot
-figure above, which anyone can recompute.
+computed live against local paths. The first committed-snapshot cut
+(2026-07-28) read **89.5%** exact over n=271 and 87.1% floor over n=418; five
+further declared directory moves (2026-08-07) resolved 62 more requests and
+produced the figure above, which anyone can recompute.
 
 Measured compression telemetry from running the real pipeline (`phi3:mini`
 via Ollama, caveman + RTK) over 69 representative technical context windows
