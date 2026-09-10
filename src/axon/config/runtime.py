@@ -793,7 +793,7 @@ def load_runtime_config() -> RuntimeConfig:
 def _resolve_provider_profile() -> str:
     from axon.router.profiles import available_profiles
 
-    raw = os.environ.get("AXON_PROVIDER_PROFILE", "free").strip().lower()
+    raw = os.environ.get("AXON_PROVIDER_PROFILE", "budget").strip().lower()
     if raw not in available_profiles():
         raise ValueError(
             f"AXON_PROVIDER_PROFILE invalido: {raw!r}. Disponiveis: {available_profiles()}"

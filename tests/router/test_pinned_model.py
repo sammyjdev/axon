@@ -85,10 +85,10 @@ def test_route_normal_uses_classifier_when_env_unset(monkeypatch) -> None:
     maps the result through _MODEL_MAP as before."""
     monkeypatch.delenv("AXON_COMPLETION_MODEL", raising=False)
 
-    free = get_profile("free")
+    budget = get_profile("budget")
     monkeypatch.setattr(
         "axon.router.engine._MODEL_MAP",
-        {task: free.models[task.value] for task in TaskType},
+        {task: budget.models[task.value] for task in TaskType},
     )
     monkeypatch.setattr(
         "axon.router.engine.classify_task_with_source",

@@ -6,8 +6,6 @@ from enum import StrEnum
 
 class Profile(StrEnum):
     BUDGET = "budget"
-    # FREE is retained as the alias
-    FREE = "free"
     PAID = "paid"
 
 
@@ -22,7 +20,7 @@ class ProfileSpec:
 
 _BUDGET = ProfileSpec(
     name="budget",
-    description="Custo reduzido: DeepInfra + OpenRouter fallback (substitui o antigo 'free')",
+    description="Custo reduzido: DeepInfra + OpenRouter fallback",
     # Model ids verified with real chat completions on 2026-08-26 (see dec-128).
     models={
         "TRIVIAL_COMPLETION": "deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
@@ -82,7 +80,6 @@ _PAID = ProfileSpec(
 
 _REGISTRY: dict[str, ProfileSpec] = {
     "budget": _BUDGET,
-    "free": _BUDGET,
     "paid": _PAID,
 }
 

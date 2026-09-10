@@ -37,7 +37,7 @@ tier is selected by the active provider profile (see dec-106). The PAID profile
 preserves D2 verbatim via OpenRouter; the budget profile substitutes cheap live
 models on DeepInfra with an OpenRouter rung (see dec-128).
 
-| Task type | PAID profile (D2 verbatim) | BUDGET profile (alias `free`) |
+| Task type | PAID profile (D2 verbatim) | BUDGET profile |
 | --- | --- | --- |
 | trivial/completion | `openrouter/anthropic/claude-haiku-4` | `deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` |
 | code analysis | `openrouter/anthropic/claude-sonnet-4` | `openrouter/meta-llama/llama-3.3-70b-instruct` |
@@ -57,7 +57,7 @@ the supported models are:
 - `gemma4:e4b`: local scoring and classification
 - `gemma4:26b`: heavier deep-suggestion workloads on larger hardware
 
-Default profiles (FREE/PAID) never route to Ollama; enable it explicitly for
+Default profiles (BUDGET/PAID) never route to Ollama; enable it explicitly for
 `ctx=work` or any other path that requires local-only execution.
 
 ### D4: Single Postgres backend (dec-101 fully superseded by dec-121)

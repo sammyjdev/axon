@@ -91,7 +91,7 @@ operating mode above.
 
 | Profile | Status | Required keys | Best fit |
 | --- | --- | --- | --- |
-| `free` (default) | recommended | `GROQ_API_KEY`, `NVIDIA_NIM_API_KEY` | onboarding without API spend; 16 GB laptops |
+| `budget` (default) | recommended | `GROQ_API_KEY`, `NVIDIA_NIM_API_KEY` | onboarding without API spend; 16 GB laptops |
 | `paid` | supported | `OPENROUTER_API_KEY`, `GROQ_API_KEY` | higher quality and quotas via Claude (D2 verbatim) |
 
 - Both profiles route exclusively to cloud — `ctx=work` (restricted) needs

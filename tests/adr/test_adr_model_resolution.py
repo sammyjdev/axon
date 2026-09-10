@@ -14,11 +14,11 @@ class TestAdrModelResolution:
         monkeypatch.setenv("AXON_ADR_MODEL", "ollama/phi3:mini")
         assert _adr_model() == "ollama/phi3:mini"
 
-    def test_free_profile_defaults_to_groq(
+    def test_budget_profile_defaults_to_groq(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("AXON_ADR_MODEL", raising=False)
-        monkeypatch.setenv("AXON_PROVIDER_PROFILE", "free")
+        monkeypatch.setenv("AXON_PROVIDER_PROFILE", "budget")
         assert _adr_model() == "groq/openai/gpt-oss-120b"
 
     def test_paid_profile_also_uses_groq_classifier(
@@ -32,7 +32,7 @@ class TestAdrModelResolution:
     def test_env_override_picks_nim(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """User can opt into NIM explicitly even when running FREE profile."""
+        """User can opt into NIM explicitly even when running BUDGET profile."""
         monkeypatch.setenv(
             "AXON_ADR_MODEL", "nvidia_nim/meta/llama-3.1-70b-instruct"
         )

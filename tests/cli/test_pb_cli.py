@@ -269,7 +269,7 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
         provider_anthropic_enabled=True,
         provider_openrouter_enabled=True,
         provider_ollama_enabled=True,
-        provider_profile="free",
+        provider_profile="budget",
         openrouter_compliance_required=False,
         expansion=ExpansionConfig(
             enabled=True,

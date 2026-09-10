@@ -1,7 +1,7 @@
 name: ci
 
 # dec-107 — validation strategy. Lint, compile, and router/resilience tests
-# under both provider profiles (free, paid). dec-106 defines the profile system.
+# under both provider profiles (budget, paid). dec-106 defines the profile system.
 
 on:
   pull_request:
@@ -50,7 +50,7 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12"]
-        profile: [free, paid]
+        profile: [budget, paid]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -98,7 +98,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [free, paid]
+        profile: [budget, paid]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -115,7 +115,7 @@ jobs:
           python3 -c "
           from axon.router.profiles import get_profile, available_profiles
           from axon.router.engine import _MODEL_MAP, _COST_PER_1K, _PROFILE
-          # identity, not name: free is a kept alias for the budget spec (dec-128).
+          # budget is the only low-cost profile spelling; the alias was removed in issue #156.
           assert _PROFILE is get_profile('${{ matrix.profile }}')
           assert _MODEL_MAP, 'model map empty'
           assert all(v for v in _MODEL_MAP.values()), 'unmapped task type'

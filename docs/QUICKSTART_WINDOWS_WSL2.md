@@ -19,7 +19,7 @@ You also need:
 - a reachable remote AXON infra host with Qdrant, Redis, Langfuse, and Ollama
   running (Ollama is optional unless you use `ctx=work` or another local-only
   path)
-- API keys for the active provider profile (default is `free`):
+- API keys for the active provider profile (default is `budget`):
   - `GROQ_API_KEY` from <https://console.groq.com/keys>
   - `NVIDIA_NIM_API_KEY` from <https://build.nvidia.com>
 
@@ -52,7 +52,7 @@ set -a
 source .env.local
 set +a
 
-export AXON_PROVIDER_PROFILE=free
+export AXON_PROVIDER_PROFILE=budget
 export GROQ_API_KEY=<your-groq-key>
 export NVIDIA_NIM_API_KEY=<your-nim-key>
 export AXON_ENGINE="$PWD"

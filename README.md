@@ -99,8 +99,10 @@ Two are built in:
 
 | Profile | Models | When to use |
 |---|---|---|
-| `budget` (default, alias `free`) | DeepInfra Llama 3.1 8B / 3.3 70B with an OpenRouter Llama 3.3 70B rung | Spend is cents per month; rate-limited; fine on a 16 GB laptop without local models |
+| `budget` (default) | DeepInfra Llama 3.1 8B / 3.3 70B with an OpenRouter Llama 3.3 70B rung | Spend is cents per month; rate-limited; fine on a 16 GB laptop without local models |
 | `paid` | OpenRouter Claude Haiku/Sonnet/Opus (D2 tiers) + Groq paid | Higher quality and quotas; unified billing via OpenRouter |
+
+Rename the `free` value of `AXON_PROVIDER_PROFILE` to `budget` when upgrading.
 
 Minimum setup (budget):
 

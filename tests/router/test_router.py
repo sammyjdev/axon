@@ -20,11 +20,11 @@ def test_route_blocks_cloud_fallback_for_corporate_context() -> None:
         )
 
 
-def test_route_uses_classifier_result_under_free_profile(monkeypatch) -> None:
-    free = get_profile("free")
+def test_route_uses_classifier_result_under_budget_profile(monkeypatch) -> None:
+    budget = get_profile("budget")
     monkeypatch.setattr(
         "axon.router.engine._MODEL_MAP",
-        {task: free.models[task.value] for task in TaskType},
+        {task: budget.models[task.value] for task in TaskType},
     )
     monkeypatch.setattr(
         "axon.router.engine.classify_task_with_source",
@@ -175,7 +175,7 @@ def test_unknown_profile_raises() -> None:
 
 
 def test_profiles_define_all_task_types() -> None:
-    for profile_name in ("free", "paid"):
+    for profile_name in ("budget", "paid"):
         profile = get_profile(profile_name)
         for task in TaskType:
             assert task.value in profile.models, (

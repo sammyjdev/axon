@@ -6,7 +6,7 @@ AXON can run as a low-cost, always-available "second brain" inside Claude Code �
 
 ## Why This Works
 
-- **FREE profile** uses Groq + NVIDIA NIM free tiers (no cost, rate-limited)
+- **BUDGET profile** uses Groq + NVIDIA NIM free tiers (no cost, rate-limited)
 - **Local embeddings** keep all semantic search on your machine (via Qdrant)
 - **Local judge** (GNOMON) scores decisions without cloud calls
 - **MCP transport** runs under your Claude Code subscription (flat-rate, no per-call charge)
@@ -17,16 +17,16 @@ The result: continuous context across coding sessions, projects, and agent switc
 
 ## Low-Cost Setup: Three Options
 
-### Option 1: FREE Profile (Default, Zero Cost)
+### Option 1: BUDGET Profile (Default, Zero Cost)
 
 Groq + NVIDIA NIM free tiers. Rate-limited but sufficient for development work.
 
 #### Env vars
 
 ```bash
-# Use the default FREE profile (no explicit setting needed)
+# Use the default BUDGET profile (no explicit setting needed)
 # or set it explicitly:
-export AXON_PROVIDER_PROFILE=free
+export AXON_PROVIDER_PROFILE=budget
 
 # API keys for free-tier access
 export GROQ_API_KEY=gsk_your_groq_key
@@ -37,7 +37,7 @@ export NVIDIA_NIM_API_KEY=nvapi_your_nim_key
 
 ```bash
 # AXON configuration
-AXON_PROVIDER_PROFILE=free
+AXON_PROVIDER_PROFILE=budget
 AXON_ENGINE=~/dev/axon
 AXON_VAULT=~/vault
 
@@ -63,7 +63,7 @@ Run all models locally with Ollama (requires 8–16 GB of VRAM).
 #### Env vars
 
 ```bash
-export AXON_PROVIDER_PROFILE=free       # fallback for non-local tasks
+export AXON_PROVIDER_PROFILE=budget     # fallback for non-local tasks
 export AXON_PROVIDER_OLLAMA=1           # enable Ollama routing
 export AXON_OLLAMA_LOCAL_HOST=http://127.0.0.1:11434
 ```
@@ -182,9 +182,9 @@ pip install -e .
 
 Choose one:
 
-**FREE (default)**:
+**BUDGET (default)**:
 ```bash
-export AXON_PROVIDER_PROFILE=free
+export AXON_PROVIDER_PROFILE=budget
 export GROQ_API_KEY=gsk_...
 export NVIDIA_NIM_API_KEY=nvapi-...
 ```
@@ -227,7 +227,7 @@ Try querying:
 2. **Index**: Code is chunked, embedded locally (via Qdrant), and stored in SQLite (source of truth).
 3. **Retrieve**: MCP tools query SQLite for decisions and Qdrant for semantic code search.
 4. **Compress** (optional): Large context is compressed locally via RTK or Caveman (phi3:mini) before returning.
-5. **Route**: Calls to cloud models use the active profile (FREE, PAID, or Ollama).
+5. **Route**: Calls to cloud models use the active profile (BUDGET, PAID, or Ollama).
 
 All indexing and retrieval happens on your machine. Only classification and deep reasoning calls route through the cloud (via the chosen profile).
 
@@ -237,15 +237,15 @@ All indexing and retrieval happens on your machine. Only classification and deep
 
 | Variable | Default | Notes |
 |---|---|---|
-| `AXON_PROVIDER_PROFILE` | `free` | Profile to use: `free`, `paid`, or custom |
+| `AXON_PROVIDER_PROFILE` | `budget` | Profile to use: `budget`, `paid`, or custom |
 | `AXON_PROVIDER_OLLAMA` | `0` | Set to `1` to enable local Ollama routing |
 | `AXON_OLLAMA_LOCAL_HOST` | `http://127.0.0.1:11434` | Ollama server address |
 | `AXON_ENGINE` | `~/dev/axon` | AXON repository root |
 | `AXON_VAULT` | `~/vault` | External Markdown vault for context (optional) |
 | `QDRANT_URL` | `http://localhost:6333` | Vector database endpoint |
 | `REDIS_URL` | `redis://localhost:6379` | Graph cache endpoint |
-| `GROQ_API_KEY` | — | Required for FREE profile |
-| `NVIDIA_NIM_API_KEY` | — | Required for FREE profile |
+| `GROQ_API_KEY` | - | Required for BUDGET profile |
+| `NVIDIA_NIM_API_KEY` | - | Required for BUDGET profile |
 | `OPENROUTER_API_KEY` | — | Required for PAID profile |
 
 ---

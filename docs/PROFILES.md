@@ -2,7 +2,7 @@
 
 > **Disambiguation.** This document describes **operating-mode profiles**
 > (`solo-dev`, `team-dev`, `privacy-first`) stored in `axon.toml`.
-> These are different from **provider profiles** (`budget` - alias `free` - and `paid`) selected
+> These are different from **provider profiles** (`budget` and `paid`) selected
 > via `AXON_PROVIDER_PROFILE`, which choose the LLM provider mapping
 > (DeepInfra + OpenRouter Llama vs. OpenRouter Claude).
 > See [`dec-106`](decisions/dec-106-routing-profiles.md) for provider profiles, superseded in
@@ -315,7 +315,7 @@ model dynamically:
 
 1. `AXON_ADR_MODEL` env var (explicit override) — highest precedence
 2. Active provider profile's `classifier_model` — Groq by default in
-   both FREE and PAID (classification is cheap)
+   both BUDGET and PAID (classification is cheap)
 
 ### Avoiding paid APIs entirely
 

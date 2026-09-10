@@ -20,7 +20,7 @@ What you expected to happen instead.
 - AXON version / commit: `axon --version`
 - OS:
 - Python version:
-- Provider profile (`AXON_PROVIDER_PROFILE`): free / paid
+- Provider profile (`AXON_PROVIDER_PROFILE`): budget / paid
 
 **Logs / output**
 Paste relevant output from `axon doctor` or the failing command. Redact any

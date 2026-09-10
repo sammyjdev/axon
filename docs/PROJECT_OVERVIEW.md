@@ -105,7 +105,7 @@ dependency bans + deleted-module assertions — all currently passing).
 **Routing (dec-106, accepted):** tier shape is fixed (D2); concrete models come
 from `AXON_PROVIDER_PROFILE`:
 
-| Tier | `budget` (alias `free`) | `paid` |
+| Tier | `budget` | `paid` |
 |---|---|---|
 | trivial | `deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` | `openrouter/anthropic/claude-haiku-4` |
 | code analysis | `openrouter/meta-llama/llama-3.3-70b-instruct` | `openrouter/anthropic/claude-sonnet-4` |

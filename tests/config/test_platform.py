@@ -377,7 +377,7 @@ def _runtime(
                 hard_cap_usd=4.0,
             ),
         ),
-        provider_profile="free",
+        provider_profile="budget",
         openrouter_compliance_required=False,
         active_profile=active_profile,
     )

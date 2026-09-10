@@ -6,22 +6,22 @@ from axon.router.profiles import available_profiles, get_profile
 from axon.router.provider_validation import provider_for_model
 
 
-def test_free_alias_resolves_to_budget() -> None:
+def test_get_profile_free_alias_removed() -> None:
     budget = get_profile("budget")
-    free = get_profile("free")
-    assert budget is free
     assert budget.name == "budget"
 
     # Normalization and default
-    assert get_profile(" Free ") is budget
+    assert get_profile(" Budget ") is budget
     assert get_profile(None) is budget
 
+    with pytest.raises(ValueError, match="profile invalido: 'free'"):
+        get_profile("free")
     with pytest.raises(ValueError, match="profile invalido: 'bogus'"):
         get_profile("bogus")
 
 
-def test_available_profiles_includes_alias() -> None:
-    assert available_profiles() == ["budget", "free", "paid"]
+def test_available_profiles_lists_budget_and_paid() -> None:
+    assert available_profiles() == ["budget", "paid"]
 
 
 def test_budget_profile_models_are_live_measured_set() -> None:

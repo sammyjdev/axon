@@ -28,7 +28,7 @@ _POLICY = PolicyRegistry(_RUNTIME)
 _BREAKER = CircuitBreaker()
 _RATE_LIMITER = RateLimiter()
 
-# Mapping task -> model é selecionado pelo profile ativo (free | paid).
+# Mapping task -> model é selecionado pelo profile ativo (budget | paid).
 # D2 (Haiku/Sonnet/Opus) é preservado pelo profile PAID via OpenRouter.
 _PROFILE = get_profile(_RUNTIME.provider_profile)
 _MODEL_MAP: dict[TaskType, str] = {
