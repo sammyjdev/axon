@@ -1250,12 +1250,13 @@ def session_save(
     ] = None,
 ) -> None:
     """Comprime e salva session memory (chamado pelo Stop/SessionEnd hook do Claude Code)."""
+    from axon.core.repo_identity import repo_identity
     from axon.memory.digest import digest_turns
     from axon.memory.session_compressor import SessionCompressor
     from axon.memory.transcript import parse_transcript_turns
     from axon.store.session_store import SessionMemory, SessionStore
 
-    project = os.path.basename(cwd or os.getcwd())
+    project = repo_identity(cwd or os.getcwd())
 
     async def _save() -> None:
         turns: list[dict[str, str]] = []
@@ -1521,6 +1522,7 @@ def _save_compact_summary(*, project: str, summary: str) -> None:
 @app.command("compact-hook")
 def compact_hook() -> None:
     """PostCompact hook: persist the harness's own compact summary (stdin payload)."""
+    from axon.core.repo_identity import repo_identity
     from axon.memory.transcript import last_compact_summary
 
     try:
@@ -1541,8 +1543,9 @@ def compact_hook() -> None:
         if not summary:
             typer.echo("[axon] compact-hook: sem compact summary, skip.", err=True)
             return
-        _save_compact_summary(project=os.path.basename(cwd), summary=summary)
-        typer.echo(f"[axon] Compact summary salvo: {os.path.basename(cwd)}", err=True)
+        project = repo_identity(cwd)
+        _save_compact_summary(project=project, summary=summary)
+        typer.echo(f"[axon] Compact summary salvo: {project}", err=True)
     except Exception as exc:  # a hook must never interrupt the agent
         typer.echo(f"[axon] compact-hook: {exc}", err=True)
 
