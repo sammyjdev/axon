@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from functools import lru_cache
 
 import litellm
@@ -10,17 +9,9 @@ from axon.policy.core import PolicyRegistry, ReasonCode
 from axon.resilience.circuit_breaker import CircuitBreaker
 from axon.resilience.rate_limiter import RateLimiter, spec_from_env
 from axon.router.provider_validation import provider_for_model
+from axon.router.task_type import TaskType
 
 litellm.drop_params = True
-
-
-class TaskType(StrEnum):
-    TRIVIAL_COMPLETION = "TRIVIAL_COMPLETION"
-    CODE_ANALYSIS = "CODE_ANALYSIS"
-    ARCHITECTURE = "ARCHITECTURE"
-    DEEP_REASONING = "DEEP_REASONING"
-    LOCAL_ONLY = "LOCAL_ONLY"
-    UNKNOWN = "UNKNOWN"
 
 
 _CLASSIFIER_PROMPT = """

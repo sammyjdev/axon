@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
@@ -140,3 +141,52 @@ def _normalize_optional(value: object) -> str | None:
         return None
     normalized = str(value).strip().lower()
     return normalized or None
+
+
+def load_retrieval_profile(
+    runtime: object | None = None,
+) -> tuple[str | None, str, tuple[str, ...]]:
+    from axon.config.runtime import (
+        get_active_profile,
+        get_profile,
+        load_runtime_config,
+        select_capabilities,
+    )
+
+    rt = runtime if runtime is not None else load_runtime_config()
+    active_profile = getattr(rt, "active_profile", None) or get_active_profile()
+    mode = getattr(rt, "mode", "minimal")
+    capabilities: tuple[str, ...] = ()
+
+    if active_profile:
+        try:
+            profile = get_profile(active_profile)
+            profile_mode = str(profile.get("mode") or "").strip()
+            if profile_mode:
+                mode = profile_mode
+            capabilities = tuple(select_capabilities(profile=profile).enabled_features)
+        except ValueError:
+            pass
+
+    return active_profile, mode, capabilities
+
+
+def select_retrieval_strategy(
+    query: str,
+    ctx: str | None,
+    loader: Callable[[], tuple[str | None, str, tuple[str, ...]]] | None = None,
+) -> tuple[RetrievalStrategy, str, str | None, str]:
+    from axon.router.task_type import TaskType
+
+    task_type = TaskType.CODE_ANALYSIS
+
+    profile_loader = loader or load_retrieval_profile
+    profile, mode, capabilities = profile_loader()
+    strategy = select_default_retrieval_strategy(
+        task_type=task_type,
+        profile=profile,
+        mode=mode,
+        capabilities=capabilities,
+    )
+    return strategy, str(task_type.value), profile, mode
+

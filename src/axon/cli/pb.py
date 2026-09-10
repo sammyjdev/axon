@@ -282,7 +282,7 @@ def _build_planner_executor_prompts(
 
 
 def _select_retrieval_strategy(query: str, ctx: str | None) -> tuple[object, str, str | None, str]:
-    from axon.mcp.server import _select_retrieval_strategy as select_retrieval_strategy
+    from axon.context.contracts import select_retrieval_strategy
 
     return select_retrieval_strategy(query, ctx)
 
