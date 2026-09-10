@@ -790,20 +790,6 @@
     "decision_id": "dec-850"
   },
   {
-    "query": "chore: derive backends-start paths from script location",
-    "expected_files": [
-      "scripts/axon-backends-start.sh"
-    ],
-    "decision_id": "dec-849"
-  },
-  {
-    "query": "chore: derive backends-start paths from script location",
-    "expected_files": [
-      "scripts/axon-backends-start.sh"
-    ],
-    "decision_id": "dec-848"
-  },
-  {
     "query": "docs: dec-127 records the Bedrock-through-funnel decision",
     "expected_files": [
       "docs/ADR.md",
