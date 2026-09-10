@@ -312,20 +312,6 @@ async def complete_with_usage(
     ]
 
     provider = provider_for_model(result.model)
-    if provider == "anthropic":
-        validate_anthropic_cache_control(layered_messages)
-    if provider == "openrouter" and _RUNTIME.openrouter_compliance_required:
-        validate_openrouter_compliance(task.extra)
-
-    provider_enabled = {
-        "anthropic": _RUNTIME.provider_anthropic_enabled,
-        "openrouter": _RUNTIME.provider_openrouter_enabled,
-        "ollama": _RUNTIME.provider_ollama_enabled,
-        "bedrock": _RUNTIME.provider_bedrock_enabled,
-    }.get(provider, True)
-    if not provider_enabled:
-        raise RuntimeError(f"provider disabled: {provider}")
-
     approx_tokens = count_tokens_for_provider(provider, layered_messages)
     if approx_tokens > _MAX_PRE_SEND_TOKENS:
         raise RuntimeError(ReasonCode.DENY_BUDGET_PRE_SEND.value)
@@ -340,6 +326,20 @@ async def complete_with_usage(
 
     # Recomputa provider apos eventual downgrade (Opus->Sonnet pode cruzar provedores).
     provider = provider_for_model(result.model)
+    if provider == "anthropic":
+        validate_anthropic_cache_control(layered_messages)
+    if provider == "openrouter" and _RUNTIME.openrouter_compliance_required:
+        validate_openrouter_compliance(task.extra)
+
+    provider_enabled = {
+        "anthropic": _RUNTIME.provider_anthropic_enabled,
+        "openrouter": _RUNTIME.provider_openrouter_enabled,
+        "ollama": _RUNTIME.provider_ollama_enabled,
+        "bedrock": _RUNTIME.provider_bedrock_enabled,
+    }.get(provider, True)
+    if not provider_enabled:
+        raise RuntimeError(f"provider disabled: {provider}")
+
     rate_spec = spec_from_env(provider)
     if not _RATE_LIMITER.allow_call(provider, rate_spec):
         raise RuntimeError(ReasonCode.DENY_RATE_LIMIT.value)
