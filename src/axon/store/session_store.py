@@ -295,7 +295,35 @@ class SessionStore:
                         created_at=datetime.fromisoformat(payload["created_at"]),
                     )
                 )
+            elif kind == "session_memory":
+                await (await self._sessions()).save_session_memory(
+                    SessionMemory(
+                        project=payload["project"],
+                        summary=payload["summary"],
+                        raw_turns=payload["raw_turns"],
+                        created_at=datetime.fromisoformat(payload["created_at"]),
+                    )
+                )
             else:
                 raise ValueError(f"unknown payload kind: {kind!r}")
 
-        return await _drain(paths, sink=sink)
+        def is_retryable(exc: Exception) -> bool:
+            if isinstance(exc, OSError):
+                return True
+            try:
+                import asyncpg
+
+                if isinstance(
+                    exc,
+                    (
+                        asyncpg.PostgresConnectionError,
+                        asyncpg.CannotConnectNowError,
+                        asyncpg.TooManyConnectionsError,
+                    ),
+                ):
+                    return True
+            except ImportError:
+                pass
+            return False
+
+        return await _drain(paths, sink=sink, is_retryable=is_retryable)

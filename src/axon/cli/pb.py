@@ -10,7 +10,10 @@ import sys
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
+
+if TYPE_CHECKING:
+    from axon.store.session_store import SessionMemory
 
 import typer
 
@@ -1241,6 +1244,47 @@ def note(
     session_note(text)
 
 
+async def _save_session_memory_with_spool(
+    mem: SessionMemory,
+    *,
+    success_msg: str | None = None,
+) -> None:
+    from axon.store.session_store import SessionStore
+
+    try:
+        db = _get_db_path()
+        store = SessionStore(db)
+        await store.init()
+        await store.save_session_memory(mem)
+        if success_msg:
+            typer.echo(success_msg)
+    except Exception as exc:
+        typer.echo(f"[axon] store save falhou ({exc}); gravando spool.", err=True)
+        try:
+            from axon.store.pending import _pending_paths, write_pending
+
+            payload = {
+                "kind": "session_memory",
+                "project": mem.project,
+                "summary": mem.summary,
+                "raw_turns": mem.raw_turns,
+                "created_at": mem.created_at.isoformat(),
+            }
+            await write_pending(
+                payload=payload,
+                commit_hash="session",
+                paths=_pending_paths(),
+            )
+        except Exception as spool_exc:
+            typer.echo(f"[axon] spool write falhou ({spool_exc}).", err=True)
+        return
+
+    try:
+        await store.drain_pending()
+    except Exception as drain_exc:
+        typer.echo(f"[axon] drain_pending: {drain_exc}", err=True)
+
+
 @app.command("session-save")
 @session_app.command("save")
 def session_save(
@@ -1254,7 +1298,7 @@ def session_save(
     from axon.memory.digest import digest_turns
     from axon.memory.session_compressor import SessionCompressor
     from axon.memory.transcript import parse_transcript_turns
-    from axon.store.session_store import SessionMemory, SessionStore
+    from axon.store.session_store import SessionMemory
 
     project = repo_identity(cwd or os.getcwd())
 
@@ -1298,12 +1342,11 @@ def session_save(
             typer.echo("[axon] Nada a gravar, skip.", err=True)
             return
 
-        db = _get_db_path()
-        store = SessionStore(db)
-        await store.init()
         mem = SessionMemory(project=project, summary=summary, raw_turns=len(turns))
-        await store.save_session_memory(mem)
-        typer.echo(f"[axon] Session memory salva: {project} ({len(turns)} turns)")
+        await _save_session_memory_with_spool(
+            mem,
+            success_msg=f"[axon] Session memory salva: {project} ({len(turns)} turns)",
+        )
 
     asyncio.run(_save())
 
@@ -1507,14 +1550,11 @@ def adr_hook_install(
 
 def _save_compact_summary(*, project: str, summary: str) -> None:
     """Persist a harness-produced compact summary as SessionMemory."""
-    from axon.store.session_store import SessionMemory, SessionStore
+    from axon.store.session_store import SessionMemory
 
     async def _save() -> None:
-        store = SessionStore(_get_db_path())
-        await store.init()
-        await store.save_session_memory(
-            SessionMemory(project=project, summary=summary, raw_turns=0)
-        )
+        mem = SessionMemory(project=project, summary=summary, raw_turns=0)
+        await _save_session_memory_with_spool(mem)
 
     asyncio.run(_save())
 

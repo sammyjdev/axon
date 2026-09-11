@@ -66,6 +66,58 @@ def _warnings_log() -> Path:
     return data_root() / "capture-warnings.jsonl"
 
 
+def _ensure_spool_ignored(paths: PendingPaths) -> None:
+    """Ensure spool directories are ignored by git in their parent .gitignore."""
+    dirs = [paths.pending_dir, paths.quarantine_dir]
+    by_parent: dict[Path, list[Path]] = {}
+    for d in dirs:
+        by_parent.setdefault(d.parent, []).append(d)
+
+    for parent, children in by_parent.items():
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+            ignore_file = parent / ".gitignore"
+            content = ""
+            existing_lines: list[str] = []
+            if ignore_file.is_file():
+                content = ignore_file.read_text(encoding="utf-8")
+                existing_lines = [
+                    line.strip()
+                    for line in content.splitlines()
+                    if line.strip() and not line.strip().startswith("#")
+                ]
+
+            to_add: list[str] = []
+            for child in children:
+                rule = f"{child.name}/"
+                rule_clean = child.name
+                already_present = any(
+                    line in (
+                        "*",
+                        "/*",
+                        rule,
+                        f"/{rule}",
+                        rule_clean,
+                        f"/{rule_clean}",
+                        f"{rule}*",
+                        f"/{rule}*",
+                        f"{rule}**",
+                        f"/{rule}**",
+                    )
+                    for line in existing_lines + to_add
+                )
+                if not already_present:
+                    to_add.append(rule)
+
+            if to_add:
+                prefix = "\n" if (content and not content.endswith("\n")) else ""
+                tmp = ignore_file.with_name(f".gitignore.{uuid.uuid4().hex[:8]}.tmp")
+                tmp.write_text(content + prefix + "\n".join(to_add) + "\n", encoding="utf-8")
+                os.replace(tmp, ignore_file)
+        except OSError:
+            pass
+
+
 async def write_pending(
     *,
     payload: dict,
@@ -77,6 +129,7 @@ async def write_pending(
     Uses write-then-rename so concurrent readers never see a partial file.
     Returns the final path.
     """
+    _ensure_spool_ignored(paths)
     paths.pending_dir.mkdir(parents=True, exist_ok=True)
     ts_ns = time.time_ns()
     safe_hash = commit_hash or "nohash"
@@ -99,6 +152,7 @@ async def quarantine_invalid(
     paths: PendingPaths,
 ) -> Path:
     """Move ``src`` into the quarantine dir and append a structured log entry."""
+    _ensure_spool_ignored(paths)
     paths.quarantine_dir.mkdir(parents=True, exist_ok=True)
     ts_ns = time.time_ns()
     dest = paths.quarantine_dir / f"{src.name}.{ts_ns}"
