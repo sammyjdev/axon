@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import shlex
 import subprocess
@@ -38,20 +39,39 @@ def _dev_root() -> Path:
 
 
 def _onboarded_repos(dev_root: Path) -> list[Path]:
-    if not dev_root.is_dir():
-        return []
-    # ponytail: two fixed-depth globs cover the observed `~/dev/<repo>` and
-    # `~/dev/<group>/<repo>` layouts. A worktree's `.git` is a FILE, not a
-    # directory, so it never matches `.git/hooks/post-commit` here - no
-    # special-casing needed. A tree nested deeper than two levels would need
-    # a real walk (rglob), not another fixed-depth glob.
-    candidates = {
-        hook.parent.parent.parent
-        for pattern in ("*/.git/hooks/post-commit", "*/*/.git/hooks/post-commit")
-        for hook in dev_root.glob(pattern)
-    }
+    candidates: set[Path] = set()
+    if dev_root.is_dir():
+        # ponytail: two fixed-depth globs cover the observed `~/dev/<repo>` and
+        # `~/dev/<group>/<repo>` layouts. A worktree's `.git` is a FILE, not a
+        # directory, so it never matches `.git/hooks/post-commit` here - no
+        # special-casing needed. A tree nested deeper than two levels would need
+        # a real walk (rglob), not another fixed-depth glob.
+        candidates.update(
+            hook.parent.parent.parent.resolve()
+            for pattern in ("*/.git/hooks/post-commit", "*/*/.git/hooks/post-commit")
+            for hook in dev_root.glob(pattern)
+        )
+
+    registry_file = load_runtime_config().data_root / "onboarded_repos.json"
+    if registry_file.is_file():
+        try:
+            raw_entries = json.loads(registry_file.read_text(encoding="utf-8"))
+            if isinstance(raw_entries, list):
+                for entry in raw_entries:
+                    if isinstance(entry, str):
+                        candidates.add(Path(entry).resolve())
+        except (OSError, ValueError):
+            pass
+
     repos = [repo for repo in candidates if _has_axon_hook(repo)]
-    return sorted(repos, key=lambda repo: repo.name)
+    return sorted(repos, key=lambda repo: (repo.name, str(repo)))
+
+
+def _repo_label(repo: Path, dev_root: Path) -> str:
+    try:
+        return str(repo.relative_to(dev_root.resolve()))
+    except ValueError:
+        return repo.name
 
 
 def _has_axon_hook(repo: Path) -> bool:
@@ -398,7 +418,7 @@ def check_capture_gap(
         )
 
     gapped = [
-        str(repo.relative_to(resolved_dev_root))
+        _repo_label(repo, resolved_dev_root)
         for repo in commits_by_repo
         if repo not in repos_with_captured_commits
     ]

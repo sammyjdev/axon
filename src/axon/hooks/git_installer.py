@@ -9,6 +9,7 @@ Note: git has no ``post-push`` hook — the push event is captured by
 
 from __future__ import annotations
 
+import json
 import shlex
 import stat
 import sys
@@ -112,6 +113,29 @@ def install_hooks(repo_path: Path | str = ".") -> list[str]:
         target.write_text(new_text, encoding="utf-8")
         target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
         installed.append(hook_name)
+    try:
+        from axon.config.runtime import load_runtime_config
+
+        registry_file = load_runtime_config().data_root / "onboarded_repos.json"
+        resolved_repo_str = str(Path(repo_path).resolve())
+        registry_file.parent.mkdir(parents=True, exist_ok=True)
+        entries: list[str] = []
+        if registry_file.is_file():
+            try:
+                raw = registry_file.read_text(encoding="utf-8")
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    entries = parsed
+                else:
+                    return installed
+            except (OSError, ValueError):
+                return installed
+        if resolved_repo_str not in entries:
+            entries.append(resolved_repo_str)
+            registry_file.write_text(json.dumps(entries), encoding="utf-8")
+    except (OSError, ValueError):
+        pass
+
     return installed
 
 
