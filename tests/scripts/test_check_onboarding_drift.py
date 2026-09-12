@@ -56,6 +56,30 @@ def test_parse_canonical_repos_empty_when_marker_absent():
     assert parse_canonical_repos("# Some other file\n\nno list here\n") == set()
 
 
+_ROUTER_MD_WRAPPED = """# AXON Router (context continuity)
+
+**Onboarded repos (canonical, single source of truth; other docs reference,
+never copy):**
+axon, glyph-kg, rtkx, lina, lume, pharos-backend,
+orion-ai, rpg-master-ai, gnomon-eval
+
+A drift guard enforces this list.
+"""
+
+
+def test_parse_canonical_repos_survives_a_wrapped_header_and_a_wrapped_list():
+    """A reformat that wraps the header or the list must not silently empty the
+    canonical set. The 2026-09-12 rewrite wrapped both, and the parser returned
+    `{'never copy):**'}` - a guard comparing against a markdown fragment reports
+    plausible-looking drift instead of failing loudly."""
+    from scripts.check_onboarding_drift import parse_canonical_repos
+
+    assert parse_canonical_repos(_ROUTER_MD_WRAPPED) == {
+        "axon", "glyph-kg", "rtkx", "lina", "lume", "pharos-backend",
+        "orion-ai", "rpg-master-ai", "gnomon-eval",
+    }
+
+
 _HOOK_SIG = "# >>> AXON git hook >>>"
 
 
@@ -81,6 +105,76 @@ def test_scan_onboarded_repos_empty_for_missing_root(tmp_path):
     from scripts.check_onboarding_drift import scan_onboarded_repos
 
     assert scan_onboarded_repos(tmp_path / "does-not-exist") == set()
+
+
+def test_scan_onboarded_repos_finds_repos_one_group_deeper(tmp_path):
+    """`~/dev` holds group dirs (`products/`, `tools/`), not only repos. Scanning
+    immediate children only found 1 of 14 onboarded repos on the dev machine -
+    the same blind spot #185 fixed in doctor and never propagated here."""
+    from scripts.check_onboarding_drift import scan_onboarded_repos
+
+    _make_repo(tmp_path, "axon", onboarded=True)
+    _make_repo(tmp_path / "products", "glyph-kg", onboarded=True)
+    _make_repo(tmp_path / "tools", "gnomon-eval", onboarded=True)
+    _make_repo(tmp_path / "products", "not-onboarded", onboarded=False)
+
+    assert scan_onboarded_repos(tmp_path) == {"axon", "glyph-kg", "gnomon-eval"}
+
+
+def _make_precommit_repo(dev_root, name):
+    """A repo onboarded through the pre-commit framework: the AXON entries live in
+    `.pre-commit-config.yaml`, and `.git/hooks/post-commit` is pre-commit's own
+    driver, which carries no AXON signature."""
+    repo = dev_root / name
+    (repo / ".git" / "hooks").mkdir(parents=True)
+    (repo / ".git" / "hooks" / "post-commit").write_text(
+        "#!/usr/bin/env bash\nARGS=(hook-impl --hook-type=post-commit)\n", encoding="utf-8"
+    )
+    (repo / ".pre-commit-config.yaml").write_text(
+        "repos:\n  - repo: local\n    hooks:\n      - id: axon-post-commit\n"
+        "        entry: python -m axon.hooks.git_event commit\n",
+        encoding="utf-8",
+    )
+
+
+def test_scan_onboarded_repos_reads_the_registry_for_repos_outside_dev_root(tmp_path, monkeypatch):
+    """`~/.claude` is onboarded and lives nowhere near `~/dev`. The glob alone can
+    never reach it; `axon hooks install` records every root it touches in the
+    registry #185 added, so the scan unions both."""
+    from scripts.check_onboarding_drift import scan_onboarded_repos
+
+    dev = tmp_path / "dev"
+    _make_repo(dev, "axon", onboarded=True)
+    elsewhere = tmp_path / "home"
+    _make_repo(elsewhere, ".claude", onboarded=True)
+
+    registry = tmp_path / "onboarded_repos.json"
+    registry.write_text(f'["{elsewhere / ".claude"}"]', encoding="utf-8")
+    monkeypatch.setenv("AXON_ONBOARDED_REGISTRY", str(registry))
+
+    assert scan_onboarded_repos(dev) == {"axon", ".claude"}
+
+
+def test_scan_onboarded_repos_survives_a_corrupt_registry(tmp_path, monkeypatch):
+    from scripts.check_onboarding_drift import scan_onboarded_repos
+
+    dev = tmp_path / "dev"
+    _make_repo(dev, "axon", onboarded=True)
+    registry = tmp_path / "onboarded_repos.json"
+    registry.write_text("{not json", encoding="utf-8")
+    monkeypatch.setenv("AXON_ONBOARDED_REGISTRY", str(registry))
+
+    assert scan_onboarded_repos(dev) == {"axon"}
+
+
+def test_scan_onboarded_repos_detects_the_pre_commit_framework_path(tmp_path):
+    """glyph-kg is onboarded, but through pre-commit rather than a written hook.
+    Checking only `.git/hooks/post-commit` for the AXON marker made it invisible."""
+    from scripts.check_onboarding_drift import scan_onboarded_repos
+
+    _make_precommit_repo(tmp_path, "glyph-kg")
+
+    assert scan_onboarded_repos(tmp_path) == {"glyph-kg"}
 
 
 def _write_router(tmp_path, names):
