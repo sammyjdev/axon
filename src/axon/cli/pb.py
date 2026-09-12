@@ -2008,6 +2008,10 @@ def pending_recover(
     if not files:
         typer.echo(f"Nenhum match para --id={id_!r}")
         return
+    from axon.store.pending import _ensure_spool_ignored, _pending_paths
+
+    paths = _pending_paths()
+    _ensure_spool_ignored(paths)
     pending_dir.mkdir(parents=True, exist_ok=True)
     for f in files:
         target = pending_dir / f.name.rsplit(".", 1)[0]
