@@ -185,19 +185,33 @@ async def purge_decisions(pg_url: str) -> list[dict[str, object]]:
         await con.close()
 
 
-def purge_briefs(brief_paths: Sequence[Path], vault_path: Path | None = None) -> None:
-    """Delete matching test brief files."""
+def purge_briefs(
+    brief_paths: Sequence[Path], vault_path: Path | None = None
+) -> tuple[list[Path], list[tuple[Path, str]]]:
+    """Delete matching test brief files.
+
+    Returns the paths actually deleted and the ones that survived, each with a
+    reason. The caller must report both: on a destructive run the printed output
+    is the operator's only receipt, and a file reported as deleted while still on
+    disk is worse than a loud failure (#205).
+    """
     vault_resolved = vault_path.resolve() if vault_path is not None else None
+    deleted: list[Path] = []
+    failures: list[tuple[Path, str]] = []
     for path in brief_paths:
         try:
             if path.is_symlink():
+                failures.append((path, "symlink"))
                 continue
             if vault_resolved is not None and not path.resolve().is_relative_to(vault_resolved):
+                failures.append((path, "resolves outside the vault"))
                 continue
             if path.is_file():
                 path.unlink()
-        except OSError:
-            pass
+                deleted.append(path)
+        except OSError as exc:
+            failures.append((path, f"{type(exc).__name__}: {exc}"))
+    return deleted, failures
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -280,6 +294,8 @@ async def run(argv: Sequence[str] | None = None) -> int:
             return 1
 
     briefs: list[tuple[Path, list[str]]] = []
+    deleted_briefs: list[Path] = []
+    brief_failures: list[tuple[Path, str]] = []
     if target_briefs:
         vault_path = resolve_vault(args.vault)
         if vault_path is not None:
@@ -295,7 +311,9 @@ async def run(argv: Sequence[str] | None = None) -> int:
                 return 1
         briefs = scan_test_briefs(vault_path)
         if args.apply:
-            purge_briefs([path for path, _ in briefs], vault_path=vault_path)
+            deleted_briefs, brief_failures = purge_briefs(
+                [path for path, _ in briefs], vault_path=vault_path
+            )
 
     if target_decisions:
         print(
@@ -315,10 +333,18 @@ async def run(argv: Sequence[str] | None = None) -> int:
 
     if target_briefs:
         action_verb = "deleted" if args.apply else "would delete"
-        for path, matches in briefs:
+        # On an --apply run only what actually left the disk may be called deleted.
+        reported = [
+            (path, matches)
+            for path, matches in briefs
+            if not args.apply or path in set(deleted_briefs)
+        ]
+        for path, matches in reported:
             print(f"{action_verb} brief {path.name} (cites: {', '.join(matches)})")
+        for path, reason in brief_failures:
+            print(f"FAILED to delete brief {path.name}: {reason}")
         brief_counts: Counter[str] = Counter()
-        for _, matches in briefs:
+        for _, matches in reported:
             for summary in matches:
                 brief_counts[summary] += 1
         for summary, count in sorted(brief_counts.items()):
@@ -327,9 +353,10 @@ async def run(argv: Sequence[str] | None = None) -> int:
             print("  (no matching test briefs found)")
 
     # Summary line
+    purged_briefs = len(deleted_briefs) if args.apply else len(briefs)
     if target_decisions and target_briefs:
         if args.apply:
-            print(f"purged {len(decisions)} decision(s) and {len(briefs)} brief(s)")
+            print(f"purged {len(decisions)} decision(s) and {purged_briefs} brief(s)")
         else:
             print(
                 f"would purge {len(decisions)} decision(s) and {len(briefs)} brief(s) "
@@ -345,13 +372,16 @@ async def run(argv: Sequence[str] | None = None) -> int:
             )
     elif target_briefs:
         if args.apply:
-            print(f"purged {len(briefs)} brief(s)")
+            print(f"purged {purged_briefs} brief(s)")
         else:
             print(
                 f"would purge {len(briefs)} brief(s) "
                 "(dry run; writing requires --apply with --briefs or --all)"
             )
 
+    if brief_failures:
+        sys.stderr.write(f"{len(brief_failures)} brief(s) could not be deleted - see above.\n")
+        return 1
     return 0
 
 

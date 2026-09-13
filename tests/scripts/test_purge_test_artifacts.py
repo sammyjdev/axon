@@ -399,3 +399,37 @@ async def test_purge_ignores_symlinked_file_inside_real_handoffs(
     assert symlink_in_handoffs.is_symlink()
 
 
+
+
+async def test_a_brief_that_cannot_be_deleted_is_not_reported_as_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    """The printed output is the operator's only receipt for a destructive run (#205)."""
+    vault = _create_vault(tmp_path)
+    handoffs = vault / "knowledge" / "handoffs"
+    monkeypatch.setenv("AXON_VAULT", str(vault))
+
+    stuck = handoffs / "brief-stuck.md"
+    stuck.write_text(_brief_with_fixture_no_notes("drop neo4j backend"), encoding="utf-8")
+    gone = handoffs / "brief-gone.md"
+    gone.write_text(_brief_with_fixture_no_notes("a decision"), encoding="utf-8")
+
+    real_unlink = Path.unlink
+
+    def failing_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        if self.name == "brief-stuck.md":
+            raise OSError(13, "Permission denied")
+        return real_unlink(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "unlink", failing_unlink)
+
+    exit_code = await run(["--apply", "--briefs"])
+
+    out, _ = capsys.readouterr()
+    assert "deleted brief brief-gone.md" in out
+    assert "deleted brief brief-stuck.md" not in out
+    assert "brief-stuck.md" in out, "a file that survived must still be named in the receipt"
+    assert "purged 1 brief(s)" in out
+    assert exit_code == 1, "a destructive run that did not fully apply must not exit 0"
+    assert stuck.exists()
+    assert not gone.exists()
