@@ -55,6 +55,22 @@ SET project = $1
 WHERE id = $2
 """
 
+# The third table holding a caller-supplied repo value: axon_capture_event and
+# axon_mark_done write notes here. Both write paths normalise now, but rows written
+# before that still carry whatever the caller sent.
+SELECT_SESSION_NOTE_SQL = """
+SELECT id, project, created_at
+FROM session_note
+WHERE project LIKE '/%'
+ORDER BY created_at ASC
+"""
+
+UPDATE_SESSION_NOTE_SQL = """
+UPDATE session_note
+SET project = $1
+WHERE id = $2
+"""
+
 
 def resolve_pg_url(pg_url_arg: str | None = None) -> str:
     """Resolve Postgres connection URL."""
@@ -189,6 +205,61 @@ async def apply_rekey_session_memory(pg_url: str) -> list[dict[str, str]]:
         await con.close()
 
 
+async def inspect_session_notes(pg_url: str) -> list[dict[str, str]]:
+    """Fetch session_note rows with absolute path project keys without modifying them."""
+    try:
+        con = await asyncpg.connect(pg_url)
+    except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
+    try:
+        rows = await con.fetch(SELECT_SESSION_NOTE_SQL)
+        return [
+            {
+                "id": str(r["id"]),
+                "project": str(r["project"]),
+                "new_project": resolve_key(str(r["project"])),
+            }
+            for r in rows
+        ]
+    except asyncpg.UndefinedTableError:
+        return []
+    finally:
+        await con.close()
+
+
+async def apply_rekey_session_notes(pg_url: str) -> list[dict[str, str]]:
+    """Update session_note rows with absolute path project keys in place."""
+    try:
+        con = await asyncpg.connect(pg_url)
+    except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
+    try:
+        async with con.transaction():
+            rows = await con.fetch(SELECT_SESSION_NOTE_SQL)
+            results: list[dict[str, str]] = []
+            for r in rows:
+                old_project = str(r["project"])
+                new_project = resolve_key(old_project)
+                row_id = int(r["id"])
+                await con.execute(UPDATE_SESSION_NOTE_SQL, new_project, row_id)
+                results.append(
+                    {
+                        "id": str(row_id),
+                        "project": old_project,
+                        "new_project": new_project,
+                    }
+                )
+            return results
+    except asyncpg.UndefinedTableError:
+        return []
+    finally:
+        await con.close()
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Re-key sessions and session_memory rows holding absolute paths.",
@@ -212,10 +283,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Scope to session_memory table in Postgres",
     )
     parser.add_argument(
+        "--session-notes",
+        action="store_true",
+        default=False,
+        help="Scope to session_note table in Postgres",
+    )
+    parser.add_argument(
         "--all",
         action="store_true",
         default=False,
-        help="Scope to both sessions and session_memory",
+        help="Scope to sessions, session_memory and session_note",
     )
     parser.add_argument(
         "--pg-url",
@@ -229,28 +306,31 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 async def run(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
 
-    if args.apply and not (args.sessions or args.session_memory or args.all):
+    scoped = args.sessions or args.session_memory or args.session_notes
+
+    if args.apply and not (scoped or args.all):
         sys.stderr.write(
-            "Refusing to re-key: pass --sessions, --session-memory, or --all with --apply.\n"
+            "Refusing to re-key: pass --sessions, --session-memory, --session-notes, "
+            "or --all with --apply.\n"
         )
         return 2
 
-    if args.all and (args.sessions or args.session_memory):
+    if args.all and scoped:
         sys.stderr.write(
             "--all and --sessions/--session-memory are mutually exclusive: --all re-keys every "
-            "target, while --sessions and --session-memory select specific tables.\n"
+            "target, while --sessions, --session-memory and --session-notes select "
+            "specific tables.\n"
         )
         return 2
 
-    if args.all:
-        target_sessions = True
-        target_memory = True
-    elif args.sessions or args.session_memory:
+    if scoped:
         target_sessions = args.sessions
         target_memory = args.session_memory
+        target_notes = args.session_notes
     else:
         target_sessions = True
         target_memory = True
+        target_notes = True
 
     pg_url = resolve_pg_url(args.pg_url)
 
@@ -276,6 +356,17 @@ async def run(argv: Sequence[str] | None = None) -> int:
             sys.stderr.write(f"Error accessing session_memory table: {exc}\n")
             return 1
 
+    notes: list[dict[str, str]] = []
+    if target_notes:
+        try:
+            if args.apply:
+                notes = await apply_rekey_session_notes(pg_url)
+            else:
+                notes = await inspect_session_notes(pg_url)
+        except (ConnectionError, OSError, asyncpg.PostgresConnectionError) as exc:
+            sys.stderr.write(f"Error accessing session_note table: {exc}\n")
+            return 1
+
     action_verb = "re-keyed" if args.apply else "would re-key"
 
     if target_sessions:
@@ -293,31 +384,33 @@ async def run(argv: Sequence[str] | None = None) -> int:
         if not memory:
             print("  (no matching session_memory rows found)")
 
-    # Summary line whose wording differs between dry run and applied run
-    if target_sessions and target_memory:
-        if args.apply:
-            print(f"re-keyed {len(sessions)} session(s) and {len(memory)} session_memory row(s)")
-        else:
+    if target_notes:
+        for row in notes:
             print(
-                f"would re-key {len(sessions)} session(s) and {len(memory)} session_memory row(s) "
-                "(dry run; writing requires --apply with --sessions, --session-memory, or --all)"
+                f"{action_verb} session_note {row['id']}: "
+                f"{row['project']} -> {row['new_project']}"
             )
-    elif target_sessions:
-        if args.apply:
-            print(f"re-keyed {len(sessions)} session(s)")
-        else:
-            print(
-                f"would re-key {len(sessions)} session(s) "
-                "(dry run; writing requires --apply with --sessions or --all)"
-            )
-    elif target_memory:
-        if args.apply:
-            print(f"re-keyed {len(memory)} session_memory row(s)")
-        else:
-            print(
-                f"would re-key {len(memory)} session_memory row(s) "
-                "(dry run; writing requires --apply with --session-memory or --all)"
-            )
+        if not notes:
+            print("  (no matching session_note rows found)")
+
+    # Summary line whose wording differs between dry run and applied run. Built from
+    # parts rather than one branch per scope combination: with three tables that chain
+    # would be seven branches saying the same thing.
+    parts = []
+    if target_sessions:
+        parts.append(f"{len(sessions)} session(s)")
+    if target_memory:
+        parts.append(f"{len(memory)} session_memory row(s)")
+    if target_notes:
+        parts.append(f"{len(notes)} session_note row(s)")
+    counted = " and ".join(parts)
+    if args.apply:
+        print(f"re-keyed {counted}")
+    else:
+        print(
+            f"would re-key {counted} (dry run; writing requires --apply with "
+            "--sessions, --session-memory, --session-notes, or --all)"
+        )
 
     return 0
 

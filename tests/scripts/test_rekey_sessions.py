@@ -5,7 +5,7 @@ Verifies:
 - Dry run by default lists matching rows in sessions and session_memory, changing nothing.
 - Refuses --apply without explicit scope flag (exit 2).
 - Rejects mutually exclusive scope flags (exit 2).
-- With --apply and --all, re-keys both tables so no rows hold absolute paths.
+- With --apply and --all, re-keys all three tables so no rows hold absolute paths.
 - With --apply and --sessions, re-keys sessions and leaves session_memory untouched.
 - With --apply and --session-memory, re-keys session_memory and leaves sessions untouched.
 - Preserves clean rows without leading slash byte-identical before and after.
@@ -44,7 +44,7 @@ async def _seed_data() -> None:
     con = await asyncpg.connect(pg_url)
     try:
         await apply_pg_migrations(con)
-        await con.execute("TRUNCATE sessions, session_memory CASCADE")
+        await con.execute("TRUNCATE sessions, session_memory, session_note CASCADE")
         await con.execute(
             """
             INSERT INTO sessions (id, agent, repo, started_at, context_payload) VALUES
@@ -59,6 +59,13 @@ async def _seed_data() -> None:
             INSERT INTO session_memory (id, project, summary, raw_turns, created_at) VALUES
             (10, '/Users/samdev/dev/axon', 'prior session memory', 5, '2026-09-13T00:00:00Z'),
             (11, 'clean-proj', 'clean session memory', 3, '2026-09-13T01:00:00Z')
+            """
+        )
+        await con.execute(
+            """
+            INSERT INTO session_note (id, project, body, created_at) VALUES
+            (20, '/Users/samdev/dev/axon', '[scope] marked done', '2026-09-13T00:00:00Z'),
+            (21, 'clean-note-proj', '[file_edit] touched a file', '2026-09-13T01:00:00Z')
             """
         )
     finally:
@@ -107,7 +114,10 @@ async def test_apply_without_scope_flag_is_refused(
     assert exit_code == 2
 
     out, err = capsys.readouterr()
-    assert "Refusing to re-key: pass --sessions, --session-memory, or --all with --apply." in err
+    assert (
+        "Refusing to re-key: pass --sessions, --session-memory, --session-notes, "
+        "or --all with --apply." in err
+    )
 
 
 async def test_mutually_exclusive_scope_flags_refused(
@@ -232,7 +242,7 @@ async def test_no_matching_rows_reports_cleanly(
     con = await asyncpg.connect(pg_url)
     try:
         await apply_pg_migrations(con)
-        await con.execute("TRUNCATE sessions, session_memory CASCADE")
+        await con.execute("TRUNCATE sessions, session_memory, session_note CASCADE")
     finally:
         await con.close()
 
@@ -288,3 +298,48 @@ async def test_credentials_redacted_on_connection_failure(
     assert secret not in err
     assert "127.0.0.1" in err
 
+
+
+async def test_apply_all_rekeys_session_notes(
+    capsys: pytest.CaptureFixture[str],
+):
+    """The third table with a caller-supplied repo value (axon_capture_event, axon_mark_done).
+
+    The write paths were fixed in Task 3, but rows written before that still hold
+    absolute paths and nothing re-keyed them.
+    """
+    await _seed_data()
+
+    exit_code = await run(["--apply", "--all"])
+    assert exit_code == 0
+
+    con = await asyncpg.connect(_get_test_pg_url())
+    try:
+        rows = {
+            r["id"]: r["project"]
+            for r in await con.fetch("SELECT id, project FROM session_note ORDER BY id")
+        }
+        assert rows[20] == "axon", "an absolute path must be re-keyed to the repo name"
+        assert rows[21] == "clean-note-proj", "a clean row must survive untouched"
+        assert await con.fetchval("SELECT count(*) FROM session_note WHERE project LIKE '/%'") == 0
+    finally:
+        await con.close()
+
+    out, _ = capsys.readouterr()
+    assert "session_note" in out
+
+
+async def test_apply_sessions_scope_leaves_session_notes_untouched(
+    capsys: pytest.CaptureFixture[str],
+):
+    await _seed_data()
+
+    exit_code = await run(["--apply", "--sessions"])
+    assert exit_code == 0
+
+    con = await asyncpg.connect(_get_test_pg_url())
+    try:
+        note = await con.fetchval("SELECT project FROM session_note WHERE id = 20")
+        assert note == "/Users/samdev/dev/axon", "a scope flag must not reach another table"
+    finally:
+        await con.close()
