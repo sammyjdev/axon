@@ -93,3 +93,43 @@ legendary.exec, which modified five existing test files. check_test_edits refuse
 it, correctly - only a test-side role may modify an existing test file. The test
 work was reverted and redone through common.testauthor with recorded provenance.
 The guard caught an orchestrator mistake, which is what it is for.
+
+Task 4: complete (commits 359ed01..b1788f5, review clean - legendary.review.spec
+APPROVE, legendary.review.quality APPROVE). Gate 2155 passed / 7 skipped / 7
+xfailed. Mutation sensor 4/4 mandatory KILLED plus 4/4 extras KILLED.
+
+This task was RETARGETED on 2026-09-13, after the rest of the plan had already
+shipped. As originally written it asked for `session_memory`, which PR #194 had
+fixed one day before the plan was authored, so the earlier pass correctly recorded
+it as already done and the plan text said so. What nobody had fixed was
+`pb.py:1226` inside `session_note` - a different table, read by the same
+`get_session_memory`, keyed by `os.path.basename(os.getcwd())`. The Task 3 and
+Task 5 ledger entries had both carried it forward as "candidate for the operator's
+re-key run"; the write path was still open. Both halves are closed now: the
+backfill in 359ed01, the writer here.
+
+The subdirectory case turned out worse than the plan text implied: the old key was
+the leaf of cwd, so a note filed from `<worktree>/src/pkg` was filed under `pkg`,
+not under the worktree name. The red run asserts `'pkg' == 'session-note-repo'`.
+
+Two FORGE machinery defects surfaced and are routed to the loop repo, not to this
+one (see .specs/features/axon-isolation-and-keying/anneal.md):
+
+1. quench-mutator.sh tells the sensor its report "MUST contain exactly one line"
+   (the mandatory battery) and never tells it the tier, while
+   check_mutation_report.py at FORGE_TIER=legendary with FORGE_RISK_AREA_HIT=1
+   rejects any report with no `Mutation sensor (extras):` line. The sensor ran the
+   extras both times, reported them in chat, and wrote a report the checker refused
+   - exit 7 - because the script had instructed it not to write that line. Cost two
+   full re-dispatches; worked around by appending the tier requirement to the
+   --issue file, with the bracketed format pasted literally.
+2. quench-mutator.sh resolves a relative --report against its OWN cwd, not the
+   worktree, and the sensor resolves it against the worktree. Invoked from the main
+   checkout, the sensor wrote a correct report and the script reported exit 6,
+   "sensor produced no report". The `rm -f "$REPORT"` guard at the top of the
+   script misses for the same reason, so a stale report can survive a run.
+
+legendary.plan was dispatched to zai/glm-5.2 and produced zero bytes in 20 minutes
+with a live process; killed and recorded as `timeout`, then run through the handle's
+declared fallback (anthropic/claude-opus-5). Another lane hit the same zai timeout
+in the same window.
