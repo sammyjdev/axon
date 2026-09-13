@@ -36,11 +36,15 @@ Removing dead surface (`symbol_deps`, the two uncalled graph MCP tools, `pet`,
 ## Tasks
 
 - [x] **Task 1: isolate the vault in the handoff test and extend the live-write guard to file paths**
-- [ ] **Task 0: make the live-write guard attribute writes to the test process** (blocks the rest)
-- [ ] **Task 2: add a purge script for the fixture rows and the test-written handoff briefs**
-- [ ] **Task 3: key sessions by repo_identity on write**
+- [x] **Task 0: make the live-write guard attribute writes to the test process** (blocks the rest)
+- [x] **Task 2: add a purge script for the fixture rows and the test-written handoff briefs**
+- [x] **Task 3: key sessions by repo_identity on write**
 - [x] **Task 4: key session_memory by repo_identity** - already landed in `084d326` / PR #194
-- [ ] **Task 5: derive embeddings.project from the repo root**
+- [x] **Task 5: derive embeddings.project from the repo root**
+
+All tasks landed in PR #204. The three scripts are dry-run by default and the loop never
+ran `--apply`: purging the live store and vault, and re-keying the `sessions`,
+`session_memory` and `embeddings` rows, remain the operator's own run.
 
 > **Execution rule for tasks 2, 3 and 5, decided 2026-09-13.** The loop delivers code, a
 > dry-run-by-default script and tests against an ephemeral Postgres. It never runs
