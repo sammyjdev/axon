@@ -9,14 +9,16 @@ developer's real ~/.axon data root during tests.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
 # Every AXON-owned relational/vector table, truncated between tests so the
 # shared Postgres container gives each test a clean slate (the isolation that
-# the retired per-test SQLite files used to provide — dec-121 Phase 3).
+# the retired per-test SQLite files used to provide - dec-121 Phase 3).
 _AXON_TABLES = (
     "nodes", "edges", "decisions", "adr", "sessions", "session_memory",
     "session_note", "code_change", "file_index", "symbol_deps",
@@ -42,51 +44,132 @@ _OPERATOR_PG_URL = os.environ.get("AXON_PG_URL")
 _OPERATOR_VAULT = os.environ.get("AXON_VAULT")
 _OPERATOR_ENGINE = os.environ.get("AXON_ENGINE")
 
+#: Paths THIS pytest process opened for writing, recorded by the audit hook
+#: below so teardown can tell a suite write from an external writer's.
+_suite_write_opens: set[str] = set()
 
-def _live_file_fingerprint() -> dict[str, int]:
-    """(path -> size) for the operator's own files a test must never touch.
+#: Open flags that indicate write intent; OR-ed mask, tested with `&`.
+_WRITE_OPEN_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+_WRITE_MODE_CHARS = frozenset("wax+")
+
+
+def _safe_record_suite_path(arg: object) -> None:
+    if isinstance(arg, (str, bytes, os.PathLike)):
+        _suite_write_opens.add(os.path.abspath(os.fsdecode(arg)))
+
+
+def _record_write_opens(event: str, args: tuple[object, ...]) -> None:
+    # CPython's "open" audit event args are (path, mode_or_None, flags_int):
+    # mode is None for os.open (a flags-only API) and a str like "w" for
+    # builtins.open / Path.open. args[2] is always real open flags, never a
+    # permission mode such as 0o666, whose O_RDWR bit would mark every read
+    # as a write. Other raisers of this event exist, so stay defensive.
+    # We also record removal and truncation events (os.remove, os.rename,
+    # os.replace, os.truncate) so suite deletions, moves, and truncations
+    # are attributed to the suite.
+    try:
+        if not args:
+            return
+        if event == "open":
+            mode = args[1] if len(args) > 1 else None
+            flags = args[2] if len(args) > 2 else None
+            by_flags = isinstance(flags, int) and bool(flags & _WRITE_OPEN_FLAGS)
+            by_mode = isinstance(mode, str) and bool(_WRITE_MODE_CHARS.intersection(mode))
+            if by_flags or by_mode:
+                _safe_record_suite_path(args[0])
+        elif event == "os.remove":
+            _safe_record_suite_path(args[0])
+        elif event in ("os.rename", "os.replace"):
+            _safe_record_suite_path(args[0])
+            if len(args) > 1:
+                _safe_record_suite_path(args[1])
+        elif event == "os.truncate":
+            _safe_record_suite_path(args[0])
+    except Exception:  # noqa: S110 - an audit hook must never break the audited call
+        pass
+
+
+def _live_file_fingerprint() -> dict[str, tuple[int, int, bytes]]:
+    """(path -> (size, mtime_ns, sha256)) for the operator's own files a test must never touch.
 
     Size, not just presence: `data/compression/stats.jsonl` is appended to rather
     than created, so a path-set comparison would miss it (issue #203).
+    Mtime and sha256 catch same-size overwrites; comparing over the union of
+    before and after paths catches deletions.
     """
     roots: list[Path] = []
     if _OPERATOR_VAULT:
-        roots.append(Path(_OPERATOR_VAULT).expanduser() / "knowledge" / "handoffs")
+        roots.append(
+            Path(os.path.abspath(os.path.expanduser(_OPERATOR_VAULT)))
+            / "knowledge"
+            / "handoffs"
+        )
     if _OPERATOR_ENGINE:
-        data = Path(_OPERATOR_ENGINE).expanduser() / "data"
+        data = Path(os.path.abspath(os.path.expanduser(_OPERATOR_ENGINE))) / "data"
         roots.extend([data / "compression", data / "recall", data / "trace"])
 
-    fingerprint: dict[str, int] = {}
+    fingerprint: dict[str, tuple[int, int, bytes]] = {}
     for root in roots:
         if not root.is_dir():
             continue
         for path in root.rglob("*"):
             try:
                 if path.is_file():
-                    fingerprint[str(path)] = path.stat().st_size
+                    st = path.stat()
+                    content_hash = hashlib.sha256(path.read_bytes()).digest()
+                    fingerprint[str(path)] = (st.st_size, st.st_mtime_ns, content_hash)
             except OSError:
                 continue
     return fingerprint
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _the_suite_never_writes_to_the_operators_files():
+def _the_suite_never_writes_to_the_operators_files(
+    request: pytest.FixtureRequest,
+):
     """Fail the run if any test created or grew a file the operator owns.
 
     Teardown-scoped on purpose: the point is to catch a write nobody predicted, so
     there is nothing to assert until every test has run. It names the offending
     paths rather than the test, because the write usually comes from a module-level
     singleton bound at import, not from the test that happened to trigger it.
+
+    Only writes made by THIS process fail the run (attributed via an audit
+    hook); a concurrent external writer - the operator's MCP server or git
+    hooks - is reported on stderr without failing, so an agent loop running
+    alongside the suite cannot turn a green run red.
     """
+    sys.addaudithook(_record_write_opens)
     before = _live_file_fingerprint()
     yield
     after = _live_file_fingerprint()
+    all_paths = set(before.keys()) | set(after.keys())
     touched = sorted(
-        path for path, size in after.items() if before.get(path) != size
+        path for path in all_paths if before.get(path) != after.get(path)
     )
-    if touched:
-        listed = "\n  ".join(touched[:10])
-        more = f"\n  ... and {len(touched) - 10} more" if len(touched) > 10 else ""
+    ours = [p for p in touched if os.path.abspath(p) in _suite_write_opens]
+    external = [p for p in touched if os.path.abspath(p) not in _suite_write_opens]
+    if external:
+        listed = "\n  ".join(external[:10])
+        more = f"\n  ... and {len(external) - 10} more" if len(external) > 10 else ""
+        note = (
+            "note: these operator files were changed by an external writer, "
+            f"not by the suite:\n  {listed}{more}\n"
+        )
+        # Session-fixture teardown runs under pytest's global capture, which
+        # discards stderr on a green run; suspend it so the note reaches the
+        # real stderr (no-op under -s, where nothing is captured).
+        capman = request.config.pluginmanager.get_plugin("capturemanager")
+        if capman is not None:
+            capman.suspend_global_capture()
+        try:
+            print(note, file=sys.stderr, end="")
+        finally:
+            if capman is not None:
+                capman.resume_global_capture()
+    if ours:
+        listed = "\n  ".join(ours[:10])
+        more = f"\n  ... and {len(ours) - 10} more" if len(ours) > 10 else ""
         raise AssertionError(
             "the suite wrote into the operator's own files - isolate the fixture "
             f"that resolves these paths:\n  {listed}{more}"
@@ -108,7 +191,7 @@ def _shared_pg():
         return
     try:
         with PostgresContainer(
-            "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+            "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"  # noqa: S106
         ) as pg:
             yield pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
     except Exception:

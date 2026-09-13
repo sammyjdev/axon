@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path, PurePath
 
 from axon.context.registry import VALID_CONTEXTS
+from axon.core.repo_identity import repo_identity
 from axon.embedder.chunker import CHUNKER_VERSION, Chunk, chunk_source
 from axon.embedder.engine import EmbedderEngine
 from axon.embedder.graph_extractor import build_dependency_records
@@ -252,6 +253,7 @@ async def ingest_file(path: Path, engine: EmbedderEngine, store: PgVectorStore) 
 
     vectors = _embed_in_token_batches(engine, chunks)
 
+    project = repo_identity(path.parent)
     _occ_counter: dict[str, int] = {}
     vector_chunks = []
     for c, vec in zip(chunks, vectors):
@@ -265,7 +267,7 @@ async def ingest_file(path: Path, engine: EmbedderEngine, store: PgVectorStore) 
                 language=c.language,
                 chunk_type=c.chunk_type,
                 symbol=c.symbol,
-                project=path.parent.name,
+                project=project,
                 ctx="knowledge",
                 content=c.content,
             )
@@ -331,6 +333,7 @@ async def index_path(
         pending_file_meta.clear()
         return batch_size
 
+    project_by_dir: dict[Path, str] = {}
     for file_path in files:
         if _is_excluded_path(file_path):
             continue
@@ -379,6 +382,12 @@ async def index_path(
             )
             continue
 
+        file_dir = file_path.parent
+        project = project_by_dir.get(file_dir)
+        if project is None:
+            project = repo_identity(file_dir)
+            project_by_dir[file_dir] = project
+
         # Embed in token-bounded batches to keep the onnxruntime activation
         # arena within safe bounds on CPU fallback (Phase 0: batch 64 -> 4.1 GB RSS).
         vectors = _embed_in_token_batches(engine, chunks)
@@ -396,7 +405,7 @@ async def index_path(
                     language=c.language,
                     chunk_type=c.chunk_type,
                     symbol=c.symbol,
-                    project=file_path.parent.name,
+                    project=project,
                     ctx=file_ctx,
                     content=c.content,
                 )
