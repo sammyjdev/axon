@@ -35,13 +35,19 @@ Removing dead surface (`symbol_deps`, the two uncalled graph MCP tools, `pet`,
 
 ## Tasks
 
-- [ ] **Task 1: isolate the vault in the handoff test and extend the live-write guard to file paths**
+- [x] **Task 1: isolate the vault in the handoff test and extend the live-write guard to file paths**
 - [ ] **Task 2: add a purge script for the fixture rows and the test-written handoff briefs**
 - [ ] **Task 3: key sessions by repo_identity on write**
 - [ ] **Task 4: key session_memory by repo_identity**
 - [ ] **Task 5: derive embeddings.project from the repo root**
 
 ### Task 1: isolate the vault in the handoff test and extend the live-write guard to file paths
+
+> **DONE 2026-09-12** in `839ed6d`, by hand rather than through the loop. Arming the
+> guard surfaced two further leaks of the same shape, both fixed in the same commit:
+> `_COMPRESSION_TELEMETRY` (server.py:82) and the separate `_RUNTIME` that
+> `axon.cli.pb` binds at import (pb.py:50). Ledger: `.forge/sdd/progress.md`.
+
 
 `tests/mcp/test_axon_tools.py::test_axon_handoff_includes_context` takes only the
 `store` fixture. `tests/mcp/test_handoff_persists.py:25-29` already has the correct
