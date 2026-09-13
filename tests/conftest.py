@@ -293,6 +293,24 @@ def _isolate_axon_engine(
                 _CTS(SimpleNamespace(data_root=engine_dir / "data")),
             )
 
+        # Fourth module with the same shape, and the first one that reached the
+        # database rather than a file: `_outcome_store` is built from
+        # `_RUNTIME.pg_url` as it stood when the module loaded, so the
+        # AXON_PG_URL set above never reached it and `axon_record_outcome` wrote
+        # into the operator's live store. It did - on 2026-09-13 the real
+        # `outcome_record` held 21 rows keyed `outcome_target`, the tmp_path
+        # fixture repo of tests/mcp/test_repo_resolution.py.
+        #
+        # Replace the whole RuntimeConfig, never mutate it: it is frozen.
+        if hasattr(srv, "_RUNTIME"):
+            import dataclasses as _dc
+
+            monkeypatch.setattr(
+                srv, "_RUNTIME", _dc.replace(srv._RUNTIME, pg_url=os.environ["AXON_PG_URL"])
+            )
+        if hasattr(srv, "_outcome_store"):
+            monkeypatch.setattr(srv, "_outcome_store", None)
+
     # `axon.cli.pb` binds its own `_RUNTIME` at import (pb.py:50) and builds a
     # TraceStore from it per search, so CLI tests appended to the operator's real
     # data/trace/records.jsonl. Third module with this shape, and the session

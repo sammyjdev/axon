@@ -45,6 +45,20 @@ def _get_pg_url() -> str:
     return load_runtime_config().pg_url
 
 
+async def _skip_without_postgres() -> None:
+    """`axon_record_outcome` goes to the Postgres OutcomeStore, not the session store.
+
+    `_shared_pg` degrades to None where docker or testcontainers is absent - the
+    CI full-suite job - and the DSN then points at an unreachable port on
+    purpose. Every other wire test here is covered by the patched session store.
+    """
+    try:
+        con = await asyncpg.connect(_get_pg_url())
+    except (OSError, asyncpg.PostgresError):
+        pytest.skip("no reachable Postgres; axon_record_outcome writes to the OutcomeStore")
+    await con.close()
+
+
 @pytest.fixture
 async def store(tmp_path: Path) -> AsyncGenerator[SessionStore, None]:
     s = SessionStore(db_path=tmp_path / "axon.db")
@@ -309,6 +323,7 @@ async def test_wire_capture_event_normalises_path(
 async def test_wire_record_outcome_normalises_path(
     tmp_path: Path,
 ) -> None:
+    await _skip_without_postgres()
     repo_dir = _init_repo(tmp_path / "outcome_target")
     out = await server.axon_record_outcome(
         summary="shipped feature",
