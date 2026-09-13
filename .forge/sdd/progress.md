@@ -70,3 +70,26 @@ Also carried, not fixed: session_note.project holds caller-supplied repo values.
 Both write paths were fixed in Task 3, but pre-existing rows can hold absolute
 paths, so that table is a candidate for the operator's own re-key round. This pass
 was deliberately not widened to a third table.
+
+Cross-review (cross_review: true in loop.yaml): codex/gpt-5.6-terra over the whole
+branch diff, after both same-family reviewers had approved every task and the
+sensor was clean. Nine findings; each verified by reading the code before acting.
+Four were real and are fixed in bda9193: the guard was blind to a deletion and to
+a same-size overwrite; all three scripts printed the Postgres password on a
+connection failure; the purge followed a symlinked handoffs directory and deleted
+files outside the vault; and --only-project '' rekeyed the whole embeddings table
+because the empty string is falsy. Report kept at .forge/cross-review/pr-204.md.
+
+Five were not acted on and are recorded in the PR body: symlinked-path write
+attribution (already a known residual), import-time writes preceding the snapshot
+(pre-existing and deliberate), repo_identity falling back to the worktree name
+under a safe.directory refusal (pre-existing on master, already warns), and
+unescaped report output. The re-run sensor killed 6/6 extras aimed at disarming
+each of the four fixes; legendary.review.quality re-reviewed the fix diff and
+returned APPROVE. Gate 2146 passed / 7 skipped / 7 xfailed.
+
+Process note worth keeping: the first attempt at this fix round was dispatched to
+legendary.exec, which modified five existing test files. check_test_edits refused
+it, correctly - only a test-side role may modify an existing test file. The test
+work was reverted and redone through common.testauthor with recorded provenance.
+The guard caught an orchestrator mistake, which is what it is for.
