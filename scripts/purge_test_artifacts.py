@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import re
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -52,23 +53,37 @@ RETURNING id, frontmatter->>'repo' AS repo,
 """
 
 
+#: A recalled decision as `axon_handoff` renders it: `- dec-001 (rank 0.40): a decision`.
+#: The summary must occupy the whole tail of such a line. Plain containment is not
+#: enough: `a decision` and `first decision` are ordinary English, so a real note-less
+#: brief whose prose used the words was selected for deletion.
+_RECALLED_DECISION = re.compile(r"^\s*[-*]\s*dec-\S+[^:]*:\s*(?P<summary>.+?)\s*$", re.M)
+
+
+def _cited_summaries(content: str) -> set[str]:
+    """Summaries cited as recalled decisions in this brief."""
+    return {m.group("summary") for m in _RECALLED_DECISION.finditer(content)}
+
+
 def is_test_brief(content: str) -> bool:
     """Return True if content represents a test-written handoff brief.
 
     Conjunctive selector:
     1. '## From this session' section is absent (no caller notes).
-    2. Recalled context cites at least one of the known fixture summaries.
+    2. Recalled context cites at least one of the known fixture summaries, as a
+       recalled-decision line rather than anywhere in the text.
     """
     if "## From this session" in content:
         return False
-    return any(summary in content for summary in FIXTURE_SUMMARIES)
+    return bool(_cited_summaries(content) & set(FIXTURE_SUMMARIES))
 
 
 def matching_summaries_in_brief(content: str) -> list[str]:
     """Return fixture summaries cited in a test-written brief, or empty list."""
     if "## From this session" in content:
         return []
-    return [summary for summary in FIXTURE_SUMMARIES if summary in content]
+    cited = _cited_summaries(content)
+    return [summary for summary in FIXTURE_SUMMARIES if summary in cited]
 
 
 def resolve_vault(vault_arg: Path | None = None) -> Path | None:
@@ -154,8 +169,6 @@ async def inspect_decisions(pg_url: str) -> list[dict[str, object]]:
             }
             for r in rows
         ]
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -179,8 +192,6 @@ async def purge_decisions(pg_url: str) -> list[dict[str, object]]:
                 }
                 for r in rows
             ]
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -289,7 +300,10 @@ async def run(argv: Sequence[str] | None = None) -> int:
                 decisions = await purge_decisions(pg_url)
             else:
                 decisions = await inspect_decisions(pg_url)
-        except (ConnectionError, OSError, asyncpg.PostgresConnectionError) as exc:
+        except (
+            ConnectionError, OSError,
+            asyncpg.PostgresConnectionError, asyncpg.UndefinedTableError,
+        ) as exc:
             sys.stderr.write(f"Error accessing decision store: {exc}\n")
             return 1
 

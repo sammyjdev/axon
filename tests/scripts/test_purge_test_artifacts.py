@@ -25,9 +25,21 @@ from scripts.purge_test_artifacts import (
     inspect_decisions,
     is_test_brief,
     main,
+    matching_summaries_in_brief,
     purge_decisions,
     run,
 )
+
+
+def _get_test_pg_url() -> str:
+    import os
+
+    env = os.environ.get("AXON_PG_URL")
+    if env:
+        return env
+    from axon.config.runtime import load_runtime_config
+
+    return load_runtime_config().pg_url
 
 
 def _create_vault(root: Path) -> Path:
@@ -433,3 +445,67 @@ async def test_a_brief_that_cannot_be_deleted_is_not_reported_as_deleted(
     assert exit_code == 1, "a destructive run that did not fully apply must not exit 0"
     assert stuck.exists()
     assert not gone.exists()
+
+
+def test_a_real_brief_that_merely_mentions_a_fixture_phrase_in_prose_survives():
+    """`a decision` is an ordinary English phrase, not a marker.
+
+    The selector matched it anywhere in the file, so a real note-less handoff whose
+    prose contained the words was deleted. Raised as P1 by the cross-review and by a
+    second-family review after it. The fixture briefs cite summaries in one structural
+    place - a recalled-decision line - and that is what the selector must require.
+    """
+    prose = (
+        "# AXON handoff -> next-session\n"
+        "repo: sage\n\n"
+        "## Recalled context\n"
+        "We need a decision before deploy, and add redis cache is off the table.\n"
+    )
+    assert not is_test_brief(prose), "a real brief was selected on prose alone"
+    assert matching_summaries_in_brief(prose) == []
+
+
+def test_a_fixture_brief_citing_a_recalled_decision_is_still_selected():
+    """The control: the shape the test suite actually wrote must keep matching."""
+    fixture = (
+        "# AXON handoff -> codex\n"
+        "repo: axon\n\n"
+        "## Recalled context\n"
+        "## AXON recall - axon\n"
+        "- dec-001 (rank 0.40): a decision\n"
+    )
+    assert is_test_brief(fixture)
+    assert matching_summaries_in_brief(fixture) == ["a decision"]
+
+
+async def test_a_dsn_with_no_axon_tables_is_an_error_not_a_clean_bill(
+    capsys: pytest.CaptureFixture[str],
+):
+    """`except UndefinedTableError: return []` turned a wrong DSN into "purged 0", exit 0.
+
+    An operator pointing a destructive script at the wrong database is told the store
+    is already clean. The table's absence is the one thing that proves nothing was
+    checked.
+    """
+    import asyncpg
+
+    admin_dsn = _get_test_pg_url()
+    con = await asyncpg.connect(admin_dsn)
+    try:
+        await con.execute("DROP DATABASE IF EXISTS axon_empty_probe")
+        await con.execute("CREATE DATABASE axon_empty_probe")
+    finally:
+        await con.close()
+    empty_dsn = admin_dsn.rsplit("/", 1)[0] + "/axon_empty_probe"
+
+    try:
+        exit_code = await run(["--decisions", "--pg-url", empty_dsn])
+        out, err = capsys.readouterr()
+        assert exit_code != 0, f"a database with no AXON tables reported success:\n{out}"
+        assert "purged 0 decision(s)" not in out, out
+    finally:
+        con = await asyncpg.connect(admin_dsn)
+        try:
+            await con.execute("DROP DATABASE IF EXISTS axon_empty_probe")
+        finally:
+            await con.close()

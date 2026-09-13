@@ -113,8 +113,6 @@ async def inspect_sessions(pg_url: str) -> list[dict[str, str]]:
             }
             for r in rows
         ]
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -144,8 +142,6 @@ async def apply_rekey_sessions(pg_url: str) -> list[dict[str, str]]:
                     }
                 )
             return results
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -168,8 +164,6 @@ async def inspect_session_memory(pg_url: str) -> list[dict[str, str]]:
             }
             for r in rows
         ]
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -199,8 +193,6 @@ async def apply_rekey_session_memory(pg_url: str) -> list[dict[str, str]]:
                     }
                 )
             return results
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -223,8 +215,6 @@ async def inspect_session_notes(pg_url: str) -> list[dict[str, str]]:
             }
             for r in rows
         ]
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -254,8 +244,6 @@ async def apply_rekey_session_notes(pg_url: str) -> list[dict[str, str]]:
                     }
                 )
             return results
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -341,7 +329,10 @@ async def run(argv: Sequence[str] | None = None) -> int:
                 sessions = await apply_rekey_sessions(pg_url)
             else:
                 sessions = await inspect_sessions(pg_url)
-        except (ConnectionError, OSError, asyncpg.PostgresConnectionError) as exc:
+        except (
+            ConnectionError, OSError,
+            asyncpg.PostgresConnectionError, asyncpg.UndefinedTableError,
+        ) as exc:
             sys.stderr.write(f"Error accessing sessions table: {exc}\n")
             return 1
 
@@ -352,7 +343,10 @@ async def run(argv: Sequence[str] | None = None) -> int:
                 memory = await apply_rekey_session_memory(pg_url)
             else:
                 memory = await inspect_session_memory(pg_url)
-        except (ConnectionError, OSError, asyncpg.PostgresConnectionError) as exc:
+        except (
+            ConnectionError, OSError,
+            asyncpg.PostgresConnectionError, asyncpg.UndefinedTableError,
+        ) as exc:
             sys.stderr.write(f"Error accessing session_memory table: {exc}\n")
             return 1
 
@@ -363,7 +357,10 @@ async def run(argv: Sequence[str] | None = None) -> int:
                 notes = await apply_rekey_session_notes(pg_url)
             else:
                 notes = await inspect_session_notes(pg_url)
-        except (ConnectionError, OSError, asyncpg.PostgresConnectionError) as exc:
+        except (
+            ConnectionError, OSError,
+            asyncpg.PostgresConnectionError, asyncpg.UndefinedTableError,
+        ) as exc:
             sys.stderr.write(f"Error accessing session_note table: {exc}\n")
             return 1
 

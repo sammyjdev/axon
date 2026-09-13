@@ -125,8 +125,6 @@ async def inspect_embeddings(
                     }
                 )
         return results
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -172,8 +170,6 @@ async def apply_rekey_embeddings(
             if updates:
                 await con.executemany(UPDATE_EMBEDDINGS_SQL, updates)
             return results
-    except asyncpg.UndefinedTableError:
-        return []
     finally:
         await con.close()
 
@@ -245,7 +241,10 @@ async def run(argv: Sequence[str] | None = None) -> int:
             changed = await apply_rekey_embeddings(pg_url, only_project=args.only_project)
         else:
             changed = await inspect_embeddings(pg_url, only_project=args.only_project)
-    except (ConnectionError, OSError, asyncpg.PostgresConnectionError) as exc:
+    except (
+            ConnectionError, OSError,
+            asyncpg.PostgresConnectionError, asyncpg.UndefinedTableError,
+        ) as exc:
         sys.stderr.write(f"Error accessing embeddings table: {exc}\n")
         return 1
 
