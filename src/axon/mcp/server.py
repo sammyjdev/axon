@@ -486,6 +486,7 @@ async def _retrieve_context(
     max_depth: int,
     max_nodes: int,
     max_tokens: int,
+    project: str | None = None,
     dedup_against: list[str] | None = None,
 ) -> tuple[str, ContextPack, list[dict]]:
     strategy, task_type, profile, mode = _select_retrieval_strategy(query, ctx)
@@ -498,6 +499,7 @@ async def _retrieve_context(
         query=query,
         collections=collections,
         language=language,
+        project=project,
         prefer_ctx=ctx,
         top_k=(
             _RERANK_CANDIDATES if rerank else strategy.max_segments * _DEDUP_OVERFETCH
@@ -668,6 +670,8 @@ async def search_code(
     max_depth: int = 2,
     max_nodes: int = 25,
     max_tokens: int = 1200,
+    project: str | None = None,
+    repo: str | None = None,
 ) -> str:
     """
     Busca semântica no codebase indexado.
@@ -676,7 +680,9 @@ async def search_code(
     Para acessar work, ctx='work' é obrigatório e explícito.
     Sem ctx, busca em personal + career + knowledge + saas.
     caller: claude-code | copilot (afeta budget de tokens retornados)
+    project: opcionalmente restringe a busca ao projeto/repositório indicado.
     """
+    target_project = _resolve_repo(project or repo, allow_none=True)
     trace = current_trace_recorder()
     response, pack, hits = await _retrieve_context(
         query=query,
@@ -685,6 +691,7 @@ async def search_code(
         max_depth=max_depth,
         max_nodes=max_nodes,
         max_tokens=max_tokens,
+        project=target_project,
     )
     if trace is not None:
         trace.append_stage(
