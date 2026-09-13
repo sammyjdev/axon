@@ -18,6 +18,12 @@ async def store(
     s = SessionStore(db_path=tmp_path / "axon.db")
     await s.init()
     monkeypatch.setattr(server, "_get_session_store", lambda: s)
+    # `axon_handoff` writes its brief to whatever `discover_vault()` resolves, and
+    # that is the operator's real AXON_VAULT unless a test says otherwise. Isolating
+    # the store alone left every run of this file writing a junk brief into
+    # ~/vault/knowledge/handoffs/ - 120 of the 121 files there were test output,
+    # committed and pushed hourly. Same fixture shape as test_handoff_persists.py.
+    monkeypatch.setattr(server, "discover_vault", lambda **_: tmp_path / "vault")
     yield s
     await s.close()
 

@@ -34,6 +34,64 @@ _UNREACHABLE_PG_URL = "postgresql://axon:axon@127.0.0.1:1/axon_tests_have_no_dat
 #: a test can assert the suite never points back at it.
 _OPERATOR_PG_URL = os.environ.get("AXON_PG_URL")
 
+#: The operator's real vault and engine root, captured at import for the same
+#: reason. The DSN guard below was written after the suite was caught writing to
+#: the live database; it covers only AXON_PG_URL, so the suite went on writing
+#: FILES into the operator's environment unnoticed - 120 of the 121 handoff briefs
+#: in ~/vault/knowledge/handoffs/ were test output, committed and pushed hourly.
+_OPERATOR_VAULT = os.environ.get("AXON_VAULT")
+_OPERATOR_ENGINE = os.environ.get("AXON_ENGINE")
+
+
+def _live_file_fingerprint() -> dict[str, int]:
+    """(path -> size) for the operator's own files a test must never touch.
+
+    Size, not just presence: `data/compression/stats.jsonl` is appended to rather
+    than created, so a path-set comparison would miss it (issue #203).
+    """
+    roots: list[Path] = []
+    if _OPERATOR_VAULT:
+        roots.append(Path(_OPERATOR_VAULT).expanduser() / "knowledge" / "handoffs")
+    if _OPERATOR_ENGINE:
+        data = Path(_OPERATOR_ENGINE).expanduser() / "data"
+        roots.extend([data / "compression", data / "recall", data / "trace"])
+
+    fingerprint: dict[str, int] = {}
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            try:
+                if path.is_file():
+                    fingerprint[str(path)] = path.stat().st_size
+            except OSError:
+                continue
+    return fingerprint
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _the_suite_never_writes_to_the_operators_files():
+    """Fail the run if any test created or grew a file the operator owns.
+
+    Teardown-scoped on purpose: the point is to catch a write nobody predicted, so
+    there is nothing to assert until every test has run. It names the offending
+    paths rather than the test, because the write usually comes from a module-level
+    singleton bound at import, not from the test that happened to trigger it.
+    """
+    before = _live_file_fingerprint()
+    yield
+    after = _live_file_fingerprint()
+    touched = sorted(
+        path for path, size in after.items() if before.get(path) != size
+    )
+    if touched:
+        listed = "\n  ".join(touched[:10])
+        more = f"\n  ... and {len(touched) - 10} more" if len(touched) > 10 else ""
+        raise AssertionError(
+            "the suite wrote into the operator's own files - isolate the fixture "
+            f"that resolves these paths:\n  {listed}{more}"
+        )
+
 
 @pytest.fixture(scope="session")
 def _shared_pg():
@@ -132,6 +190,41 @@ def _isolate_axon_engine(
 
             monkeypatch.setattr(
                 srv, "_TRACE_STORE", _TS(runtime=SimpleNamespace(data_root=engine_dir / "data"))
+            )
+
+        # Same import-time binding, same fix: _COMPRESSION_TELEMETRY resolved
+        # data_root when the module loaded, so the per-test AXON_ENGINE below
+        # never reached it and every run appended to the operator's own
+        # data/compression/stats.jsonl - the records `axon doctor` and
+        # `axon gain` read, and the ones issue #168 is investigating.
+        if hasattr(srv, "_COMPRESSION_TELEMETRY"):
+            from types import SimpleNamespace
+
+            from axon.observability.compression_telemetry import (
+                CompressionTelemetryStore as _CTS,
+            )
+
+            monkeypatch.setattr(
+                srv,
+                "_COMPRESSION_TELEMETRY",
+                _CTS(SimpleNamespace(data_root=engine_dir / "data")),
+            )
+
+    # `axon.cli.pb` binds its own `_RUNTIME` at import (pb.py:50) and builds a
+    # TraceStore from it per search, so CLI tests appended to the operator's real
+    # data/trace/records.jsonl. Third module with this shape, and the session
+    # guard above is what turned it from invisible into a failing run.
+    #
+    # Replace the whole object, never mutate it: RuntimeConfig is a frozen
+    # dataclass whose `data_root` is a property derived from `engine_root`, so
+    # setattr on the shared instance raises and takes every test with it.
+    if "axon.cli.pb" in sys.modules:
+        import dataclasses
+
+        pb = sys.modules["axon.cli.pb"]
+        if hasattr(pb, "_RUNTIME"):
+            monkeypatch.setattr(
+                pb, "_RUNTIME", dataclasses.replace(pb._RUNTIME, engine_root=engine_dir)
             )
 
     if "axon.hooks.git_event" in sys.modules:
