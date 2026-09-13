@@ -37,3 +37,21 @@ def test_the_fallback_dsn_cannot_reach_anything() -> None:
     """Port 1 on loopback, so the degraded path fails loudly rather than quietly."""
     assert ":1/" in _UNREACHABLE_PG_URL
     assert "127.0.0.1" in _UNREACHABLE_PG_URL
+
+
+def test_the_outcome_store_follows_the_active_dsn() -> None:
+    """`server._outcome_store` is built from the import-time `_RUNTIME.pg_url`.
+
+    Fourth module with the shape `_TRACE_STORE`, `_COMPRESSION_TELEMETRY` and
+    `pb._RUNTIME` already had: the value is resolved when the module loads, so
+    the per-test `AXON_PG_URL` override never reaches it. `axon_record_outcome`
+    therefore wrote into the operator's live database. It did: on 2026-09-13,
+    21 of the 66 rows in the real `outcome_record` were `project='outcome_target'`,
+    the tmp_path fixture repo of `tests/mcp/test_repo_resolution.py`.
+    """
+    from axon.mcp import server
+
+    assert server._get_outcome_store()._dsn == os.environ["AXON_PG_URL"], (
+        "the outcome store is bound to a DSN the suite did not choose - "
+        "axon_record_outcome writes into whatever database was configured at import"
+    )

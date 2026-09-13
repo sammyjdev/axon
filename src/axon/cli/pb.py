@@ -1221,9 +1221,10 @@ def session_note(
     text: Annotated[str, typer.Argument(help="Texto da nota")],
 ) -> None:
     """Adiciona uma nota livre à sessão atual."""
+    from axon.core.repo_identity import repo_identity
     from axon.store.session_store import SessionNote, SessionStore
 
-    project = os.path.basename(os.getcwd())
+    project = repo_identity(os.getcwd())
 
     async def _note() -> None:
         db = _get_db_path()

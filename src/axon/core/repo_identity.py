@@ -20,9 +20,10 @@ _NOT_A_REPO = "not a git repository"
 def repo_identity(path: Path | str | None = None) -> str:
     """Return the parent repository's bare name, falling back to the basename."""
     root = Path(path) if path is not None else Path.cwd()
+    target_dir = root.parent if root.is_file() else root
     try:
         common = subprocess.check_output(  # noqa: S603
-            ["git", "-C", str(root), "rev-parse", "--git-common-dir"],  # noqa: S603, S607
+            ["git", "-C", str(target_dir), "rev-parse", "--git-common-dir"],  # noqa: S603, S607
             text=True,
             stderr=subprocess.PIPE,
         ).strip()
@@ -31,20 +32,20 @@ def repo_identity(path: Path | str | None = None) -> str:
             logger.warning(
                 "git could not resolve a repo identity for %s (%s); falling back to "
                 "the directory name, which is unstable across worktrees: %s",
-                root,
+                target_dir,
                 exc.returncode,
                 (exc.stderr or "").strip()[:200],
             )
-        return root.name
+        return target_dir.name
     except (OSError, subprocess.SubprocessError) as exc:
         logger.warning(
             "could not run git to resolve a repo identity for %s (%s); falling back "
             "to the directory name, which is unstable across worktrees",
-            root,
+            target_dir,
             exc,
         )
-        return root.name
-    git_dir = (root / common).resolve()
+        return target_dir.name
+    git_dir = (target_dir / common).resolve()
     if git_dir.name == ".git":
-        return git_dir.parent.name or root.name
-    return git_dir.name.removesuffix(".git") or root.name
+        return git_dir.parent.name or target_dir.name
+    return git_dir.name.removesuffix(".git") or target_dir.name

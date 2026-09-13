@@ -1,0 +1,407 @@
+#!/usr/bin/env python3
+"""Purge fixture rows and test-written handoff briefs.
+
+Dry run is the default. Applying changes requires an explicit scope flag:
+  --decisions: purge matching decision rows in Postgres
+  --briefs: purge matching test-written handoff briefs in Obsidian vault
+  --all: purge both matching decisions and briefs
+
+Precedent and CLI shape follow axon rekey-repo (src/axon/__main__.py:392).
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import os
+import re
+import sys
+from collections import Counter
+from collections.abc import Sequence
+from pathlib import Path
+
+import asyncpg
+
+try:
+    from scripts.pg_redact import redact_pg_url
+except ImportError:
+    from pg_redact import redact_pg_url
+
+FIXTURE_SUMMARIES: tuple[str, ...] = (
+    "a decision",
+    "first decision",
+    "add redis cache",
+    "drop neo4j backend",
+    "adopt sqlite graph",
+)
+
+SELECT_DECISIONS_SQL = """
+SELECT id, frontmatter->>'repo' AS repo,
+       COALESCE(body, frontmatter->>'summary') AS summary, created_at
+FROM decisions
+WHERE body IN ($1, $2, $3, $4, $5)
+   OR frontmatter->>'summary' IN ($1, $2, $3, $4, $5)
+ORDER BY created_at ASC
+"""
+
+DELETE_DECISIONS_SQL = """
+DELETE FROM decisions
+WHERE body IN ($1, $2, $3, $4, $5)
+   OR frontmatter->>'summary' IN ($1, $2, $3, $4, $5)
+RETURNING id, frontmatter->>'repo' AS repo,
+          COALESCE(body, frontmatter->>'summary') AS summary, created_at
+"""
+
+
+#: A recalled decision as `axon_handoff` renders it: `- dec-001 (rank 0.40): a decision`.
+#: The summary must occupy the whole tail of such a line. Plain containment is not
+#: enough: `a decision` and `first decision` are ordinary English, so a real note-less
+#: brief whose prose used the words was selected for deletion.
+_RECALLED_DECISION = re.compile(r"^\s*[-*]\s*dec-\S+[^:]*:\s*(?P<summary>.+?)\s*$", re.M)
+
+
+def _cited_summaries(content: str) -> set[str]:
+    """Summaries cited as recalled decisions in this brief."""
+    return {m.group("summary") for m in _RECALLED_DECISION.finditer(content)}
+
+
+def is_test_brief(content: str) -> bool:
+    """Return True if content represents a test-written handoff brief.
+
+    Conjunctive selector:
+    1. '## From this session' section is absent (no caller notes).
+    2. Recalled context cites at least one of the known fixture summaries, as a
+       recalled-decision line rather than anywhere in the text.
+    """
+    if "## From this session" in content:
+        return False
+    return bool(_cited_summaries(content) & set(FIXTURE_SUMMARIES))
+
+
+def matching_summaries_in_brief(content: str) -> list[str]:
+    """Return fixture summaries cited in a test-written brief, or empty list."""
+    if "## From this session" in content:
+        return []
+    cited = _cited_summaries(content)
+    return [summary for summary in FIXTURE_SUMMARIES if summary in cited]
+
+
+def resolve_vault(vault_arg: Path | None = None) -> Path | None:
+    """Resolve Obsidian vault root."""
+    if vault_arg is not None:
+        return vault_arg.expanduser().resolve()
+    env = os.environ.get("AXON_VAULT")
+    if env:
+        return Path(env).expanduser().resolve()
+    try:
+        from axon.obsidian.discovery import discover_vault
+
+        return discover_vault(use_cache=False)
+    except Exception:
+        return None
+
+
+def resolve_pg_url(pg_url_arg: str | None = None) -> str:
+    """Resolve Postgres connection URL."""
+    if pg_url_arg:
+        return pg_url_arg
+    env = os.environ.get("AXON_PG_URL")
+    if env:
+        return env
+    try:
+        from axon.config.runtime import load_runtime_config
+
+        return load_runtime_config().pg_url
+    except Exception:
+        return "postgresql://axon:axon@localhost:5433/axon"
+
+
+def scan_test_briefs(vault_path: Path | None) -> list[tuple[Path, list[str]]]:
+    """Scan vault for test-written handoff briefs."""
+    if vault_path is None:
+        return []
+    handoffs_dir = vault_path / "knowledge" / "handoffs"
+    if handoffs_dir.is_symlink():
+        return []
+    vault_resolved = vault_path.resolve()
+    try:
+        if not handoffs_dir.resolve().is_relative_to(vault_resolved):
+            return []
+    except (ValueError, OSError):
+        return []
+    if not handoffs_dir.is_dir():
+        return []
+
+    matching: list[tuple[Path, list[str]]] = []
+    for file_path in sorted(handoffs_dir.rglob("*.md")):
+        if file_path.is_symlink() or not file_path.is_file():
+            continue
+        try:
+            if not file_path.resolve().is_relative_to(vault_resolved):
+                continue
+        except (ValueError, OSError):
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        matches = matching_summaries_in_brief(content)
+        if matches:
+            matching.append((file_path, matches))
+    return matching
+
+
+async def inspect_decisions(pg_url: str) -> list[dict[str, object]]:
+    """Fetch matching fixture decisions without modifying the store."""
+    try:
+        con = await asyncpg.connect(pg_url)
+    except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
+    try:
+        rows = await con.fetch(SELECT_DECISIONS_SQL, *FIXTURE_SUMMARIES)
+        return [
+            {
+                "id": str(r["id"]),
+                "repo": str(r["repo"] or ""),
+                "summary": str(r["summary"] or ""),
+            }
+            for r in rows
+        ]
+    finally:
+        await con.close()
+
+
+async def purge_decisions(pg_url: str) -> list[dict[str, object]]:
+    """Delete matching fixture decisions from Postgres and return deleted rows."""
+    try:
+        con = await asyncpg.connect(pg_url)
+    except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
+    try:
+        async with con.transaction():
+            rows = await con.fetch(DELETE_DECISIONS_SQL, *FIXTURE_SUMMARIES)
+            return [
+                {
+                    "id": str(r["id"]),
+                    "repo": str(r["repo"] or ""),
+                    "summary": str(r["summary"] or ""),
+                }
+                for r in rows
+            ]
+    finally:
+        await con.close()
+
+
+def purge_briefs(
+    brief_paths: Sequence[Path], vault_path: Path | None = None
+) -> tuple[list[Path], list[tuple[Path, str]]]:
+    """Delete matching test brief files.
+
+    Returns the paths actually deleted and the ones that survived, each with a
+    reason. The caller must report both: on a destructive run the printed output
+    is the operator's only receipt, and a file reported as deleted while still on
+    disk is worse than a loud failure (#205).
+    """
+    vault_resolved = vault_path.resolve() if vault_path is not None else None
+    deleted: list[Path] = []
+    failures: list[tuple[Path, str]] = []
+    for path in brief_paths:
+        try:
+            if path.is_symlink():
+                failures.append((path, "symlink"))
+                continue
+            if vault_resolved is not None and not path.resolve().is_relative_to(vault_resolved):
+                failures.append((path, "resolves outside the vault"))
+                continue
+            if path.is_file():
+                path.unlink()
+                deleted.append(path)
+        except OSError as exc:
+            failures.append((path, f"{type(exc).__name__}: {exc}"))
+    return deleted, failures
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Purge test fixture decision rows and test-written handoff briefs.",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        default=False,
+        help="Write changes (default: dry run)",
+    )
+    parser.add_argument(
+        "--decisions",
+        action="store_true",
+        default=False,
+        help="Scope to decision rows in Postgres",
+    )
+    parser.add_argument(
+        "--briefs",
+        action="store_true",
+        default=False,
+        help="Scope to handoff briefs in Obsidian vault",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="Scope to both decisions and briefs",
+    )
+    parser.add_argument(
+        "--vault",
+        type=Path,
+        default=None,
+        help="Path to Obsidian vault (overrides AXON_VAULT / auto-discovery)",
+    )
+    parser.add_argument(
+        "--pg-url",
+        type=str,
+        default=None,
+        help="Postgres URL (overrides AXON_PG_URL / runtime config)",
+    )
+    return parser.parse_args(argv)
+
+
+async def run(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+
+    if args.apply and not (args.decisions or args.briefs or args.all):
+        sys.stderr.write("Refusing to purge: pass --decisions, --briefs, or --all with --apply.\n")
+        return 2
+
+    if args.all and (args.decisions or args.briefs):
+        sys.stderr.write(
+            "--all and --decisions/--briefs are mutually exclusive: --all purges every "
+            "target, while --decisions and --briefs select specific targets.\n"
+        )
+        return 2
+
+    if args.all:
+        target_decisions = True
+        target_briefs = True
+    elif args.decisions or args.briefs:
+        target_decisions = args.decisions
+        target_briefs = args.briefs
+    else:
+        target_decisions = True
+        target_briefs = True
+
+    decisions: list[dict[str, object]] = []
+    if target_decisions:
+        pg_url = resolve_pg_url(args.pg_url)
+        try:
+            if args.apply:
+                decisions = await purge_decisions(pg_url)
+            else:
+                decisions = await inspect_decisions(pg_url)
+        except (
+            ConnectionError, OSError,
+            asyncpg.PostgresConnectionError, asyncpg.UndefinedTableError,
+        ) as exc:
+            sys.stderr.write(f"Error accessing decision store: {exc}\n")
+            return 1
+
+    briefs: list[tuple[Path, list[str]]] = []
+    deleted_briefs: list[Path] = []
+    brief_failures: list[tuple[Path, str]] = []
+    if target_briefs:
+        vault_path = resolve_vault(args.vault)
+        if vault_path is not None:
+            handoffs_dir = vault_path / "knowledge" / "handoffs"
+            if handoffs_dir.is_symlink() or (
+                handoffs_dir.exists()
+                and not handoffs_dir.resolve().is_relative_to(vault_path.resolve())
+            ):
+                sys.stderr.write(
+                    "Refusing to purge: handoffs directory is a symlink or outside vault: "
+                    f"{handoffs_dir}\n"
+                )
+                return 1
+        briefs = scan_test_briefs(vault_path)
+        if args.apply:
+            deleted_briefs, brief_failures = purge_briefs(
+                [path for path, _ in briefs], vault_path=vault_path
+            )
+
+    if target_decisions:
+        print(
+            "Notice: matching decisions by exact summary in:\n"
+            + "".join(f"  - {s}\n" for s in FIXTURE_SUMMARIES)
+            + "Any real decision sharing these exact summaries will be deleted because\n"
+            + "exact match cannot distinguish it from a fixture."
+        )
+        action_verb = "deleted" if args.apply else "would delete"
+        for row in decisions:
+            print(f"{action_verb} decision {row['id']} ({row['repo']}): {row['summary']}")
+        dec_counts = Counter(str(row["summary"]) for row in decisions)
+        for summary, count in sorted(dec_counts.items()):
+            print(f"  {summary}: {count} row(s)")
+        if not decisions:
+            print("  (no matching decision rows found)")
+
+    if target_briefs:
+        action_verb = "deleted" if args.apply else "would delete"
+        # On an --apply run only what actually left the disk may be called deleted.
+        reported = [
+            (path, matches)
+            for path, matches in briefs
+            if not args.apply or path in set(deleted_briefs)
+        ]
+        for path, matches in reported:
+            print(f"{action_verb} brief {path.name} (cites: {', '.join(matches)})")
+        for path, reason in brief_failures:
+            print(f"FAILED to delete brief {path.name}: {reason}")
+        brief_counts: Counter[str] = Counter()
+        for _, matches in reported:
+            for summary in matches:
+                brief_counts[summary] += 1
+        for summary, count in sorted(brief_counts.items()):
+            print(f"  {summary}: {count} brief(s)")
+        if not briefs:
+            print("  (no matching test briefs found)")
+
+    # Summary line
+    purged_briefs = len(deleted_briefs) if args.apply else len(briefs)
+    if target_decisions and target_briefs:
+        if args.apply:
+            print(f"purged {len(decisions)} decision(s) and {purged_briefs} brief(s)")
+        else:
+            print(
+                f"would purge {len(decisions)} decision(s) and {len(briefs)} brief(s) "
+                "(dry run; writing requires --apply with --decisions, --briefs, or --all)"
+            )
+    elif target_decisions:
+        if args.apply:
+            print(f"purged {len(decisions)} decision(s)")
+        else:
+            print(
+                f"would purge {len(decisions)} decision(s) "
+                "(dry run; writing requires --apply with --decisions or --all)"
+            )
+    elif target_briefs:
+        if args.apply:
+            print(f"purged {purged_briefs} brief(s)")
+        else:
+            print(
+                f"would purge {len(briefs)} brief(s) "
+                "(dry run; writing requires --apply with --briefs or --all)"
+            )
+
+    if brief_failures:
+        sys.stderr.write(f"{len(brief_failures)} brief(s) could not be deleted - see above.\n")
+        return 1
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    return asyncio.run(run(argv))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
