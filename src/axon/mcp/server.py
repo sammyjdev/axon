@@ -1131,8 +1131,6 @@ def _is_path_like(val: str) -> bool:
 def _resolve_repo(repo: str | Path | None = None, *, allow_none: Literal[False] = False) -> str: ...
 @overload
 def _resolve_repo(repo: str | Path | None = None, *, allow_none: Literal[True]) -> str | None: ...
-@overload
-def _resolve_repo(repo: str | Path | None = None, *, allow_none: bool = False) -> str | None: ...
 def _resolve_repo(
     repo: str | Path | None = None, *, allow_none: bool = False
 ) -> str | None:
@@ -1153,9 +1151,6 @@ def _resolve_repo(
     if _is_path_like(val):
         return repo_identity(Path(val).resolve())
     return val
-
-
-resolve_repo = _resolve_repo
 
 
 _DECISION_AGENTS = {"claude-code", "codex", "cursor", "manual"}

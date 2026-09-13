@@ -15,7 +15,7 @@ import pytest
 
 from axon.core.decision import Decision
 from axon.mcp import server
-from axon.mcp.server import _resolve_repo, resolve_repo
+from axon.mcp.server import _resolve_repo
 from axon.store.session_store import SessionStore
 
 
@@ -81,7 +81,6 @@ def test_resolve_repo_absolute_path_normalises_to_repo_name(tmp_path: Path) -> N
     repo_path = _init_repo(tmp_path / "sample_project")
     resolved = _resolve_repo(str(repo_path))
     assert resolved == "sample_project"
-    assert resolve_repo(str(repo_path)) == "sample_project"
 
 
 def test_resolve_repo_bare_name_unchanged_and_never_invokes_git(
@@ -224,7 +223,8 @@ async def test_wire_destructive_tool_axon_mark_done_normalises_path(
 
     repo_dir = _init_repo(tmp_path / "done_target")
     out = await server.axon_mark_done(repo=str(repo_dir))
-    assert "export_target" not in out
+    assert str(repo_dir) not in out, "the raw path must not survive into the output"
+    assert "done_target" in out
     notes = await store.get_notes("done_target")
     assert any("[scope] marked done" in n.body for n in notes)
 
