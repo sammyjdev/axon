@@ -18,3 +18,16 @@ plus 4/4 extras KILLED at legendary+risk_area_hit). Gate 2088 passed / 7 skipped
 mid-gate - the exact condition that made the baseline red. The conftest edit went
 through common.testauthor with recorded provenance, because tests/conftest.py is
 an existing test file and only a test-side role may modify one.
+
+Task 2: complete (commits 7d62fcc..4b6d8d6, review clean - legendary.review.spec
+APPROVE, legendary.review.quality APPROVE). Gate 2095 passed / 7 skipped / 7
+xfailed. Mutation sensor needed two rounds: the first battery left
+EXACT_MATCH_PREFIX_LIKE SURVIVING, meaning no test could tell the exact IN match
+from a prefix match on a script that deletes decision rows; closed with
+test_exact_match_preserves_extended_fixture_summaries and the re-run killed 5/5
+extras. The plan's brief selector was corrected in the plan text as well as the
+script - axon_handoff omits "## From this session" whenever notes is empty
+(server.py:1367), so the original selector would have deleted real briefs. The
+conjunctive selector was checked as a pure function against the operator's real
+vault: 120 selected, 1 real brief kept, nothing written. --apply against the live
+store and vault remains the operator's run, never the loop's.
