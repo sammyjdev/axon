@@ -9,6 +9,7 @@ import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal, overload
 
 import litellm
 from mcp.server.mcpserver import MCPServer
@@ -1109,6 +1110,47 @@ def _detect_repo() -> str:
     return repo_identity()
 
 
+def _is_path_like(val: str) -> bool:
+    """Return True if val looks like a filesystem path."""
+    return (
+        val in (".", "..")
+        or "/" in val
+        or (os.sep != "/" and os.sep in val)
+        or os.path.isabs(val)
+    )
+
+
+@overload
+def _resolve_repo(repo: str | Path | None = None, *, allow_none: Literal[False] = False) -> str: ...
+@overload
+def _resolve_repo(repo: str | Path | None = None, *, allow_none: Literal[True]) -> str | None: ...
+@overload
+def _resolve_repo(repo: str | Path | None = None, *, allow_none: bool = False) -> str | None: ...
+def _resolve_repo(
+    repo: str | Path | None = None, *, allow_none: bool = False
+) -> str | None:
+    """Resolve repo parameter: normalise path-like inputs to repo identity.
+
+    Bare names pass through untouched without invoking git.
+    Path-like strings (absolute, containing path separators, or '.'/'..')
+    are resolved via repo_identity.
+    None falls back to _detect_repo() unless allow_none=True.
+    """
+    if repo is None:
+        return None if allow_none else _detect_repo()
+    if isinstance(repo, Path):
+        return repo_identity(repo.resolve())
+    val = str(repo).strip()
+    if not val:
+        return None if allow_none else _detect_repo()
+    if _is_path_like(val):
+        return repo_identity(Path(val).resolve())
+    return val
+
+
+resolve_repo = _resolve_repo
+
+
 _DECISION_AGENTS = {"claude-code", "codex", "cursor", "manual"}
 
 
@@ -1129,7 +1171,7 @@ async def axon_session_start(agent: str | None = None, repo: str | None = None) 
     store = _get_session_store()
     await store.init()
     agent = _detect_agent(agent)
-    repo = repo or _detect_repo()
+    repo = _resolve_repo(repo)
     session_id = uuid.uuid4().hex[:12]
     context = await recall_context(repo, store=store)
     await store.save_session(session_id, agent, repo, context_payload=context)
@@ -1169,7 +1211,7 @@ async def axon_capture_event(event_type: str, payload: dict) -> str:
 
     store = _get_session_store()
     await store.init()
-    repo = str(payload.get("repo") or _detect_repo())
+    repo = _resolve_repo(payload.get("repo"))
     body = f"[{event_type}] {_json.dumps(payload, sort_keys=True, ensure_ascii=False)}"
     await store.save_note(SessionNote(project=repo, body=body))
     return f"captured {event_type} for {repo}."
@@ -1194,7 +1236,7 @@ async def axon_record_outcome(
     """
     store = _get_outcome_store()
     await store.init()
-    repo = repo or _detect_repo()
+    repo = _resolve_repo(repo)
     rid = await store.save_outcome(
         OutcomeRecord(
             project=repo,
@@ -1286,7 +1328,7 @@ async def axon_get_context(repo: str | None = None, token_budget: int = 2000) ->
     """Recall compact, ranked project context (recent decisions) for a repo."""
     store = _get_session_store()
     await store.init()
-    repo = repo or _detect_repo()
+    repo = _resolve_repo(repo)
     return await recall_context(repo, store=store, token_budget=token_budget)
 
 
@@ -1302,7 +1344,7 @@ async def axon_capture(
     """Capture a draft decision into AXON's store. Returns the new decision id."""
     store = _get_session_store()
     await store.init()
-    repo = repo or _detect_repo()
+    repo = _resolve_repo(repo)
     detected = _detect_agent(agent)
     decision = Decision(
         id=await store.next_decision_id(),
@@ -1324,7 +1366,7 @@ async def axon_search(query: str, repo: str | None = None) -> str:
     """Search captured decisions by summary text for a repo."""
     store = _get_session_store()
     await store.init()
-    repo = repo or _detect_repo()
+    repo = _resolve_repo(repo)
     decisions = await store.find_decisions_by_repo(repo, limit=200)
     needle = query.lower()
     hits = [d for d in decisions if needle in d.summary.lower()]
@@ -1356,7 +1398,7 @@ async def axon_handoff(
 
     store = _get_session_store()
     await store.init()
-    repo = repo or _detect_repo()
+    repo = _resolve_repo(repo)
     context = await recall_context(repo, store=store)
 
     brief = (
@@ -1404,7 +1446,7 @@ async def axon_export_now(repo: str | None = None) -> str:
     """Export architecture + ADR docs for a repo's decisions to the vault."""
     store = _get_session_store()
     await store.init()
-    return await _export_repo_docs(store, repo or _detect_repo())
+    return await _export_repo_docs(store, _resolve_repo(repo))
 
 
 @mcp.tool()
@@ -1413,7 +1455,7 @@ async def axon_mark_done(repo: str | None = None) -> str:
     """Mark the current work scope done, then export the repo's docs."""
     store = _get_session_store()
     await store.init()
-    repo = repo or _detect_repo()
+    repo = _resolve_repo(repo)
     await store.save_note(SessionNote(project=repo, body="[scope] marked done"))
     return await _export_repo_docs(store, repo)
 
@@ -1430,6 +1472,7 @@ async def axon_validation_stats(
 
     store = _get_session_store()
     await store.init()
+    repo = _resolve_repo(repo, allow_none=True)
     stats = await pass_rate(store=store, repo=repo, threshold=threshold)
     if stats is None:
         scope = repo if repo is not None else "workspace"
