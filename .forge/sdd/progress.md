@@ -31,3 +31,15 @@ script - axon_handoff omits "## From this session" whenever notes is empty
 conjunctive selector was checked as a pure function against the operator's real
 vault: 120 selected, 1 real brief kept, nothing written. --apply against the live
 store and vault remains the operator's run, never the loop's.
+
+Task 3: complete (commits f92f09a..7163833, review clean - legendary.review.spec
+APPROVE, legendary.review.quality APPROVE). Gate 2121 passed / 7 skipped / 7
+xfailed. Mutation sensor 4/4 mandatory KILLED plus 5/5 extras KILLED, first try.
+The plan said eight call sites; there are ten. axon_export_now (destructive, names
+vault documents after repo) and axon_validation_stats (no normalization and no
+default at all) were both missed, and the plan text is corrected. The resolver
+normalizes narrowly - only path-looking values - and a test that makes
+subprocess.check_output raise pins that narrowness, so a normalize-everything
+mutant dies. Carried, not fixed: session_note.project holds caller-supplied repo
+values too; both its write paths are fixed here, but pre-existing rows can still
+hold absolute paths, so it is a candidate for the operator's re-key run.
