@@ -22,7 +22,12 @@ import pytest
 
 from axon.core.repo_identity import repo_identity
 from axon.store.pg_vector_store import VECTOR_SIZE, PgVectorStore
-from scripts.rekey_embeddings_project import main, run
+from scripts.rekey_embeddings_project import (
+    apply_rekey_embeddings,
+    inspect_embeddings,
+    main,
+    run,
+)
 
 
 def _get_test_pg_url() -> str:
@@ -231,3 +236,96 @@ def test_main_help_runs_without_error() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["--help"])
     assert exc.value.code == 0
+
+
+async def test_credentials_redacted_on_connection_failure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    secret = "secret_db_password_xyz987"  # noqa: S105
+    bad_pg_url = f"postgresql://axon_admin:{secret}@127.0.0.1:1/axon_test"
+
+    with pytest.raises(ConnectionError) as exc_info:
+        await inspect_embeddings(bad_pg_url)
+    msg = str(exc_info.value)
+    assert secret not in msg
+    assert "127.0.0.1" in msg
+
+    with pytest.raises(ConnectionError) as exc_info_apply:
+        await apply_rekey_embeddings(bad_pg_url)
+    msg_apply = str(exc_info_apply.value)
+    assert secret not in msg_apply
+    assert "127.0.0.1" in msg_apply
+
+    exit_code = await run(["--pg-url", bad_pg_url, "--embeddings"])
+    assert exit_code == 1
+    _, err = capsys.readouterr()
+    assert secret not in err
+    assert "127.0.0.1" in err
+
+
+async def test_apply_with_empty_string_only_project_filter(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pg_url = _get_test_pg_url()
+    repo_a = _init_git_repo(tmp_path / "repo_a")
+    repo_b = _init_git_repo(tmp_path / "repo_b")
+
+    file_a = repo_a / "tests" / "test_a.py"
+    file_b = repo_b / "tests" / "test_b.py"
+
+    for f in (file_a, file_b):
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("def fn(): pass\n", encoding="utf-8")
+        _git(["add", "."], cwd=f.parent)
+        _git(["commit", "-m", "init"], cwd=f.parent)
+
+    store = PgVectorStore(pg_url)
+    await store.ensure_collections()
+
+    con = await asyncpg.connect(pg_url)
+    try:
+        await con.execute("TRUNCATE embeddings CASCADE")
+        dummy_vec = f"[{','.join(['0.0'] * VECTOR_SIZE)}]"
+        await con.execute(
+            """
+            INSERT INTO embeddings (
+                id, vector, ctx, file_path, language, chunk_type, symbol, project, content
+            )
+            VALUES
+            ('emb-empty', $1::vector, 'knowledge', $2, 'python',
+             'function', 'fn_a', '', 'def fn(): pass'),
+            ('emb-stale', $1::vector, 'knowledge', $3, 'python',
+             'function', 'fn_b', 'stale_proj', 'def fn(): pass')
+            """,
+            dummy_vec,
+            str(file_a),
+            str(file_b),
+        )
+    finally:
+        await con.close()
+
+    # Dry run with empty string filter inspects only emb-empty
+    inspect_results = await inspect_embeddings(pg_url, only_project="")
+    assert len(inspect_results) == 1
+    assert inspect_results[0]["id"] == "emb-empty"
+
+    exit_code = await run(
+        ["--apply", "--embeddings", "--only-project", "", "--pg-url", pg_url]
+    )
+    assert exit_code == 0
+
+    out, _ = capsys.readouterr()
+    assert "re-keyed embedding emb-empty:  -> repo_a" in out
+    assert "emb-stale" not in out
+    assert "re-keyed 1 embedding row(s)" in out
+
+    con = await asyncpg.connect(pg_url)
+    try:
+        row_empty = await con.fetchrow("SELECT project FROM embeddings WHERE id = 'emb-empty'")
+        row_stale = await con.fetchrow("SELECT project FROM embeddings WHERE id = 'emb-stale'")
+        assert row_empty is not None and row_empty["project"] == "repo_a"
+        # emb-stale must be left untouched because its project is 'stale_proj', not ''
+        assert row_stale is not None and row_stale["project"] == "stale_proj"
+    finally:
+        await con.close()
+

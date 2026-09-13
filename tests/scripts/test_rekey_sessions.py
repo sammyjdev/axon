@@ -19,7 +19,15 @@ import asyncpg
 import pytest
 
 from axon.store.pg_migrations import apply_pg_migrations
-from scripts.rekey_sessions import main, resolve_key, run
+from scripts.rekey_sessions import (
+    apply_rekey_session_memory,
+    apply_rekey_sessions,
+    inspect_session_memory,
+    inspect_sessions,
+    main,
+    resolve_key,
+    run,
+)
 
 
 def _get_test_pg_url() -> str:
@@ -242,3 +250,41 @@ def test_main_runs_without_error(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(SystemExit) as exc:
         main(["--help"])
     assert exc.value.code == 0
+
+
+async def test_credentials_redacted_on_connection_failure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    secret = "secret_db_password_xyz987"  # noqa: S105
+    bad_pg_url = f"postgresql://axon_admin:{secret}@127.0.0.1:1/axon_test"
+
+    with pytest.raises(ConnectionError) as exc_info:
+        await inspect_sessions(bad_pg_url)
+    msg = str(exc_info.value)
+    assert secret not in msg
+    assert "127.0.0.1" in msg
+
+    with pytest.raises(ConnectionError) as exc_info_apply:
+        await apply_rekey_sessions(bad_pg_url)
+    msg_apply = str(exc_info_apply.value)
+    assert secret not in msg_apply
+    assert "127.0.0.1" in msg_apply
+
+    with pytest.raises(ConnectionError) as exc_info_mem:
+        await inspect_session_memory(bad_pg_url)
+    msg_mem = str(exc_info_mem.value)
+    assert secret not in msg_mem
+    assert "127.0.0.1" in msg_mem
+
+    with pytest.raises(ConnectionError) as exc_info_mem_apply:
+        await apply_rekey_session_memory(bad_pg_url)
+    msg_mem_apply = str(exc_info_mem_apply.value)
+    assert secret not in msg_mem_apply
+    assert "127.0.0.1" in msg_mem_apply
+
+    exit_code = await run(["--pg-url", bad_pg_url, "--sessions"])
+    assert exit_code == 1
+    _, err = capsys.readouterr()
+    assert secret not in err
+    assert "127.0.0.1" in err
+

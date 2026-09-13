@@ -9,6 +9,7 @@ developer's real ~/.axon data root during tests.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -17,7 +18,7 @@ import pytest
 
 # Every AXON-owned relational/vector table, truncated between tests so the
 # shared Postgres container gives each test a clean slate (the isolation that
-# the retired per-test SQLite files used to provide — dec-121 Phase 3).
+# the retired per-test SQLite files used to provide - dec-121 Phase 3).
 _AXON_TABLES = (
     "nodes", "edges", "decisions", "adr", "sessions", "session_memory",
     "session_note", "code_change", "file_index", "symbol_deps",
@@ -52,46 +53,71 @@ _WRITE_OPEN_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APP
 _WRITE_MODE_CHARS = frozenset("wax+")
 
 
+def _safe_record_suite_path(arg: object) -> None:
+    if isinstance(arg, (str, bytes, os.PathLike)):
+        _suite_write_opens.add(os.path.abspath(os.fsdecode(arg)))
+
+
 def _record_write_opens(event: str, args: tuple[object, ...]) -> None:
     # CPython's "open" audit event args are (path, mode_or_None, flags_int):
     # mode is None for os.open (a flags-only API) and a str like "w" for
     # builtins.open / Path.open. args[2] is always real open flags, never a
     # permission mode such as 0o666, whose O_RDWR bit would mark every read
     # as a write. Other raisers of this event exist, so stay defensive.
+    # We also record removal and truncation events (os.remove, os.rename,
+    # os.replace, os.truncate) so suite deletions, moves, and truncations
+    # are attributed to the suite.
     try:
-        if event != "open" or not args:
+        if not args:
             return
-        mode = args[1] if len(args) > 1 else None
-        flags = args[2] if len(args) > 2 else None
-        by_flags = isinstance(flags, int) and bool(flags & _WRITE_OPEN_FLAGS)
-        by_mode = isinstance(mode, str) and bool(_WRITE_MODE_CHARS.intersection(mode))
-        if by_flags or by_mode:
-            _suite_write_opens.add(os.path.abspath(os.fsdecode(args[0])))
+        if event == "open":
+            mode = args[1] if len(args) > 1 else None
+            flags = args[2] if len(args) > 2 else None
+            by_flags = isinstance(flags, int) and bool(flags & _WRITE_OPEN_FLAGS)
+            by_mode = isinstance(mode, str) and bool(_WRITE_MODE_CHARS.intersection(mode))
+            if by_flags or by_mode:
+                _safe_record_suite_path(args[0])
+        elif event == "os.remove":
+            _safe_record_suite_path(args[0])
+        elif event in ("os.rename", "os.replace"):
+            _safe_record_suite_path(args[0])
+            if len(args) > 1:
+                _safe_record_suite_path(args[1])
+        elif event == "os.truncate":
+            _safe_record_suite_path(args[0])
     except Exception:  # noqa: S110 - an audit hook must never break the audited call
         pass
 
 
-def _live_file_fingerprint() -> dict[str, int]:
-    """(path -> size) for the operator's own files a test must never touch.
+def _live_file_fingerprint() -> dict[str, tuple[int, int, bytes]]:
+    """(path -> (size, mtime_ns, sha256)) for the operator's own files a test must never touch.
 
     Size, not just presence: `data/compression/stats.jsonl` is appended to rather
     than created, so a path-set comparison would miss it (issue #203).
+    Mtime and sha256 catch same-size overwrites; comparing over the union of
+    before and after paths catches deletions.
     """
     roots: list[Path] = []
     if _OPERATOR_VAULT:
-        roots.append(Path(_OPERATOR_VAULT).expanduser() / "knowledge" / "handoffs")
+        roots.append(
+            Path(os.path.abspath(os.path.expanduser(_OPERATOR_VAULT)))
+            / "knowledge"
+            / "handoffs"
+        )
     if _OPERATOR_ENGINE:
-        data = Path(_OPERATOR_ENGINE).expanduser() / "data"
+        data = Path(os.path.abspath(os.path.expanduser(_OPERATOR_ENGINE))) / "data"
         roots.extend([data / "compression", data / "recall", data / "trace"])
 
-    fingerprint: dict[str, int] = {}
+    fingerprint: dict[str, tuple[int, int, bytes]] = {}
     for root in roots:
         if not root.is_dir():
             continue
         for path in root.rglob("*"):
             try:
                 if path.is_file():
-                    fingerprint[str(path)] = path.stat().st_size
+                    st = path.stat()
+                    content_hash = hashlib.sha256(path.read_bytes()).digest()
+                    fingerprint[str(path)] = (st.st_size, st.st_mtime_ns, content_hash)
             except OSError:
                 continue
     return fingerprint
@@ -117,8 +143,9 @@ def _the_suite_never_writes_to_the_operators_files(
     before = _live_file_fingerprint()
     yield
     after = _live_file_fingerprint()
+    all_paths = set(before.keys()) | set(after.keys())
     touched = sorted(
-        path for path, size in after.items() if before.get(path) != size
+        path for path in all_paths if before.get(path) != after.get(path)
     )
     ours = [p for p in touched if os.path.abspath(p) in _suite_write_opens]
     external = [p for p in touched if os.path.abspath(p) not in _suite_write_opens]
@@ -164,7 +191,7 @@ def _shared_pg():
         return
     try:
         with PostgresContainer(
-            "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"
+            "pgvector/pgvector:pg16", username="axon", password="axon", dbname="axon"  # noqa: S106
         ) as pg:
             yield pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
     except Exception:

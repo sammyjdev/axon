@@ -20,7 +20,14 @@ import pytest
 
 from axon.core.decision import Decision
 from axon.store.session_store import SessionStore
-from scripts.purge_test_artifacts import FIXTURE_SUMMARIES, is_test_brief, main, run
+from scripts.purge_test_artifacts import (
+    FIXTURE_SUMMARIES,
+    inspect_decisions,
+    is_test_brief,
+    main,
+    purge_decisions,
+    run,
+)
 
 
 def _create_vault(root: Path) -> Path:
@@ -309,4 +316,86 @@ async def test_exact_match_preserves_extended_fixture_summaries():
             assert fixture not in remaining_summaries
     finally:
         await store.close()
+
+
+async def test_credentials_redacted_on_connection_failure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    secret = "secret_db_password_xyz987"  # noqa: S105
+    bad_pg_url = f"postgresql://axon_admin:{secret}@127.0.0.1:1/axon_test"
+
+    with pytest.raises(ConnectionError) as exc_info:
+        await inspect_decisions(bad_pg_url)
+    msg = str(exc_info.value)
+    assert secret not in msg
+    assert "127.0.0.1" in msg
+
+    with pytest.raises(ConnectionError) as exc_info_purge:
+        await purge_decisions(bad_pg_url)
+    msg_purge = str(exc_info_purge.value)
+    assert secret not in msg_purge
+    assert "127.0.0.1" in msg_purge
+
+    exit_code = await run(["--pg-url", bad_pg_url, "--decisions"])
+    assert exit_code == 1
+    _, err = capsys.readouterr()
+    assert secret not in err
+    assert "127.0.0.1" in err
+
+
+async def test_purge_refuses_symlinked_handoffs_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    outside_dir = tmp_path / "outside_handoffs"
+    outside_dir.mkdir(parents=True)
+    outside_brief = outside_dir / "brief-external.md"
+    outside_brief.write_text(_brief_with_fixture_no_notes("a decision"), encoding="utf-8")
+
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+    (vault / "knowledge").mkdir(parents=True)
+    handoffs_symlink = vault / "knowledge" / "handoffs"
+    handoffs_symlink.symlink_to(outside_dir, target_is_directory=True)
+
+    exit_code = await run(["--apply", "--briefs", "--vault", str(vault)])
+    assert exit_code == 1
+
+    _, err = capsys.readouterr()
+    assert "Refusing to purge: handoffs directory is a symlink or outside vault" in err
+    assert outside_brief.exists()
+    assert outside_brief.read_text(encoding="utf-8") == _brief_with_fixture_no_notes("a decision")
+
+
+async def test_purge_ignores_symlinked_file_inside_real_handoffs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    vault = _create_vault(tmp_path)
+    handoffs = vault / "knowledge" / "handoffs"
+
+    outside_dir = tmp_path / "outside_target"
+    outside_dir.mkdir(parents=True)
+    outside_brief = outside_dir / "brief-outside.md"
+    outside_content = _brief_with_fixture_no_notes("add redis cache")
+    outside_brief.write_text(outside_content, encoding="utf-8")
+
+    # Symlinked file inside real handoffs pointing to outside file
+    symlink_in_handoffs = handoffs / "symlinked-brief.md"
+    symlink_in_handoffs.symlink_to(outside_brief)
+
+    # Genuine test brief that SHOULD be purged
+    real_test_brief = handoffs / "normal-brief.md"
+    real_test_brief.write_text(_brief_with_fixture_no_notes("a decision"), encoding="utf-8")
+
+    exit_code = await run(["--apply", "--briefs", "--vault", str(vault)])
+    assert exit_code == 0
+
+    out, _ = capsys.readouterr()
+    assert "deleted brief normal-brief.md" in out
+    assert not real_test_brief.exists()
+
+    # The symlinked file and the outside target must survive untouched
+    assert outside_brief.exists()
+    assert outside_brief.read_text(encoding="utf-8") == outside_content
+    assert symlink_in_handoffs.is_symlink()
+
 

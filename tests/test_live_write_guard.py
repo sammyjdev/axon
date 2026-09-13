@@ -142,6 +142,77 @@ def test_in_process_vault_write():
     assert str(brief) in combined, combined
 
 
+def test_in_process_delete_of_preseeded_vault_handoff_fails_the_guard(
+    tmp_path: Path,
+) -> None:
+    engine = tmp_path / "fake-engine"
+    engine.mkdir()
+    vault = tmp_path / "fake-vault"
+    handoffs = vault / "knowledge" / "handoffs"
+    handoffs.mkdir(parents=True)
+    brief = handoffs / "brief-vanished.md"
+    brief.write_text("pre-seeded brief the suite will unlink\n")
+
+    child_test = f'''\
+from pathlib import Path
+
+BRIEF = {str(brief)!r}
+
+
+def test_in_process_unlink():
+    Path(BRIEF).unlink()
+'''
+    _write_child_suite(tmp_path, child_test)
+    result = _run_child_pytest(tmp_path, engine=engine, vault=vault)
+
+    # Non-vacuous: the child really deleted the pre-seeded file, so a guard
+    # that only iterates the AFTER snapshot has something to miss.
+    assert not brief.exists()
+
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, combined
+    assert GUARD_CONTRACT_MESSAGE in combined, combined
+    assert str(brief) in combined, combined
+
+
+def test_in_process_same_size_overwrite_of_preseeded_handoff_fails_the_guard(
+    tmp_path: Path,
+) -> None:
+    engine = tmp_path / "fake-engine"
+    engine.mkdir()
+    vault = tmp_path / "fake-vault"
+    handoffs = vault / "knowledge" / "handoffs"
+    handoffs.mkdir(parents=True)
+    brief = handoffs / "brief-flipped.md"
+    original = "A" * 64
+    replacement = "B" * 64
+    brief.write_text(original)
+    size_before = brief.stat().st_size
+
+    child_test = f'''\
+from pathlib import Path
+
+BRIEF = {str(brief)!r}
+REPLACEMENT = {replacement!r}
+
+
+def test_in_process_same_size_overwrite():
+    Path(BRIEF).write_text(REPLACEMENT)
+'''
+    _write_child_suite(tmp_path, child_test)
+    result = _run_child_pytest(tmp_path, engine=engine, vault=vault)
+
+    # Non-vacuous: the content changed while the byte count did not, so a
+    # size-only comparison has exactly this case to miss.
+    assert brief.read_text() == replacement
+    assert brief.stat().st_size == size_before
+
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, combined
+    assert GUARD_CONTRACT_MESSAGE in combined, combined
+    assert str(brief) in combined, combined
+
+
 def test_in_process_os_open_append_into_engine_trace_fails_the_guard(
     tmp_path: Path,
 ) -> None:
@@ -173,3 +244,4 @@ def test_in_process_os_open_append():
     assert result.returncode != 0, combined
     assert GUARD_CONTRACT_MESSAGE in combined, combined
     assert str(records) in combined, combined
+

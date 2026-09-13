@@ -21,6 +21,11 @@ from pathlib import Path
 
 import asyncpg
 
+try:
+    from scripts.pg_redact import redact_pg_url
+except ImportError:
+    from pg_redact import redact_pg_url
+
 FIXTURE_SUMMARIES: tuple[str, ...] = (
     "a decision",
     "first decision",
@@ -101,12 +106,25 @@ def scan_test_briefs(vault_path: Path | None) -> list[tuple[Path, list[str]]]:
     if vault_path is None:
         return []
     handoffs_dir = vault_path / "knowledge" / "handoffs"
+    if handoffs_dir.is_symlink():
+        return []
+    vault_resolved = vault_path.resolve()
+    try:
+        if not handoffs_dir.resolve().is_relative_to(vault_resolved):
+            return []
+    except (ValueError, OSError):
+        return []
     if not handoffs_dir.is_dir():
         return []
 
     matching: list[tuple[Path, list[str]]] = []
     for file_path in sorted(handoffs_dir.rglob("*.md")):
-        if not file_path.is_file():
+        if file_path.is_symlink() or not file_path.is_file():
+            continue
+        try:
+            if not file_path.resolve().is_relative_to(vault_resolved):
+                continue
+        except (ValueError, OSError):
             continue
         try:
             content = file_path.read_text(encoding="utf-8", errors="replace")
@@ -123,7 +141,9 @@ async def inspect_decisions(pg_url: str) -> list[dict[str, object]]:
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-        raise ConnectionError(f"Failed to connect to Postgres at {pg_url}: {exc}") from exc
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
     try:
         rows = await con.fetch(SELECT_DECISIONS_SQL, *FIXTURE_SUMMARIES)
         return [
@@ -145,7 +165,9 @@ async def purge_decisions(pg_url: str) -> list[dict[str, object]]:
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-        raise ConnectionError(f"Failed to connect to Postgres at {pg_url}: {exc}") from exc
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
     try:
         async with con.transaction():
             rows = await con.fetch(DELETE_DECISIONS_SQL, *FIXTURE_SUMMARIES)
@@ -163,10 +185,15 @@ async def purge_decisions(pg_url: str) -> list[dict[str, object]]:
         await con.close()
 
 
-def purge_briefs(brief_paths: Sequence[Path]) -> None:
+def purge_briefs(brief_paths: Sequence[Path], vault_path: Path | None = None) -> None:
     """Delete matching test brief files."""
+    vault_resolved = vault_path.resolve() if vault_path is not None else None
     for path in brief_paths:
         try:
+            if path.is_symlink():
+                continue
+            if vault_resolved is not None and not path.resolve().is_relative_to(vault_resolved):
+                continue
             if path.is_file():
                 path.unlink()
         except OSError:
@@ -255,9 +282,20 @@ async def run(argv: Sequence[str] | None = None) -> int:
     briefs: list[tuple[Path, list[str]]] = []
     if target_briefs:
         vault_path = resolve_vault(args.vault)
+        if vault_path is not None:
+            handoffs_dir = vault_path / "knowledge" / "handoffs"
+            if handoffs_dir.is_symlink() or (
+                handoffs_dir.exists()
+                and not handoffs_dir.resolve().is_relative_to(vault_path.resolve())
+            ):
+                sys.stderr.write(
+                    "Refusing to purge: handoffs directory is a symlink or outside vault: "
+                    f"{handoffs_dir}\n"
+                )
+                return 1
         briefs = scan_test_briefs(vault_path)
         if args.apply:
-            purge_briefs([path for path, _ in briefs])
+            purge_briefs([path for path, _ in briefs], vault_path=vault_path)
 
     if target_decisions:
         print(

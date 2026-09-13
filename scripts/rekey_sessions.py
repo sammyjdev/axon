@@ -22,6 +22,11 @@ from pathlib import Path
 
 import asyncpg
 
+try:
+    from scripts.pg_redact import redact_pg_url
+except ImportError:
+    from pg_redact import redact_pg_url
+
 from axon.core.repo_identity import repo_identity
 
 SELECT_SESSIONS_SQL = """
@@ -79,7 +84,9 @@ async def inspect_sessions(pg_url: str) -> list[dict[str, str]]:
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-        raise ConnectionError(f"Failed to connect to Postgres at {pg_url}: {exc}") from exc
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
     try:
         rows = await con.fetch(SELECT_SESSIONS_SQL)
         return [
@@ -101,7 +108,9 @@ async def apply_rekey_sessions(pg_url: str) -> list[dict[str, str]]:
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-        raise ConnectionError(f"Failed to connect to Postgres at {pg_url}: {exc}") from exc
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
     try:
         async with con.transaction():
             rows = await con.fetch(SELECT_SESSIONS_SQL)
@@ -130,7 +139,9 @@ async def inspect_session_memory(pg_url: str) -> list[dict[str, str]]:
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-        raise ConnectionError(f"Failed to connect to Postgres at {pg_url}: {exc}") from exc
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
     try:
         rows = await con.fetch(SELECT_SESSION_MEMORY_SQL)
         return [
@@ -152,7 +163,9 @@ async def apply_rekey_session_memory(pg_url: str) -> list[dict[str, str]]:
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-        raise ConnectionError(f"Failed to connect to Postgres at {pg_url}: {exc}") from exc
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
     try:
         async with con.transaction():
             rows = await con.fetch(SELECT_SESSION_MEMORY_SQL)

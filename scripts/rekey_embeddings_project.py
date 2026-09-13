@@ -5,6 +5,9 @@ Dry run is the default. Applying changes requires an explicit scope flag:
   --embeddings: re-key matching rows in the embeddings table
   --all: re-key all matching rows in the embeddings table
 
+Filter by project with --only-project <name>. Pass '' to select rows where
+project is the empty string, and '<null>' to select rows where project IS NULL.
+
 Precedent and CLI shape follow axon rekey-repo (src/axon/__main__.py:392)
 and scripts/rekey_sessions.py.
 Rows are updated in place, never deleted.
@@ -22,6 +25,11 @@ from pathlib import Path
 
 import asyncpg
 
+try:
+    from scripts.pg_redact import redact_pg_url
+except ImportError:
+    from pg_redact import redact_pg_url
+
 from axon.core.repo_identity import repo_identity
 
 SELECT_EMBEDDINGS_SQL = """
@@ -34,6 +42,13 @@ SELECT_EMBEDDINGS_FILTERED_SQL = """
 SELECT id, file_path, project
 FROM embeddings
 WHERE project = $1
+ORDER BY file_path ASC, id ASC
+"""
+
+SELECT_EMBEDDINGS_NULL_PROJECT_SQL = """
+SELECT id, file_path, project
+FROM embeddings
+WHERE project IS NULL
 ORDER BY file_path ASC, id ASC
 """
 
@@ -83,10 +98,15 @@ async def inspect_embeddings(
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-        raise ConnectionError(f"Failed to connect to Postgres at {pg_url}: {exc}") from exc
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
     try:
-        if only_project:
-            rows = await con.fetch(SELECT_EMBEDDINGS_FILTERED_SQL, only_project)
+        if only_project is not None:
+            if only_project == "<null>":
+                rows = await con.fetch(SELECT_EMBEDDINGS_NULL_PROJECT_SQL)
+            else:
+                rows = await con.fetch(SELECT_EMBEDDINGS_FILTERED_SQL, only_project)
         else:
             rows = await con.fetch(SELECT_EMBEDDINGS_SQL)
         cache: dict[str, str] = {}
@@ -119,11 +139,16 @@ async def apply_rekey_embeddings(
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-        raise ConnectionError(f"Failed to connect to Postgres at {pg_url}: {exc}") from exc
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
     try:
         async with con.transaction():
-            if only_project:
-                rows = await con.fetch(SELECT_EMBEDDINGS_FILTERED_SQL, only_project)
+            if only_project is not None:
+                if only_project == "<null>":
+                    rows = await con.fetch(SELECT_EMBEDDINGS_NULL_PROJECT_SQL)
+                else:
+                    rows = await con.fetch(SELECT_EMBEDDINGS_FILTERED_SQL, only_project)
             else:
                 rows = await con.fetch(SELECT_EMBEDDINGS_SQL)
             cache: dict[str, str] = {}
@@ -179,7 +204,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--only-project",
         type=str,
         default=None,
-        help="Filter candidate rows by current project",
+        help="Filter candidate rows by current project (pass '' for empty, '<null>' for NULL)",
     )
     parser.add_argument(
         "--pg-url",
@@ -206,7 +231,7 @@ async def run(argv: Sequence[str] | None = None) -> int:
         )
         return 2
 
-    if args.all and args.only_project:
+    if args.all and args.only_project is not None:
         sys.stderr.write(
             "--all and --only-project are mutually exclusive: --all re-keys every "
             "matching row, while --only-project selects a specific current project.\n"
