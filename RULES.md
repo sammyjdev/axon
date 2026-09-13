@@ -209,3 +209,28 @@ promotes them into a section above after curation.
   step nor job sets `continue-on-error`. `tests/test_ci_secret_scan.py` does
   this for `secret-scan`; `bandit`, `pip-audit` and `dast` have no such guard
   and can each be silently disarmed today. (FORGE #97)
+- **A destructive selector needs a test that pins EXACTNESS, not just correctness
+  on the happy path.** `scripts/purge_test_artifacts.py` deletes decision rows
+  matching five literal summaries with SQL `IN`. The mutation battery replaced
+  that with a prefix match and the whole suite stayed green - so widening the
+  delete to every real decision whose summary merely BEGINS with a fixture
+  string (`a decision about the chunker` under the fixture `a decision`) would
+  have shipped unnoticed. A test that only seeds the exact fixtures and asserts
+  they are gone cannot see the difference. Check: seed rows that EXTEND the
+  literal in all three directions - prefix, suffix and containment - and assert
+  by exact summary that they SURVIVE, not merely that a count is right; a count
+  assertion survives a mutant that deletes the wrong row and keeps the right
+  number. Same test shape applies to any file selector that decides what to
+  unlink. (FORGE, plan axon-isolation-and-keying Task 2)
+- **A guard that fingerprints paths outside the process's own temp dir must
+  attribute the write, or another process on the machine turns a green suite
+  red.** The live-write guard in `tests/conftest.py` compared (path -> size)
+  under the operator's `AXON_VAULT` and `AXON_ENGINE/data` and blamed the suite
+  for any growth - but `@traced_tool` appends to `data/trace/records.jsonl` on
+  every MCP call and the AXON git hooks append on every commit, so any agent
+  loop running alongside the gate failed it and named an innocent fixture.
+  Measured on 9e57e16: red with concurrent MCP traffic, 2085 passed without it,
+  the file byte-identical either way. Fixed by a `sys.addaudithook` ledger.
+  Check: any new before/after snapshot over a path the operator's other tools
+  also write to records WHO wrote, not just THAT it changed.
+  (FORGE, plan axon-isolation-and-keying Task 0)
