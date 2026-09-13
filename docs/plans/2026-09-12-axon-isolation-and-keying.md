@@ -39,7 +39,7 @@ Removing dead surface (`symbol_deps`, the two uncalled graph MCP tools, `pet`,
 - [x] **Task 0: make the live-write guard attribute writes to the test process** (blocks the rest)
 - [x] **Task 2: add a purge script for the fixture rows and the test-written handoff briefs**
 - [x] **Task 3: key sessions by repo_identity on write**
-- [x] **Task 4: key session_memory by repo_identity** - already landed in `084d326` / PR #194
+- [x] **Task 4: key session_note by repo_identity** (retargeted 2026-09-13)
 - [x] **Task 5: derive embeddings.project from the repo root**
 
 All tasks landed in PR #204. The three scripts are dry-run by default and the loop never
@@ -107,15 +107,36 @@ or default at all. `axon_export_now` is destructive and names vault documents af
     rows already holding absolute paths exists, dry-run by default. Applying it to the
     live store is the operator's run.
 
-### Task 4: key session_memory by repo_identity
+### Task 4: key session_note by repo_identity
 
-> **ALREADY DONE** in `084d326` / PR #194, merged 2026-09-11, one day before this plan
-> was written. `session_save` and `compact_hook` use `repo_identity(cwd)`
-> (`src/axon/cli/pb.py:1303` and `:1586`), and the acceptance test already exists and
-> passes:
-> `tests/cli/test_session_memory_repo_key.py::test_session_save_in_a_worktree_keys_under_the_parent_repo`.
-> Re-keying rows already written with the old key is not covered by this task's
-> acceptance; it rides with the re-key work in Task 3.
+**Retargeted 2026-09-13.** As written this task was already done. `session_memory`'s
+two writers - `pb.py:1303` (`session_save`) and `pb.py:1586` (`compact_hook`) - both
+key by `repo_identity` today, and `tests/cli/test_session_memory_repo_key.py` plus
+`..._key_gaps.py` cover worktrees, worktree subdirectories and the no-`--cwd` case.
+Issue #186 is closed by that code; verify and close it rather than re-fixing it.
+
+What is still keyed by `os.path.basename(os.getcwd())` is `pb.py:1226`, inside
+`session_note` - a different table (`session_note`, written through
+`SessionStore.save_note` -> `pg_session_repository.py:70-93`). `get_session_memory`
+reads that table alongside `session_memory` (`server.py:705-739`), so a note filed
+from a worktree is invisible to a recall keyed by the repo, exactly as the
+`session_memory` bug behaved before it was fixed.
+
+Reuse the fix and the test shape that already landed for `session_memory`; do not
+invent a second idiom.
+
+  - Depends on: Task 3
+  - Acceptance: `axon session note` run from a worktree under `~/dev/axon-worktrees/`
+    stores `project='axon'`, and `get_session_memory('axon')` returns that note; no
+    row in `session_note` has a `project` value that is a worktree directory name
+
+> **DONE.** The one-line write-path fix landed here; the backfill half already shipped in
+> `359ed01` (`scripts/rekey_sessions.py --session-notes`). The three MCP writers of the
+> same table (`server.py:1193`, `:1218`, `:1461`) were normalized in Task 3, so
+> `pb.py:1226` was the fourth and last writer. Residual for the operator: the backfill
+> selects `WHERE project LIKE '/%'`, so a row already keyed to a bare worktree directory
+> name is not selected - a bare name carries nothing to map back to a repo unless that
+> worktree still exists on disk.
 
 ### Task 5: derive embeddings.project from the repo root
 
