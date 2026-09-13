@@ -43,3 +43,30 @@ subprocess.check_output raise pins that narrowness, so a normalize-everything
 mutant dies. Carried, not fixed: session_note.project holds caller-supplied repo
 values too; both its write paths are fixed here, but pre-existing rows can still
 hold absolute paths, so it is a candidate for the operator's re-key run.
+
+Task 5: complete (commits 33dee0e..b180b67, review clean - legendary.review.spec
+APPROVE, legendary.review.quality APPROVE). Gate 2137 passed / 7 skipped / 7
+xfailed. Mutation sensor needed two rounds: the first left the cache-key mutant
+SURVIVING - keying project_by_dir by directory NAME reintroduces the very
+repo_a/tests vs repo_b/tests collision this task removes, and the flagship test
+missed it because it called index_path once per repo, so the two directories never
+shared a cache lifetime. Closed by a test that indexes both repos in one
+index_path call; re-run killed 6/6.
+
+The executor's first attempt widened repo_identity so any non-existent path
+resolved through its parent: repo_identity("some-other-repo") returned 'axon'
+instead of the name, filing a caller's data under the ambient repo with the whole
+suite green. Caught by probing the changed function against master rather than by
+any test. Narrowed to root.parent only when root.is_file(), pinned by
+tests/core/test_repo_identity_nonexistent.py.
+
+FOR THE OPERATOR, before --apply on the 24,164 rows: a row whose directory no
+longer exists on disk re-keys to its stale directory fragment, because git cannot
+resolve a missing path. The "no project maps to more than one repo root" property
+is proven for the seeded case and is NOT guaranteed for orphaned rows. Raised
+independently by both reviewers.
+
+Also carried, not fixed: session_note.project holds caller-supplied repo values.
+Both write paths were fixed in Task 3, but pre-existing rows can hold absolute
+paths, so that table is a candidate for the operator's own re-key round. This pass
+was deliberately not widened to a third table.
