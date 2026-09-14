@@ -149,7 +149,7 @@ by editing the line. Step O1 records them.
   codex `-p forge` profile flag, `agents/forge/tests/test_role_argv.py`, `settings.json`)
   and the untracked `agents/forge/telemetry.jsonl.bak-20260913T215508`. Commit on a branch
   or discard, before O2.
-- [ ] **D7. Four stashes.** (2026-09-14: all four exported to `~/backups/stashes/` and read. axon `stash@{1}` is three pt-BR comment translations plus CLAUDE.md pointers to a `docs/agents/` that never landed; the claude-skills pair is the 2026-07-11 dash-cleanup WIP, already on main via #b34f443 and later. Verdict: drop all four; the drop itself is the operator's, auto mode refuses it.) axon `stash@{0}` (superseded plan edit, +45/-8): drop.
+- [x] **D7. Four stashes.** (2026-09-14: all four exported to `~/backups/stashes/` and read. axon `stash@{1}` is three pt-BR comment translations plus CLAUDE.md pointers to a `docs/agents/` that never landed; the claude-skills pair is the 2026-07-11 dash-cleanup WIP, already on main via #b34f443 and later. Verdict: drop all four; dropped by the operator on 2026-09-14, both stash lists empty.) axon `stash@{0}` (superseded plan edit, +45/-8): drop.
   axon `stash@{1}` (`wip(oss-branch)`, +4/-4 on one comment): drop after one look.
   claude-skills `stash@{0}` and `stash@{1}`: identical -1003/+12 on
   `skills/design-taste-frontend/SKILL.md`; inspect one, drop both or apply one. Dropping is
@@ -507,7 +507,7 @@ prints nothing; never `--force`.
   `fix/maker-timeout-and-aging-fixture` is fully in `main` by content (`b05b5f9` is
   dangling, nothing to recover); delete it. `~/dev/_wt/scope-creep` is unrelated to this
   flow; leave it.
-- [ ] **O11.3** Stashes per D7, each exported first:
+- [x] **O11.3** Stashes per D7, each exported first:
   `for r in ~/dev/axon ~/.claude; do for n in 0 1; do git -C $r stash show -p "stash@{$n}" > ~/backups/$(basename $r)-stash-$n.patch; done; done`
 - [ ] **O11.4** (optional, claude-skills) Redo `-c mcp_servers={}` on the codex rail
   dispatch in `role_argv.py`: the other session measured 25,408 to 20,363 prefix tokens
