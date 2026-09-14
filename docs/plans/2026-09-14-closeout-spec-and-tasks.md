@@ -149,7 +149,7 @@ by editing the line. Step O1 records them.
   codex `-p forge` profile flag, `agents/forge/tests/test_role_argv.py`, `settings.json`)
   and the untracked `agents/forge/telemetry.jsonl.bak-20260913T215508`. Commit on a branch
   or discard, before O2.
-- [ ] **D7. Four stashes.** axon `stash@{0}` (superseded plan edit, +45/-8): drop.
+- [ ] **D7. Four stashes.** (2026-09-14: all four exported to `~/backups/stashes/` and read. axon `stash@{1}` is three pt-BR comment translations plus CLAUDE.md pointers to a `docs/agents/` that never landed; the claude-skills pair is the 2026-07-11 dash-cleanup WIP, already on main via #b34f443 and later. Verdict: drop all four; the drop itself is the operator's, auto mode refuses it.) axon `stash@{0}` (superseded plan edit, +45/-8): drop.
   axon `stash@{1}` (`wip(oss-branch)`, +4/-4 on one comment): drop after one look.
   claude-skills `stash@{0}` and `stash@{1}`: identical -1003/+12 on
   `skills/design-taste-frontend/SKILL.md`; inspect one, drop both or apply one. Dropping is
@@ -228,12 +228,12 @@ operator chose to keep; D1..D7 are ticked.
 **Requirement:** feeds CM-3. **Depends on:** O1 (D6). Auto mode refuses the merge
 (`Merge Without Review`), so the operator merges.
 
-- [ ] **O2.1** Merge #57 (`agy --effort` for models without a tier suffix; 3.8 becomes
+- [x] **O2.1** Merge #57 (`agy --effort` for models without a tier suffix; 3.8 becomes
   dispatchable, the pin stays 3.7 until O10 measures).
-- [ ] **O2.2** Merge #58 (the parity check's `untrusted` state, read from
+- [x] **O2.2** Merge #58 (the parity check's `untrusted` state, read from
   `~/.codex/config.toml`; it changes only `hooks/test_codex_hooks_parity.py`, so it does
   not move `~/.codex/hooks.json` and does not invalidate trust).
-- [ ] **O2.3** `git -C ~/.claude pull --ff-only`. The claude-skills gate is now red until
+- [x] **O2.3** `git -C ~/.claude pull --ff-only`. The claude-skills gate is now red until
   O3; that is the finding, not a regression.
 
 **Acceptance:**
@@ -249,7 +249,7 @@ python3 ~/.claude/hooks/test_codex_hooks_parity.py; echo exit=$?                
 prints `OK: installed and consistent with ...` regardless of trust, the sixth lying green
 P-CODEX records, so this step's acceptance is meaningless earlier.
 
-- [ ] **O3.1** Run `codex` in the TUI, open `/hooks`, review and trust every entry. Trust
+- [x] **O3.1** Run `codex` in the TUI, open `/hooks`, review and trust every entry. Trust
   is keyed `<file>:<event>:<entry index>:<hook index>` in `config.toml`, so do this after
   any change to `~/.codex/hooks.json`; nothing in this plan changes that file. Any future
   edit to `~/.claude/hooks/codex-hooks.reference.json` reorders indices on install and
