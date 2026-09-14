@@ -500,7 +500,7 @@ prints nothing; never `--force`.
   (`agent/issue-92..198`, `fix/summary-cap-250`, both chunker fixes,
   `docs/adr-retrieval-partition`), all clean. Keep `agent/plan-axon-isolation-and-keying`
   while its untracked `.specs/` is wanted, and `fix/pack-eval-ruler-precision` (PR #179).
-- [ ] **O11.2** claude-skills: `timeout-rebase` and `telemetry-guard` are merged by content
+- [x] **O11.2** claude-skills: `timeout-rebase` and `telemetry-guard` are merged by content
   (squash; `git branch --merged` will not show it) and clean; `agent-plan-codex-axon-hooks`
   is merged by content but holds untracked `.specs/features/plan-codex-axon-hooks/` and two
   review artifacts; `agy-effort` and `hook-trust` go after O2.
