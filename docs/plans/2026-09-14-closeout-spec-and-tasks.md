@@ -120,14 +120,14 @@ concern); an `exec` entry point for the forge envelope under Codex; re-keying
 The loop must not make these. Each carries the recommendation and its reason; override
 by editing the line. Step O1 records them.
 
-- [ ] **D1. Work-notes content.** Recommend **both** halves: delete the 6 `embeddings`
+- [x] **D1. Work-notes content.** (2026-09-14: both halves; file moved to `~/work-notes/`.) Recommend **both** halves: delete the 6 `embeddings`
   and 1 `file_index` rows, and move
   `~/vault/inbox/2026-07-16-definicao-do-roadmap-e-entregas.md` outside `$AXON_VAULT`
   (or under the `work` ctx root). Reason: today it is reachable by `search_code` and `ask`
   without the explicit `ctx="work"` the restricted rule requires; deleting rows alone is
   undone by the next `index-vault`. Alternative: read the file, confirm it is not
   restricted, record that in the handoff, skip both halves. (P-SEQ D1, P-KEY A0)
-- [ ] **D2. Refusals and known names.** `dev/gnomon-eval-src` (31 rows) is refused, not
+- [x] **D2. Refusals and known names.** `dev/gnomon-eval-src` (31 rows) is refused, not
   aliased. Any path under `$AXON_VAULT` gets no repo key, live directory or not, matched by
   prefix on the resolved root, never by the substring `/vault/`. `_bench`, `_worktrees`,
   `_wt` and `pytest-of-*` are a denylist. Known repository names are the ROUTER list plus
@@ -135,17 +135,17 @@ by editing the line. Step O1 records them.
   reads `embeddings.project`). `config/projects.json` is an alias table only: read as a
   source of names it admits `poc-medicamentos-ia` and `iago-server`, which nothing
   classified. (P-SEQ D2, P-KEY B, dead-dirs analysis)
-- [ ] **D3. Benchmark-arm rows** (`sessions` `b04c37db5cfc`, `session_note` 6). Recommend
+- [x] **D3. Benchmark-arm rows** (`sessions` `b04c37db5cfc`, `session_note` 6). Recommend
   **delete** after export. Reason: the note is a real eval report, but no repository owns
   it; re-keying to the arm name (P-CODEX) satisfies the `LIKE '/%'` guard while keeping a
   non-repository name in the store.
-- [ ] **D4. Pilot shape for forge under Codex** (P-CODEX C7). Recommend the **Codex TUI
+- [ ] **D4. Pilot shape for forge under Codex** (2026-09-14: O5 not run; this pass went on the D5 rail, so D4 carries to the next plan.) (P-CODEX C7). Recommend the **Codex TUI
   with per-dispatch approval**, gated on Step O5's dispatched-agent probe, not on the
   2026-07-10 human-typed result. An `exec` entry point stays out of scope.
-- [ ] **D5. Rail for the loop run if the pilot cannot start.** Recommend the current
+- [x] **D5. Rail for the loop run if the pilot cannot start.** Recommend the current
   Claude-orchestrated `forge plan`; the maker is off the Anthropic family per forge's
   registry either way.
-- [ ] **D6. Uncommitted files in `~/.claude`** (`agents/forge/scripts/role_argv.py` with a
+- [x] **D6. Uncommitted files in `~/.claude`** (2026-09-14: four files, not three; the three forge ones parked on `forge/codex-profile-flag` (f152086), `settings.json` kept as live preference, `.bak` removed.) (`agents/forge/scripts/role_argv.py` with a
   codex `-p forge` profile flag, `agents/forge/tests/test_role_argv.py`, `settings.json`)
   and the untracked `agents/forge/telemetry.jsonl.bak-20260913T215508`. Commit on a branch
   or discard, before O2.
@@ -216,8 +216,8 @@ checkpoint, O9 backfill, O10 Gemini 3.8, O11 housekeeping, O12 activity-history.
 
 **Requirement:** none directly; unblocks O2 and O4. **Depends on:** nothing.
 
-- [ ] **O1.1** Tick D1..D7 in section 2, editing any line the operator overrides.
-- [ ] **O1.2** D6: in `~/.claude`, either commit the three modified files on a branch or
+- [x] **O1.1** Tick D1..D7 in section 2, editing any line the operator overrides.
+- [x] **O1.2** D6: in `~/.claude`, either commit the three modified files on a branch or
   discard them; decide the untracked telemetry backup.
 
 **Acceptance:** `git -C ~/.claude status --short` prints nothing, or only lines the
@@ -267,7 +267,7 @@ python3 ~/.claude/hooks/test_codex_hooks_parity.py; echo exit=$?
 **Requirements:** KS-1, KS-2, RC-1, OP-1. **Depends on:** O1 (D1, D2, D3). Independent
 of the Codex track; may run first.
 
-- [ ] **O4.1 Backups.** The briefs are in a git repo inside the vault; the tables are not.
+- [x] **O4.1 Backups.** The briefs are in a git repo inside the vault; the tables are not.
   ```bash
   mkdir -p ~/backups && cd ~/dev/axon
   pg_dump "$AXON_PG_URL" -t decisions -t sessions -t session_note -t outcome_record -f ~/backups/axon-pre-O4-$(date +%Y%m%dT%H%M).sql
@@ -277,12 +277,12 @@ of the Codex track; may run first.
   psql "$AXON_PG_URL" -c "\copy (select * from sessions where id='b04c37db5cfc') to '$HOME/backups/bench-session.csv' csv header"
   psql "$AXON_PG_URL" -Atc "select (select count(*) from sessions), (select count(*) from session_note), (select count(*) from outcome_record), (select count(*) from embeddings), (select count(*) from decisions);"   # note the five totals
   ```
-- [ ] **O4.2 Purge the test artifacts** (P-KEY A1): dry run, read it, apply.
+- [x] **O4.2 Purge the test artifacts** (P-KEY A1): dry run, read it, apply.
   ```bash
   python3 scripts/purge_test_artifacts.py                 # 6 decisions, 120 briefs
   python3 scripts/purge_test_artifacts.py --apply --all
   ```
-- [ ] **O4.3 Correct, delete, then script**, in one transaction that stops on the first
+- [x] **O4.3 Correct, delete, then script**, in one transaction that stops on the first
   error. The merit `update` must precede `rekey_sessions.py`, which would otherwise write
   `agent-issue-6` and hide the row from the `LIKE '/%'` guard for good (P-CODEX B5).
   ```bash
@@ -301,10 +301,10 @@ of the Codex track; may run first.
   delete from file_index where file_path like '%/vault/work-notes/%';                         -- 1
   SQL
   ```
-- [ ] **O4.4 D1, second half, same branch.** The file leaves the indexed tree or the next
+- [x] **O4.4 D1, second half, same branch.** The file leaves the indexed tree or the next
   `index-vault` re-creates the rows:
   `mv ~/vault/inbox/2026-07-16-definicao-do-roadmap-e-entregas.md <a directory outside $AXON_VAULT, or the work ctx root>/`
-- [ ] **O4.5 Gate, then the script.**
+- [x] **O4.5 Gate, then the script.**
   ```bash
   psql "$AXON_PG_URL" -Atc "select repo from sessions where id='2420891be51e';"   # merit, or stop here
   python3 scripts/rekey_sessions.py                       # dry run: now 3 sessions, 0 notes
@@ -358,7 +358,7 @@ and closes D4 as "envelope needs an exec entry point", which stays out of scope.
 dependency and buys nothing here: the pipx snapshot carries the pre-Task-2 parser until
 O7.1, so the pilot session writes no `session_memory` row by construction.
 
-- [ ] **O6.1** In one commit on `master`: add this file and
+- [x] **O6.1** In one commit on `master`: add this file and
   `docs/plans/2026-09-13-dead-dirs-key-analysis.md` (a worktree does not see untracked
   files), and rename the previous plan's ledger so plan-mode starts at Task 1:
   `git mv .forge/sdd/progress.md .forge/sdd/progress-2026-09-12-axon-isolation-and-keying.md`.
