@@ -496,7 +496,7 @@ to pin without a measurement.
 **Depends on:** nothing. Remove a worktree only when `git -C <worktree> status --porcelain`
 prints nothing; never `--force`.
 
-- [ ] **O11.1** axon: 17 of the 19 non-master worktrees hold branches merged to `master`
+- [x] **O11.1** axon: 17 of the 19 non-master worktrees hold branches merged to `master`
   (`agent/issue-92..198`, `fix/summary-cap-250`, both chunker fixes,
   `docs/adr-retrieval-partition`), all clean. Keep `agent/plan-axon-isolation-and-keying`
   while its untracked `.specs/` is wanted, and `fix/pack-eval-ruler-precision` (PR #179).
