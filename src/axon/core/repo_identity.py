@@ -17,6 +17,26 @@ logger = logging.getLogger(__name__)
 _NOT_A_REPO = "not a git repository"
 
 
+def is_git_repo(path: Path | str | None = None) -> bool:
+    """True when `path` sits inside a git working tree or worktree.
+
+    The capture hooks refuse a cwd outside any repository instead of keying it
+    by basename (closeout F1): `samdev` and `maker-bench` were the home
+    directory and a bench scratch root, not projects.
+    """
+    root = Path(path) if path is not None else Path.cwd()
+    target_dir = root.parent if root.is_file() else root
+    try:
+        subprocess.check_output(  # noqa: S603
+            ["git", "-C", str(target_dir), "rev-parse", "--git-common-dir"],  # noqa: S603, S607
+            text=True,
+            stderr=subprocess.PIPE,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
 def repo_identity(path: Path | str | None = None) -> str:
     """Return the parent repository's bare name, falling back to the basename."""
     root = Path(path) if path is not None else Path.cwd()
