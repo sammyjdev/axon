@@ -362,11 +362,11 @@ O7.1, so the pilot session writes no `session_memory` row by construction.
   `docs/plans/2026-09-13-dead-dirs-key-analysis.md` (a worktree does not see untracked
   files), and rename the previous plan's ledger so plan-mode starts at Task 1:
   `git mv .forge/sdd/progress.md .forge/sdd/progress-2026-09-12-axon-isolation-and-keying.md`.
-- [ ] **O6.2** From the Codex TUI in `~/dev/axon`, invoke the forge agent with
+- [x] **O6.2** (2026-09-15: not attempted; O5 was never run, so the pass went straight to O6.3.) From the Codex TUI in `~/dev/axon`, invoke the forge agent with
   `plan docs/plans/2026-09-14-closeout-spec-and-tasks.md`; approve each nested dispatch
   when prompted (or set an approval policy covering `codex exec`). Plan-mode runs Task 1,
   gate, quench, commit, ledger, then Task 2 the same way, then opens one PR.
-- [ ] **O6.3 Fallbacks, one attempt each.** If O5 was NO-GO or the run stops for envelope
+- [x] **O6.3 Fallbacks, one attempt each.** (2026-09-15: ran `forge plan` on the D5 rail, Claude-orchestrated, makers on agy/gemini-3.7-flash-high; both tasks landed in one pass as PR #206.) If O5 was NO-GO or the run stops for envelope
   reasons (nested dispatch not approved, agent not reachable, quota), record that in the
   handoff as the pilot's finding and run
   `forge plan docs/plans/2026-09-14-closeout-spec-and-tasks.md` on the rail D5 picks;
@@ -375,7 +375,7 @@ O7.1, so the pilot session writes no `session_memory` row by construction.
   plan-mode's contract: copy that task's section, from its `### Task` heading to
   `## Self-Review`, into a one-task file under `docs/plans/`, commit it, and run
   `forge plan` on that file. Never edit the stranded task's tests to make the pass move.
-- [ ] **O6.4** Review and merge the PR (the loop never merges). Record in the handoff
+- [x] **O6.4** (2026-09-15: #206 merged as b69ad7b, merge commit. Rail D5, not the Codex pilot. The pass crossed worktree, red test, gate, quench and PR. Divergences A1 and A2 accepted as follow-ups.) Review and merge the PR (the loop never merges). Record in the handoff
   which rail produced it and whether the pilot crossed worktree, red test, gate, quench
   and PR.
 
