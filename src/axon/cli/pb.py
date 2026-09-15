@@ -1295,13 +1295,18 @@ def session_save(
     ] = None,
 ) -> None:
     """Comprime e salva session memory (chamado pelo Stop/SessionEnd hook do Claude Code)."""
-    from axon.core.repo_identity import repo_identity
+    from axon.core.repo_identity import is_git_repo, repo_identity
     from axon.memory.digest import digest_turns
     from axon.memory.session_compressor import SessionCompressor
     from axon.memory.transcript import parse_transcript_turns
     from axon.store.session_store import SessionMemory
 
-    project = repo_identity(cwd or os.getcwd())
+    cwd = cwd or os.getcwd()
+    if not is_git_repo(cwd):
+        # Closeout F1: a basename key is a guess; refuse rather than guess.
+        typer.echo(f"[axon] session-save: fora de um repositorio git ({cwd}), skip.", err=True)
+        return
+    project = repo_identity(cwd)
 
     async def _save() -> None:
         turns: list[dict[str, str]] = []
@@ -1599,6 +1604,11 @@ def session_hook() -> None:
     package, is covered by the suite, and carries no venv path in a shebang -
     renaming a venv once silently killed the hooks in thirteen repos.
     """
+    if os.environ.get("AXON_SESSION_HOOK_SKIP", "").lower() in ("1", "true", "yes", "on"):
+        # Closeout F4: a forge lane marks its headless `codex exec` so its
+        # SessionEnd does not land in the operator's session history.
+        typer.echo("[axon] session-hook: AXON_SESSION_HOOK_SKIP set, skip.", err=True)
+        return
     payload: dict = {}
     try:
         payload = json.loads(sys.stdin.read() or "{}")

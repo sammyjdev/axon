@@ -3,7 +3,8 @@
 The Stop/PostCompact hooks derive the project key with os.path.basename(cwd),
 so a session lived in a linked worktree never joins the stream that
 get_session_memory(project=<repo>) reads. Keying by repo_identity(cwd) is the
-fix; a cwd outside any git repo keeps the basename fallback it always had.
+fix. session_save refuses a cwd outside any git repo (closeout F1): a basename
+key is a guess. compact-hook keeps the basename fallback for now, pinned below.
 """
 
 from __future__ import annotations
@@ -179,11 +180,13 @@ def test_session_save_with_no_cwd_resolves_the_current_worktree_directory(
     assert saved[0].project == REPO_DIRNAME
 
 
-def test_session_save_outside_any_repo_keeps_the_basename_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_session_save_outside_any_repo_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
-    """Out of scope by design: repo_identity already falls back to the
-    basename, so a non-repo cwd must behave exactly as before."""
+    """Closeout F1 (2026-09-15): 155 `samdev` and 52 `maker-bench` rows were the
+    home directory and a bench scratch root keyed by basename. Outside a git
+    repository there is no identity to key by, so nothing is written and the
+    hook says so in one line."""
     outside = tmp_path / "scratch-dir"
     outside.mkdir()
     transcript = _turns_transcript(tmp_path / "session.jsonl")
@@ -191,8 +194,8 @@ def test_session_save_outside_any_repo_keeps_the_basename_key(
 
     pb.session_save(cwd=str(outside), transcript=str(transcript))
 
-    assert len(saved) == 1
-    assert saved[0].project == "scratch-dir"
+    assert saved == []
+    assert "fora de um repositorio git" in capsys.readouterr().err
 
 
 def test_compact_hook_in_a_worktree_saves_and_echoes_the_parent_repo(

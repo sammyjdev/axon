@@ -180,3 +180,23 @@ def test_every_pb_top_level_command_is_reachable_from_the_installed_binary():
 
     missing = pb_names - entry_names
     assert not missing, f"registered on pb.app but not on the entry point: {sorted(missing)}"
+
+
+def test_session_hook_skips_when_a_lane_marks_itself(tmp_path, monkeypatch):
+    """Closeout F4 (2026-09-15): a headless `codex exec` fires SessionEnd and
+    wrote one session_memory row per dispatch, so every forge maker, reviewer
+    and mutator would land in the operator's session history. The lane sets
+    AXON_SESSION_HOOK_SKIP=1 on its invocation; the hook exits 0 and writes
+    nothing. Interactive sessions never carry the marker."""
+    called = []
+    monkeypatch.setattr("axon.cli.pb.session_save", lambda **kw: called.append(kw))
+    monkeypatch.setenv("AXON_SESSION_HOOK_SKIP", "1")
+    path = _transcript(tmp_path, ("user", "a"), ("assistant", "b"))
+
+    result = runner.invoke(
+        app, ["session-hook"], input=_payload(transcript_path=str(path), cwd=str(tmp_path))
+    )
+
+    assert result.exit_code == 0
+    assert called == []
+    assert "AXON_SESSION_HOOK_SKIP" in result.output

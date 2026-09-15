@@ -8,6 +8,20 @@ import pytest
 from axon.memory.session_compressor import SessionCompressor
 
 
+@pytest.fixture(autouse=True)
+def _tmp_path_is_a_repo(tmp_path) -> None:
+    """Both tests hand ``tmp_path`` to ``session_save`` as ``cwd``. Since
+    closeout F1 a cwd outside any git repository is refused, so the scratch
+    directory is made one; the fallback behaviour under test is untouched."""
+    import subprocess
+
+    subprocess.run(  # noqa: S603
+        ["git", "init", "-q", "-b", "main", str(tmp_path)],  # noqa: S607
+        check=True,
+        capture_output=True,
+    )
+
+
 def _turns(n: int) -> list[dict[str, str]]:
     return [{"role": "user", "content": f"turn number {i}"} for i in range(n)]
 
