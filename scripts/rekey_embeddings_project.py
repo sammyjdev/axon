@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import asyncpg
 
@@ -30,7 +33,12 @@ try:
 except ImportError:
     from pg_redact import redact_pg_url
 
-from axon.core.repo_identity import repo_identity
+try:
+    from scripts.check_onboarding_drift import parse_canonical_repos
+except ImportError:
+    from check_onboarding_drift import parse_canonical_repos
+
+from axon.core.repo_identity import RepoKeyResolution, resolve_repo_key
 
 SELECT_EMBEDDINGS_SQL = """
 SELECT id, file_path, project
@@ -59,6 +67,47 @@ WHERE id = $2
 """
 
 
+@dataclass(frozen=True, slots=True)
+class ResolverInputs:
+    known_names: frozenset[str]
+    aliases: Mapping[str, str]
+    vault_root: Path
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedRow:
+    id: str
+    file_path: str
+    project: str  # stored value, "" for NULL
+    new_project: str  # resolved key
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "id": self.id,
+            "file_path": self.file_path,
+            "project": self.project,
+            "new_project": self.new_project,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RefusedRow:
+    id: str
+    file_path: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class RekeyPlan:
+    changed: list[PlannedRow]
+    unchanged: list[PlannedRow]
+    refused: list[RefusedRow]
+
+    @property
+    def total(self) -> int:
+        return len(self.changed) + len(self.unchanged) + len(self.refused)
+
+
 def resolve_pg_url(pg_url_arg: str | None = None) -> str:
     """Resolve Postgres connection URL."""
     if pg_url_arg:
@@ -74,27 +123,177 @@ def resolve_pg_url(pg_url_arg: str | None = None) -> str:
         return "postgresql://axon:axon@localhost:5433/axon"
 
 
-def resolve_key(path_str: str, cache: dict[str, str] | None = None) -> str:
-    """Resolve a file path to its repository identity, cached by directory."""
-    p = Path(path_str)
-    dir_path = p.parent
-    dir_key = str(dir_path)
-    if cache is not None and dir_key in cache:
-        return cache[dir_key]
+def plan_rekey(
+    rows: Sequence[Any],
+    *,
+    inputs: ResolverInputs,
+) -> RekeyPlan:
+    """Plan re-keying across rows, returning changed, unchanged, and refused."""
+    cache: dict[str, RepoKeyResolution] = {}
+    changed: list[PlannedRow] = []
+    unchanged: list[PlannedRow] = []
+    refused: list[RefusedRow] = []
+
+    for r in rows:
+        row_id = str(r[0]) if isinstance(r, (tuple, list)) else str(r["id"])
+        file_path = str(r[1]) if isinstance(r, (tuple, list)) else str(r["file_path"])
+        project_val = r[2] if isinstance(r, (tuple, list)) else r["project"]
+        old_project = str(project_val) if project_val is not None else ""
+
+        p = Path(file_path)
+        dir_path = p.parent
+        dir_key = str(dir_path)
+        if dir_key in cache:
+            resolution = cache[dir_key]
+        else:
+            resolution = resolve_repo_key(
+                dir_path,
+                known_names=inputs.known_names,
+                aliases=inputs.aliases,
+                vault_root=inputs.vault_root,
+            )
+            cache[dir_key] = resolution
+
+        if resolution.key is None:
+            refused.append(
+                RefusedRow(
+                    id=row_id,
+                    file_path=file_path,
+                    reason=resolution.reason or "",
+                )
+            )
+        elif resolution.key == old_project:
+            unchanged.append(
+                PlannedRow(
+                    id=row_id,
+                    file_path=file_path,
+                    project=old_project,
+                    new_project=resolution.key,
+                )
+            )
+        else:
+            changed.append(
+                PlannedRow(
+                    id=row_id,
+                    file_path=file_path,
+                    project=old_project,
+                    new_project=resolution.key,
+                )
+            )
+
+    return RekeyPlan(changed=changed, unchanged=unchanged, refused=refused)
+
+
+def read_router_text() -> str | None:
+    """Read ROUTER.md text from environment or default location."""
+    path_str = os.environ.get("AXON_ROUTER_MD")
+    router_path = Path(path_str) if path_str else (Path.home() / ".claude" / "axon" / "ROUTER.md")
+    if not router_path.exists():
+        return None
     try:
-        new_proj = repo_identity(dir_path)
-    except Exception:
-        new_proj = dir_path.name
-    if cache is not None:
-        cache[dir_key] = new_proj
-    return new_proj
+        return router_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
-async def inspect_embeddings(
+def load_known_names(router_text: str | None) -> frozenset[str]:
+    """Parse canonical repo names from router text, adding linkedin-content-manager and revvo."""
+    if not router_text:
+        return frozenset()
+    parsed = parse_canonical_repos(router_text)
+    if not parsed:
+        return frozenset()
+    return frozenset(parsed | {"linkedin-content-manager", "revvo"})
+
+
+def load_aliases(manifest_path: Path | None = None) -> dict[str, str]:
+    """Load repo aliases from config/projects.json or degrade to empty dict."""
+    p = manifest_path or (Path(__file__).resolve().parent.parent / "config" / "projects.json")
+    if not p.exists():
+        sys.stderr.write(f"Warning: projects.json not found at {p}; using empty aliases\n")
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        aliases: dict[str, str] = {}
+        for proj in data.get("projects", []):
+            name = proj.get("name")
+            path_str = proj.get("path")
+            if name and path_str:
+                aliases[name] = Path(path_str).name
+        return aliases
+    except Exception as exc:
+        sys.stderr.write(f"Warning: failed to read {p}: {exc}; using empty aliases\n")
+        return {}
+
+
+def resolve_vault_root() -> Path:
+    """Resolve vault root to an absolute path from AXON_VAULT or ~/vault."""
+    env = os.environ.get("AXON_VAULT")
+    raw = env if env else "~/vault"
+    return Path(os.path.realpath(os.path.expanduser(raw)))
+
+
+def build_resolver_inputs(manifest_path: Path | None = None) -> ResolverInputs:
+    """Assemble all inputs for repo key resolution."""
+    router_text = read_router_text()
+    known = load_known_names(router_text)
+    aliases = load_aliases(manifest_path)
+    vault_root = resolve_vault_root()
+    return ResolverInputs(known_names=known, aliases=aliases, vault_root=vault_root)
+
+
+def known_names_gate(rows: Sequence[Any], known_names: frozenset[str]) -> str | None:
+    """Check that known_names is non-empty if any dead directory rows exist."""
+    if not known_names:
+        for r in rows:
+            file_path = str(r[1]) if isinstance(r, (tuple, list)) else str(r["file_path"])
+            if not Path(file_path).parent.is_dir():
+                return (
+                    "Error: known repository names set is empty (missing or empty ROUTER.md) "
+                    "but dead directories are present"
+                )
+    return None
+
+
+def write_refused(plan: RekeyPlan, out_path: Path) -> None:
+    """Write refused rows to a TSV file as id<TAB>file_path<TAB>reason."""
+    lines: list[str] = []
+    for r in plan.refused:
+        clean_id = r.id.replace("\t", " ").replace("\n", " ")
+        clean_path = r.file_path.replace("\t", " ").replace("\n", " ")
+        clean_reason = r.reason.replace("\t", " ").replace("\n", " ")
+        lines.append(f"{clean_id}\t{clean_path}\t{clean_reason}\n")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("".join(lines), encoding="utf-8")
+
+
+def format_plan_counts(plan: RekeyPlan) -> list[str]:
+    """Format plan counts for output."""
+    return [
+        f"changed {len(plan.changed)}",
+        f"unchanged {len(plan.unchanged)}",
+        f"refused {len(plan.refused)}",
+        f"total {plan.total}",
+    ]
+
+
+async def fetch_rows_from_con(
+    con: asyncpg.Connection,
+    only_project: str | None = None,
+) -> list[Any]:
+    """Fetch rows from database using an active connection."""
+    if only_project is not None:
+        if only_project == "<null>":
+            return await con.fetch(SELECT_EMBEDDINGS_NULL_PROJECT_SQL)
+        return await con.fetch(SELECT_EMBEDDINGS_FILTERED_SQL, only_project)
+    return await con.fetch(SELECT_EMBEDDINGS_SQL)
+
+
+async def fetch_rows(
     pg_url: str,
     only_project: str | None = None,
-) -> list[dict[str, str]]:
-    """Fetch embeddings rows that would change without modifying them."""
+) -> list[Any]:
+    """Fetch rows from database, connecting and closing cleanly."""
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
@@ -102,38 +301,37 @@ async def inspect_embeddings(
             f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
         ) from exc
     try:
-        if only_project is not None:
-            if only_project == "<null>":
-                rows = await con.fetch(SELECT_EMBEDDINGS_NULL_PROJECT_SQL)
-            else:
-                rows = await con.fetch(SELECT_EMBEDDINGS_FILTERED_SQL, only_project)
-        else:
-            rows = await con.fetch(SELECT_EMBEDDINGS_SQL)
-        cache: dict[str, str] = {}
-        results: list[dict[str, str]] = []
-        for r in rows:
-            file_path = str(r["file_path"])
-            old_project = str(r["project"]) if r["project"] is not None else ""
-            new_project = resolve_key(file_path, cache=cache)
-            if new_project != old_project:
-                results.append(
-                    {
-                        "id": str(r["id"]),
-                        "file_path": file_path,
-                        "project": old_project,
-                        "new_project": new_project,
-                    }
-                )
-        return results
+        return await fetch_rows_from_con(con, only_project=only_project)
     finally:
         await con.close()
 
 
-async def apply_rekey_embeddings(
+async def inspect_plan(
     pg_url: str,
     only_project: str | None = None,
-) -> list[dict[str, str]]:
-    """Update embeddings rows in place."""
+    inputs: ResolverInputs | None = None,
+) -> RekeyPlan:
+    """Fetch embeddings rows and build a re-key plan without writing."""
+    try:
+        con = await asyncpg.connect(pg_url)
+    except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
+        raise ConnectionError(
+            f"Failed to connect to Postgres at {redact_pg_url(pg_url)}: {exc}"
+        ) from exc
+    try:
+        rows = await fetch_rows_from_con(con, only_project=only_project)
+        resolver_inputs = inputs if inputs is not None else build_resolver_inputs()
+        return plan_rekey(rows, inputs=resolver_inputs)
+    finally:
+        await con.close()
+
+
+async def apply_plan(
+    pg_url: str,
+    only_project: str | None = None,
+    inputs: ResolverInputs | None = None,
+) -> RekeyPlan:
+    """Update embeddings rows in place and return the plan."""
     try:
         con = await asyncpg.connect(pg_url)
     except (OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
@@ -142,36 +340,33 @@ async def apply_rekey_embeddings(
         ) from exc
     try:
         async with con.transaction():
-            if only_project is not None:
-                if only_project == "<null>":
-                    rows = await con.fetch(SELECT_EMBEDDINGS_NULL_PROJECT_SQL)
-                else:
-                    rows = await con.fetch(SELECT_EMBEDDINGS_FILTERED_SQL, only_project)
-            else:
-                rows = await con.fetch(SELECT_EMBEDDINGS_SQL)
-            cache: dict[str, str] = {}
-            results: list[dict[str, str]] = []
-            updates = []
-            for r in rows:
-                file_path = str(r["file_path"])
-                old_project = str(r["project"]) if r["project"] is not None else ""
-                new_project = resolve_key(file_path, cache=cache)
-                if new_project != old_project:
-                    row_id = str(r["id"])
-                    updates.append((new_project, row_id))
-                    results.append(
-                        {
-                            "id": row_id,
-                            "file_path": file_path,
-                            "project": old_project,
-                            "new_project": new_project,
-                        }
-                    )
+            rows = await fetch_rows_from_con(con, only_project=only_project)
+            resolver_inputs = inputs if inputs is not None else build_resolver_inputs()
+            plan = plan_rekey(rows, inputs=resolver_inputs)
+            updates = [(row.new_project, row.id) for row in plan.changed]
             if updates:
                 await con.executemany(UPDATE_EMBEDDINGS_SQL, updates)
-            return results
+            return plan
     finally:
         await con.close()
+
+
+async def inspect_embeddings(
+    pg_url: str,
+    only_project: str | None = None,
+) -> list[dict[str, str]]:
+    """Fetch embeddings rows that would change without modifying them."""
+    plan = await inspect_plan(pg_url, only_project=only_project)
+    return [row.as_dict() for row in plan.changed]
+
+
+async def apply_rekey_embeddings(
+    pg_url: str,
+    only_project: str | None = None,
+) -> list[dict[str, str]]:
+    """Update embeddings rows in place."""
+    plan = await apply_plan(pg_url, only_project=only_project)
+    return [row.as_dict() for row in plan.changed]
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -208,6 +403,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Postgres URL (overrides AXON_PG_URL / runtime config)",
     )
+    parser.add_argument(
+        "--refused-out",
+        type=str,
+        default=None,
+        help="Write refused rows to TSV file (id, file_path, reason)",
+    )
     return parser.parse_args(argv)
 
 
@@ -237,36 +438,59 @@ async def run(argv: Sequence[str] | None = None) -> int:
     pg_url = resolve_pg_url(args.pg_url)
 
     try:
-        if args.apply:
-            changed = await apply_rekey_embeddings(pg_url, only_project=args.only_project)
-        else:
-            changed = await inspect_embeddings(pg_url, only_project=args.only_project)
+        rows = await fetch_rows(pg_url, only_project=args.only_project)
     except (
-            ConnectionError, OSError,
-            asyncpg.PostgresConnectionError, asyncpg.UndefinedTableError,
-        ) as exc:
+        ConnectionError, OSError,
+        asyncpg.PostgresConnectionError, asyncpg.UndefinedTableError,
+        asyncpg.PostgresError, asyncpg.InterfaceError,
+    ) as exc:
         sys.stderr.write(f"Error accessing embeddings table: {exc}\n")
         return 1
 
+    resolver_inputs = build_resolver_inputs()
+    gate_err = known_names_gate(rows, resolver_inputs.known_names)
+    if gate_err:
+        sys.stderr.write(f"{gate_err}\n")
+        return 2
+
+    if args.apply:
+        try:
+            plan = await apply_plan(pg_url, only_project=args.only_project, inputs=resolver_inputs)
+        except (
+            ConnectionError, OSError,
+            asyncpg.PostgresConnectionError, asyncpg.UndefinedTableError,
+            asyncpg.PostgresError, asyncpg.InterfaceError,
+        ) as exc:
+            sys.stderr.write(f"Error accessing embeddings table: {exc}\n")
+            return 1
+    else:
+        plan = plan_rekey(rows, inputs=resolver_inputs)
+
+    if args.refused_out:
+        write_refused(plan, Path(args.refused_out))
+
     action_verb = "re-keyed" if args.apply else "would re-key"
 
-    for row in changed:
-        print(f"{action_verb} embedding {row['id']}: {row['project']} -> {row['new_project']}")
-    if not changed:
+    for row in plan.changed:
+        print(f"{action_verb} embedding {row.id}: {row.project} -> {row.new_project}")
+    if not plan.changed:
         print("  (no matching embedding rows found)")
 
     # Per-key counts
-    for source, count in sorted(Counter(r["project"] for r in changed).items()):
+    for source, count in sorted(Counter(r.project for r in plan.changed).items()):
         print(f"  {source}: {count} row(s)")
 
     # Summary line whose wording differs between dry run and applied run
     if args.apply:
-        print(f"re-keyed {len(changed)} embedding row(s)")
+        print(f"re-keyed {len(plan.changed)} embedding row(s)")
     else:
         print(
-            f"would re-key {len(changed)} embedding row(s) "
+            f"would re-key {len(plan.changed)} embedding row(s) "
             "(dry run; writing requires --apply with --embeddings or --all)"
         )
+
+    for line in format_plan_counts(plan):
+        print(line)
 
     return 0
 

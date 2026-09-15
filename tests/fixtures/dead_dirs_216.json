@@ -1,0 +1,866 @@
+[
+  {
+    "dir": "~/dev/aerus-game-master-platform",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/config",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/e2e",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/eval",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/eval/topics",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/scripts",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/src",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/src/application",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/src/application/billing",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/src/infrastructure",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/src/infrastructure/config",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/backend/tests",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/docs",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/docs/ai-ops",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/docs/ai-ops/agents",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/docs/ai-ops/evidence",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/docs/ai-ops/harness",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/docs/ai-ops/migration",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/docs/ai-ops/rules",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/docs/ai-ops/skills",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/docs/ai-ops/specs",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/public/audio",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/src/api",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/src/constants",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/src/debug",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/src/features/game",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/src/hooks",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/src/i18n",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/src/store",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/src/test",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/frontend/src/types",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/lore",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/aerus-game-master-platform/scripts",
+    "key": "aerus-game-master-platform"
+  },
+  {
+    "dir": "~/dev/claude-usage-bar",
+    "key": "claude-usage-bar"
+  },
+  {
+    "dir": "~/dev/claude-usage-bar/docs/superpowers/specs",
+    "key": "claude-usage-bar"
+  },
+  {
+    "dir": "~/dev/claude-usage-bar-rs",
+    "key": "claude-usage-bar-rs"
+  },
+  {
+    "dir": "~/dev/claude-usage-bar-rs/docs/design",
+    "key": "claude-usage-bar-rs"
+  },
+  {
+    "dir": "~/dev/claude-usage-bar-rs/docs/superpowers",
+    "key": "claude-usage-bar-rs"
+  },
+  {
+    "dir": "~/dev/claude-usage-bar-rs/docs/superpowers/specs",
+    "key": "claude-usage-bar-rs"
+  },
+  {
+    "dir": "~/dev/glyph-kg",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/docs",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/docs/agents",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/docs/decisions",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/docs/superpowers/specs",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/eval",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/baseline",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/embed",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/eval",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/extract",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/extract/code",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/extract/document",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/integration",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/model",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/retrieval",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/glyph/store",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/scripts",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/architecture",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/baseline",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/embed",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/eval",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/extract",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/extract/code",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/extract/document",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/integration",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/model",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/retrieval",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/glyph-kg/tests/store",
+    "key": "glyph-kg"
+  },
+  {
+    "dir": "~/dev/gnomon-eval",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/datasets/second_brain_example",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/docs",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/docs/adr",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/docs/articles",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/docs/superpowers/specs",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/results/2026-07-02-ab-recall",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon/config",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon/dataset",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon/domain",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon/gate",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon/judge",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon/metrics",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon/reporting",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon/runner",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/src/gnomon/targets",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/tests/gate",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/tests/integration",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/tests/reproducibility",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/gnomon-eval/tests/unit",
+    "key": "gnomon-eval"
+  },
+  {
+    "dir": "~/dev/lina",
+    "key": "lina"
+  },
+  {
+    "dir": "~/dev/lina/core/src/lina_core",
+    "key": "lina"
+  },
+  {
+    "dir": "~/dev/lina/core/tests",
+    "key": "lina"
+  },
+  {
+    "dir": "~/dev/lina/shared-schemas",
+    "key": "lina"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/agents",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/analytics",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/claude_project",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/comments",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/config",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/config/prompts",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/config/prompts/writer",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/docs",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/docs/adr",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/docs/architecture",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/docs/audits",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/docs/editorial",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/docs/operations",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/lambda_handlers",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/models",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/pipeline",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/scripts",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/tests",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/tools",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/linkedin_content_manager/utils",
+    "key": "linkedin-content-manager"
+  },
+  {
+    "dir": "~/dev/lume",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/.github",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/assets/concepts",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/docs",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/docs/adr",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/docs/runbooks",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/docs/superpowers/specs",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/frontend",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/frontend/src/__tests__",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/frontend/src/__tests__/lib",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/frontend/src/hooks",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/frontend/src/lib",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/frontend/src/lib/demo",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/frontend/src/types",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/landing",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/lume/specs",
+    "key": "lume"
+  },
+  {
+    "dir": "~/dev/Orion-AI",
+    "key": "orion-ai"
+  },
+  {
+    "dir": "~/dev/Orion-AI/app",
+    "key": "orion-ai"
+  },
+  {
+    "dir": "~/dev/Orion-AI/app/actions",
+    "key": "orion-ai"
+  },
+  {
+    "dir": "~/dev/Orion-AI/app/mcp",
+    "key": "orion-ai"
+  },
+  {
+    "dir": "~/dev/Orion-AI/docs",
+    "key": "orion-ai"
+  },
+  {
+    "dir": "~/dev/Orion-AI/docs/adr",
+    "key": "orion-ai"
+  },
+  {
+    "dir": "~/dev/Orion-AI/docs/superpowers/specs",
+    "key": "orion-ai"
+  },
+  {
+    "dir": "~/dev/Orion-AI/prompts",
+    "key": "orion-ai"
+  },
+  {
+    "dir": "~/dev/Orion-AI/tests",
+    "key": "orion-ai"
+  },
+  {
+    "dir": "~/dev/Pharos/docs",
+    "key": "pharos"
+  },
+  {
+    "dir": "~/dev/Pharos/docs/superpowers/specs",
+    "key": "pharos"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/alembic",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/alembic/versions",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/app",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/app/api",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/app/api/v1",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/app/core",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/app/models",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/app/schemas",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/app/services",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/app/workers",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/data/demo/soja-br-nl-2026",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/data/rules",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/docs",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/scripts",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-backend/tests",
+    "key": "pharos-backend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-frontend",
+    "key": "pharos-frontend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-frontend/components/ui",
+    "key": "pharos-frontend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-frontend/design",
+    "key": "pharos-frontend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-frontend/e2e",
+    "key": "pharos-frontend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-frontend/hooks",
+    "key": "pharos-frontend"
+  },
+  {
+    "dir": "~/dev/Pharos/pharos-frontend/lib",
+    "key": "pharos-frontend"
+  },
+  {
+    "dir": "~/dev/PitStopOS",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/alembic",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/alembic/versions",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/docs",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/docs/superpowers/specs",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/scripts",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/src/pitstopos",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/tests",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/tests/e2e",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/tests/unit",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/PitStopOS/tests/usability",
+    "key": "pitstop-os"
+  },
+  {
+    "dir": "~/dev/piloto_revvo",
+    "key": "revvo"
+  },
+  {
+    "dir": "~/dev/piloto_revvo/docs/superpowers/specs",
+    "key": "revvo"
+  },
+  {
+    "dir": "~/dev/piloto_revvo/src",
+    "key": "revvo"
+  },
+  {
+    "dir": "~/dev/piloto_revvo/src/lib",
+    "key": "revvo"
+  },
+  {
+    "dir": "~/dev/piloto_revvo/src/routes/api",
+    "key": "revvo"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/.github",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/.github/instructions",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/.github/prompts",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/integrationTest/java/com/rpgmaster/app/benchmark",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/integrationTest/java/com/rpgmaster/app/eval",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/integrationTest/java/com/rpgmaster/app/integration",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/main/java/com/rpgmaster/app",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/main/java/com/rpgmaster/app/adapter/inbound",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/main/java/com/rpgmaster/app/adapter/inbound/rest",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/main/java/com/rpgmaster/app/adapter/outbound",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/main/java/com/rpgmaster/app/adapter/outbound/persistence",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/main/java/com/rpgmaster/app/application",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/main/java/com/rpgmaster/app/application/port",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/main/java/com/rpgmaster/app/config",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/main/java/com/rpgmaster/app/observability",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/test/java/com/rpgmaster/app/adapter/outbound",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/test/java/com/rpgmaster/app/application",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/test/java/com/rpgmaster/app/architecture",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/test/java/com/rpgmaster/app/config",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/test/java/com/rpgmaster/app/eval",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/app/src/test/java/com/rpgmaster/app/unit",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/docs",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/docs/adr",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/docs/agents",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/docs/superpowers",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/docs/superpowers/specs",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/eval/gnomon",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/eval/reports",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/infra/scripts",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/rpg-master-ai/shared-domain/src/main/java/com/rpgmaster/domain",
+    "key": "rpg-master-ai"
+  },
+  {
+    "dir": "~/dev/gnomon-eval-src",
+    "key": null
+  },
+  {
+    "dir": "~/vault/AXON/Decisions",
+    "key": null
+  },
+  {
+    "dir": "~/vault/work-notes",
+    "key": null
+  }
+]

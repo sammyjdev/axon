@@ -234,3 +234,20 @@ promotes them into a section above after curation.
   Check: any new before/after snapshot over a path the operator's other tools
   also write to records WHO wrote, not just THAT it changed.
   (FORGE, plan axon-isolation-and-keying Task 0)
+- **A guard that validates a derived name against an allowlist needs a
+  negative-branch test.** `resolve_repo_key`'s R7 rule (`<repo>-worktrees` keys to
+  `<repo>`) was exercised only with a stem that IS in the allowlist (`merit`), so
+  replacing `if stem in known_names:` with `if True:` left all 244 tests green while
+  the resolver returned an invented basename for `notarepo-worktrees` - exactly the
+  "never return a basename" failure the whole task existed to remove. Review did not
+  catch it; the mutation sensor did. Check: for every allowlist membership test in a
+  key-derivation path, one test feeding a name that is NOT in the list and asserting
+  the refusal. (FORGE, plan closeout-spec-and-tasks Task 1)
+- **A production path rule that names a scratch marker must be ordered against the
+  filesystem probe on purpose.** `pytest`'s `tmp_path` resolves under
+  `$TMPDIR/pytest-of-<user>/`, so refusing any path carrying a `pytest-of-` segment
+  unconditionally refuses every row `tests/scripts/test_rekey_embeddings_project.py`
+  seeds - a file a maker may not edit. Measured: 4 of its 9 tests go red. The rule
+  therefore refuses only a path whose directory does NOT exist, and both halves are
+  pinned by a test. Check: any new segment denylist states, in the docstring, whether
+  it fires on a live directory and why. (FORGE, plan closeout-spec-and-tasks Task 1)
