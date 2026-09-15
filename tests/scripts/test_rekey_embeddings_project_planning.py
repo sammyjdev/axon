@@ -346,3 +346,79 @@ def test_a_missing_projects_json_degrades_to_an_empty_alias_table(
         )
         assert res.key is None
         assert res.reason == REFUSED_UNKNOWN
+
+
+def _refused_only_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One row under the vault root: refused, never changed."""
+    router_file = tmp_path / "ROUTER.md"
+    router_file.write_text("**Onboarded repos (canonical):**\naxon\n\n", encoding="utf-8")
+    monkeypatch.setenv("AXON_ROUTER_MD", str(router_file))
+    vault_root = tmp_path / "vault"
+    monkeypatch.setenv("AXON_VAULT", str(vault_root))
+    rows = [("emb-1", str(vault_root / "notes.md"), "old_proj")]
+
+    async def fake_fetch_rows(*args: Any, **kwargs: Any) -> list[tuple[str, str, str]]:
+        return rows
+
+    monkeypatch.setattr("scripts.rekey_embeddings_project.fetch_rows", fake_fetch_rows)
+
+
+@pytest.mark.asyncio
+async def test_an_unwritable_refused_out_stops_apply_before_any_db_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _refused_only_setup(tmp_path, monkeypatch)
+    apply_calls: list[str] = []
+
+    async def fake_apply_plan(*args: Any, **kwargs: Any) -> RekeyPlan:
+        apply_calls.append("called")
+        return RekeyPlan(changed=[], unchanged=[], refused=[])
+
+    monkeypatch.setattr("scripts.rekey_embeddings_project.apply_plan", fake_apply_plan)
+    blocker = tmp_path / "blocker.txt"
+    blocker.write_text("not a directory", encoding="utf-8")
+    unwritable = blocker / "refused.tsv"
+
+    exit_code = await run(["--apply", "--all", "--refused-out", str(unwritable)])
+
+    assert exit_code == 1
+    assert apply_calls == []
+    out, err = capsys.readouterr()
+    assert "refused-out" in err
+    assert "re-keyed" not in out
+
+
+@pytest.mark.asyncio
+async def test_an_unwritable_refused_out_fails_the_dry_run_cleanly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _refused_only_setup(tmp_path, monkeypatch)
+    blocker = tmp_path / "blocker.txt"
+    blocker.write_text("not a directory", encoding="utf-8")
+
+    exit_code = await run(["--refused-out", str(blocker / "refused.tsv")])
+
+    assert exit_code == 1
+    _, err = capsys.readouterr()
+    assert "refused-out" in err
+
+
+@pytest.mark.asyncio
+async def test_a_refused_only_plan_does_not_claim_no_rows_were_found(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _refused_only_setup(tmp_path, monkeypatch)
+
+    exit_code = await run([])
+
+    assert exit_code == 0
+    out, _ = capsys.readouterr()
+    assert "no matching embedding rows found" not in out
+    assert "no embedding rows need re-keying" in out
+    assert "refused 1" in out

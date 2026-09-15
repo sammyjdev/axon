@@ -453,6 +453,18 @@ async def run(argv: Sequence[str] | None = None) -> int:
         sys.stderr.write(f"{gate_err}\n")
         return 2
 
+    # The refused TSV is written from the dry plan BEFORE any DB write: a bad
+    # --refused-out path must fail the run while nothing has changed, never after
+    # the transaction committed. Refusal is a pure function of the rows, so the
+    # applied plan carries the same refused set.
+    plan = plan_rekey(rows, inputs=resolver_inputs)
+    if args.refused_out:
+        try:
+            write_refused(plan, Path(args.refused_out))
+        except OSError as exc:
+            sys.stderr.write(f"Error writing --refused-out {args.refused_out}: {exc}\n")
+            return 1
+
     if args.apply:
         try:
             plan = await apply_plan(pg_url, only_project=args.only_project, inputs=resolver_inputs)
@@ -463,18 +475,16 @@ async def run(argv: Sequence[str] | None = None) -> int:
         ) as exc:
             sys.stderr.write(f"Error accessing embeddings table: {exc}\n")
             return 1
-    else:
-        plan = plan_rekey(rows, inputs=resolver_inputs)
-
-    if args.refused_out:
-        write_refused(plan, Path(args.refused_out))
 
     action_verb = "re-keyed" if args.apply else "would re-key"
 
     for row in plan.changed:
         print(f"{action_verb} embedding {row.id}: {row.project} -> {row.new_project}")
     if not plan.changed:
-        print("  (no matching embedding rows found)")
+        if plan.unchanged or plan.refused:
+            print("  (no embedding rows need re-keying)")
+        else:
+            print("  (no matching embedding rows found)")
 
     # Per-key counts
     for source, count in sorted(Counter(r.project for r in plan.changed).items()):
