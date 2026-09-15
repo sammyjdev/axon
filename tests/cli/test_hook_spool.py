@@ -15,6 +15,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from axon.cli import pb
@@ -23,6 +24,23 @@ from axon.memory.session_compressor import SessionCompressor
 from axon.store.session_store import SessionStore
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _tmp_path_is_a_repo(tmp_path: Path) -> None:
+    """Every test here hands ``tmp_path`` to the hooks as ``cwd``. Since
+    closeout F1 ``session_save`` refuses a cwd outside any git repository, so
+    the scratch directory is made one. ``repo_identity`` then answers
+    ``tmp_path.name``, which is what every assertion below already expects;
+    the spool behaviour under test is untouched."""
+    import subprocess
+
+    subprocess.run(  # noqa: S603
+        ["git", "init", "-q", "-b", "main", str(tmp_path)],  # noqa: S607
+        check=True,
+        capture_output=True,
+    )
+
 
 _COMPRESSED = "fixed summary: the compressor is faked in this test"
 _SPOOLED_SUMMARY = "spooled while postgres was down"
