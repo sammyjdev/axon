@@ -391,7 +391,7 @@ git -C ~/dev/axon log origin/master --oneline -5     # two task commits plus the
 session open in `~/dev/axon` or in any path `git -C ~/dev/axon worktree list` prints;
 every one of them keys to `axon` and its Stop hook writes the same table.
 
-- [ ] **O7.1**
+- [x] **O7.1** (2026-09-15: master at 376584a, parser commit 7e8095b reachable; pipx reinstalled; the snapshot parses a real rollout, N=6, roles user and assistant.)
   ```bash
   git -C ~/dev/axon checkout master && git -C ~/dev/axon pull --ff-only && git -C ~/dev/axon log --oneline -1   # the parser commit must be reachable from this line
   pipx install --force ~/dev/axon
@@ -567,8 +567,8 @@ edits, every test it writes, and acceptance commands that exist on `master`. The
 never runs `--apply`, never touches the live store, never edits an existing test to make
 a pass move.
 
-- [ ] **Task 1: a path-text resolver for embeddings that refuses rather than guesses**
-- [ ] **Task 2: read the Codex rollout shape in parse_transcript_turns**
+- [x] **Task 1: a path-text resolver for embeddings that refuses rather than guesses** (af3aa30, merged in #206)
+- [x] **Task 2: read the Codex rollout shape in parse_transcript_turns** (7e8095b, merged in #206)
 
 ### Task 1: a path-text resolver for embeddings that refuses rather than guesses
 
