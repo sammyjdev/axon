@@ -252,3 +252,8 @@ attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
   that would have prevented them, on n=13 with a 95% CI of [12.7%, 57.6%]; two
   retrievers measured, neither discriminating, and no similarity threshold that
   separates hits from misses.
+- [dec-136](decisions/dec-136-operational-activity-history.md): operational
+  activity history (Claude Code, Codex, AGY session/turn/tool-call records) is
+  durable evidence in a separate PostgreSQL subsystem, not semantic memory -
+  links to existing memory/decision records require an explicit ID, never a
+  shared timestamp or workspace path.
