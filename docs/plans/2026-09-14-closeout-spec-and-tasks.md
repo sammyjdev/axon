@@ -533,7 +533,10 @@ re-derive.
 
 ## 5. Follow-ups registered, not scheduled
 
-- **F1. `session_memory` keys.** 263 distinct `project` values; `samdev` 155 (home
+- **F1. `session_memory` keys.** RESOLVED 2026-09-15, PR #209: `session_save` refuses a
+  cwd outside any git repository (`is_git_repo`), proven with the pipx binary against the
+  live store (skip line, no row). `compact-hook` keeps the basename fallback; old rows
+  untouched by decision. 263 distinct `project` values; `samdev` 155 (home
   basename), `maker-bench` 52; 15 `samdev` rows in the last 24 h. The capture path keys
   a non-git cwd by basename today: the same defect class as PR #204, in the table the
   checkpoint writes to. Needs its own decision (skip capture outside a repository, or key
@@ -543,7 +546,10 @@ re-derive.
   Built only if O8 fails on an empty `transcript_path`.
 - **F3. `axon compact-hook` under Codex** is a silent no-op. Quality, not memory.
 - **F4. Hook noise from headless dispatches.** CONFIRMED 2026-09-15 by O8.2: `codex exec`
-  fires SessionEnd (row 2418, `axon|5`, N=5). Decision still open. If O8 shows `codex exec` fires Stop hooks,
+  fires SessionEnd (row 2418, `axon|5`, N=5). RESOLVED the same day: the forge codex lane
+  runs `env AXON_SESSION_HOOK_SKIP=1 codex exec ...` (claude-skills #63) and
+  `session-hook` exits 0 without writing on the marker (axon #209); proven with the pipx
+  binary, no row. If O8 shows `codex exec` fires Stop hooks,
   every forge maker and reviewer dispatch writes a `session_memory` row for its worktree.
   Decide whether to suppress it (an env marker the hook honours) before Codex carries
   every maker.
