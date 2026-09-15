@@ -139,7 +139,7 @@ by editing the line. Step O1 records them.
   **delete** after export. Reason: the note is a real eval report, but no repository owns
   it; re-keying to the arm name (P-CODEX) satisfies the `LIKE '/%'` guard while keeping a
   non-repository name in the store.
-- [ ] **D4. Pilot shape for forge under Codex** (2026-09-14: O5 not run; this pass went on the D5 rail, so D4 carries to the next plan.) (P-CODEX C7). Recommend the **Codex TUI
+- [x] **D4. Pilot shape for forge under Codex** (2026-09-15: closed as "the envelope needs an exec entry point", which stays out of scope; the headless O5 probe was NO-GO on 0.154.0 and the loop pass ran on the D5 rail.) (P-CODEX C7). Recommend the **Codex TUI
   with per-dispatch approval**, gated on Step O5's dispatched-agent probe, not on the
   2026-07-10 human-typed result. An `exec` entry point stays out of scope.
 - [x] **D5. Rail for the loop run if the pilot cannot start.** Recommend the current
@@ -336,7 +336,7 @@ predicate alone is satisfied by a DELETE that took too much.
 nested `codex exec` and approving the escalation; the pilot needs a dispatched `forge`
 agent to issue it. The ADR's probe 2 references `$S` and `$S/wt` without creating them.
 
-- [ ] **O5.1**
+- [x] **O5.1** (2026-09-15: run headless, outer `codex exec -s workspace-write` asking for the inner exec, codex-cli 0.154.0: NO-GO, `Operation not permitted` inside the outer sandbox, file never created. The interactive escalation shape was not re-run.)
   ```bash
   S=$(mktemp -d) && git init -q "$S/wt" && codex --version      # record the version with the result
   cd ~/dev/axon && codex   # in the TUI, invoke the forge agent and hand it exactly this instruction:
@@ -346,7 +346,7 @@ agent to issue it. The ADR's probe 2 references `$S` and `$S/wt` without creatin
   rm -rf "$S"
   ```
   Approve the escalation when prompted.
-- [ ] **O5.2** Append a dated GO or NO-GO line with the cli version to
+- [x] **O5.2** (2026-09-15: claude-skills PR #62.) Append a dated GO or NO-GO line with the cli version to
   `~/.claude/agents/forge/docs/adr/0004-codex-nesting-pilot.md`.
 
 **Acceptance:** (MG-2) the ADR carries the line; NO-GO routes O6 to the rail D5 picks
@@ -396,7 +396,7 @@ every one of them keys to `axon` and its Stop hook writes the same table.
   git -C ~/dev/axon checkout master && git -C ~/dev/axon pull --ff-only && git -C ~/dev/axon log --oneline -1   # the parser commit must be reachable from this line
   pipx install --force ~/dev/axon
   ```
-- [ ] **O7.2**
+- [x] **O7.2** (2026-09-15: N=6; the hook wrote row 2416 `axon|6`. A second row 2415 `axon|13` landed in the same window from another open session's Stop hook, so A6 was not met literally; the hook's own write is the one row it promised.)
   ```bash
   PY=~/.local/pipx/venvs/axon-context-mcp/bin/python
   ROLLOUT=$(grep -l output_text $(ls -t ~/.codex/sessions/2026/*/*/rollout-*.jsonl) | head -1)   # one with an assistant turn
@@ -417,7 +417,7 @@ correct red.
 
 **Requirements:** CM-4, OB-1. **Depends on:** O3, O7. **Precondition:** as O7.
 
-- [ ] **O8.1**
+- [x] **O8.1** (2026-09-15: run headless as `codex exec -s read-only` with the lessons question; it listed the 13 lesson lines from the injected context and said it read no file; row 2420 `axon|3`, N=3. The TUI shape was not run.)
   ```bash
   BEFORE=$(psql "$AXON_PG_URL" -Atc "select coalesce(max(id),0) from session_memory")
   cd ~/dev/axon && codex     # interactive; first turn: "which lessons does the AXON context list?"; at least one more turn; exit
@@ -425,7 +425,7 @@ correct red.
   N=$(~/.local/pipx/venvs/axon-context-mcp/bin/python -c "from axon.memory.transcript import parse_transcript_turns as p; print(min(len(p('$ROLLOUT')), 50))")
   psql "$AXON_PG_URL" -Atc "select id, project, raw_turns, created_at from session_memory where id > $BEFORE order by id"
   ```
-- [ ] **O8.2 Observations (OB-1)**, recorded in the handoff while the payload is observable:
+- [x] **O8.2 Observations (OB-1)** (2026-09-15: `codex exec` DOES fire the hook, as SessionEnd not Stop: row 2418 `axon|5` with N=5, and codex warns "clamping SessionEnd hook timeout to 3s". So F4 is real: every headless forge dispatch writes a row. One row per exec session. Quality hooks and compact-hook not observed.), recorded in the handoff while the payload is observable:
   - does `codex exec` fire Stop hooks? After O3 every entry is trusted, so a plain exec
     answers it (the bypass flag adds nothing). Same `BEFORE`/`N` protocol:
     `codex exec --skip-git-repo-check -s read-only -C ~/dev/axon -m gpt-5.6-luna "one sentence about this repo" < /dev/null 2> /tmp/probe.log`.
@@ -452,7 +452,7 @@ nothing else in this plan waits for it.
 **Requirements:** KS-3, KS-4, KS-5, OP-1. **Depends on:** O6 merged, O4 applied (O4
 changes the total).
 
-- [ ] **O9.1 Snapshot and dry run.**
+- [x] **O9.1 Snapshot and dry run.** (2026-09-15: TOTAL 24158, VAULT 1809; changed 21696 + unchanged 622 + refused 1840 = 24158; K = 1840.)
   ```bash
   cd ~/dev/axon && git -C ~/dev/axon pull --ff-only
   psql "$AXON_PG_URL" -Atc "select id||'|'||project from embeddings" | sort > ~/backups/embeddings-project-pre-O9.txt
@@ -461,11 +461,11 @@ changes the total).
   python3 scripts/rekey_embeddings_project.py --refused-out ~/backups/refused-O9.tsv | tail -4   # changed N, unchanged M, refused K: N + M + K = $TOTAL
   cut -f1 ~/backups/refused-O9.tsv | sort > ~/backups/refused-ids-O9.txt; wc -l < ~/backups/refused-ids-O9.txt   # = K
   ```
-- [ ] **O9.2 Read the refused file.** Column 3 (reason) names only the vault root,
+- [x] **O9.2 Read the refused file.** (2026-09-15: reasons are only "vault root /Users/samdev/vault" 1809 and "no known repo segment" 31, all 31 under `~/dev/gnomon-eval-src`; zero scratch rows; the 8 `src/axon/vault/` rows in changed as `vault -> axon`.) Column 3 (reason) names only the vault root,
   `gnomon-eval-src` and scratch roots; `K` is `$VAULT` (1,815 today, 1,809 on D1's delete
   branch) + 31 + any scratch-root rows; `unchanged` is in the hundreds (about 622), never
   zero; the 8 rows under `src/axon/vault/` are in the changed bucket with key `axon`.
-- [ ] **O9.3** `python3 scripts/rekey_embeddings_project.py --apply --all`
+- [x] **O9.3** (2026-09-15: applied, 21696 re-keyed, exit 0; refused-rows-identical; `axon|8`; every remaining off-list value is a refused row, 1808 rows.) `python3 scripts/rekey_embeddings_project.py --apply --all`
 
 **Acceptance:** (KS-3, KS-4, KS-5)
 ```bash
@@ -483,7 +483,7 @@ psql "$AXON_PG_URL" -Atc "select project, count(*) from embeddings group by 1 or
 
 **Requirement:** none in section 1.2; P-CODEX C8. **Depends on:** O2.
 
-- [ ] **O10.1** In `~/dev/tools/gate-over-model/forge-role-selection`, against the 3.7 arms
+- [x] **O10.1** (2026-09-15: already measured before this plan was written, in `~/dev/tools/metron/maker-bench/REPORT-38.md`, commit bb640e2. Maker H3 x3 in one window: 3.8-medium 0.975 [0.93, 1.00] vs 3.7-high 0.983 [0.95, 1.00], indistinguishable; 3.8-low 0.818 [0.72, 0.90], separated below. Reviewer, 29 pairs: tie, 3.7-high nominally ahead. Verdict: no repin; 3.8-medium recorded as fallback candidate for `rare.maker`.) In `~/dev/tools/gate-over-model/forge-role-selection`, against the 3.7 arms
   already measured, on the straight ruler (#55 and #56 merged, telemetry purged to 250
   lines). Cost in money is zero (agy authenticates by OAuth).
 
@@ -509,7 +509,7 @@ prints nothing; never `--force`.
   flow; leave it.
 - [x] **O11.3** Stashes per D7, each exported first:
   `for r in ~/dev/axon ~/.claude; do for n in 0 1; do git -C $r stash show -p "stash@{$n}" > ~/backups/$(basename $r)-stash-$n.patch; done; done`
-- [ ] **O11.4** (optional, claude-skills) Redo `-c mcp_servers={}` on the codex rail
+- [x] **O11.4** (2026-09-15: claude-skills PR #61, with a test this time.) (optional, claude-skills) Redo `-c mcp_servers={}` on the codex rail
   dispatch in `role_argv.py`: the other session measured 25,408 to 20,363 prefix tokens
   per dispatch and the change is gone from disk. After O2; not on the critical path.
 
@@ -542,7 +542,8 @@ re-derive.
   `~/.codex/state_5.sqlite` (`threads.rollout_path`, `threads.cwd`; 229 axon threads).
   Built only if O8 fails on an empty `transcript_path`.
 - **F3. `axon compact-hook` under Codex** is a silent no-op. Quality, not memory.
-- **F4. Hook noise from headless dispatches.** If O8 shows `codex exec` fires Stop hooks,
+- **F4. Hook noise from headless dispatches.** CONFIRMED 2026-09-15 by O8.2: `codex exec`
+  fires SessionEnd (row 2418, `axon|5`, N=5). Decision still open. If O8 shows `codex exec` fires Stop hooks,
   every forge maker and reviewer dispatch writes a `session_memory` row for its worktree.
   Decide whether to suppress it (an env marker the hook honours) before Codex carries
   every maker.
