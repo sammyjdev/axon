@@ -49,3 +49,95 @@ def repo_identity(path: Path | str | None = None) -> str:
     if git_dir.name == ".git":
         return git_dir.parent.name or target_dir.name
     return git_dir.name.removesuffix(".git") or target_dir.name
+
+
+import os  # noqa: E402
+from collections.abc import Mapping  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+
+#: Scratch roots under ~/dev that are not repositories (R8).
+DEFAULT_SCRATCH_SEGMENTS: frozenset[str] = frozenset({"_bench", "_worktrees", "_wt"})
+
+#: Test-residue directories (R5).
+DEFAULT_TMP_SEGMENT_PREFIXES: tuple[str, ...] = ("pytest-of-",)
+
+#: Stable refusal-reason prefixes. Tests assert against these, never a literal,
+#: and `cut -f3 refused.tsv | sort | uniq -c` groups on them.
+REFUSED_VAULT = "vault root"
+REFUSED_SCRATCH = "scratch root"
+REFUSED_TEST_RESIDUE = "test residue"
+REFUSED_RELATIVE = "relative path, no root"
+REFUSED_UNKNOWN = "no known repo segment"
+
+
+@dataclass(frozen=True, slots=True)
+class RepoKeyResolution:
+    """The key a path text resolves to, or the reason it is refused."""
+
+    key: str | None
+    rule: str  # "R0-bare", "R0-live-git", "R1/R3", "R2", "R7"; "" on refusal
+    reason: str | None  # None iff key is not None
+
+
+def resolve_repo_key(
+    path: Path | str,
+    *,
+    known_names: frozenset[str],
+    aliases: Mapping[str, str],
+    vault_root: Path,
+    scratch_segments: frozenset[str] = DEFAULT_SCRATCH_SEGMENTS,
+    tmp_segment_prefixes: tuple[str, ...] = DEFAULT_TMP_SEGMENT_PREFIXES,
+) -> RepoKeyResolution:
+    """Resolve a repository key from a path text or live directory."""
+    path_str = str(path)
+    is_home_or_abs = (
+        path_str == "~"
+        or path_str.startswith("~" + os.sep)
+        or path_str.startswith("~/")
+        or os.path.isabs(path_str)
+    )
+    if not is_home_or_abs:
+        parts = Path(path).parts
+        if len(parts) == 1:
+            seg = parts[0]
+            if seg in aliases:
+                return RepoKeyResolution(key=aliases[seg], rule="R0-bare", reason=None)
+            if seg in known_names:
+                return RepoKeyResolution(key=seg, rule="R0-bare", reason=None)
+        return RepoKeyResolution(key=None, rule="", reason=REFUSED_RELATIVE)
+
+    resolved = Path(os.path.realpath(os.path.expanduser(path_str)))
+    target = resolved.parent if resolved.is_file() else resolved
+
+    vr = Path(os.path.realpath(os.path.expanduser(str(vault_root))))
+    if target == vr or vr in target.parents:
+        return RepoKeyResolution(key=None, rule="", reason=f"{REFUSED_VAULT} {vr}")
+
+    for seg in target.parts:
+        if seg in scratch_segments:
+            return RepoKeyResolution(key=None, rule="", reason=f"{REFUSED_SCRATCH} {seg}")
+
+    if not target.is_dir():
+        for seg in target.parts:
+            if any(seg.startswith(prefix) for prefix in tmp_segment_prefixes):
+                return RepoKeyResolution(
+                    key=None,
+                    rule="",
+                    reason=f"{REFUSED_TEST_RESIDUE} {seg}",
+                )
+
+    if target.is_dir():
+        return RepoKeyResolution(key=repo_identity(target), rule="R0-live-git", reason=None)
+
+    for seg in reversed(target.parts):
+        if seg in aliases:
+            return RepoKeyResolution(key=aliases[seg], rule="R2", reason=None)
+        if seg in known_names:
+            return RepoKeyResolution(key=seg, rule="R1/R3", reason=None)
+        if seg.endswith("-worktrees"):
+            stem = seg.removesuffix("-worktrees")
+            if stem in known_names:
+                return RepoKeyResolution(key=stem, rule="R7", reason=None)
+
+    return RepoKeyResolution(key=None, rule="", reason=REFUSED_UNKNOWN)
+
