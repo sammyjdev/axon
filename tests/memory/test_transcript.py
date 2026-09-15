@@ -141,3 +141,47 @@ def test_last_compact_summary_also_skips_non_object_lines(tmp_path, line: str) -
     )
 
     assert last_compact_summary(transcript) == "sum"
+
+
+def test_parses_codex_rollout_turns_from_response_item_payload(tmp_path) -> None:
+    path = tmp_path / "rollout.jsonl"
+    path.write_text(
+        '{"type":"session_meta","payload":'
+        '{"id":"...","cwd":"/Users/x/dev/axon","cli_version":"0.153.4"}}\n'
+        '{"type":"response_item","payload":{"type":"message","role":"developer",'
+        '"content":[{"type":"input_text","text":"<skills_instructions>..."}]}}\n'
+        '{"type":"response_item","payload":{"type":"message","role":"user",'
+        '"content":[{"type":"input_text","text":"why does the hook never fire?"}]}}\n'
+        '{"type":"response_item","payload":{"type":"reasoning","summary":[]}}\n'
+        '{"type":"response_item","payload":{"type":"custom_tool_call",'
+        '"name":"shell","input":"..."}}\n'
+        '{"type":"response_item","payload":{"type":"custom_tool_call_output",'
+        '"output":"..."}}\n'
+        '{"type":"response_item","payload":{"type":"message","role":"assistant",'
+        '"content":[{"type":"output_text",'
+        '"text":"because the parser reads the wrong shape"}]}}\n'
+        '{"type":"event_msg","payload":{"type":"agent_message"}}\n',
+        encoding="utf-8",
+    )
+
+    turns = parse_transcript_turns(path)
+
+    assert turns == [
+        {"role": "user", "content": "why does the hook never fire?"},
+        {"role": "assistant", "content": "because the parser reads the wrong shape"},
+    ]
+
+
+def test_a_codex_reasoning_item_carrying_a_text_key_is_still_not_a_turn(tmp_path) -> None:
+    path = tmp_path / "rollout_reasoning.jsonl"
+    path.write_text(
+        '{"type":"response_item","payload":{"type":"reasoning",'
+        '"content":[{"type":"text","text":"SECRET REASONING"}]}}\n'
+        '{"type":"response_item","payload":{"type":"message","role":"user",'
+        '"content":[{"type":"input_text","text":"kept"}]}}\n',
+        encoding="utf-8",
+    )
+
+    turns = parse_transcript_turns(path)
+
+    assert turns == [{"role": "user", "content": "kept"}]
