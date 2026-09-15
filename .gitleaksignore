@@ -1,0 +1,4 @@
+# Test fixtures that deliberately look like credentials so sanitize_event() can prove it redacts them.
+# One fingerprint per line: <commit>:<file>:<rule>:<line>. Full-history scan (ci.yml) needs the
+# original commit listed even after the line is annotated with gitleaks:allow.
+4ef1ab04e367ab53117a43979d93c65c4e6056f6:tests/activity/test_sanitize.py:generic-api-key:12

@@ -9,7 +9,7 @@ def test_secret_fixture_never_survives_sanitization() -> None:
     raw = {
         "password": "my_super_secret_password",
         "nested": {
-            "api_key": "sk-1234567890",
+            "api_key": "sk-1234567890",  # gitleaks:allow - fixture, proves redaction
             "Authorization": "Bearer some_jwt_token",
             "some_aws_key": "AKIAIOSFODNN7EXAMPLE",
         },
