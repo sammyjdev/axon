@@ -2445,6 +2445,54 @@ def setup() -> None:
 # ---------------------------------------------------------------------------
 
 
+@activity_app.command("run")
+def activity_run(
+    harness: Annotated[str, typer.Option("--harness")],
+    model: Annotated[str, typer.Option("--model")] = "Gemini 3.1 Pro (High)",
+    workspace: Annotated[Path, typer.Option("--workspace")] = Path.cwd(),
+    prompt: Annotated[list[str], typer.Argument()] = None,
+) -> None:
+    """Run one explicit AGY invocation and store its captured activity."""
+    if harness != "agy":
+        raise typer.BadParameter("Only --harness agy is supported")
+    if not prompt:
+        raise typer.BadParameter("Prompt is required")
+
+    prompt_str = " ".join(prompt)
+
+    import uuid
+
+    from axon.activity.adapters.agy import build_agy_session
+    from axon.activity.agy_runner import run_agy
+    from axon.activity.repository import PostgresActivityRepository
+    from axon.activity.service import ActivityService
+
+    async def _run() -> None:
+        result = run_agy(model=model, workspace=workspace, prompt=prompt_str)
+        source_id = f"agy-{uuid.uuid4()}"
+        adapter_res = build_agy_session(result, source_id=source_id)
+
+        repo = PostgresActivityRepository(_RUNTIME.pg_url)
+        try:
+            await repo.ensure_schema()
+            svc = ActivityService(repo)
+            await svc.ingest_events(adapter_res.events, cursor=adapter_res.cursor)
+
+            outcome = next(
+                (e.outcome for e in adapter_res.events if e.kind == "terminal_output"), None
+            )
+            summary = {
+                "session_id": adapter_res.sessions[0].session_id,
+                "outcome": outcome,
+                "coverage": adapter_res.sessions[0].coverage,
+            }
+            typer.echo(json.dumps(summary))
+        finally:
+            await repo.close()
+
+    asyncio.run(_run())
+
+
 @activity_app.command("import")
 def activity_import(
     harness: Annotated[str, typer.Option("--harness", help="Source harness")],
@@ -2478,9 +2526,7 @@ def activity_import(
 
             result = await service.import_events(lines_to_import)
             typer.echo(
-                json.dumps(
-                    {"imported": result.stored, "coverage_warnings": result.warnings}
-                )
+                json.dumps({"imported": result.stored, "coverage_warnings": result.warnings})
             )
         finally:
             await repo.close()
@@ -2500,13 +2546,17 @@ def activity_collect() -> None:
         try:
             service = ActivityService(repo)
             health = await service.health()
-            typer.echo(json.dumps({
-                "pending_count": health.pending_count,
-                "pending_bytes": health.pending_bytes,
-                "stored_bytes": health.stored_bytes,
-                "latest_error": health.latest_error,
-                "compatibility_warnings": health.compatibility_warnings
-            }))
+            typer.echo(
+                json.dumps(
+                    {
+                        "pending_count": health.pending_count,
+                        "pending_bytes": health.pending_bytes,
+                        "stored_bytes": health.stored_bytes,
+                        "latest_error": health.latest_error,
+                        "compatibility_warnings": health.compatibility_warnings,
+                    }
+                )
+            )
         finally:
             await repo.close()
 
@@ -2576,10 +2626,14 @@ def activity_search(
         try:
             service = ActivityService(repo)
             page = await service.search_activity(query, filters=filters, limit=limit, cursor=cursor)
-            typer.echo(json.dumps({
-                "events": [e.model_dump(mode="json") for e in page.events],
-                "next_cursor": page.next_cursor,
-            }))
+            typer.echo(
+                json.dumps(
+                    {
+                        "events": [e.model_dump(mode="json") for e in page.events],
+                        "next_cursor": page.next_cursor,
+                    }
+                )
+            )
         finally:
             await repo.close()
 
