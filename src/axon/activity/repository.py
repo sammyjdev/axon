@@ -158,3 +158,53 @@ class PostgresActivityRepository:
                     cursor.fingerprint,
                     byte_offset,
                 )
+
+    async def record_evidence_link(
+        self,
+        *,
+        target_type: str,
+        target_id: str,
+        session_id: str,
+        turn_id: str | None,
+        event_id: str | None,
+        relation: str,
+    ) -> int:
+        if relation not in ("context-delivered", "record-supported"):
+            raise ValueError(
+                f"relation MUST be 'context-delivered' or 'record-supported', got: {relation}"
+            )
+            
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            row = await con.fetchrow(
+                """
+                INSERT INTO activity_evidence_links (
+                    target_type, target_id, session_id, turn_id, event_id, relation, created_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, now())
+                RETURNING id
+                """,
+                target_type,
+                target_id,
+                session_id,
+                turn_id,
+                event_id,
+                relation,
+            )
+            return row["id"]
+
+    async def get_evidence_links(self, *, target_type: str, target_id: str) -> list[dict]:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                """
+                SELECT 
+                    id, target_type, target_id, session_id, 
+                    turn_id, event_id, relation, created_at
+                FROM activity_evidence_links
+                WHERE target_type = $1 AND target_id = $2
+                ORDER BY created_at ASC
+                """,
+                target_type,
+                target_id,
+            )
+            return [dict(row) for row in rows]
