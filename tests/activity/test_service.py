@@ -198,3 +198,65 @@ async def test_health_reports_pending_spool_after_database_outage(service, isola
     health = await service.health()
     assert health.pending_count >= 1
     assert health.pending_bytes > 0
+
+
+async def test_spool_contamination_across_harnesses_is_prevented(service, pg_pool):
+    """Review finding 3: ingest_events drains the single shared spool dir,
+    and the old sink closed over the CURRENT call's cursor for every item it
+    swept - including another harness's leftover item from an earlier failed
+    call. Each spooled item must carry its own cursor identity so a later
+    call's drain never contaminates a different source's cursor row."""
+    event_a = ActivityEvent(
+        event_id="evt-a", harness="claude-code", source_id="src-a",
+        session_id="ses-a", occurred_at=datetime.now(UTC),
+        ingested_at=datetime.now(UTC), kind="test", content={},
+        coverage="full", redactions=[],
+    )
+    cursor_a = SourceCursor(
+        session_id="ses-a", harness="claude-code", source_id="src-a", fingerprint="fp-a"
+    )
+
+    # First ingest fails (simulated outage): the event stays in the shared
+    # spool, unprocessed.
+    real_replay = service.repo.replay_spooled_event
+
+    async def failing_replay(*args, **kwargs):
+        raise OSError("simulated outage")
+
+    service.repo.replay_spooled_event = failing_replay
+    res1 = await service.ingest_events([event_a], cursor=cursor_a, byte_offset=111)
+    assert res1.stored == 0
+    service.repo.replay_spooled_event = real_replay
+
+    # Second ingest, a DIFFERENT harness/source, succeeds - and its drain
+    # sweeps up event_a's leftover spool item too (same shared spool dir).
+    event_b = ActivityEvent(
+        event_id="evt-b", harness="codex", source_id="src-b",
+        session_id="ses-b", occurred_at=datetime.now(UTC),
+        ingested_at=datetime.now(UTC), kind="test", content={},
+        coverage="full", redactions=[],
+    )
+    cursor_b = SourceCursor(
+        session_id="ses-b", harness="codex", source_id="src-b", fingerprint="fp-b"
+    )
+    res2 = await service.ingest_events([event_b], cursor=cursor_b, byte_offset=222)
+    assert res2.stored == 2  # event_a (now succeeding) + event_b
+
+    cursor_row_a = await service.repo.get_cursor(harness="claude-code", source_id="src-a")
+    cursor_row_b = await service.repo.get_cursor(harness="codex", source_id="src-b")
+    assert cursor_row_a is not None
+    assert cursor_row_a.fingerprint == "fp-a"
+    assert cursor_row_b is not None
+    assert cursor_row_b.fingerprint == "fp-b"
+
+    async with pg_pool.acquire() as con:
+        offset_a = await con.fetchval(
+            "SELECT byte_offset FROM activity_cursors WHERE harness=$1 AND source_id=$2",
+            "claude-code", "src-a",
+        )
+        offset_b = await con.fetchval(
+            "SELECT byte_offset FROM activity_cursors WHERE harness=$1 AND source_id=$2",
+            "codex", "src-b",
+        )
+    assert offset_a == 111
+    assert offset_b == 222

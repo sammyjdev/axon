@@ -26,16 +26,20 @@ def activity_spool_paths() -> PendingPaths:
     )
 
 
-async def spool_event(event: dict, *, paths: PendingPaths | None = None) -> Path:
-    """Atomically spool one sanitized event dict. Wraps write_pending with
-    commit_hash=event["event_id"] (spool identity is the deterministic event_id,
-    not a git commit).
+async def spool_event(
+    event: dict, *, commit_hash: str | None = None, paths: PendingPaths | None = None
+) -> Path:
+    """Atomically spool one sanitized payload dict. Wraps write_pending with
+    commit_hash=event["event_id"] by default (spool identity is the
+    deterministic event_id, not a git commit); pass `commit_hash` explicitly
+    for a payload with no top-level "event_id" key (e.g. a wrapped item or a
+    session record) - the filename is bookkeeping only, never the dedup key.
     """
     if paths is None:
         paths = activity_spool_paths()
     return await write_pending(
         payload=event,
-        commit_hash=event["event_id"],
+        commit_hash=commit_hash if commit_hash is not None else event["event_id"],
         paths=paths,
     )
 
