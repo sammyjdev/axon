@@ -34,6 +34,7 @@ profile_app = typer.Typer(help="Perfis de instalação e uso")
 portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
 pending_app = typer.Typer(help="Gerencia o backlog .axon/pending/ (dec-112)")
 hooks_app = typer.Typer(help="Instala hooks AXON (dec-113, opt-in com --apply)")
+activity_app = typer.Typer(help="Historico operacional (Claude Code/Codex/AGY) - dec-136")
 
 app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
@@ -42,6 +43,7 @@ app.add_typer(profile_app, name="profile")
 app.add_typer(portability_app, name="portability")
 app.add_typer(pending_app, name="pending")
 app.add_typer(hooks_app, name="hooks")
+app.add_typer(activity_app, name="activity")
 
 _MAX_CHUNK_INPUT_CHARS = 4_000
 _DEFAULT_LESSON_CORPUS_PATH = (
@@ -2436,6 +2438,173 @@ def setup() -> None:
         vault_root=_RUNTIME.vault_root,
         packs_root=_RUNTIME.engine_root / "domain-packs",
     )
+
+
+# ---------------------------------------------------------------------------
+# pb activity
+# ---------------------------------------------------------------------------
+
+
+@activity_app.command("import")
+def activity_import(
+    harness: Annotated[str, typer.Option("--harness", help="Source harness")],
+    path: Annotated[Path, typer.Option("--path", help="Path to JSONL file")],
+) -> None:
+    """Import historical activity from a JSONL file."""
+    if harness not in ("claude-code", "codex", "agy"):
+        raise typer.BadParameter("harness must be claude-code, codex, or agy")
+    if not path.is_file():
+        raise typer.BadParameter(f"path not found: {path}")
+
+    from axon.activity.export import event_to_jsonl_line
+    from axon.activity.models import ActivityEvent
+    from axon.activity.repository import PostgresActivityRepository
+    from axon.activity.service import ActivityService
+
+    async def _run() -> None:
+        repo = PostgresActivityRepository(dsn=_RUNTIME.pg_url)
+        await repo.ensure_schema()
+        try:
+            service = ActivityService(repo)
+            lines_to_import = []
+            with path.open("r", encoding="utf-8") as f:
+                for text_line in f:
+                    text_line = text_line.strip()
+                    if not text_line:
+                        continue
+                    event_dict = json.loads(text_line)
+                    event = ActivityEvent.model_validate(event_dict)
+                    lines_to_import.append(event_to_jsonl_line(event))
+
+            result = await service.import_events(lines_to_import)
+            typer.echo(
+                json.dumps(
+                    {"imported": result.stored, "coverage_warnings": result.warnings}
+                )
+            )
+        finally:
+            await repo.close()
+
+    asyncio.run(_run())
+
+
+@activity_app.command("collect")
+def activity_collect() -> None:
+    """Collect pending spool events into the Postgres database."""
+    from axon.activity.repository import PostgresActivityRepository
+    from axon.activity.service import ActivityService
+
+    async def _run() -> None:
+        repo = PostgresActivityRepository(dsn=_RUNTIME.pg_url)
+        await repo.ensure_schema()
+        try:
+            service = ActivityService(repo)
+            health = await service.health()
+            typer.echo(json.dumps({
+                "pending_count": health.pending_count,
+                "pending_bytes": health.pending_bytes,
+                "stored_bytes": health.stored_bytes,
+                "latest_error": health.latest_error,
+                "compatibility_warnings": health.compatibility_warnings
+            }))
+        finally:
+            await repo.close()
+
+    asyncio.run(_run())
+
+
+@activity_app.command("export")
+def activity_export(
+    session_id: Annotated[str, typer.Option("--session", help="Session ID to export")],
+) -> None:
+    """Export the activity timeline of a session as JSONL."""
+    from axon.activity.repository import PostgresActivityRepository
+    from axon.activity.service import ActivityService
+
+    async def _run() -> None:
+        repo = PostgresActivityRepository(dsn=_RUNTIME.pg_url)
+        await repo.ensure_schema()
+        try:
+            service = ActivityService(repo)
+            async for line in service.export_activity(session_id):
+                typer.echo(line)
+        finally:
+            await repo.close()
+
+    asyncio.run(_run())
+
+
+@activity_app.command("search")
+def activity_search(
+    query: Annotated[str, typer.Argument(help="Search query text")],
+    project: Annotated[str | None, typer.Option("--project", help="Filter by project")] = None,
+    harness: Annotated[str | None, typer.Option("--harness", help="Filter by harness")] = None,
+    date_from: Annotated[
+        str | None, typer.Option("--date-from", help="Filter by start date (ISO)")
+    ] = None,
+    date_to: Annotated[
+        str | None, typer.Option("--date-to", help="Filter by end date (ISO)")
+    ] = None,
+    outcome: Annotated[str | None, typer.Option("--outcome", help="Filter by outcome")] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Max events to return")] = 20,
+    cursor: Annotated[str | None, typer.Option("--cursor", help="Pagination cursor")] = None,
+) -> None:
+    """Search historical activity events."""
+    from datetime import datetime
+
+    from axon.activity.models import ActivityFilters
+    from axon.activity.repository import PostgresActivityRepository
+    from axon.activity.service import ActivityService
+
+    dt_from = datetime.fromisoformat(date_from) if date_from else None
+    dt_to = datetime.fromisoformat(date_to) if date_to else None
+
+    if harness and harness not in ("claude-code", "codex", "agy"):
+        raise typer.BadParameter("harness must be claude-code, codex, or agy")
+
+    filters = ActivityFilters(
+        project=project,
+        harness=harness,
+        date_from=dt_from,
+        date_to=dt_to,
+        outcome=outcome,
+    )
+
+    async def _run() -> None:
+        repo = PostgresActivityRepository(dsn=_RUNTIME.pg_url)
+        await repo.ensure_schema()
+        try:
+            service = ActivityService(repo)
+            page = await service.search_activity(query, filters=filters, limit=limit, cursor=cursor)
+            typer.echo(json.dumps({
+                "events": [e.model_dump(mode="json") for e in page.events],
+                "next_cursor": page.next_cursor,
+            }))
+        finally:
+            await repo.close()
+
+    asyncio.run(_run())
+
+
+@activity_app.command("show")
+def activity_show(
+    session_id: Annotated[str, typer.Option("--session", help="Session ID to show timeline for")],
+) -> None:
+    """Show the timeline of a session."""
+    from axon.activity.repository import PostgresActivityRepository
+    from axon.activity.service import ActivityService
+
+    async def _run() -> None:
+        repo = PostgresActivityRepository(dsn=_RUNTIME.pg_url)
+        await repo.ensure_schema()
+        try:
+            service = ActivityService(repo)
+            events = await service.get_session_timeline(session_id)
+            typer.echo(json.dumps([e.model_dump(mode="json") for e in events]))
+        finally:
+            await repo.close()
+
+    asyncio.run(_run())
 
 
 # ---------------------------------------------------------------------------

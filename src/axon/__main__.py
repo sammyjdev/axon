@@ -566,6 +566,7 @@ def ingest_vault_cmd(
 # imported and therefore not surfaced.
 # ---------------------------------------------------------------------------
 from axon.cli.pb import (  # noqa: E402
+    activity_app,
     adr_app,
     compact_hook,
     configure,
@@ -595,6 +596,7 @@ from axon.cli.pb import (  # noqa: E402
 )
 from axon.cli.pb import init as pb_bootstrap  # noqa: E402
 
+app.add_typer(activity_app, name="activity")
 app.add_typer(adr_app, name="adr")
 app.add_typer(graph_app, name="graph")
 app.add_typer(hooks_app, name="hooks")
