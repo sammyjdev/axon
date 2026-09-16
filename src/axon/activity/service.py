@@ -6,7 +6,13 @@ from dataclasses import dataclass
 import asyncpg
 
 from axon.activity.export import event_to_jsonl_line, jsonl_line_to_event
-from axon.activity.models import ActivityEvent, ActivityFilters, ActivityPage, SourceCursor
+from axon.activity.models import (
+    ActivityEvent,
+    ActivityFilters,
+    ActivityPage,
+    ActivitySession,
+    SourceCursor,
+)
 from axon.activity.repository import PostgresActivityRepository
 from axon.activity.spool import activity_spool_paths, drain_spool, spool_event
 
@@ -31,9 +37,14 @@ class ActivityService:
         self.repo = repo
 
     async def ingest_events(
-        self, events: Sequence[ActivityEvent], *, cursor: SourceCursor, byte_offset: int = 0
+        self,
+        events: Sequence[ActivityEvent],
+        *,
+        cursor: SourceCursor,
+        byte_offset: int = 0,
+        sessions: Sequence[ActivitySession] = (),
     ) -> IngestResult:
-        """Spool events durably, then drain the shared spool.
+        """Spool sessions and events durably, then drain the shared spool.
 
         The spool directory is shared by every caller of this method (one
         process-wide pending queue), so a drain triggered by THIS call can
@@ -49,9 +60,17 @@ class ActivityService:
         warnings: list[str] = []
         cursor_payload = cursor.model_dump(mode="json")
 
+        for session in sessions:
+            await spool_event(
+                {"item_type": "session", "data": session.model_dump(mode="json")},
+                commit_hash=f"session-{session.harness}-{session.session_id}",
+            )
+            spooled += 1
+
         for event in events:
             await spool_event(
                 {
+                    "item_type": "event",
                     "cursor": cursor_payload,
                     "byte_offset": byte_offset,
                     "data": event.model_dump(mode="json"),
@@ -66,6 +85,10 @@ class ActivityService:
             return isinstance(e, (asyncpg.PostgresError, OSError))
 
         async def sink(payload: dict) -> None:
+            if payload.get("item_type") == "session":
+                session_obj = ActivitySession.model_validate(payload["data"])
+                await self.repo.upsert_session(session_obj)
+                return
             ev = ActivityEvent.model_validate(payload["data"])
             item_cursor = SourceCursor.model_validate(payload["cursor"])
             item_byte_offset = payload["byte_offset"]
@@ -96,64 +119,64 @@ class ActivityService:
         self, query: str, *, filters: ActivityFilters, limit: int, cursor: str | None
     ) -> ActivityPage:
         pool = await self.repo._ensure_pool()
-
+        
         offset = int(cursor) if cursor else 0
-
+        
         where_clauses = ["e.content::text ILIKE $1"]
         args: list[object] = [f"%{query}%"]
         idx = 2
-
+        
         if filters.project:
             where_clauses.append(f"s.project = ${idx}")
             args.append(filters.project)
             idx += 1
-
+            
         if filters.harness:
             where_clauses.append(f"e.harness = ${idx}")
             args.append(filters.harness)
             idx += 1
-
+            
         if filters.date_from:
             where_clauses.append(f"e.occurred_at >= ${idx}")
             args.append(filters.date_from)
             idx += 1
-
+            
         if filters.date_to:
             where_clauses.append(f"e.occurred_at <= ${idx}")
             args.append(filters.date_to)
             idx += 1
-
+            
         if filters.outcome:
             where_clauses.append(f"e.outcome = ${idx}")
             args.append(filters.outcome)
             idx += 1
-
+            
         where_sql = " AND ".join(where_clauses)
-
+        
         args.append(limit + 1)
         limit_idx = idx
         args.append(offset)
         offset_idx = idx + 1
-
+        
         sql = f"""
-            SELECT e.*
+            SELECT e.* 
             FROM activity_events e
             LEFT JOIN activity_sessions s ON e.session_id = s.session_id
             WHERE {where_sql}
             ORDER BY e.occurred_at DESC, e.event_id ASC
             LIMIT ${limit_idx} OFFSET ${offset_idx}
         """  # noqa: S608
-
+        
         async with pool.acquire() as con:
             rows = await con.fetch(sql, *args)
-
+            
         events = [ActivityEvent(**dict(row)) for row in rows]
-
+        
         next_cursor = None
         if len(events) > limit:
             events = events[:limit]
             next_cursor = str(offset + limit)
-
+            
         return ActivityPage(events=events, next_cursor=next_cursor)
 
     async def export_activity(self, session_id: str) -> AsyncIterator[str]:
@@ -189,7 +212,7 @@ class ActivityService:
                 if f.is_file():
                     pending_count += 1
                     pending_bytes += f.stat().st_size
-
+                    
         latest_error = None
         if paths.quarantine_log.exists():
             try:
@@ -200,7 +223,7 @@ class ActivityService:
                     latest_error = last_line.get("reason")
             except Exception as e:
                 logger.warning("Could not read quarantine log: %s", e)
-
+                
         stored_bytes = None
         try:
             pool = await self.repo._ensure_pool()
@@ -213,7 +236,7 @@ class ActivityService:
                     stored_bytes = int(size)
         except Exception as e:
             logger.warning("Could not query stored_bytes: %s", e)
-
+            
         return HealthReport(
             pending_count=pending_count,
             pending_bytes=pending_bytes,

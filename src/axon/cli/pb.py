@@ -2476,7 +2476,9 @@ def activity_run(
         try:
             await repo.ensure_schema()
             svc = ActivityService(repo)
-            await svc.ingest_events(adapter_res.events, cursor=adapter_res.cursor)
+            await svc.ingest_events(
+                adapter_res.events, cursor=adapter_res.cursor, sessions=adapter_res.sessions
+            )
 
             outcome = next(
                 (e.outcome for e in adapter_res.events if e.kind == "terminal_output"), None

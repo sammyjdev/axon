@@ -200,6 +200,43 @@ async def test_health_reports_pending_spool_after_database_outage(service, isola
     assert health.pending_bytes > 0
 
 
+async def test_ingest_events_persists_sessions_durably(service, pg_pool):
+    """Review finding 1: every adapter fills AdapterResult.sessions, but
+    nothing durably persisted them - activity_sessions stayed empty in every
+    real deployment. This goes through ActivityService.ingest_events (the
+    same path the CLI uses), never repo.upsert_session directly."""
+    session = ActivitySession(
+        session_id="ses-durable",
+        harness="claude-code",
+        source_id="src-durable",
+        project="proj-durable",
+        workspace="/repo",
+        status="observed",
+        coverage="complete-observable",
+    )
+    event = ActivityEvent(
+        event_id="evt-durable", harness="claude-code", source_id="src-durable",
+        session_id="ses-durable", occurred_at=datetime.now(UTC),
+        ingested_at=datetime.now(UTC), kind="test", content={},
+        coverage="full", redactions=[],
+    )
+    cursor = SourceCursor(
+        session_id="ses-durable", harness="claude-code", source_id="src-durable",
+        fingerprint="fp-durable",
+    )
+
+    await service.ingest_events([event], cursor=cursor, sessions=[session])
+
+    async with pg_pool.acquire() as con:
+        row = await con.fetchrow(
+            "SELECT session_id, project, coverage FROM activity_sessions WHERE session_id=$1",
+            "ses-durable",
+        )
+    assert row is not None
+    assert row["project"] == "proj-durable"
+    assert row["coverage"] == "complete-observable"
+
+
 async def test_spool_contamination_across_harnesses_is_prevented(service, pg_pool):
     """Review finding 3: ingest_events drains the single shared spool dir,
     and the old sink closed over the CURRENT call's cursor for every item it
