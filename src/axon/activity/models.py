@@ -88,14 +88,13 @@ class EvidenceLink(BaseModel):
 
 
 class ActivityFilters(BaseModel):
-    session_id: str
-    harness: Literal["claude-code", "codex", "agy"]
-    source_id: str
-    fingerprint: str
+    project: str | None = None
+    harness: Literal["claude-code", "codex", "agy"] | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    outcome: str | None = None
 
 
 class ActivityPage(BaseModel):
-    session_id: str
-    harness: Literal["claude-code", "codex", "agy"]
-    source_id: str
-    fingerprint: str
+    events: list[ActivityEvent]
+    next_cursor: str | None = None
