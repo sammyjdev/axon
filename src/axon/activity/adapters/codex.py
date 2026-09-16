@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from axon.activity.adapters.base import AdapterResult
-from axon.activity.models import ActivityEvent, ActivitySession, SourceCursor, compute_event_id
+from axon.activity.models import (
+    ActivityEvent,
+    ActivitySession,
+    SourceCursor,
+    compute_event_id,
+    resolve_activity_project_from_cwd,
+)
 from axon.activity.sanitize import sanitize_event
 from axon.memory.transcript import _message_of, _text_of
 
@@ -123,13 +129,14 @@ def parse_codex_session(
 
                 current_session_id = str(sess_id)
                 current_cwd = payload.get("cwd")
+                cwd_str = str(current_cwd) if current_cwd else None
                 if current_session_id not in sessions_dict:
                     sessions_dict[current_session_id] = ActivitySession(
                         session_id=current_session_id,
                         harness="codex",
                         source_id=f"{path}::{current_session_id}",
-                        project=None,
-                        workspace=str(current_cwd) if current_cwd else None,
+                        project=resolve_activity_project_from_cwd(cwd_str),
+                        workspace=cwd_str,
                         parent_session_id=None,
                         status="observed",
                         coverage="complete-observable",

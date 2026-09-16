@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from axon.activity.adapters.base import AdapterResult
-from axon.activity.models import ActivityEvent, ActivitySession, SourceCursor, compute_event_id
+from axon.activity.models import (
+    ActivityEvent,
+    ActivitySession,
+    SourceCursor,
+    compute_event_id,
+    resolve_activity_project_from_cwd,
+)
 from axon.activity.sanitize import sanitize_event
 
 
@@ -92,12 +98,13 @@ def parse_claude_code_session(
 
             if session_id not in sessions_dict:
                 parent_session_id = raw.get("parentSessionId")
+                cwd = raw.get("cwd") if isinstance(raw.get("cwd"), str) else None
                 sessions_dict[session_id] = ActivitySession(
                     session_id=session_id,
                     harness="claude-code",
                     source_id=f"{path}::{session_id}",
-                    project=None,
-                    workspace=raw.get("cwd") if isinstance(raw.get("cwd"), str) else None,
+                    project=resolve_activity_project_from_cwd(cwd),
+                    workspace=cwd,
                     parent_session_id=parent_session_id
                     if isinstance(parent_session_id, str)
                     else None,

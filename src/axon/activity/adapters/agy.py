@@ -2,7 +2,13 @@ import hashlib
 from typing import TYPE_CHECKING
 
 from axon.activity.adapters.base import AdapterResult
-from axon.activity.models import ActivityEvent, ActivitySession, SourceCursor, compute_event_id
+from axon.activity.models import (
+    ActivityEvent,
+    ActivitySession,
+    SourceCursor,
+    compute_event_id,
+    resolve_activity_project_from_cwd,
+)
 from axon.activity.sanitize import sanitize_event
 
 if TYPE_CHECKING:
@@ -28,12 +34,13 @@ def build_agy_session(
 
     session_id = hashlib.sha256(source_id.encode("utf-8")).hexdigest()
 
+    workspace_str = str(result.workspace)
     session = ActivitySession(
         session_id=session_id,
         harness="agy",
         source_id=source_id,
-        project=None,
-        workspace=str(result.workspace),
+        project=resolve_activity_project_from_cwd(workspace_str),
+        workspace=workspace_str,
         parent_session_id=None,
         status="observed",
         coverage="partial-observable",

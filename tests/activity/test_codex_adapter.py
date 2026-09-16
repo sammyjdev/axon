@@ -1,6 +1,55 @@
+import json
+import subprocess
 from pathlib import Path
 
 from axon.activity.adapters.codex import parse_codex_session
+
+
+def _init_git_repo(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(  # noqa: S603
+        ["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True  # noqa: S607
+    )
+    return path
+
+
+def test_session_project_resolves_from_a_real_git_repo_cwd(tmp_path: Path):
+    repo = _init_git_repo(tmp_path / "codex-repo")
+    line = json.dumps(
+        {
+            "timestamp": "2026-09-13T10:00:00Z",
+            "type": "session_meta",
+            "payload": {
+                "session_id": "s-git",
+                "cwd": str(repo),
+                "originator": "codex_exec",
+            },
+        }
+    )
+    test_file = tmp_path / "rollout.jsonl"
+    test_file.write_text(line + "\n")
+
+    res = parse_codex_session(test_file)
+    assert res.sessions[0].project == "codex-repo"
+
+
+def test_session_project_stays_none_outside_a_repo(tmp_path: Path):
+    line = json.dumps(
+        {
+            "timestamp": "2026-09-13T10:00:00Z",
+            "type": "session_meta",
+            "payload": {
+                "session_id": "s-norepo",
+                "cwd": "/nonexistent/not-a-repo/anywhere",
+                "originator": "codex_exec",
+            },
+        }
+    )
+    test_file = tmp_path / "rollout.jsonl"
+    test_file.write_text(line + "\n")
+
+    res = parse_codex_session(test_file)
+    assert res.sessions[0].project is None
 
 
 def test_codex_exec_prompt_and_json_events_reconcile_by_native_id():

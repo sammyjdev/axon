@@ -1,10 +1,48 @@
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
 
 from axon.activity.adapters.agy import build_agy_session
 from axon.activity.agy_runner import AgyRunResult, build_agy_argv, run_agy
+
+
+def _init_git_repo(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(  # noqa: S603
+        ["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True  # noqa: S607
+    )
+    return path
+
+
+def test_session_project_resolves_from_a_real_git_repo_workspace(tmp_path: Path):
+    repo = _init_git_repo(tmp_path / "agy-repo")
+    res = AgyRunResult(
+        prompt="hello",
+        output="done",
+        exit_code=0,
+        timed_out=False,
+        workspace=repo,
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+    )
+    adapter_res = build_agy_session(res, source_id="src-git")
+    assert adapter_res.sessions[0].project == "agy-repo"
+
+
+def test_session_project_stays_none_outside_a_repo(tmp_path: Path):
+    res = AgyRunResult(
+        prompt="hello",
+        output="done",
+        exit_code=0,
+        timed_out=False,
+        workspace=Path("/nonexistent/not-a-repo/anywhere"),
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+    )
+    adapter_res = build_agy_session(res, source_id="src-norepo")
+    assert adapter_res.sessions[0].project is None
 
 
 def test_agy_timeout_and_successful_exit_have_distinct_outcomes():

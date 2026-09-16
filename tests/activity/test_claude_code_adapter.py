@@ -1,9 +1,57 @@
 import json
+import subprocess
 from pathlib import Path
 
 from axon.activity.adapters.claude_code import parse_claude_code_session
 
 FIXTURE_DIR = Path("tests/fixtures/activity/claude_code").absolute()
+
+
+def _init_git_repo(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(  # noqa: S603
+        ["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True  # noqa: S607
+    )
+    return path
+
+
+def test_session_project_resolves_from_a_real_git_repo_cwd(tmp_path: Path):
+    repo = _init_git_repo(tmp_path / "my-repo")
+    line = json.dumps(
+        {
+            "type": "user",
+            "uuid": "u1",
+            "sessionId": "s-git",
+            "timestamp": "2026-09-14T13:36:00.000Z",
+            "cwd": str(repo),
+            "message": {"role": "user", "content": "hello"},
+        }
+    )
+    test_file = tmp_path / "session.jsonl"
+    test_file.write_text(line + "\n")
+
+    res = parse_claude_code_session(test_file)
+    sessions = {s.session_id: s for s in res.sessions}
+    assert sessions["s-git"].project == "my-repo"
+
+
+def test_session_project_stays_none_outside_a_repo(tmp_path: Path):
+    line = json.dumps(
+        {
+            "type": "user",
+            "uuid": "u1",
+            "sessionId": "s-norepo",
+            "timestamp": "2026-09-14T13:36:00.000Z",
+            "cwd": "/nonexistent/not-a-repo/anywhere",
+            "message": {"role": "user", "content": "hello"},
+        }
+    )
+    test_file = tmp_path / "session.jsonl"
+    test_file.write_text(line + "\n")
+
+    res = parse_claude_code_session(test_file)
+    sessions = {s.session_id: s for s in res.sessions}
+    assert sessions["s-norepo"].project is None
 
 def test_claude_subagent_events_keep_explicit_parent_session():
     path = FIXTURE_DIR / "parent_and_subagent.jsonl"
