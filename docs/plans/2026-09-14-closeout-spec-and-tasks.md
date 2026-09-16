@@ -529,6 +529,17 @@ re-derive.
 
 **Acceptance:** that plan's own, per slice.
 
+- [x] **O12 done 2026-09-16.** Tasks 0-1 in PR #208 (2cbd968), Tasks 2-10 in PR #210
+  (7a03f6c), both on the agy lane (Gemini 3.1 Pro High as executor, Claude orchestrating).
+  #210 went through an independent review (python-reviewer): three real defects found and
+  fixed on the branch before merge (sessions never persisted through the real path, project
+  resolver dead code, spool drain stamping one cursor on other harnesses' items); second
+  pass MERGE. Final gate 2485 passed. Migration `0006_activity_history` applied to the live
+  store after a schema-only pg_dump. Known gaps carried: `activity import`/`collect` do
+  not populate sessions for Claude Code/Codex (only the AGY `run` path does); old-shape
+  spool payloads would be quarantined, none existed; `activity_cursors.byte_offset` is
+  written but never read.
+
 ---
 
 ## 5. Follow-ups registered, not scheduled
