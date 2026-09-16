@@ -208,3 +208,55 @@ class PostgresActivityRepository:
                 target_id,
             )
             return [dict(row) for row in rows]
+
+    async def list_sessions(
+        self,
+        *,
+        project: str | None = None,
+        harness: str | None = None,
+        limit: int,
+        cursor: str | None = None
+    ) -> tuple[list[ActivitySession], str | None]:
+        pool = await self._ensure_pool()
+        
+        offset = int(cursor) if cursor else 0
+        where_clauses = []
+        args: list[object] = []
+        idx = 1
+        
+        if project:
+            where_clauses.append(f"project = ${idx}")
+            args.append(project)
+            idx += 1
+            
+        if harness:
+            where_clauses.append(f"harness = ${idx}")
+            args.append(harness)
+            idx += 1
+            
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        
+        args.append(limit + 1)
+        limit_idx = idx
+        args.append(offset)
+        offset_idx = idx + 1
+        
+        sql = f"""
+            SELECT *
+            FROM activity_sessions
+            WHERE {where_sql}
+            ORDER BY updated_at DESC, session_id ASC
+            LIMIT ${limit_idx} OFFSET ${offset_idx}
+        """  # noqa: S608
+        
+        async with pool.acquire() as con:
+            rows = await con.fetch(sql, *args)
+            
+        sessions = [ActivitySession(**dict(row)) for row in rows]
+        
+        next_cursor = None
+        if len(sessions) > limit:
+            sessions = sessions[:limit]
+            next_cursor = str(offset + limit)
+            
+        return sessions, next_cursor
