@@ -1163,7 +1163,14 @@ def _detect_agent(explicit: str | None = None) -> str:
 
 @mcp.tool()
 @traced_tool(risk="write")
-async def axon_session_start(agent: str | None = None, repo: str | None = None) -> str:
+async def axon_session_start(
+    agent: str | None = None,
+    repo: str | None = None,
+    *,
+    activity_session_id: str | None = None,
+    activity_turn_id: str | None = None,
+    activity_event_id: str | None = None,
+) -> str:
     """Start an AXON session: recall context for the repo and return it.
 
     The agent is detected from AXON_AGENT when not given; the repo is detected
@@ -1177,6 +1184,23 @@ async def axon_session_start(agent: str | None = None, repo: str | None = None) 
     session_id = uuid.uuid4().hex[:12]
     context = await recall_context(repo, store=store)
     await store.save_session(session_id, agent, repo, context_payload=context)
+
+    if activity_session_id is not None:
+        from axon.activity.repository import PostgresActivityRepository
+
+        activity_repo = PostgresActivityRepository(_RUNTIME.pg_url)
+        try:
+            await activity_repo.record_evidence_link(
+                target_type="context_delivery",
+                target_id=session_id,
+                session_id=activity_session_id,
+                turn_id=activity_turn_id,
+                event_id=activity_event_id,
+                relation="context-delivered",
+            )
+        finally:
+            await activity_repo.close()
+
     return f"session: {session_id}\nrepo: {repo}\n\n{context}"
 
 
@@ -1204,7 +1228,14 @@ async def axon_session_end(session_id: str, summary: str | None = None) -> str:
 
 @mcp.tool()
 @traced_tool(risk="write")
-async def axon_capture_event(event_type: str, payload: dict) -> str:
+async def axon_capture_event(
+    event_type: str,
+    payload: dict,
+    *,
+    activity_session_id: str | None = None,
+    activity_turn_id: str | None = None,
+    activity_event_id: str | None = None,
+) -> str:
     """Universal event capture (file_edit, plan_end, test_pass, manual_note...).
 
     The event is persisted as a session note for the payload's repo.
@@ -1215,7 +1246,24 @@ async def axon_capture_event(event_type: str, payload: dict) -> str:
     await store.init()
     repo = _resolve_repo(payload.get("repo"))
     body = f"[{event_type}] {_json.dumps(payload, sort_keys=True, ensure_ascii=False)}"
-    await store.save_note(SessionNote(project=repo, body=body))
+    note_id = await store.save_note(SessionNote(project=repo, body=body))
+
+    if activity_session_id is not None:
+        from axon.activity.repository import PostgresActivityRepository
+
+        activity_repo = PostgresActivityRepository(_RUNTIME.pg_url)
+        try:
+            await activity_repo.record_evidence_link(
+                target_type="session_note",
+                target_id=str(note_id),
+                session_id=activity_session_id,
+                turn_id=activity_turn_id,
+                event_id=activity_event_id,
+                relation="record-supported",
+            )
+        finally:
+            await activity_repo.close()
+
     return f"captured {event_type} for {repo}."
 
 

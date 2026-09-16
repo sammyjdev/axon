@@ -63,7 +63,9 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 `rtk*`, `run`, `git`. Sub-apps: `axon adr {list,add,sync,hook,infer-commit,review,audit,validate-drafts}`,
 `axon graph {index,neighbors,path}`, `axon hooks {install,status}`,
 `axon pending {drain,recover}`, `axon session {note,save}`,
-`axon profile {list,use,show,create,export}`, `axon portability {export,import}`.
+`axon profile {list,use,show,create,export}`, `axon portability {export,import}`,
+`axon activity {import,collect,export,search,show}` (dec-136 operational
+activity history).
 
 ## MCP tools (`src/axon/mcp/server.py`)
 

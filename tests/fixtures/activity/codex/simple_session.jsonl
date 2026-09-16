@@ -1,0 +1,7 @@
+{"timestamp": "2026-09-13T10:00:00Z", "ordinal": 0, "type": "session_meta", "payload": {"session_id": "01a0a5ba-1234", "id": "01a0a5ba-1234", "cwd": "/repo", "originator": "codex_exec", "source": "exec", "model_provider": "openai"}}
+{"type": "event_msg", "payload": {"type": "task_started", "turn_id": "01a0a5ba-b137"}}
+{"type": "response_item", "payload": {"type": "message", "id": "msg_1", "role": "user", "content": [{"type": "input_text", "text": "run tests"}]}}
+{"type": "response_item", "payload": {"type": "message", "id": "msg_2", "role": "assistant", "content": [{"type": "output_text", "text": "I will run the tests"}]}}
+{"type": "response_item", "payload": {"type": "function_call", "name": "exec_command", "arguments": "{\"cmd\":\"pytest -q\"}", "call_id": "call_abc"}}
+{"type": "response_item", "payload": {"type": "function_call_output", "call_id": "call_abc", "output": "Process exited with code 0\n..."}}
+{"type": "token_usage_record", "payload": {"thread_id": "thread_1", "turn_id": "01a0a5ba-b137", "session_id": "01a0a5ba-1234", "usage": {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}, "turn_token_usage": {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}, "thread_token_usage": {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}}}
