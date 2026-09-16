@@ -63,10 +63,14 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from axon.config.runtime import load_runtime_config
+
+_RUNTIME = load_runtime_config()
+
 logger = logging.getLogger(__name__)
 
 try:
-    from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request
+    from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request
     from fastapi.responses import HTMLResponse, JSONResponse
     from pydantic import BaseModel
 except ModuleNotFoundError as _exc:  # pragma: no cover
@@ -416,3 +420,105 @@ async def promotions_dashboard() -> HTMLResponse:
     )
 
     return HTMLResponse(content=PROMOTIONS_DASHBOARD_HTML)
+
+
+# ---------------------------------------------------------------------------
+# Activity History API (Task 9)
+# ---------------------------------------------------------------------------
+
+_ACTIVITY_API_MAX_LIMIT = 100
+
+async def _get_activity_service():
+    from axon.activity.repository import PostgresActivityRepository  # noqa: PLC0415
+    from axon.activity.service import ActivityService  # noqa: PLC0415
+
+    repo = PostgresActivityRepository(_RUNTIME.pg_url)
+    await repo.ensure_schema()
+    try:
+        yield ActivityService(repo)
+    finally:
+        await repo.close()
+
+
+@app.get("/api/activity/sessions")
+async def api_activity_sessions(
+    limit: int = Query(50, gt=0, le=_ACTIVITY_API_MAX_LIMIT),
+    cursor: str | None = None,
+    project: str | None = None,
+    harness: str | None = None,
+    service: Any = Depends(_get_activity_service),
+) -> JSONResponse:
+    if cursor is not None:
+        try:
+            int(cursor)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid cursor format") from exc
+
+    sessions, next_cursor = await service.repo.list_sessions(
+        project=project, harness=harness, limit=limit, cursor=cursor
+    )
+    
+    return JSONResponse(
+        content={
+            "sessions": [s.model_dump(mode="json") for s in sessions],
+            "next_cursor": next_cursor,
+        }
+    )
+
+
+@app.get("/api/activity/sessions/{session_id}/timeline")
+async def api_activity_session_timeline(
+    session_id: str,
+    service: Any = Depends(_get_activity_service),
+) -> JSONResponse:
+    events = await service.get_session_timeline(session_id)
+    return JSONResponse(
+        content=[e.model_dump(mode="json") for e in events]
+    )
+
+
+@app.get("/api/activity/search")
+async def api_activity_search(
+    q: str,
+    limit: int = Query(50, gt=0, le=_ACTIVITY_API_MAX_LIMIT),
+    cursor: str | None = None,
+    project: str | None = None,
+    harness: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    outcome: str | None = None,
+    service: Any = Depends(_get_activity_service),
+) -> JSONResponse:
+    from axon.activity.models import ActivityFilters  # noqa: PLC0415
+
+    if cursor is not None:
+        try:
+            int(cursor)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid cursor format") from exc
+
+    filters = ActivityFilters(
+        project=project,
+        harness=harness,  # type: ignore
+        date_from=date_from,  # type: ignore
+        date_to=date_to,  # type: ignore
+        outcome=outcome,
+    )
+    
+    page = await service.search_activity(
+        q, filters=filters, limit=limit, cursor=cursor
+    )
+    
+    return JSONResponse(
+        content=page.model_dump(mode="json")
+    )
+
+
+@app.get("/api/activity/health")
+async def api_activity_health(
+    service: Any = Depends(_get_activity_service),
+) -> JSONResponse:
+    import dataclasses
+    
+    report = await service.health()
+    return JSONResponse(content=dataclasses.asdict(report))

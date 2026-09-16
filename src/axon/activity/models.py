@@ -37,6 +37,26 @@ def resolve_activity_project(
     return res.key
 
 
+def resolve_activity_project_from_cwd(cwd: str | None) -> str | None:
+    """Adapter-facing convenience wrapper over `resolve_activity_project`.
+
+    Adapters observe a raw `cwd`/`workspace` string and have no config
+    surface of their own for known-repo aliasing, so this always resolves
+    with an empty `known_names`/`aliases` set (only the live-directory /
+    live-git resolution rules in `resolve_repo_key` can fire) against the
+    real configured vault root. `cwd=None` refuses immediately - never calls
+    the resolver on a missing value, and never falls back to a basename.
+    """
+    if not cwd:
+        return None
+    from axon.config.runtime import load_runtime_config
+
+    runtime = load_runtime_config()
+    return resolve_activity_project(
+        cwd, known_names=frozenset(), aliases={}, vault_root=runtime.vault_root
+    )
+
+
 class ActivityEvent(BaseModel):
     event_id: str
     schema_version: int = 1
@@ -88,14 +108,13 @@ class EvidenceLink(BaseModel):
 
 
 class ActivityFilters(BaseModel):
-    session_id: str
-    harness: Literal["claude-code", "codex", "agy"]
-    source_id: str
-    fingerprint: str
+    project: str | None = None
+    harness: Literal["claude-code", "codex", "agy"] | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    outcome: str | None = None
 
 
 class ActivityPage(BaseModel):
-    session_id: str
-    harness: Literal["claude-code", "codex", "agy"]
-    source_id: str
-    fingerprint: str
+    events: list[ActivityEvent]
+    next_cursor: str | None = None

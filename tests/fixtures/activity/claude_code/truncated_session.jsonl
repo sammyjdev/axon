@@ -1,0 +1,2 @@
+{"type": "user", "uuid": "u1", "sessionId": "s1", "timestamp": "2026-09-14T13:36:00.000Z", "message": {"role": "user", "content": "hello"}}
+{"type": "assistant", "uuid": "a1", "sessionId": "s1
