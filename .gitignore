@@ -63,6 +63,7 @@ Thumbs.db
 
 # Benchmark outputs
 benchmarks/results/*.png
+/data/typesafe-pilot/
 
 # Build artifacts
 dist/
