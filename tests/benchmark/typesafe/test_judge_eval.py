@@ -403,3 +403,39 @@ async def test_a_real_parse_failure_stays_cached(tmp_path) -> None:
     await judge_eval._cached_llm(**kwargs)
 
     assert calls == 1
+
+
+def test_an_infra_failure_is_counted_apart_from_a_parse_failure() -> None:
+    """Round 2 finding 1 (2026-09-23): c365239 claimed more than it delivered.
+
+    It stopped a dead provider from being CACHED as a parse failure, but
+    ``_record`` still counted every None score in ``failures``, so the report
+    written during an outage published an inflated parse_failure_rate and only
+    the next run recovered. The signal to tell them apart is the same one the
+    cache fix uses: ``_routed`` returns no model name when the call itself
+    failed.
+    """
+    failures = {"composite": 0}
+    infra = {"composite": 0}
+    scores = {"composite": {"case-1": []}}
+    common = dict(
+        scores=scores,
+        failures=failures,
+        infra_failures=infra,
+        costs={"composite": 0.0},
+        latencies={"composite": []},
+        models={"composite": set()},
+        arm="composite",
+        case_id="case-1",
+        latency=0.0,
+        cost=0.0,
+    )
+
+    judge_eval._record(score=None, model=None, routed=True, **common)
+    judge_eval._record(score=None, model="some-model", routed=True, **common)
+    judge_eval._record(score=None, model=None, routed=False, **common)
+
+    assert infra["composite"] == 1, "a dead provider is not the judge failing to parse"
+    assert failures["composite"] == 2, (
+        "the provider answered once and a stub has no transport to fail: both are parse failures"
+    )

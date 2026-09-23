@@ -118,6 +118,7 @@ def test_judge_round_trip_uses_stubbed_score_seam(tmp_path, monkeypatch) -> None
             mean_item_stdev=0.0,
             max_item_stdev=0.0,
             parse_failure_rate=0.0,
+            infra_failure_rate=0.0,
             n_items=1,
             n_attempts=1,
             cost_usd=0.0,

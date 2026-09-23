@@ -501,3 +501,60 @@ async def test_default_similarity_embeds_each_decision_once(monkeypatch) -> None
     )
 
     assert sorted(calls) == sorted(decision.summary for decision in decisions)
+
+
+def test_the_cli_aborts_and_removes_the_cases_file_when_the_gate_fails(
+    tmp_path, monkeypatch
+) -> None:
+    """Round 2 finding 3a (2026-09-23): deleting the whole gate block left the
+    suite green. `require_pilot_sample` has its own test, but nothing checked
+    that the CLI acts on it, and a gate that raises into a caller who writes
+    the file anyway is not a gate. Asserted here: exit 2, no cases file, and
+    sampling.json recording the refusal so the run is auditable afterwards.
+    """
+
+    class FakeSessionStore:
+        async def init(self) -> None:
+            pass
+
+        async def close(self) -> None:
+            pass
+
+    def mid(case_id: str) -> corpus.SupersessionCase:
+        return corpus.SupersessionCase(
+            case_id=case_id,
+            older_id=f"{case_id}-o",
+            newer_id=f"{case_id}-n",
+            older_summary=f"old {case_id}",
+            newer_summary=f"new {case_id}",
+            older_ts="2026-01-01T00:00:00+00:00",
+            newer_ts="2026-01-02T00:00:00+00:00",
+            older_status="active",
+            shared_scope=["shared.py"],
+            cosine=0.85,
+            stratum="mid",
+            split="holdout",
+        )
+
+    async def fake_supersession(**kwargs):
+        # every case in holdout: the mid tuning floor cannot be met
+        return ([mid(f"m{index}") for index in range(12)],
+                [corpus.Stratum("mid", population=12, sampled=12)],
+                ())
+
+    monkeypatch.setattr("axon.store.session_store.SessionStore", FakeSessionStore)
+    monkeypatch.setattr(corpus, "build_supersession_corpus", fake_supersession)
+    out = tmp_path / "corpus"
+
+    result = CliRunner().invoke(
+        corpus.app,
+        ["--surface", "supersession", "--repos", "axon", "--out", str(out)],
+    )
+
+    assert result.exit_code == 2, result.output
+    assert not (out / "supersession_cases.jsonl").exists(), (
+        "a refused sample must not leave a cases file behind for the eval to pick up"
+    )
+    sampling = json.loads((out / "sampling.json").read_text())
+    assert sampling["ok"] is False
+    assert "mid tuning" in sampling["gate_error"]

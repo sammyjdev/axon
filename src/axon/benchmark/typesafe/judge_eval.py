@@ -45,6 +45,9 @@ class ArmReport:
     mean_item_stdev: float
     max_item_stdev: float
     parse_failure_rate: float
+    #: Calls that never reached the judge. Kept out of parse_failure_rate so an
+    #: outage is not published as the judge being unstable.
+    infra_failure_rate: float
     n_items: int
     n_attempts: int
     cost_usd: float
@@ -212,6 +215,7 @@ async def run(
         arm: {case.case_id: [] for case in cases} for arm in active_arms
     }
     failures = {arm: 0 for arm in active_arms}
+    infra_failures = {arm: 0 for arm in active_arms}
     costs = {arm: 0.0 for arm in active_arms}
     latencies: dict[str, list[float]] = {arm: [] for arm in active_arms}
     models: dict[str, set[str]] = {arm: set() for arm in active_arms}
@@ -235,6 +239,7 @@ async def run(
             _record(
                 scores,
                 failures,
+                infra_failures,
                 costs,
                 latencies,
                 models,
@@ -244,6 +249,7 @@ async def run(
                 latency,
                 cost,
                 model,
+                routed=score_fn is None,
             )
 
             prompt = (
@@ -262,6 +268,7 @@ async def run(
             _record(
                 scores,
                 failures,
+                infra_failures,
                 costs,
                 latencies,
                 models,
@@ -284,6 +291,7 @@ async def run(
                 _record(
                     scores,
                     failures,
+                    infra_failures,
                     costs,
                     latencies,
                     models,
@@ -300,6 +308,7 @@ async def run(
                 _record(
                     scores,
                     failures,
+                    infra_failures,
                     costs,
                     latencies,
                     models,
@@ -341,6 +350,7 @@ async def run(
             mean_item_stdev=mean_stdev,
             max_item_stdev=max_stdev,
             parse_failure_rate=failures[arm] / attempts if attempts else 0.0,
+            infra_failure_rate=infra_failures[arm] / attempts if attempts else 0.0,
             n_items=len(cases),
             n_attempts=attempts,
             cost_usd=costs[arm],
@@ -408,6 +418,7 @@ async def _as_pair(value: Any) -> tuple[float | None, str | None]:
 def _record(
     scores: dict[str, dict[str, list[float]]],
     failures: dict[str, int],
+    infra_failures: dict[str, int],
     costs: dict[str, float],
     latencies: dict[str, list[float]],
     models: dict[str, set[str]],
@@ -417,12 +428,20 @@ def _record(
     latency: float,
     cost: float,
     model: str | None,
+    routed: bool = True,
 ) -> None:
     costs[arm] += cost
     latencies[arm].append(latency)
     if model is not None:
         models[arm].add(model)
     if score is None:
-        failures[arm] += 1
+        # Only a real router call can fail for infrastructure reasons, and
+        # _routed signals it by returning no model name. A stubbed score
+        # function has no transport to fail, so its None is the judge failing
+        # to produce a score, which is what parse_failure_rate is for.
+        if routed and model is None:
+            infra_failures[arm] += 1
+        else:
+            failures[arm] += 1
     else:
         scores[arm][case_id].append(score)
