@@ -11,23 +11,29 @@ mechanical and only waits for a turn.
 
 ---
 
-## 0. Read this first: a collision on `agent/typesafe-pilot-harness`
+## 0. Read this first: one conflict left on `agent/typesafe-pilot-harness`
 
-`~/dev/axon` is checked out on that branch at `2eab3c0` and carries **uncommitted work**:
-a pre-registered sampling design (`SAMPLE_SEED`, `MID_TUNING_MINIMUM`, ~227 new lines in
-`corpus.py`) and a rewrite of `weighted_precision` to return `float | None`.
+`~/dev/axon` is checked out on that branch and carries **uncommitted work**: a
+pre-registered sampling design (`SAMPLE_SEED`, `MID_TUNING_MINIMUM`, ~227 new lines in
+`corpus.py`) and a treatment of undefined metrics across `supersession_eval.py`
+(`wilson_interval(0, 0)`, every zero-denominator field in `_condition_report`, and
+`weighted_precision` all return `None` instead of a fabricated zero).
 
-On 2026-09-22 an agent pushed `0ba3361` to the same branch from a worktree, before noticing
-that work. Pulling will collide. What to keep, per hunk:
+An agent pushed to that branch on 2026-09-22 before noticing, and one of its changes
+competed with that work. It was backed out on 2026-09-23 (`520613e`): the local version is
+the stronger reading, because a population-weighted figure computed over part of the
+population still misreports its own basis.
 
-| File / function | Keep |
+The collision was then **measured**, not predicted, by applying the saved working-tree patch
+against the pushed branch. Result, after the backout:
+
+| File | Applies |
 |---|---|
-| `weighted_precision` in `supersession_eval.py` | **the uncommitted local version.** It makes stratum `precision` `float \| None` and returns `None` when any stratum is undefined, rather than averaging over the strata that are defined. A population-weighted figure computed over part of the population is still a figure that misreports its own basis, so this is the stronger reading of the same defect. |
-| `detect_current`, `older_status`, `_supersession_case` in `evaluate.py` | **the pushed version.** The uncommitted work does not touch `detect_current`, and the pinned-status fix is orthogonal to the sampling design. |
-| `SupersessionCase` construction in `corpus.py` | both sides edited near it. The pushed side adds one line, `older_status=older.status`; the local side rewrote the surrounding sampling. Take the local structure and re-add that one line. |
+| `corpus.py`, `evaluate.py`, `questions.py`, `supersession_eval.py`, `test_supersession_eval.py` | clean |
+| `test_corpus.py` | **one conflict**: the pushed side adds `older_status="active"` to the `fake_supersession` fixture, inside the block the local side rewrites. Take the local block and add that one keyword. |
 
-The lesson is already recorded in agent memory: pre-create a worktree and check for
-uncommitted work in the main checkout before pushing to a branch that is checked out there.
+The working tree was saved first, untouched, to
+`~/backups/typesafe-uncommitted-20260923T0935.patch` (855 lines).
 
 ---
 
@@ -39,7 +45,7 @@ Branch `agent/typesafe-pilot-harness`, 15 new files, +3418. Reviewed 2026-09-22 
 `zai/glm-5.3-flash` through the zai-cc rail, the arm pinned as reviewer in forge's
 `models.json`. Verdict: MERGE WITH FIXES, four findings.
 
-The two blocking findings are fixed on the branch (`0ba3361`, pushed):
+Three commits are on the branch. Blocking findings fixed in `0ba3361`:
 
 | # | Defect | Fix |
 |---|---|---|
@@ -48,16 +54,15 @@ The two blocking findings are fixed on the branch (`0ba3361`, pushed):
 
 Measured deflation in the regression test for #2: `0.08` where the honest number is `0.80`.
 
-Two findings remain open and are NOT fixed, because each one changes a number the harness
-publishes and that is the operator's call:
+The two non-blocking findings are fixed too, in `c365239`:
 
-- **Cost and latency are zero on a cache hit** (`client.py:109-110`). The first run writes
-  `$X` into `report-supersession.json`, the rerun writes `$0.0`. The tokens and the pinned
-  price are both in the cache, so the fix is to recompute rather than report zero.
-- **A transient provider failure is cached as a parse failure forever**
-  (`judge_eval.py:144,148`). `{"score": None}` is stored like any score, so
-  `parse_failure_rate` counts infrastructure as judge instability and a rerun never
-  recovers without deleting the cache key by hand.
+- **Cost on a cache hit** is recomputed from the pinned tokens and price, so two reports of
+  the same measurement stop disagreeing about what it cost. Latency stays `0.0` on purpose:
+  no time was spent this run, and `cached` already says which kind of row it is.
+- **A provider failure is no longer cached.** `_routed` already returns `(None, None)` when
+  the call itself failed and a model name beside a `None` score when the reply would not
+  parse, so only the first is retried. A real parse failure is deterministic and stays
+  cached, which costs no extra calls for the case that matters.
 
 **Migration consequence, stated:** a corpus extracted before 2026-09-22 has no
 `older_status` to pin. `evaluate.py` now refuses such a file by name and says to re-extract,
@@ -65,16 +70,13 @@ rather than guessing a status and putting the irreproducible number back. The lo
 at `data/typesafe-pilot/supersession_cases.jsonl` (150 cases) is pre-change and must be
 re-extracted before the next run.
 
-Gate on the branch: 69 passed, `ruff check` clean.
+Gate on the branch: 71 passed, `ruff check` clean.
 
-### 1.2 PR #179 - pack-quality ruler (OPERATOR: review, then merge)
+### 1.2 PR #213 - pack-quality ruler, replacing #179 (OPERATOR: review and merge)
 
-Open since 2026-08-31, was `DIRTY`. Rebased onto master on 2026-09-22 in the worktree
-`~/dev/axon-worktrees/rebase-179` and pushed as a **new** branch,
-`fix/pack-eval-ruler-precision-rebase`. The original `fix/pack-eval-ruler-precision` was
-left untouched: updating #179 in place means a force-push over the branch the PR was opened
-from, which is the operator's call, not an agent's. Either point #179 at the new branch or
-open a fresh PR from it.
+**Closed 2026-09-23 in favour of #213**, which carries the same work rebased onto master
+plus the defect the rebase exposed. No force-push: the original branch
+`fix/pack-eval-ruler-precision` is untouched and #179 carries a comment pointing at #213.
 
 One conflict, in the generated golden fixture. Regenerating at the pinned cutoff produced a
 **byte-identical** file to the one the PR committed three weeks earlier, which is the
@@ -138,22 +140,19 @@ rtk trust
 `pipx install --force ~/dev/axon` from there installs the feature branch. The fixes in 1.1
 were pushed from a worktree, so the checkout is behind by one commit and needs a `pull`.
 
-### 2.3 Fifteen files parked in `~/backups/axon-untracked-2026-09-15/`
+### 2.3 Four files left in `~/backups/axon-untracked-2026-09-15/`
 
 Recovered from a teleport auto-stash on 2026-09-15 and moved out of the repo, nothing
 deleted. Triaged 2026-09-22; **no file has been discarded and none will be without an
 explicit go**.
 
-Recommended to discard, work finished:
+**Done 2026-09-23.** Eleven files whose work is finished were moved to
+`~/backups/discarded-2026-09-23/`, which carries a `WHY.md` naming the evidence per file:
+the five issue briefs (all five issues re-verified CLOSED), the cloud-arm plan (implemented
+in `972df7e` and `31cbf98`), the four forge artifacts of the closed closeout, and the revvo
+PNG (nothing references it). Nothing was deleted; that directory is the tombstone.
 
-| File | Why |
-|---|---|
-| `docs/superpowers/specs/2026-07-18-degrau0-briefs/issue-{62,69,77,78,79}-brief.md` | all five issues CLOSED |
-| `docs/superpowers/plans/2026-07-17-cloud-arm-bridge.md` | implemented, `972df7e` and `31cbf98` |
-| `forge-sdd-closeout/.forge/sdd/task-{1,2}-{brief,report}.md` | the closeout they belong to is finished |
-| `revvo-desktop-hero.png` | belongs to the revvo project, landed here by accident |
-
-Recommended to keep, still live:
+Four files stay in the original directory because they are still live:
 
 | File | Why |
 |---|---|
@@ -162,7 +161,7 @@ Recommended to keep, still live:
 | `docs/ai-engineering-gap-review.md` | conceptual review of AXON as an AI engineering system |
 | `docs/mockups/promotion-workbench-style-comparison.html` | `/api/promotion-candidates` exists, the dashboard has no promotion view, so this is pending design and not history |
 
-Where the four survivors should live is also a decision: `docs/superpowers/specs/` is
+Where these four should live is still open: `docs/superpowers/specs/` is
 indexed and findable through `search_code`, `docs/superpowers/plans/` is excluded from the
 index on purpose, and the vault is outside the repo entirely.
 
