@@ -341,3 +341,65 @@ async def test_no_client_reports_only_llm_arms(tmp_path) -> None:
     )
 
     assert set(report) == {"llm_current", "llm_decomposed"}
+
+
+async def test_a_provider_failure_is_not_cached_as_a_parse_failure(tmp_path) -> None:
+    """A provider that fell over must not poison parse_failure_rate forever.
+
+    Review finding 4 (2026-09-22): ``{"score": None}`` was written to the cache
+    like any score, so one network or budget failure became a permanent parse
+    failure. The judge's stability metric then counted infrastructure, and no
+    rerun recovered without deleting the cache key by hand.
+
+    The two cases are already distinguishable where they arrive: ``_routed``
+    returns ``(None, None)`` when the call itself failed, and a model name
+    alongside a None score when the provider answered and the reply would not
+    parse. Only the first is retried; a real parse failure is deterministic and
+    stays cached.
+    """
+    attempts = 0
+
+    async def flaky():
+        nonlocal attempts
+        attempts += 1
+        return (None, None) if attempts == 1 else (1.0, "some-model")
+
+    cache = JsonCache(tmp_path / "cache.json")
+    kwargs = dict(
+        cache=cache,
+        state={"decision": "x"},
+        arm="composite",
+        request={"q": "text"},
+        sample_index=0,
+        call=flaky,
+    )
+
+    assert (await judge_eval._cached_llm(**kwargs))[0] is None
+    assert (await judge_eval._cached_llm(**kwargs))[0] == 1.0, (
+        "the retry recovered instead of reading a cached provider failure"
+    )
+
+
+async def test_a_real_parse_failure_stays_cached(tmp_path) -> None:
+    """The provider answered; the reply did not parse. Re-asking cannot help."""
+    calls = 0
+
+    async def unparseable():
+        nonlocal calls
+        calls += 1
+        return None, "some-model"
+
+    cache = JsonCache(tmp_path / "cache.json")
+    kwargs = dict(
+        cache=cache,
+        state={"decision": "y"},
+        arm="composite",
+        request={"q": "text"},
+        sample_index=0,
+        call=unparseable,
+    )
+
+    await judge_eval._cached_llm(**kwargs)
+    await judge_eval._cached_llm(**kwargs)
+
+    assert calls == 1

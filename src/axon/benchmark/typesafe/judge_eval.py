@@ -145,7 +145,14 @@ async def _cached_llm(
     started = time.perf_counter()
     score, model = await _resolve(call())
     latency_s = time.perf_counter() - started
-    cache.set(key, {"score": score, "model": model})
+    if score is not None or model is not None:
+        # A None score with no model is _routed reporting that the call itself
+        # failed. Caching it turned one network or budget failure into a
+        # permanent entry in parse_failure_rate, which then measured
+        # infrastructure and never recovered without deleting the key by hand.
+        # A None score WITH a model is a real parse failure: the provider
+        # answered, the reply would not parse, and re-asking cannot change that.
+        cache.set(key, {"score": score, "model": model})
     return score, latency_s, 0.0, model
 
 

@@ -111,7 +111,6 @@ async def test_identical_ask_uses_durable_cache(tmp_path) -> None:
     assert calls == 1
     assert cached.cached is True
     assert cached.latency_s == 0.0
-    assert cached.cost_usd == 0.0
 
 
 def test_json_cache_survives_reopen(tmp_path) -> None:
@@ -187,3 +186,25 @@ async def test_cost_uses_input_tokens_only(tmp_path) -> None:
 
     assert first.cost_usd == PRICE_PER_MTOK_INPUT == 0.042
     assert second.cost_usd == first.cost_usd
+
+
+async def test_a_cache_hit_reports_what_the_measurement_cost(tmp_path) -> None:
+    """Cost is a property of the measurement, not of this particular run.
+
+    Review finding 3 (2026-09-22): a cache hit reported cost_usd 0.0 while the
+    tokens and the pinned price were both sitting in the cache, so the first
+    run wrote a cost into report-supersession.json and the rerun wrote zero.
+    Two reports of the same measurement then disagreed about what it cost, and
+    neither said why. Latency stays 0.0 on purpose: no time was spent this run,
+    and ``cached`` already tells a reader which it was.
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _response({"q": {"type": "noul", "noul": 0.95}})
+
+    tested_client = _client(tmp_path, handler)
+    first = await tested_client.ask({"decision": "x"}, {"question": {"type": "noul"}})
+    cached = await tested_client.ask({"decision": "x"}, {"question": {"type": "noul"}})
+
+    assert cached.cached is True
+    assert cached.latency_s == 0.0
+    assert cached.cost_usd == first.cost_usd > 0.0

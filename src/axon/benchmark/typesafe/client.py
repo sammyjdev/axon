@@ -106,8 +106,12 @@ class TypeSafeClient:
                 model=cached["model"],
                 input_tokens=cached["input_tokens"],
                 output_tokens=cached["output_tokens"],
+                # No time was spent this run, so latency is honestly zero. Cost is
+                # not: the tokens were paid for, and a report whose cost column
+                # flips to zero on a rerun stops being comparable to the one
+                # before it. Recomputed from the pinned tokens and price.
                 latency_s=0.0,
-                cost_usd=0.0,
+                cost_usd=cached["input_tokens"] / 1_000_000 * questions.PRICE_PER_MTOK_INPUT,
                 cached=True,
             )
 
