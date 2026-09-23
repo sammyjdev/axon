@@ -22,6 +22,7 @@ from axon.benchmark.typesafe.corpus import SupersessionCase
 from axon.benchmark.typesafe.supersession_eval import (
     ConditionReport,
     Counts,
+    _condition_report,
     detect_current,
     mcnemar_exact,
     run,
@@ -204,7 +205,7 @@ def test_wilson_interval_known_value_and_empty_trials() -> None:
     low, high = wilson_interval(8, 10)
 
     assert (round(low, 2), round(high, 2)) == (0.49, 0.94)
-    assert wilson_interval(0, 0) == (0.0, 1.0)
+    assert wilson_interval(0, 0) is None
 
 
 def test_mcnemar_exact_uses_only_discordant_pairs() -> None:
@@ -226,11 +227,50 @@ def _report(stratum: str, precision: float) -> ConditionReport:
     )
 
 
+def test_zero_denominator_metrics_are_undefined_not_zero() -> None:
+    report = _condition_report(
+        "current",
+        "low",
+        [
+            _case(
+                "only",
+                _decision(1, "old"),
+                _decision(2, "new"),
+                cosine=0.2,
+                stratum="low",
+            )
+        ],
+        {"only": False},
+        {"only": False},
+    )
+
+    assert report.precision is None
+    assert report.precision_ci is None
+    assert report.recall is None
+    assert report.recall_ci is None
+    assert weighted_precision([report], {"low": 100}) is None
+
+
+def test_a_defined_zero_precision_stays_zero() -> None:
+    report = _condition_report(
+        "current",
+        None,
+        [_case("only", _decision(1, "old"), _decision(2, "new"), cosine=0.9)],
+        {"only": False},
+        {"only": True},
+    )
+
+    assert report.precision == 0.0
+    assert report.precision_ci is not None
+    assert report.recall is None
+
+
 def test_weighted_precision_uses_natural_stratum_population() -> None:
     reports = [_report("common", 1.0), _report("rare", 0.0)]
 
     assert weighted_precision(reports, {"common": 9, "rare": 1}) == 0.9
     assert weighted_precision(reports, {"common": 1, "rare": 1}) == 0.5
+    assert weighted_precision(reports, {"common": 0, "rare": 0}) is None
 
 
 async def test_run_keeps_tuning_cases_out_of_headline_metrics() -> None:

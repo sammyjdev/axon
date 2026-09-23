@@ -114,14 +114,18 @@ def _metadata(
     }
 
 
+def _fmt_metric(value: float | None) -> str:
+    return "undefined" if value is None else f"{value:.3f}"
+
+
 def _print_table(surface: str, report: dict[str, Any]) -> None:
     if surface == "supersession":
         typer.echo("condition | precision | recall | f1")
         for name, value in report["conditions"].items():
             aggregate = value["aggregate"]
             typer.echo(
-                f"{name} | {aggregate['precision']:.3f} | {aggregate['recall']:.3f} | "
-                f"{aggregate['f1']:.3f}"
+                f"{name} | {_fmt_metric(aggregate['precision'])} | "
+                f"{_fmt_metric(aggregate['recall'])} | {_fmt_metric(aggregate['f1'])}"
             )
         return
     typer.echo("arm | band agreement | parse failures")

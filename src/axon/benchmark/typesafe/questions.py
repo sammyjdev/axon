@@ -25,6 +25,13 @@ NOUL_PRIMARY_THRESHOLD = 0.5
 NOUL_UNCERTAIN_LOW = 0.30
 NOUL_UNCERTAIN_HIGH = 0.70
 
+# Pre-registered supersession sample. Uniform shuffle within each cosine stratum.
+# The low floor exists so recall below the production cutoff is measurable. Mid is
+# a census when its population fits in the budget left after that floor. High takes
+# whatever budget remains. Do not reseed to pass the tuning floor.
+SAMPLE_SEED = 20260922
+MID_TUNING_MINIMUM = 10
+
 
 def supersession_question(older_summary: str, newer_summary: str) -> dict:
     """One noul: does the newer decision revise the older one?"""

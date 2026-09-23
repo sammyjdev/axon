@@ -39,11 +39,11 @@ class ConditionReport:
     condition: str
     stratum: str | None
     counts: Counts
-    precision: float
-    recall: float
-    f1: float
-    precision_ci: tuple[float, float]
-    recall_ci: tuple[float, float]
+    precision: float | None
+    recall: float | None
+    f1: float | None
+    precision_ci: tuple[float, float] | None
+    recall_ci: tuple[float, float] | None
 
 
 def detect_current(
@@ -79,10 +79,15 @@ def wilson_interval(
     successes: int,
     trials: int,
     z: float = 1.96,
-) -> tuple[float, float]:
-    """Return the Wilson score interval, or the full interval with no trials."""
+) -> tuple[float, float] | None:
+    """Return the Wilson score interval.
+
+    Zero trials are undefined. That is not precision 0 and not the interval
+    (0, 1): a detector that never fires has no precision to compare, and the
+    holdout gate is inconclusive on that metric.
+    """
     if trials == 0:
-        return 0.0, 1.0
+        return None
     probability = successes / trials
     denominator = 1 + z**2 / trials
     centre = (probability + z**2 / (2 * trials)) / denominator
@@ -109,16 +114,22 @@ def mcnemar_exact(only_a: int, only_b: int) -> float:
 def weighted_precision(
     per_stratum: Sequence[ConditionReport],
     population: Mapping[str, int],
-) -> float:
-    """Weight stratum precision by its natural population share."""
-    reports = {
-        report.stratum: report.precision
-        for report in per_stratum
-        if report.stratum is not None
-    }
+) -> float | None:
+    """Weight stratum precision by its natural population share.
+
+    Undefined stratum precision makes the weighted figure undefined too. A
+    detector that never fires in a stratum does not contribute a precision of 0.
+    """
+    reports: dict[str, float] = {}
+    for report in per_stratum:
+        if report.stratum is None:
+            continue
+        if report.precision is None:
+            return None
+        reports[report.stratum] = report.precision
     total = sum(population.get(stratum, 0) for stratum in reports)
     if total == 0:
-        return 0.0
+        return None
     return sum(
         reports[stratum] * population.get(stratum, 0) for stratum in reports
     ) / total
@@ -136,19 +147,25 @@ def _condition_report(
     fp = sum(not labels[case.case_id] and predictions[case.case_id] for case in selected)
     tn = sum(not labels[case.case_id] and not predictions[case.case_id] for case in selected)
     fn = sum(labels[case.case_id] and not predictions[case.case_id] for case in selected)
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
+    predicted_positive = tp + fp
+    labelled_positive = tp + fn
+    precision = tp / predicted_positive if predicted_positive else None
+    recall = tp / labelled_positive if labelled_positive else None
+    if precision is None or recall is None:
+        f1 = None
+    elif precision + recall == 0:
+        f1 = 0.0
+    else:
+        f1 = 2 * precision * recall / (precision + recall)
     return ConditionReport(
         condition=condition,
         stratum=stratum,
         counts=Counts(tp=tp, fp=fp, tn=tn, fn=fn),
         precision=precision,
         recall=recall,
-        f1=(2 * precision * recall / (precision + recall))
-        if precision + recall
-        else 0.0,
-        precision_ci=wilson_interval(tp, tp + fp),
-        recall_ci=wilson_interval(tp, tp + fn),
+        f1=f1,
+        precision_ci=wilson_interval(tp, predicted_positive),
+        recall_ci=wilson_interval(tp, labelled_positive),
     )
 
 
@@ -216,7 +233,15 @@ def _choose_thresholds(
             distance = abs(scope_threshold - questions.SCOPE_SIM_THRESHOLD) + abs(
                 near_dup_threshold - questions.NEAR_DUP_THRESHOLD
             )
-            key = (report.f1, report.precision, correct / len(tuning), -distance)
+            # The published metric stays undefined. The search still needs a
+            # number so accuracy can break a tie between "never fired" and a
+            # false positive. Undefined sorts as 0, matching that tie.
+            key = (
+                0.0 if report.f1 is None else report.f1,
+                0.0 if report.precision is None else report.precision,
+                correct / len(tuning),
+                -distance,
+            )
             if best_key is None or key > best_key:
                 best_key = key
                 best = scope_threshold, near_dup_threshold
@@ -350,11 +375,17 @@ async def run(
             case_id: probability >= questions.NOUL_PRIMARY_THRESHOLD
             for case_id, probability in primary_probabilities.items()
         }
-        sample_f1 = [
-            _condition_report("typesafe", None, holdout, labels, sample).f1
-            for sample in typesafe_samples
+        # Spread across repeats. An undefined F1 counts as 0 here only, so a
+        # repeat that never fires still disagrees with a repeat that hits.
+        # The reported precision and recall stay undefined.
+        repeat_f1 = [
+            0.0 if f1 is None else f1
+            for f1 in (
+                _condition_report("typesafe", None, holdout, labels, sample).f1
+                for sample in typesafe_samples
+            )
         ]
-        variances["typesafe"] = pvariance(sample_f1) if sample_f1 else 0.0
+        variances["typesafe"] = pvariance(repeat_f1) if repeat_f1 else 0.0
 
     condition_reports: dict[str, dict] = {}
     # Kept apart from the threshold curve: mixing a report with a list of points

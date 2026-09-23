@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import random
+from collections import Counter
 from datetime import UTC, datetime, timedelta
+from itertools import combinations
 from pathlib import Path
 
 import pytest
@@ -53,7 +56,7 @@ async def test_repo_allowlist_is_fail_closed_for_both_corpora() -> None:
     )
     store = _CorpusStore(decisions)
 
-    supersession, _ = await corpus.build_supersession_corpus(
+    supersession, _, _dropped = await corpus.build_supersession_corpus(
         store=store,
         allowed_repos=frozenset({"axon"}),
         similarity=lambda left, right: 1.0,
@@ -101,22 +104,26 @@ def test_cli_writes_separate_unlabeled_artifacts_and_summary(tmp_path, monkeypat
             pass
 
     async def fake_supersession(**kwargs):
-        return [
-            corpus.SupersessionCase(
-                case_id="pair",
-                older_id="dec-001",
-                newer_id="dec-002",
-                older_summary="old",
-                newer_summary="new",
-                older_ts="2026-01-01T00:00:00+00:00",
-                newer_ts="2026-01-02T00:00:00+00:00",
-                older_status="active",
-                shared_scope=["shared.py"],
-                cosine=0.5,
-                stratum="low",
-                split="holdout",
-            )
-        ], [corpus.Stratum("low", population=8, sampled=1)]
+        return (
+            [
+                corpus.SupersessionCase(
+                    case_id="pair",
+                    older_id="dec-001",
+                    newer_id="dec-002",
+                    older_summary="old",
+                    newer_summary="new",
+                    older_ts="2026-01-01T00:00:00+00:00",
+                    newer_ts="2026-01-02T00:00:00+00:00",
+                    older_status="active",
+                    shared_scope=["shared.py"],
+                    cosine=0.5,
+                    stratum="low",
+                    split="holdout",
+                )
+            ],
+            [corpus.Stratum("low", population=8, sampled=1)],
+            (),
+        )
 
     async def fake_judge(**kwargs):
         return [
@@ -149,6 +156,7 @@ def test_cli_writes_separate_unlabeled_artifacts_and_summary(tmp_path, monkeypat
     assert {path.name for path in out.iterdir()} == {
         "supersession_cases.jsonl",
         "strata.json",
+        "sampling.json",
         "judge_cases.jsonl",
         "judge_history.jsonl",
     }
@@ -174,7 +182,7 @@ async def test_supersession_requires_scope_intersection() -> None:
         )
     )
 
-    cases, strata = await corpus.build_supersession_corpus(
+    cases, strata, _dropped = await corpus.build_supersession_corpus(
         store=store,
         allowed_repos=frozenset({"axon"}),
         similarity=lambda left, right: 1.0,
@@ -208,7 +216,7 @@ async def test_strata_use_pinned_production_boundaries() -> None:
         frozenset({"high older", "high newer"}): questions.NEAR_DUP_THRESHOLD,
     }
 
-    cases, _ = await corpus.build_supersession_corpus(
+    cases, _, _dropped = await corpus.build_supersession_corpus(
         store=_CorpusStore(decisions),
         allowed_repos=frozenset({"low", "mid", "high", "edge"}),
         similarity=lambda left, right: scores[frozenset({left, right})],
@@ -227,7 +235,7 @@ async def test_strata_use_pinned_production_boundaries() -> None:
 async def test_stratum_population_is_counted_before_sampling() -> None:
     decisions = tuple(_decision(number) for number in range(1, 7))
 
-    cases, strata = await corpus.build_supersession_corpus(
+    cases, strata, _dropped = await corpus.build_supersession_corpus(
         store=_CorpusStore(decisions),
         allowed_repos=frozenset({"axon"}),
         similarity=lambda left, right: 1.0,
@@ -254,11 +262,138 @@ async def test_low_stratum_shortfall_reports_available_count() -> None:
         )
 
 
+async def test_sample_keeps_the_low_floor_and_every_mid_pair() -> None:
+    """Quota is 40 low, a mid census, and the rest high. Proportional fill is not it."""
+    decisions = tuple(_decision(number, summary=f"s{number}") for number in range(23))
+    pairs = list(combinations((decision.summary for decision in decisions), 2))
+    scores = {}
+    for index, pair in enumerate(pairs):
+        if index < 100:
+            scores[frozenset(pair)] = 0.1
+        elif index < 157:
+            scores[frozenset(pair)] = 0.85
+        else:
+            scores[frozenset(pair)] = 0.95
+
+    cases, strata, _dropped = await corpus.build_supersession_corpus(
+        store=_CorpusStore(decisions),
+        allowed_repos=frozenset({"axon"}),
+        similarity=lambda left, right: scores[frozenset({left, right})],
+        target=150,
+        min_low_stratum=40,
+        seed=questions.SAMPLE_SEED,
+    )
+
+    counts = Counter(case.stratum for case in cases)
+    assert counts == Counter(low=40, mid=57, high=53)
+    mid = next(stratum for stratum in strata if stratum.name == "mid")
+    assert mid.population == 57
+    assert mid.sampled == 57
+    assert len({(case.older_summary, case.newer_summary) for case in cases}) == len(cases)
+
+
+def test_duplicate_summary_pairs_are_refilled_from_the_same_stratum() -> None:
+    def pair(case_id: str, older: str, newer: str) -> corpus.SupersessionCase:
+        return corpus.SupersessionCase(
+            case_id=case_id,
+            older_id=f"{case_id}-o",
+            newer_id=f"{case_id}-n",
+            older_summary=older,
+            newer_summary=newer,
+            older_ts="2026-01-01T00:00:00+00:00",
+            newer_ts="2026-01-02T00:00:00+00:00",
+            older_status="active",
+            shared_scope=["shared.py"],
+            cosine=0.99,
+            stratum="high",
+            split="",
+        )
+
+    duplicate = pair("dup-a", "same old", "same new")
+    copy = pair("dup-b", "same old", "same new")
+    refill = pair("unique", "other old", "other new")
+    population = {"low": [], "mid": [], "high": [duplicate, copy, refill]}
+
+    kept, dropped = corpus.collapse_duplicate_summaries(
+        [duplicate, copy],
+        population,
+        random.Random(questions.SAMPLE_SEED),  # noqa: S311 - reproducible sampling, not security
+    )
+
+    assert dropped == ("dup-b",)
+    assert [case.case_id for case in kept] == ["dup-a", "unique"]
+
+
+def test_refill_keeps_one_case_when_the_pool_repeats_a_summary() -> None:
+    def pair(case_id: str, older: str, newer: str) -> corpus.SupersessionCase:
+        return corpus.SupersessionCase(
+            case_id=case_id,
+            older_id=f"{case_id}-o",
+            newer_id=f"{case_id}-n",
+            older_summary=older,
+            newer_summary=newer,
+            older_ts="2026-01-01T00:00:00+00:00",
+            newer_ts="2026-01-02T00:00:00+00:00",
+            older_status="active",
+            shared_scope=["shared.py"],
+            cosine=0.99,
+            stratum="high",
+            split="",
+        )
+
+    sampled = [
+        pair("a1", "old-a", "new-a"),
+        pair("a2", "old-a", "new-a"),
+        pair("c1", "old-c", "new-c"),
+        pair("c2", "old-c", "new-c"),
+    ]
+    pool = [
+        *sampled,
+        pair("b1", "old-b", "new-b"),
+        pair("b2", "old-b", "new-b"),
+    ]
+    kept, _dropped = corpus.collapse_duplicate_summaries(
+        sampled,
+        {"low": [], "mid": [], "high": pool},
+        random.Random(questions.SAMPLE_SEED),  # noqa: S311 - reproducible sampling, not security
+    )
+
+    keys = [(case.older_summary, case.newer_summary) for case in kept]
+    assert len(keys) == len(set(keys))
+    assert len(kept) == 3
+
+
+def test_pilot_sample_aborts_when_mid_tuning_is_below_the_floor() -> None:
+    def mid(case_id: str, split: str) -> corpus.SupersessionCase:
+        return corpus.SupersessionCase(
+            case_id=case_id,
+            older_id=f"{case_id}-o",
+            newer_id=f"{case_id}-n",
+            older_summary=f"old {case_id}",
+            newer_summary=f"new {case_id}",
+            older_ts="2026-01-01T00:00:00+00:00",
+            newer_ts="2026-01-02T00:00:00+00:00",
+            older_status="active",
+            shared_scope=["shared.py"],
+            cosine=0.85,
+            stratum="mid",
+            split=split,
+        )
+
+    short = [mid(f"m{index}", "holdout") for index in range(12)]
+    with pytest.raises(ValueError, match="mid tuning"):
+        corpus.require_pilot_sample(short)
+
+    enough = [mid(f"m{index}", "tuning" if index < 10 else "holdout") for index in range(12)]
+    corpus.require_pilot_sample(enough)
+    corpus.require_pilot_sample([mid("only", "holdout")])
+
+
 async def test_supersession_sampling_is_seeded_and_deterministic() -> None:
     decisions = tuple(_decision(number) for number in range(1, 13))
 
     async def sample(seed: int) -> list[str]:
-        cases, _ = await corpus.build_supersession_corpus(
+        cases, _, _dropped = await corpus.build_supersession_corpus(
             store=_CorpusStore(decisions),
             allowed_repos=frozenset({"axon"}),
             similarity=lambda left, right: 1.0,
@@ -307,6 +442,42 @@ async def test_judge_cases_hide_incumbent_history_and_include_unjudged() -> None
     assert all(not hasattr(case, "judged") for case in cases)
     assert {item["case_id"] for item in history} == {"dec-001", "dec-002"}
     assert all(set(item) == {"case_id", "validation_score", "judged"} for item in history)
+
+
+async def test_embedding_retries_a_timeout_and_reuses_the_disk_cache(tmp_path, monkeypatch) -> None:
+    calls: list[str] = []
+
+    class FlakyEmbedder:
+        def __init__(self, *, model_name: str) -> None:
+            assert model_name == questions.EMBEDDER_MODEL
+
+        def embed_one(self, text: str) -> list[float]:
+            calls.append(text)
+            if len(calls) == 1:
+                raise RuntimeError("timeout")
+            return [1.0, float(len(text))]
+
+    monkeypatch.setattr(corpus, "EmbedderEngine", FlakyEmbedder)
+    monkeypatch.setattr(corpus.time, "sleep", lambda _seconds: None)
+    decisions = tuple(_decision(number) for number in range(1, 3))
+    cache = tmp_path / "embeddings.jsonl"
+
+    await corpus.build_supersession_corpus(
+        store=_CorpusStore(decisions),
+        allowed_repos=frozenset({"axon"}),
+        min_low_stratum=0,
+        cache_path=cache,
+    )
+    first_run = len(calls)
+    await corpus.build_supersession_corpus(
+        store=_CorpusStore(decisions),
+        allowed_repos=frozenset({"axon"}),
+        min_low_stratum=0,
+        cache_path=cache,
+    )
+
+    assert first_run == 3
+    assert len(calls) == 3
 
 
 async def test_default_similarity_embeds_each_decision_once(monkeypatch) -> None:
