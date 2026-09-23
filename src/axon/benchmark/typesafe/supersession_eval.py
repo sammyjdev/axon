@@ -110,19 +110,11 @@ def weighted_precision(
     per_stratum: Sequence[ConditionReport],
     population: Mapping[str, int],
 ) -> float:
-    """Weight stratum precision by its natural population share.
-
-    A stratum nobody predicted positive in has undefined precision, not zero,
-    and is left out of the average. Counting it as zero deflated the headline
-    by its full population weight while every case in it was scored correctly:
-    on the pilot corpus ``mid`` and ``high`` carry 425 of 6740 between them and
-    are sampled at one and two cases.
-    """
+    """Weight stratum precision by its natural population share."""
     reports = {
         report.stratum: report.precision
         for report in per_stratum
         if report.stratum is not None
-        and (report.counts.tp + report.counts.fp) > 0
     }
     total = sum(population.get(stratum, 0) for stratum in reports)
     if total == 0:

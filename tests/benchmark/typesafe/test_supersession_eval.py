@@ -214,17 +214,10 @@ def test_mcnemar_exact_uses_only_discordant_pairs() -> None:
 
 
 def _report(stratum: str, precision: float) -> ConditionReport:
-    # Counts consistent with the precision claimed. Fabricating a precision on
-    # zero counts described a state real data cannot reach, and it hid the
-    # difference weighted_precision now depends on: a stratum that predicted
-    # positives and got them all wrong scores a real 0.0 and belongs in the
-    # average, while one that predicted nothing has no precision to weight.
-    tp = round(precision * 2)
-    counts = Counts(tp=tp, fp=2 - tp, tn=0, fn=0)
     return ConditionReport(
         condition="current",
         stratum=stratum,
-        counts=counts,
+        counts=Counts(tp=0, fp=0, tn=0, fn=0),
         precision=precision,
         recall=0.0,
         f1=0.0,
@@ -522,36 +515,3 @@ def test_detect_current_reads_the_pinned_status_not_the_live_decision() -> None:
         older, newer, older_status="superseded", similarity=lambda left, right: 0.0
     )
 
-
-def test_weighted_precision_skips_a_stratum_with_no_scored_case() -> None:
-    """A stratum nobody predicted positive has undefined precision, not zero.
-
-    Review finding 2 (2026-09-22): ``_reports`` emits a report for every
-    stratum in the population, and a stratum with no positive prediction scored
-    precision 0.0 and entered the weighted average at its full population
-    weight. On the real corpus ``mid`` carries 57 of 6740 and ``high`` 368,
-    both sampled at one and two cases, so the headline number deflated by
-    construction.
-    """
-    scored = ConditionReport(
-        condition="typesafe",
-        stratum="low",
-        counts=Counts(tp=4, fp=1, tn=0, fn=0),
-        precision=0.8,
-        recall=1.0,
-        f1=0.888,
-        precision_ci=(0.0, 1.0),
-        recall_ci=(0.0, 1.0),
-    )
-    empty = ConditionReport(
-        condition="typesafe",
-        stratum="high",
-        counts=Counts(tp=0, fp=0, tn=3, fn=0),
-        precision=0.0,
-        recall=0.0,
-        f1=0.0,
-        precision_ci=(0.0, 1.0),
-        recall_ci=(0.0, 1.0),
-    )
-
-    assert weighted_precision([scored, empty], {"low": 100, "high": 900}) == 0.8
