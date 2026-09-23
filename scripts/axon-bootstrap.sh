@@ -74,6 +74,6 @@ fi
 echo
 echo "✓ AXON pronto em $NAME"
 echo "  próximos passos:"
-echo "   - confirme os backends:  axon health   (sqlite/redis/qdrant devem estar ok)"
+echo "   - confirme os backends:  axon health   (sqlite/pgvector devem estar ok)"
 echo "   - reinicie seu agent (Claude Code/Codex) pra carregar o MCP"
 echo "   - faça um commit; depois rode 'axon status' pra ver a captura"

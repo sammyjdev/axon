@@ -234,7 +234,7 @@ def serve_http(
 
 @app.command()
 def health() -> None:
-    """Report the health of each AXON subsystem (SQLite, Redis, pgvector, vault, git)."""
+    """Report the health of each AXON subsystem (SQLite, pgvector, vault, git)."""
     from axon.mcp.server import axon_health
 
     typer.echo(asyncio.run(axon_health()))

@@ -21,8 +21,8 @@ If your repository lives elsewhere, export `AXON_ENGINE` first.
 
 ## Provider Profile
 
-`pb ask` and any other command that hits an LLM uses the active provider
-profile (`AXON_PROVIDER_PROFILE`, default `budget`).
+The `ask` MCP tool and any other command that hits an LLM uses the active
+provider profile (`AXON_PROVIDER_PROFILE`, default `budget`).
 
 | Profile | Required env | What it routes to |
 | --- | --- | --- |
@@ -38,39 +38,30 @@ Full reference: `docs/decisions/dec-106-routing-profiles.md`.
 
 ### Ask for context
 
-`pb ask` retrieves relevant chunks, compresses them, and prints prompt-ready
-output.
-
-```bash
-pb ask "How should I model semantic indexing for mixed code and markdown?"
-pb ask "Summarize the current context for the auth module" --rtk-max-tokens 600
-```
-
-What it does:
-
-1. Detects or validates the context.
-2. Searches the allowed collections.
-3. Compresses the retrieved material.
-4. Prints planner and executor prompts.
+There is no `axon ask` CLI command. Retrieval-and-compress lives only as the
+MCP `ask` tool (`src/axon/mcp/server.py`), called by an agent (Claude Code,
+Codex, …) through `axon serve`, not typed at a terminal. Use `axon search`
+below for a terminal-driven equivalent.
 
 ### Search directly
 
 Use `axon search` when you want raw hits instead of the full prompt pipeline.
 
 ```bash
-axon search "uuid5 qdrant" --ctx knowledge
 axon search "service layer" --ctx personal --lang python --top 10
+axon search "uuid5 postgres ids" --ctx knowledge
 ```
 
-### Index a path
+### Index the vault
 
 ```bash
-pb index ~/vault/knowledge --ctx knowledge
-pb index ~/vault/personal --ctx personal
+axon index-vault --dry-run
+axon index-vault
 ```
 
-This writes semantic chunks to Qdrant and code dependency relationships to
-Redis.
+This writes semantic chunks and code-dependency relationships (the `dep:*`
+graph) into the shared Postgres store — `pgvector` for vectors, the
+`symbol_deps` table for the graph (dec-121; Qdrant and Redis were retired).
 
 ### Index development repositories from a manifest
 
@@ -83,84 +74,54 @@ Use `--dry-run` first when validating a manifest-driven setup.
 
 ### Watch for changes
 
-```bash
-pb watch ~/vault/knowledge --ctx knowledge
-```
-
-Use the watcher when you want near-real-time reindexing. For small or
-infrequently updated vaults, manual indexing is often enough.
+There is no watcher. `pb watch` was removed in dec-125; reindex manually
+(`axon index-vault` / `axon index-dev`) after a batch of changes.
 
 ## Knowledge Capture
 
-### Save a TIL
+The TIL pipeline (`pb til`: save / list / promote / convert-to-howto) was
+removed in dec-125 along with the rest of `pb`. The closest thing today is a
+free-form session note:
 
 ```bash
-pb til "Qdrant ids should use uuid5 instead of raw SHA1 hex" --tags qdrant,ids
+axon note "Qdrant ids should have used uuid5 instead of raw SHA1 hex"
 ```
 
-### List pending TILs
-
-```bash
-pb til --list
-```
-
-### Promote today's TILs
-
-```bash
-pb til --promote-today
-```
-
-### Convert one TIL into a HOW-TO
-
-```bash
-pb til howto --from knowledge/daily/2026-05-05/til-example.md
-```
+`axon note` is an alias for `axon session note` — one free-text note per
+call, no list/promote/howto pipeline.
 
 ## ADR Workflow
 
 ```bash
-axon adr add --project axon --title "Use UUID5 for deterministic Qdrant ids"
+axon adr add --project axon --title "Use UUID5 for deterministic decision ids"
 axon adr list --project axon
 ```
 
-Use ADRs for decisions that should remain queryable later.
+Use ADRs for decisions that should remain queryable later. `axon adr` also
+has `sync`, `infer-commit`, `review`, `audit` and `validate-drafts` — see
+`axon adr --help`.
 
-## Career and Memory Commands
+## Career context
 
-```bash
-pb career metrics
-pb career brief "Target Company"
-pb career interview "kafka"
-
-pb memory smoke --ctx knowledge
-```
-
-`pb memory smoke` is the fastest way to validate the Mem0 (Qdrant) integration
-path.
+`career` is a `--ctx` value (`axon search "..." --ctx career`), not a
+command group. `pb career metrics/brief/interview` were removed in dec-125
+with no replacement.
 
 ## Expansion and Deep Research
 
-```bash
-pb deep suggest
-
-pb expand run --ctx knowledge --topic "vector search" --fast
-pb expand review ~/vault/knowledge/staging/vector-search.md
-pb expand approve ~/vault/knowledge/staging/vector-search.md
-```
-
-The expansion flow is intentionally staged. Review happens before publication
-to the final vault path.
+`pb deep suggest` and `pb expand run/review/approve` were removed in
+dec-125 with no replacement; there is no staged draft-review pipeline today.
 
 ## Cost and Compression
 
-```bash
-pb cost today
-pb cost week
-pb cost compression
-```
+`pb cost today/week/compression` were removed in dec-125.
+`axon gain [--json]` is the current source: windows, tokens saved, daily
+trend and the p50/mean/p95/max compression ratio. `docs/METRICS.md` is the
+maintained reference for what each number means.
 
-These commands help track whether compression and provider routing are working
-as expected over time.
+```bash
+axon gain
+```
 
 ## RTK Helpers
 
@@ -189,7 +150,8 @@ Rules worth keeping:
 
 - Use explicit `--ctx work` only when you really want restricted retrieval.
 - Do not mix vault data into the repository itself.
-- Reindex after structural moves if you are not running the watcher.
+- Reindex (`axon index-vault` / `axon index-dev`) after structural moves —
+  there is no watcher to pick them up automatically.
 
 ## Tool risk gating
 
@@ -236,16 +198,16 @@ on every push.
 ## Recommended Daily Loop
 
 ```bash
-# start of day
-pb ask "What should I know before resuming this project?"
+# start of day — ask the `ask` MCP tool through your agent, or search directly
+axon search "what should I know before resuming this project" --ctx personal
 
 # while working
 axon search "previous decision about indexing" --ctx personal
-pb til "important implementation note" --tags project-x
+axon note "important implementation note for project-x"
 
 # end of day
-pb til --list
-pb til --promote-today
+axon status
+axon gain
 ```
 
 ## MCP Usage
@@ -290,14 +252,14 @@ not yet measured recall on reworded revisions. See
 Check these first:
 
 ```bash
-docker compose ps
+axon health
 axon search "health check" --ctx knowledge --top 1
-pb memory smoke --ctx knowledge
 ```
 
 If those fail, the problem is usually one of:
 
-- env vars not loaded in the current shell
-- local services not running
+- env vars not loaded in the current shell (`AXON_PG_URL` in particular —
+  defaults to port 5433, but a `docker-compose.override.yml` can remap it)
+- the `axon-postgres` container not running (`docker compose ps axon-postgres`)
 - vault path mismatch
 - no indexed content for the queried context

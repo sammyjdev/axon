@@ -9,13 +9,15 @@ capture, recall, and handoff start working immediately.
    ```bash
    pipx install -e /path/to/axon
    ```
-2. Backends running locally:
+2. Backend running locally (single Postgres instance, `pgvector` for vectors —
+   dec-121 retired Qdrant, Redis and mem0):
    ```bash
-   cd /path/to/axon && docker compose up -d qdrant redis
+   cd /path/to/axon && docker compose up -d axon-postgres
    ```
-3. `axon health` returns all subsystems `ok` (sqlite, redis, qdrant, mem0,
-   vault, git). If `redis`/`qdrant` report `down (timeout)`, check that
-   `QDRANT_URL` / `REDIS_URL` in your shell point to a reachable host.
+3. `axon health` returns `ok` for `sqlite`, `pgvector`, `vault` and `git`. If
+   `pgvector` reports `down (timeout)`, check `AXON_PG_URL` — it defaults to
+   port 5433, but a `docker-compose.override.yml` can remap it on a machine
+   with a port collision.
 
 ## Per-repo bootstrap
 
@@ -31,8 +33,7 @@ It:
   (so you can resolve husky / lefthook / project-specific hooks first);
 - runs `axon init .` (installs the two hooks and indexes the code graph);
 - creates or updates `.claude/settings.json` so Claude Code auto-loads the
-  AXON MCP server next time it starts;
-- runs `axon health` and stops if any backend is degraded.
+  AXON MCP server next time it starts.
 
 After the script exits clean, restart your coding agent and make a commit —
 `axon status` should list the captured decision.
@@ -42,7 +43,7 @@ After the script exits clean, restart your coding agent and make a commit —
 | Concern | Location |
 |---|---|
 | AXON code, hooks, indexer | axon repo (engine) |
-| Backends (Qdrant, Redis) | `docker compose` in axon repo |
+| Backend (Postgres + pgvector) | `docker compose` in axon repo |
 | Per-repo capture / hooks | `.git/hooks/post-commit`, `.git/hooks/pre-push` |
 | Agent MCP registration | `.claude/settings.json` in target repo |
 | Vault (optional, for ADR export) | `$AXON_VAULT` (defaults to `~/vault`) |
@@ -51,8 +52,8 @@ After the script exits clean, restart your coding agent and make a commit —
 
 ```bash
 cd /path/to/your-repo
-pb hooks install            # dry-run preview (dec-113)
-pb hooks install --apply    # mutate; opt-in, TTY required
+axon hooks install            # dry-run preview (dec-113)
+axon hooks install --apply    # mutate; opt-in, TTY required
 ```
 
 ## Removing AXON from a repo
@@ -66,5 +67,6 @@ cd /path/to/your-repo
 rm .claude/settings.json   # only if it only contained AXON
 ```
 
-The SQLite store at `/path/to/axon/data/axon.db` retains captured
-decisions across all repos; remove that file to wipe global memory.
+The Postgres store (single instance, dec-121) retains captured decisions
+across all repos; there is no per-file store to delete — drop the `axon`
+database, or the `axon-postgres` container's volume, to wipe global memory.
