@@ -50,6 +50,7 @@ def detect_current(
     older: Decision,
     newer: Decision,
     *,
+    older_status: str,
     similarity: PairwiseSimilarity,
     scope_threshold: float = questions.SCOPE_SIM_THRESHOLD,
     near_dup_threshold: float = questions.NEAR_DUP_THRESHOLD,
@@ -57,8 +58,14 @@ def detect_current(
     """Exact replica of the pair-level decision inside ``_mark_superseded``.
 
     Returns True when production would mark ``older`` superseded.
+
+    ``older_status`` is passed in rather than read off ``older`` on purpose.
+    Production mutates that field through ``_mark_superseded``, so reading it
+    live made the arm's prediction depend on when the eval ran, and made the
+    oracle partly the output of the detector under test. The corpus pins it at
+    extraction, like every other input here.
     """
-    if older.status == "superseded":
+    if older_status == "superseded":
         return True
     if not (_scope(older) & _scope(newer)):
         return False
@@ -103,11 +110,19 @@ def weighted_precision(
     per_stratum: Sequence[ConditionReport],
     population: Mapping[str, int],
 ) -> float:
-    """Weight stratum precision by its natural population share."""
+    """Weight stratum precision by its natural population share.
+
+    A stratum nobody predicted positive in has undefined precision, not zero,
+    and is left out of the average. Counting it as zero deflated the headline
+    by its full population weight while every case in it was scored correctly:
+    on the pilot corpus ``mid`` and ``high`` carry 425 of 6740 between them and
+    are sampled at one and two cases.
+    """
     reports = {
         report.stratum: report.precision
         for report in per_stratum
         if report.stratum is not None
+        and (report.counts.tp + report.counts.fp) > 0
     }
     total = sum(population.get(stratum, 0) for stratum in reports)
     if total == 0:
@@ -165,6 +180,7 @@ def _predict_current(
         case.case_id: detect_current(
             decisions[case.older_id],
             decisions[case.newer_id],
+            older_status=case.older_status,
             similarity=fixed(cosines[case.case_id]),
             scope_threshold=scope_threshold,
             near_dup_threshold=near_dup_threshold,

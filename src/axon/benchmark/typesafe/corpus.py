@@ -40,6 +40,9 @@ class SupersessionCase:
     newer_summary: str
     older_ts: str
     newer_ts: str
+    #: ``older.status`` frozen at extraction. Production mutates it, so reading
+    #: it live at eval time made the ``current`` arm irreproducible.
+    older_status: str
     shared_scope: list[str]
     cosine: float
     stratum: str
@@ -180,6 +183,7 @@ async def build_supersession_corpus(
                     newer_summary=newer.summary,
                     older_ts=older.timestamp.isoformat(),
                     newer_ts=newer.timestamp.isoformat(),
+                    older_status=older.status,
                     shared_scope=shared_scope,
                     cosine=cosine,
                     stratum=stratum,

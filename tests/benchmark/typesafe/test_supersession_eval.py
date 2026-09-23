@@ -72,6 +72,7 @@ async def test_detect_current_matches_production_for_every_gold_scenario() -> No
             detect_current(
                 older,
                 newer,
+                older_status=older.status,
                 similarity=lexical_similarity,
                 scope_threshold=_LEXICAL_THRESHOLD,
                 near_dup_threshold=questions.NEAR_DUP_THRESHOLD,
@@ -116,6 +117,7 @@ def _case(
         newer_summary=newer.summary,
         older_ts=older.timestamp.isoformat(),
         newer_ts=newer.timestamp.isoformat(),
+        older_status=older.status,
         shared_scope=["shared.py"],
         cosine=cosine,
         stratum=stratum,
@@ -127,7 +129,9 @@ def test_detect_current_honours_preexisting_superseded_status() -> None:
     older = _decision(1, "old behavior", status="superseded")
     newer = _decision(2, "unrelated addition")
 
-    assert detect_current(older, newer, similarity=lambda left, right: 0.0)
+    assert detect_current(
+        older, newer, older_status=older.status, similarity=lambda left, right: 0.0
+    )
 
 
 async def test_detect_current_treats_first_decision_as_stale_on_timestamp_tie() -> None:
@@ -145,7 +149,9 @@ async def test_detect_current_treats_first_decision_as_stale_on_timestamp_tie() 
 
     assert production[first.id] < baseline[first.id] * 0.5
     assert production[second.id] == baseline[second.id]
-    assert detect_current(first, second, similarity=lambda left, right: 1.0)
+    assert detect_current(
+        first, second, older_status=first.status, similarity=lambda left, right: 1.0
+    )
 
 
 def test_detect_current_rejects_revision_verb_below_scope_floor() -> None:
@@ -155,6 +161,7 @@ def test_detect_current_rejects_revision_verb_below_scope_floor() -> None:
     assert not detect_current(
         older,
         newer,
+        older_status=older.status,
         similarity=lambda left, right: questions.SCOPE_SIM_THRESHOLD - 0.001,
     )
 
@@ -164,7 +171,9 @@ def test_detect_current_accepts_revision_verb_between_thresholds() -> None:
     newer = _decision(2, "replace old backend")
     cosine = (questions.SCOPE_SIM_THRESHOLD + questions.NEAR_DUP_THRESHOLD) / 2
 
-    assert detect_current(older, newer, similarity=lambda left, right: cosine)
+    assert detect_current(
+        older, newer, older_status=older.status, similarity=lambda left, right: cosine
+    )
 
 
 def test_detect_current_accepts_near_duplicate_without_revision_verb() -> None:
@@ -180,11 +189,13 @@ def test_detect_current_accepts_near_duplicate_without_revision_verb() -> None:
     assert detect_current(
         older,
         newer,
+        older_status=older.status,
         similarity=lambda left, right: questions.NEAR_DUP_THRESHOLD,
     )
     assert not detect_current(
         older,
         newer,
+        older_status=older.status,
         similarity=lambda left, right: questions.NEAR_DUP_THRESHOLD - 0.001,
     )
 
@@ -203,10 +214,17 @@ def test_mcnemar_exact_uses_only_discordant_pairs() -> None:
 
 
 def _report(stratum: str, precision: float) -> ConditionReport:
+    # Counts consistent with the precision claimed. Fabricating a precision on
+    # zero counts described a state real data cannot reach, and it hid the
+    # difference weighted_precision now depends on: a stratum that predicted
+    # positives and got them all wrong scores a real 0.0 and belongs in the
+    # average, while one that predicted nothing has no precision to weight.
+    tp = round(precision * 2)
+    counts = Counts(tp=tp, fp=2 - tp, tn=0, fn=0)
     return ConditionReport(
         condition="current",
         stratum=stratum,
-        counts=Counts(tp=0, fp=0, tn=0, fn=0),
+        counts=counts,
         precision=precision,
         recall=0.0,
         f1=0.0,
@@ -483,3 +501,57 @@ async def test_typesafe_threshold_curve_uses_tuning_probabilities_only() -> None
         point["threshold"] for point in report["tuning"]["typesafe_threshold_curve"]
     } == {0.0, 0.25, 0.5, 1.0, nextafter(1.0, inf)}
     assert report["conditions"]["typesafe"]["human_review_fraction"] == 0.0
+
+
+def test_detect_current_reads_the_pinned_status_not_the_live_decision() -> None:
+    """The corpus pins the status, so the arm's prediction cannot drift.
+
+    Review finding 1 (2026-09-22): the arm short-circuited on the live
+    ``Decision.status``, which production mutates through ``_mark_superseded``.
+    Rerunning the same pinned corpus a week later produced different numbers,
+    and the oracle was partly the output of the detector under test. The status
+    now enters as an explicit argument, like every other pinned input.
+    """
+    older = _decision(1, "old behavior", status="superseded")
+    newer = _decision(2, "unrelated addition")
+
+    assert not detect_current(
+        older, newer, older_status="active", similarity=lambda left, right: 0.0
+    )
+    assert detect_current(
+        older, newer, older_status="superseded", similarity=lambda left, right: 0.0
+    )
+
+
+def test_weighted_precision_skips_a_stratum_with_no_scored_case() -> None:
+    """A stratum nobody predicted positive has undefined precision, not zero.
+
+    Review finding 2 (2026-09-22): ``_reports`` emits a report for every
+    stratum in the population, and a stratum with no positive prediction scored
+    precision 0.0 and entered the weighted average at its full population
+    weight. On the real corpus ``mid`` carries 57 of 6740 and ``high`` 368,
+    both sampled at one and two cases, so the headline number deflated by
+    construction.
+    """
+    scored = ConditionReport(
+        condition="typesafe",
+        stratum="low",
+        counts=Counts(tp=4, fp=1, tn=0, fn=0),
+        precision=0.8,
+        recall=1.0,
+        f1=0.888,
+        precision_ci=(0.0, 1.0),
+        recall_ci=(0.0, 1.0),
+    )
+    empty = ConditionReport(
+        condition="typesafe",
+        stratum="high",
+        counts=Counts(tp=0, fp=0, tn=3, fn=0),
+        precision=0.0,
+        recall=0.0,
+        f1=0.0,
+        precision_ci=(0.0, 1.0),
+        recall_ci=(0.0, 1.0),
+    )
+
+    assert weighted_precision([scored, empty], {"low": 100, "high": 900}) == 0.8

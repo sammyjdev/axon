@@ -110,6 +110,7 @@ def test_cli_writes_separate_unlabeled_artifacts_and_summary(tmp_path, monkeypat
                 newer_summary="new",
                 older_ts="2026-01-01T00:00:00+00:00",
                 newer_ts="2026-01-02T00:00:00+00:00",
+                older_status="active",
                 shared_scope=["shared.py"],
                 cosine=0.5,
                 stratum="low",

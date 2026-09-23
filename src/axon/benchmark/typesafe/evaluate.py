@@ -56,6 +56,23 @@ def _load_labels(path: Path, *, surface: str) -> dict[str, bool | str]:
     return labels
 
 
+def _supersession_case(item: dict) -> SupersessionCase:
+    """Build one case, naming the re-extraction a pre-``older_status`` corpus needs.
+
+    ``older_status`` was added on 2026-09-22 so the ``current`` arm stops
+    reading a field production mutates. A corpus extracted before that carries
+    no status to pin, and guessing one would put the irreproducible number
+    back, so this refuses and says how to fix it.
+    """
+    if "older_status" not in item:
+        raise ValueError(
+            f"case {item.get('case_id')!r} predates older_status; re-extract the corpus "
+            "(python3 -m axon.benchmark.typesafe.corpus ...) - a pinned status cannot be "
+            "inferred from an old file"
+        )
+    return SupersessionCase(**item)
+
+
 async def load_decisions(
     *,
     store: _DecisionStore,
@@ -129,7 +146,8 @@ async def _evaluate(
     all_case_count: int
     if surface == "supersession":
         all_supersession_cases = [
-            SupersessionCase(**item) for item in _read_jsonl(data / "supersession_cases.jsonl")
+            _supersession_case(item)
+            for item in _read_jsonl(data / "supersession_cases.jsonl")
         ]
         supersession_cases = [case for case in all_supersession_cases if case.case_id in raw_labels]
         supersession_labels = {

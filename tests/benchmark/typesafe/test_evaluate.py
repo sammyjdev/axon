@@ -50,6 +50,7 @@ def _supersession_case(*, split: str = "holdout") -> corpus.SupersessionCase:
         newer_summary=newer.summary,
         older_ts=older.timestamp.isoformat(),
         newer_ts=newer.timestamp.isoformat(),
+        older_status=older.status,
         shared_scope=["shared.py"],
         cosine=0.8,
         stratum="mid",
@@ -259,7 +260,16 @@ async def test_load_decisions_names_missing_ids() -> None:
         )
 
 
-def test_stored_superseded_status_reaches_current_arm(tmp_path, monkeypatch) -> None:
+def test_the_live_store_status_never_reaches_the_current_arm(tmp_path, monkeypatch) -> None:
+    """Replaces test_stored_superseded_status_reaches_current_arm.
+
+    That test pinned the opposite contract: the arm read ``Decision.status``
+    from the store at run time, so production marking a decision superseded
+    changed the measured number after the corpus was frozen. Review finding 1
+    (2026-09-22) called it irreproducible and circular, since the status is
+    written by the detector under test. The corpus now pins the status; the
+    store is seeded with the opposite value here to prove it is ignored.
+    """
     case = _supersession_case()
     _write_jsonl(tmp_path / "supersession_cases.jsonl", [case.__dict__])
     (tmp_path / "strata.json").write_text(
@@ -290,7 +300,7 @@ def test_stored_superseded_status_reaches_current_arm(tmp_path, monkeypatch) -> 
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(out.read_text())["conditions"]["current"]["aggregate"]["counts"]["tp"] == 1
+    assert json.loads(out.read_text())["conditions"]["current"]["aggregate"]["counts"]["tp"] == 0
 
 
 def test_missing_typesafe_key_exits_cleanly(tmp_path, monkeypatch) -> None:
