@@ -98,11 +98,7 @@
       "query": "refactor(doctor): retire recall.coverage, keep recall.savings",
       "expected_files": [
         "src/axon/doctor/__init__.py",
-        "src/axon/doctor/checks/recall_coverage.py",
-        "src/axon/observability/coverage.py",
-        "tests/doctor/test_checks_capture_path.py",
-        "tests/doctor/test_checks_coverage.py",
-        "tests/observability/test_coverage.py"
+        "tests/doctor/test_checks_capture_path.py"
       ],
       "decision_id": "dec-1064"
     },
@@ -149,11 +145,7 @@
       "query": "refactor(doctor): retire recall.coverage, keep recall.savings",
       "expected_files": [
         "src/axon/doctor/__init__.py",
-        "src/axon/doctor/checks/recall_coverage.py",
-        "src/axon/observability/coverage.py",
-        "tests/doctor/test_checks_capture_path.py",
-        "tests/doctor/test_checks_coverage.py",
-        "tests/observability/test_coverage.py"
+        "tests/doctor/test_checks_capture_path.py"
       ],
       "decision_id": "dec-1055"
     },
@@ -741,20 +733,6 @@
       "decision_id": "dec-850"
     },
     {
-      "query": "chore: derive backends-start paths from script location",
-      "expected_files": [
-        "scripts/axon-backends-start.sh"
-      ],
-      "decision_id": "dec-849"
-    },
-    {
-      "query": "chore: derive backends-start paths from script location",
-      "expected_files": [
-        "scripts/axon-backends-start.sh"
-      ],
-      "decision_id": "dec-848"
-    },
-    {
       "query": "docs: dec-127 records the Bedrock-through-funnel decision",
       "expected_files": [
         "docs/ADR.md",
@@ -863,13 +841,6 @@
         "tests/router/test_classifier_reasoning_effort.py"
       ],
       "decision_id": "dec-829"
-    },
-    {
-      "query": "Ecosystem security audit 2026-07-18/19 (4 parallel auditors: axon/glyph/gnomon/F",
-      "expected_files": [
-        ".claude/docs/superpowers/specs/2026-07-18-ecosystem-security-audit.md"
-      ],
-      "decision_id": "dec-817"
     },
     {
       "query": "refactor(expansion): drop dead proxy-skip path from pinning handlers (#83)",

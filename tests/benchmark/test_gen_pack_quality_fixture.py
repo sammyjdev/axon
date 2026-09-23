@@ -208,3 +208,40 @@ def test_build_cases_keeps_a_mixed_case_but_prunes_the_unreachable_file() -> Non
     ]
     (case,) = build_cases(rows)
     assert case["expected_files"] == ["src/axon/a.py"]
+
+
+def test_build_cases_drops_a_case_whose_files_were_deleted_from_the_repo() -> None:
+    """A deleted file is unreachable for the same reason an unindexable one is.
+
+    Measured on 2026-09-22 while rebasing this branch: master deleted
+    `scripts/axon-backends-start.sh` with the retired backends (c0ae6bb), and
+    the two cases expecting it (dec-848, dec-849) came back in the regenerated
+    fixture. Retrieval cannot return a file that is not in the tree, so those
+    cases can only ever score zero and they deflate the ruler by construction -
+    the same defect this branch exists to remove, arriving by a different door.
+    """
+    rows = [
+        {
+            "id": "dec-gone",
+            "summary": "retired backend boot script",
+            "files": '["scripts/gone.sh"]',
+        },
+        {"id": "dec-here", "summary": "a file still in the tree", "files": '["src/axon/a.py"]'},
+    ]
+    exists = {"src/axon/a.py"}.__contains__
+
+    assert [case["decision_id"] for case in build_cases(rows, exists=exists)] == ["dec-here"]
+
+
+def test_build_cases_prunes_only_the_deleted_file_of_a_mixed_case() -> None:
+    """Same rule as the unindexable half: the decision still scores on the rest."""
+    rows = [
+        {
+            "id": "dec-mixed",
+            "summary": "touched both",
+            "files": '["scripts/gone.sh","src/axon/a.py"]',
+        }
+    ]
+    (case,) = build_cases(rows, exists={"src/axon/a.py"}.__contains__)
+
+    assert case["expected_files"] == ["src/axon/a.py"]

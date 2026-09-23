@@ -18,7 +18,7 @@ import json
 import os
 import re
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -77,17 +77,27 @@ def is_unindexable(path: str) -> bool:
     return normalized.startswith(_UNINDEXABLE_PREFIXES)
 
 
-def build_cases(rows: Iterable[Mapping[str, Any]]) -> list[dict]:
+def build_cases(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    exists: Callable[[str], bool] = lambda _path: True,
+) -> list[dict]:
     """Map decision rows to fixture cases, dropping what cannot be scored.
 
     A case whose expected files are all unindexable measures the indexing
     policy, not the retrieval, so it is not a case. In a mixed case only the
     unreachable file is pruned - the decision still scores on the rest.
+
+    ``exists`` says whether a repo-relative path is still in the tree. A file
+    deleted since the decision was written is unreachable for the same reason
+    an unindexable one is, and charging retrieval for it deflates the ruler.
+    The default admits everything so a caller with no tree to check against
+    keeps the policy-only behaviour.
     """
     cases: list[dict] = []
     for row in rows:
         paths = [_portable_path(f) for f in json.loads(row["files"])]
-        reachable = [p for p in paths if not is_unindexable(p)]
+        reachable = [p for p in paths if not is_unindexable(p) and exists(p)]
         if not reachable:
             continue
         cases.append(
@@ -155,7 +165,7 @@ async def main() -> None:
     finally:
         await con.close()
 
-    cases = build_cases(rows)
+    cases = build_cases(rows, exists=lambda path: (REPO_ROOT / path).exists())
     write_cases(
         cases,
         args.out,
