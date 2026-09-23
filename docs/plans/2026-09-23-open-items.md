@@ -39,38 +39,27 @@ The working tree was saved first, untouched, to
 
 ## 1. In flight
 
-### 1.1 PR #211 - TypeSafe pilot harness (OPERATOR: review and merge)
+### 1.1 PR #211 - TypeSafe pilot harness (MERGED 2026-09-23)
 
-Branch `agent/typesafe-pilot-harness`, 15 new files, +3418. Reviewed 2026-09-22 by
-`zai/glm-5.3-flash` through the zai-cc rail, the arm pinned as reviewer in forge's
-`models.json`. Verdict: MERGE WITH FIXES, four findings.
+Nine commits. Reviewed twice by `zai/glm-5.3-flash` through the zai-cc rail, the arm pinned
+as reviewer in forge's `models.json`. Round 1 read the whole branch; round 2 read only the
+four commits added after it.
 
-Three commits are on the branch. Blocking findings fixed in `0ba3361`:
+Round 1 found three defects, all of the class this repo calls a lying green:
 
 | # | Defect | Fix |
 |---|---|---|
-| 1 | `detect_current` short-circuited on the **live** `Decision.status`, which production mutates through `_mark_superseded`. The corpus pinned `older_ts`, `cosine` and `shared_scope` but not `status`, so the same frozen corpus scored differently week to week, and the oracle was partly the output of the detector under test. | `older_status` is pinned at extraction and passed in explicitly. The arm can no longer reach mutable state. |
-| 2 | `weighted_precision` scored a stratum with no positive prediction as precision `0.0` and weighted it by full population. On the pilot corpus `mid` and `high` carry 425 of 6740 between them while sampled at one and two cases. | Undefined precision is left out of the average. A stratum that predicted positives and got them wrong still scores a real zero and still counts. |
+| 1 | `detect_current` short-circuited on the **live** `Decision.status`, which production mutates through `_mark_superseded`. The corpus pinned `older_ts`, `cosine` and `shared_scope` but not `status`, so the same frozen corpus scored differently week to week and the oracle was partly the output of the detector under test. | `older_status` pinned at extraction and passed in explicitly (`0ba3361`). A corpus extracted earlier refuses to load with the re-extraction named. |
+| 2 | `weighted_precision` scored a stratum with no positive prediction as `0.0` and weighted it by full population. | The operator's own uncommitted work solved this across the whole module: `wilson_interval(0, 0)`, every zero-denominator field in `_condition_report` and `weighted_precision` return `None`. An agent's narrower fix was backed out in `520613e` in its favour. |
+| 3 | Cost zero on a cache hit, and a provider failure cached as a parse failure forever. | `c365239`. |
 
-Measured deflation in the regression test for #2: `0.08` where the honest number is `0.80`.
+Round 2 found that `c365239` **overclaimed**: it stopped the failure being cached but
+`_record` still counted every `None` score in `failures`, so the report written *during* an
+outage published an inflated `parse_failure_rate` and only the next run recovered. Fixed in
+`abf7f75`, together with the CLI gate that refused a sample below `MID_TUNING_MINIMUM` and
+had no test at all: deleting the whole block left the suite green.
 
-The two non-blocking findings are fixed too, in `c365239`:
-
-- **Cost on a cache hit** is recomputed from the pinned tokens and price, so two reports of
-  the same measurement stop disagreeing about what it cost. Latency stays `0.0` on purpose:
-  no time was spent this run, and `cached` already says which kind of row it is.
-- **A provider failure is no longer cached.** `_routed` already returns `(None, None)` when
-  the call itself failed and a model name beside a `None` score when the reply would not
-  parse, so only the first is retried. A real parse failure is deterministic and stays
-  cached, which costs no extra calls for the case that matters.
-
-**Migration consequence, stated:** a corpus extracted before 2026-09-22 has no
-`older_status` to pin. `evaluate.py` now refuses such a file by name and says to re-extract,
-rather than guessing a status and putting the irreproducible number back. The local corpus
-at `data/typesafe-pilot/supersession_cases.jsonl` (150 cases) is pre-change and must be
-re-extracted before the next run.
-
-Gate on the branch: 71 passed, `ruff check` clean.
+Final gate: 80 passed, `ruff check` clean, CI 12 of 12.
 
 ### 1.2 PR #213 - pack-quality ruler, replacing #179 (OPERATOR: review and merge)
 
@@ -158,6 +147,36 @@ The four still-live files came into the repository instead:
 | `promotion-workbench-style-comparison.html` | `docs/mockups/` | its original path, and a new directory in the tree. `/api/promotion-candidates` exists and the dashboard has no promotion view, so this is pending design |
 
 ---
+
+## 2.4 TypeSafe harness follow-ups, registered not scheduled
+
+Accepted at merge on the operator's call. None blocks the harness landing; the first one
+blocks trusting a *rerun* of the pilot.
+
+- **T1. The embedding cache cannot detect that it is stale.**
+  `data/typesafe-pilot/embeddings.jsonl` (18.8 MB) keys each entry by `decision.id` alone:
+  every line is `{"id", "vector"}`, with no model name and no hash of the summary it
+  embedded. If `EMBEDDER_MODEL` changes, or a summary is edited in the store, a
+  re-extraction silently reuses the old vectors, the cosines move, the strata move and the
+  sample moves, while `sampling.json` goes on asserting `seed: 20260922` pre-registered. So
+  the central promise of the design, same seed and same population reproduce the same
+  sample, is not currently verifiable. The artifacts in the tree today were built on this
+  cache, so fixing it means re-embedding the corpus once. Fix: write `{id, model,
+  summary_hash}` and refuse an entry that does not match, in the same shape as the
+  `older_status` refusal.
+- **T2. A shortfall is visible but not signalled.** If the pool lacks enough pairs with
+  unique summaries, the refill returns fewer cases than asked without saying so, and
+  `sampling.json` records neither `target` nor the sampled total, so there is nothing to
+  compare against without opening `strata.json`. Fix: record `target`, `sampled_total` and
+  any shortfall.
+- **T3. A cache hit is costed at today's price.** `client.py` recomputes `cost_usd` from
+  the pinned tokens but multiplies by `PRICE_PER_MTOK_INPUT` as it stands now, so if the
+  price changes, rerunning a fully cached measurement prints a different cost from the
+  original report. Fix: stamp the price into the cache entry beside the tokens.
+- **T4. The judge side still fabricates zeros.** `band_agreement = 0.0` and
+  `_wilson -> (0.0, 0.0)` on an empty holdout print as measured agreement. The same defect
+  the operator fixed on the supersession side survives on the judge side; `26b9e0f` scoped
+  its claim to supersession honestly, so this is an inconsistency rather than an untruth.
 
 ## 3. Closed, recorded so it is not re-investigated
 
