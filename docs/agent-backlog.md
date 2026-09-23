@@ -90,10 +90,18 @@ or Qdrant as current runtime components.
 - [ ] Historical ADRs and migration plans remain unchanged.
 - [ ] Health-label tests pass and a scoped retired-term scan is reviewed.
 
-**Files.** `RULES.md`, runtime config, health/help surfaces,
-`docs/SECOND_BRAIN.md`, relevant runtime docstrings and tests.
+**Files.** `RULES.md`, runtime config, health/help surfaces, relevant runtime
+docstrings and tests. (`docs/SECOND_BRAIN.md` was archived out of the repo
+2026-09-23, superseded rather than fixed — see `docs/README.md`.)
 
 **Test plan.** Run focused MCP/CLI tests and the scoped scan defined in the spec.
+
+**2026-09-23 (PR #216):** the doc-surface half of this landed — `USAGE_GUIDE.md`,
+`ADOPTION.md`, both quickstarts, `SUPPORT_MATRIX.md` and `axon health`'s own
+docstring no longer mention SQLite/Redis/Qdrant as active. Still open: `RULES.md`
+still documents an `AXON_DB_BACKEND=sqlite` rollback flag, and `axon health`'s
+`sqlite: ok` line is a vestigial no-op (`SessionStore.init()`, dec-121 Phase 3)
+rather than a real probe — neither is a docs fix, both need a code decision.
 
 ---
 

@@ -5,9 +5,10 @@
 #
 # O que faz:
 #  1. Valida que o alvo é um repositório git limpo de hooks customizados.
-#  2. Roda `axon init` (instala post-commit + pre-push e indexa o código).
+#  2. Roda `axon init` (instala os 4 hooks: post-commit, pre-push, post-merge,
+#     post-checkout; e indexa o código).
 #  3. Cria/atualiza `.claude/settings.json` com o MCP server do AXON.
-#  4. Faz um health-check e imprime os próximos passos.
+#  4. Imprime os próximos passos (não roda `axon health` por conta própria).
 #
 # Não toca em `.env.local` do repo alvo — backends ficam configurados
 # globalmente em ~/.zshrc ou no .env.local do engine AXON.

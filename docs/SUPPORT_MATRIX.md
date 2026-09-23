@@ -32,20 +32,18 @@ Use one of these acceptance paths when validating an environment.
 ### Minimal path
 
 ```bash
-pb --help
-pb index ~/vault/knowledge --ctx knowledge
-pb ask "health check"
+axon --help
+axon index-vault
+axon search "health check" --ctx knowledge --top 1
 ```
 
 ### Infra path
 
-Use this when the chosen mode depends on Docker-managed services or memory
-features.
+Use this when the chosen mode depends on Docker-managed services.
 
 ```bash
-docker compose ps
-pb search "health check" --ctx knowledge --top 1
-pb memory smoke --ctx knowledge
+docker compose ps axon-postgres
+axon health
 ```
 
 ## Platform Matrix
@@ -91,13 +89,13 @@ operating mode above.
 
 | Profile | Status | Required keys | Best fit |
 | --- | --- | --- | --- |
-| `budget` (default) | recommended | `GROQ_API_KEY`, `NVIDIA_NIM_API_KEY` | onboarding without API spend; 16 GB laptops |
-| `paid` | supported | `OPENROUTER_API_KEY`, `GROQ_API_KEY` | higher quality and quotas via Claude (D2 verbatim) |
+| `budget` (default) | recommended | `DEEPINFRA_API_KEY`, `GROQ_API_KEY` (classifier) | onboarding without API spend; 16 GB laptops |
+| `paid` | supported | `OPENROUTER_API_KEY`, `GROQ_API_KEY` (classifier) | higher quality and quotas via Claude (D2 verbatim) |
 
 - Both profiles route exclusively to cloud — `ctx=work` (restricted) needs
   Ollama enabled (`AXON_PROVIDER_OLLAMA=1`) and an `AXON_CLASSIFIER_CLOUD_MODEL`
   pointing at a local Ollama model. Work-ctx support is currently out of scope.
-- Per-provider rate caps default conservatively (Groq 25 RPM / 13000 RPD,
-  NIM 50 RPM / 950 RPD). Tune via `AXON_<PROVIDER>_MAX_RPM` and
-  `AXON_<PROVIDER>_MAX_RPD`. Exceeding a cap fails the call with
+- Per-provider rate caps are opt-in and unlimited unless set: no default RPM/RPD
+  applies until you export `AXON_<PROVIDER>_MAX_RPM` / `AXON_<PROVIDER>_MAX_RPD`
+  (e.g. `AXON_GROQ_MAX_RPM`). Exceeding a cap you set fails the call with
   `DENY_RATE_LIMIT` without tripping the circuit breaker.

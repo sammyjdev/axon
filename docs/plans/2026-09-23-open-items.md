@@ -1,9 +1,9 @@
 # Open items after the 2026-09 closeout
 
 Single list of what is still open across the axon repo, the claude-skills repo and the
-operator's machine, as of 2026-09-23. The closeout plan
-(`docs/plans/2026-09-14-closeout-spec-and-tasks.md`) is finished and carries zero unticked
-boxes; everything below either arrived after it, or was deliberately carried out of it.
+operator's machine, as of 2026-09-23. The closeout plan (`2026-09-14-closeout-spec-and-tasks.md`,
+archived 2026-09-23 — see `docs/README.md`) finished with zero unticked boxes; everything
+below either arrived after it, or was deliberately carried out of it.
 
 Every line says who it waits on. `OPERATOR` means it cannot be done by an agent: it needs a
 merge, an interactive gate, a judgement call about scope, or a deletion. `AGENT` means it is

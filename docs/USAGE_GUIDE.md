@@ -26,8 +26,8 @@ provider profile (`AXON_PROVIDER_PROFILE`, default `budget`).
 
 | Profile | Required env | What it routes to |
 | --- | --- | --- |
-| `budget` | `GROQ_API_KEY`, `NVIDIA_NIM_API_KEY` | Groq + NVIDIA NIM free tiers |
-| `paid` | `OPENROUTER_API_KEY`, `GROQ_API_KEY` | OpenRouter Claude (D2 tiers) + Groq paid |
+| `budget` | `DEEPINFRA_API_KEY`, `OPENROUTER_API_KEY` (fallback), `GROQ_API_KEY` | DeepInfra Llama models + OpenRouter fallback; Groq only runs the classifier step |
+| `paid` | `OPENROUTER_API_KEY`, `GROQ_API_KEY` | OpenRouter Claude (D2 tiers); Groq only runs the classifier step |
 
 The rate-limit gate is on by default for free-tier providers — if your daily
 workflow includes heavy ingest, monitor for `DENY_RATE_LIMIT` errors and tune
@@ -59,9 +59,11 @@ axon index-vault --dry-run
 axon index-vault
 ```
 
-This writes semantic chunks and code-dependency relationships (the `dep:*`
-graph) into the shared Postgres store — `pgvector` for vectors, the
-`symbol_deps` table for the graph (dec-121; Qdrant and Redis were retired).
+This is Markdown-only (`iter_supported_files(vault_root, languages={"markdown"})`)
+and writes semantic chunks into the shared Postgres store (`pgvector`, dec-121;
+Qdrant and Redis were retired). It does not populate the code-dependency graph —
+`extract_calls()` only handles Python/Java/TypeScript — that comes from
+`axon index-dev` below, over your actual code repos.
 
 ### Index development repositories from a manifest
 
