@@ -140,11 +140,7 @@ rtk trust
 `pipx install --force ~/dev/axon` from there installs the feature branch. The fixes in 1.1
 were pushed from a worktree, so the checkout is behind by one commit and needs a `pull`.
 
-### 2.3 Four files left in `~/backups/axon-untracked-2026-09-15/`
-
-Recovered from a teleport auto-stash on 2026-09-15 and moved out of the repo, nothing
-deleted. Triaged 2026-09-22; **no file has been discarded and none will be without an
-explicit go**.
+### 2.3 The backup directory, settled
 
 **Done 2026-09-23.** Eleven files whose work is finished were moved to
 `~/backups/discarded-2026-09-23/`, which carries a `WHY.md` naming the evidence per file:
@@ -152,18 +148,14 @@ the five issue briefs (all five issues re-verified CLOSED), the cloud-arm plan (
 in `972df7e` and `31cbf98`), the four forge artifacts of the closed closeout, and the revvo
 PNG (nothing references it). Nothing was deleted; that directory is the tombstone.
 
-Four files stay in the original directory because they are still live:
+The four still-live files came into the repository instead:
 
-| File | Why |
-|---|---|
-| `docs/superpowers/specs/2026-07-13-instinct-loop-roadmap.md` | header still reads "Approved direction, pending distillation into backlog items" |
-| `docs/superpowers/specs/2026-07-13-retrieval-eval-precision-roadmap.md` | same header, never distilled |
-| `docs/ai-engineering-gap-review.md` | conceptual review of AXON as an AI engineering system |
-| `docs/mockups/promotion-workbench-style-comparison.html` | `/api/promotion-candidates` exists, the dashboard has no promotion view, so this is pending design and not history |
-
-Where these four should live is still open: `docs/superpowers/specs/` is
-indexed and findable through `search_code`, `docs/superpowers/plans/` is excluded from the
-index on purpose, and the vault is outside the repo entirely.
+| File | Where | Why there |
+|---|---|---|
+| `2026-07-13-instinct-loop-roadmap.md` | `docs/superpowers/specs/` | header still reads "Approved direction, pending distillation into backlog items"; `specs/` is indexed, `plans/` is excluded on purpose |
+| `2026-07-13-retrieval-eval-precision-roadmap.md` | `docs/superpowers/specs/` | same header, never distilled |
+| `ai-engineering-gap-review.md` | `docs/` | kept at its original path and undated: the file carries no date and inventing one would put a number in the tree that nothing measured |
+| `promotion-workbench-style-comparison.html` | `docs/mockups/` | its original path, and a new directory in the tree. `/api/promotion-candidates` exists and the dashboard has no promotion view, so this is pending design |
 
 ---
 
