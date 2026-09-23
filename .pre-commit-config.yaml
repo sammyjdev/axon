@@ -9,13 +9,14 @@ repos:
         # Reads pyproject.toml [tool.ruff.lint] (E,F,I,UP) as-is — no args.
         # Excludes pre-existing findings (I001/UP006/UP035/E402/E501) that are
         # out-of-scope debt for #67 and cannot be fixed here: 4 in test files
-        # (the loop forbids modifying existing test files) plus 8 more in
-        # doc/ (a separate, self-contained AXON ecosystem health-check
-        # sub-tool, never covered by this repo's CI ruff job either) and
-        # scripts/. Mirrors ci.yml's dec-107 scope TODO. This is an
-        # enumerated ratchet, not a directory exclude — any NEW file added
-        # under doc/ or scripts/ is still linted.
-        exclude: ^(tests/(config/test_runtime_expansion|context/test_rtk_ccr|embedder/test_md_relations|store/test_stores)|doc/(scripts/checks/(ci_status|coupling|drift|performance|versioning)|scripts/health-check|tests/test_health_check)|scripts/analyze_retrieval_telemetry)\.py$
+        # (the loop forbids modifying existing test files) plus 8 more in the
+        # AXON ecosystem health-check sub-tool (folded from the stray doc/
+        # tree into scripts/checks/, scripts/health-check.py and
+        # tests/test_health_check.py on 2026-09-23; never covered by this
+        # repo's CI ruff job either). Mirrors ci.yml's dec-107 scope TODO.
+        # This is an enumerated ratchet, not a directory exclude — any NEW
+        # file added under scripts/ or tests/ is still linted.
+        exclude: ^(tests/(config/test_runtime_expansion|context/test_rtk_ccr|embedder/test_md_relations|store/test_stores|test_health_check)|scripts/(checks/(ci_status|coupling|drift|performance|versioning)|health-check|analyze_retrieval_telemetry))\.py$
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:

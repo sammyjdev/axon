@@ -1,9 +1,9 @@
 # Open items after the 2026-09 closeout
 
 Single list of what is still open across the axon repo, the claude-skills repo and the
-operator's machine, as of 2026-09-23. The closeout plan
-(`docs/plans/2026-09-14-closeout-spec-and-tasks.md`) is finished and carries zero unticked
-boxes; everything below either arrived after it, or was deliberately carried out of it.
+operator's machine, as of 2026-09-23. The closeout plan (`2026-09-14-closeout-spec-and-tasks.md`,
+archived 2026-09-23 — see `docs/README.md`) finished with zero unticked boxes; everything
+below either arrived after it, or was deliberately carried out of it.
 
 Every line says who it waits on. `OPERATOR` means it cannot be done by an agent: it needs a
 merge, an interactive gate, a judgement call about scope, or a deletion. `AGENT` means it is
@@ -61,7 +61,7 @@ had no test at all: deleting the whole block left the suite green.
 
 Final gate: 80 passed, `ruff check` clean, CI 12 of 12.
 
-### 1.2 PR #213 - pack-quality ruler, replacing #179 (OPERATOR: review and merge)
+### 1.2 PR #213 - pack-quality ruler, replacing #179 (MERGED 2026-09-23)
 
 **Closed 2026-09-23 in favour of #213**, which carries the same work rebased onto master
 plus the defect the rebase exposed. No force-push: the original branch
@@ -112,22 +112,14 @@ From `dec-136` / PRs #208 and #210, recorded and not bugs to fix silently:
 
 ## 2. Waits on the operator only
 
-### 2.1 `rtk trust` in `~/dev/axon`
+### 2.1 `rtk trust` in `~/dev/axon` (DONE 2026-09-23)
 
-Every command in the repo prints a warning that project filters are not trusted.
-`.rtk/filters.toml` is the unmodified template: every filter is commented out, so approving
-changes no behaviour. It is an interactive security gate and an agent must not route around
-it.
+Trusted. `rtk` commands no longer print the untrusted-filters warning.
 
-```bash
-rtk trust
-```
+### 2.2 The main checkout is on a feature branch (RESOLVED)
 
-### 2.2 The main checkout is on a feature branch
-
-`~/dev/axon` sits on `agent/typesafe-pilot-harness`, not `master`. Any
-`pipx install --force ~/dev/axon` from there installs the feature branch. The fixes in 1.1
-were pushed from a worktree, so the checkout is behind by one commit and needs a `pull`.
+`agent/typesafe-pilot-harness` merged via PR #211. The checkout has since moved through
+`master` and is now on `docs/reorg-2026-09-23`.
 
 ### 2.3 The backup directory, settled
 

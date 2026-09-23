@@ -167,7 +167,9 @@ project.
 
 Five-round red-team consolidation on context capture, ADR inference, write
 concurrency, and hook integration. Consolidated rationale and absorbed
-attack vectors live in [CAPTURE_ROBUSTNESS.md](CAPTURE_ROBUSTNESS.md).
+attack vectors previously lived in `CAPTURE_ROBUSTNESS.md`, archived
+2026-09-23 as materialized (see `docs/README.md`); the decisions below
+are the durable record.
 
 - [dec-100](decisions/dec-100-rename-prometheus-to-axon.md): rename Prometheus to AXON.
 - [dec-101](decisions/dec-101-revoke-d4-drop-neo4j.md): drop Neo4j.

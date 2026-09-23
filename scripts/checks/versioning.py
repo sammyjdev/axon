@@ -1,6 +1,6 @@
 """Check dependency pins (floating vs semver)."""
 
-import toml
+import tomllib
 from pathlib import Path
 from typing import Dict, Any
 
@@ -33,7 +33,8 @@ class VersioningCheck:
             }
 
         try:
-            data = toml.load(glyph_pyproject)
+            with open(glyph_pyproject, "rb") as f:
+                data = tomllib.load(f)
         except Exception as e:
             return {
                 "status": "error",
@@ -69,7 +70,8 @@ class VersioningCheck:
             }
 
         try:
-            data = toml.load(axon_pyproject)
+            with open(axon_pyproject, "rb") as f:
+                data = tomllib.load(f)
         except Exception as e:
             return {
                 "status": "error",

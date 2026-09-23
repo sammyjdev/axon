@@ -82,16 +82,38 @@ or Qdrant as current runtime components.
 
 **Acceptance criteria.**
 - [ ] `RULES.md` and active runtime configuration no longer promise SQLite
-      rollback or retired backend choices.
-- [ ] `axon health` and help name the Postgres, pgvector, vault, and git probes
-      they actually execute.
-- [ ] Active operational docs and runtime docstrings stop instructing users to
-      configure SQLite, Redis, or Qdrant.
-- [ ] Historical ADRs and migration plans remain unchanged.
-- [ ] Health-label tests pass and a scoped retired-term scan is reviewed.
+      rollback or retired backend choices. **Traced, not fixed** (2026-09-23):
+      `_resolve_concern_backend` (`src/axon/config/runtime.py`) still accepts
+      `AXON_DB_BACKEND=sqlite`/`AXON_<CONCERN>_BACKEND=sqlite` and stores it on
+      `RuntimeConfig`, but nothing downstream reads those four fields — the
+      SQLite repo modules they'd select are already deleted. The flag does
+      nothing today, silently. ~8 test files
+      (`tests/config/test_{db,decisions,fileindex,graph,sessions}_backend.py`,
+      `tests/store/test_session_{graph,decisions,sessions}_backend.py`) test
+      the string-resolution logic itself, not real SQLite behavior — removing
+      the dead machinery means updating that whole test surface too. Real,
+      separately-scoped cleanup; deliberately not folded into PR #216.
+      Tracked as issue #217.
+- [x] `axon health` and help name the Postgres, pgvector, vault, and git probes
+      they actually execute. **Done 2026-09-23:** the `sqlite: ok` line was a
+      vestigial no-op (`SessionStore.init()`, dec-121 Phase 3) — removed from
+      `axon_health()`, the `health` command docstring, and
+      `test_axon_health_reports_subsystems` (now asserts pgvector/vault/git
+      only, 3 not 4). Full suite green (2337 passed) after the change.
+- [x] Active operational docs and runtime docstrings stop instructing users to
+      configure SQLite, Redis, or Qdrant. **Done 2026-09-23** for
+      `USAGE_GUIDE.md`, `ADOPTION.md`, both quickstarts, `SUPPORT_MATRIX.md`,
+      `axon health`'s docstring, `axon-bootstrap.sh`.
+- [ ] Historical ADRs and migration plans remain unchanged. Mostly true —
+      `docs/ADR.md` and `dec-105` each had one dead cross-reference (to an
+      archived file) de-linked to plain text; their decisions were not
+      reworded. Leaving unchecked since it's not a clean pass.
+- [ ] Health-label tests pass (yes — full suite green) and a scoped
+      retired-term scan is reviewed (not done as a standalone deliverable).
 
-**Files.** `RULES.md`, runtime config, health/help surfaces,
-`docs/SECOND_BRAIN.md`, relevant runtime docstrings and tests.
+**Files.** `RULES.md`, runtime config, health/help surfaces, relevant runtime
+docstrings and tests. (`docs/SECOND_BRAIN.md` was archived out of the repo
+2026-09-23, superseded rather than fixed — see `docs/README.md`.)
 
 **Test plan.** Run focused MCP/CLI tests and the scoped scan defined in the spec.
 

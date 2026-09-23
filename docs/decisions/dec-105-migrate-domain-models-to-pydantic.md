@@ -9,7 +9,8 @@
 CLAUDE.md instructs preferring `@dataclass` for models. AXON introduces models
 that need validation, regex constraints, score ranges, and round-trip
 serialization to markdown frontmatter (`Decision`, `Symbol`, `Edge`). An audit
-(`docs/MIGRATION_PYDANTIC.md`) found **71** `@dataclass` declarations — far more
+(`docs/MIGRATION_PYDANTIC.md`, archived 2026-09-23 as materialized — see
+`docs/README.md`) found **71** `@dataclass` declarations — far more
 than the ~9 the original AXON draft assumed. Of these, only a subset are
 persisted/serialized data models; the rest are internal value objects, config
 objects, or service classes.

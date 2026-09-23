@@ -2,8 +2,8 @@
 
 Recommended mode: `hybrid-local`
 
-This is the fastest product-facing macOS path to a working `pb ask`: run the
-engine on your Mac, let AXON provision the local CPU stack, and keep
+This is the fastest product-facing macOS path to a working `axon search`: run
+the engine on your Mac, let AXON provision the local CPU stack, and keep
 cloud-routed calls available for heavier reasoning.
 
 ## Before you start
@@ -18,12 +18,12 @@ Install these first:
 
 You also need API keys for the active provider profile (default is `budget`):
 
-- `GROQ_API_KEY` from <https://console.groq.com/keys>
-- `NVIDIA_NIM_API_KEY` from <https://build.nvidia.com>
+- `DEEPINFRA_API_KEY` from <https://deepinfra.com> — primary generation
+- `GROQ_API_KEY` from <https://console.groq.com/keys> — the classifier step (both profiles)
 
 If you prefer paid Claude routing via OpenRouter, set
-`AXON_PROVIDER_PROFILE=paid` and provide `OPENROUTER_API_KEY` instead of NIM.
-See `docs/decisions/dec-106-routing-profiles.md`.
+`AXON_PROVIDER_PROFILE=paid` and provide `OPENROUTER_API_KEY` instead of
+`DEEPINFRA_API_KEY`. See `docs/decisions/dec-106-routing-profiles.md`.
 
 ## 1. Clone the engine
 
@@ -49,8 +49,8 @@ source .env.local
 set +a
 
 export AXON_PROVIDER_PROFILE=budget
+export DEEPINFRA_API_KEY=<your-deepinfra-key>
 export GROQ_API_KEY=<your-groq-key>
-export NVIDIA_NIM_API_KEY=<your-nim-key>
 export AXON_ENGINE="$PWD"
 export AXON_VAULT="$HOME/vault"
 ```
@@ -66,18 +66,18 @@ mkdir -p \
 cat > "$AXON_VAULT/knowledge/first-note.md" <<'EOF'
 # AXON
 
-AXON keeps technical notes in an external vault and retrieves them with `pb ask`.
+AXON keeps technical notes in an external vault and retrieves them with `axon search`.
 EOF
 ```
 
-## 5. Index and ask
+## 5. Index and search
 
 ```bash
-pb index "$AXON_VAULT/knowledge" --ctx knowledge
-pb ask "What does this vault contain?"
+axon index-vault
+axon search "What does this vault contain?" --ctx knowledge
 ```
 
-If you get an answer back, the quickstart worked.
+If you get a hit back, the quickstart worked.
 
 ## Next
 
