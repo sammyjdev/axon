@@ -14,10 +14,8 @@ capture, recall, and handoff start working immediately.
    ```bash
    cd /path/to/axon && docker compose up -d axon-postgres
    ```
-3. `axon health` prints `sqlite: ok` (vestigial — `SessionStore.init()` is a
-   documented no-op since the Postgres migration, so this line is always
-   `ok` and checks nothing), `pgvector: ok` or `down (...)`, `vault: <path>`
-   or `not found`, and `git: ok` or `down (...)`. If `pgvector` reports
+3. `axon health` prints `pgvector: ok` or `down (...)`, `vault: <path>` or
+   `not found`, and `git: ok` or `down (...)`. If `pgvector` reports
    `down (timeout)`, check `AXON_PG_URL` — it defaults to port 5433, but a
    `docker-compose.override.yml` can remap it on a machine with a port
    collision.

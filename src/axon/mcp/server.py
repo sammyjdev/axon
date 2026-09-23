@@ -1549,7 +1549,7 @@ async def axon_validation_stats(
 async def axon_health() -> str:
     """Report the health of each AXON subsystem.
 
-    Covers SQLite, pgvector, the Obsidian vault and git.
+    Covers pgvector, the Obsidian vault and git.
 
     Each external probe is time-bounded so an unreachable backend cannot hang
     the whole report — important when AXON is configured against a host that
@@ -1562,14 +1562,6 @@ async def axon_health() -> str:
     _PROBE_TIMEOUT = 2.0
 
     lines = ["# AXON health"]
-
-    try:
-        await asyncio.wait_for(_get_session_store().init(), timeout=_PROBE_TIMEOUT)
-        lines.append("- sqlite: ok")
-    except TimeoutError:
-        lines.append("- sqlite: down (timeout)")
-    except Exception as exc:
-        lines.append(f"- sqlite: down ({exc})")
 
     try:
         await asyncio.wait_for(

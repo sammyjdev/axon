@@ -25,8 +25,9 @@ replacements throughout, or "removed with no replacement" where none exists.
 
 Two one-line source fixes in passing: `src/axon/__main__.py`'s `health` command docstring and
 `scripts/axon-bootstrap.sh`'s comments both still said "Redis" / "2 hooks" — `axon health`
-never probed Redis (it probes sqlite, pgvector, vault, git) and `axon init` installs four
-hooks (`post-commit`, `pre-push`, `post-merge`, `post-checkout`), not two.
+never probed Redis (it probes pgvector, vault, git — see below on why sqlite dropped off that
+list) and `axon init` installs four hooks (`post-commit`, `pre-push`, `post-merge`,
+`post-checkout`), not two.
 
 **Two independent adversarial reviews** (GLM `glm-5.3-flash`, Codex `gpt-5.6-sol`/high) ran
 against the first version of this pass and found real defects — the biggest ones: this
@@ -48,18 +49,32 @@ outside the index, lower stakes, and touching them cuts against "historical plan
 unchanged."
 
 **`docs/agent-backlog.md`'s OPS-1 item, substantially delivered.** That backlog entry
-(P1, status "ready") asked for exactly what this pass did to the doc surface — its
-acceptance criteria and a 2026-09-23 note are now in the file itself. Two of its criteria are
-still open and are *not* docs fixes: see the finding below.
+(P1, status "ready") asked for exactly what this pass did to the doc surface, plus the
+`axon health` fix below — its acceptance criteria and a 2026-09-23 note are now in the file
+itself. One criterion is still open and is *not* a docs fix: see the finding below.
 
-**Open findings, not resolved — both are code decisions, not docs fixes:**
+**`axon health`'s vestigial `sqlite` probe, removed (fixed in this pass).**
+`SessionStore.init()` is a documented no-op since the Postgres migration (dec-121 Phase 3) —
+the old `sqlite: ok` line was unconditionally true and checked nothing. Removed from
+`axon_health()` (`src/axon/mcp/server.py`), the `health` command docstring, and
+`test_axon_health_reports_subsystems` (now asserts `pgvector`/`vault`/`git` only). `axon
+health` now genuinely reports three subsystems, not four. Confirmed via source read (no
+consumer of the sqlite branch anywhere) and the full test suite (2337 passed).
 
-- `axon health`'s `sqlite: ok` line is vestigial. `SessionStore.init()` is a documented
-  no-op since the Postgres migration (dec-121 Phase 3) — the line is unconditionally `ok`
-  and checks nothing. Confirmed via source read, not inference.
-- `RULES.md` still documents an `AXON_DB_BACKEND=sqlite` rollback flag as something "a
-  change must keep working," which reads as in tension with `CLAUDE.md` D4's "SQLite is
-  fully retired." Whether that flag still does anything wasn't checked.
+**Open finding, not resolved — a bigger code decision, out of scope for this branch:**
+`RULES.md` documents an `AXON_DB_BACKEND` / `AXON_<CONCERN>_BACKEND=sqlite` "rollback" flag
+that "a change must keep working." Traced it: `_resolve_concern_backend` in
+`src/axon/config/runtime.py` validates and stores the string, but **nothing downstream reads
+the four `RuntimeConfig` fields it populates** (`fileindex_backend`, `graph_backend`,
+`decisions_backend`, `sessions_backend`) — the SQLite repository modules those fields would
+have selected are already deleted (`tests/test_no_sqlite.py`). Setting the flag today does
+nothing, silently. About 8 test files
+(`tests/config/test_{db,decisions,fileindex,graph,sessions}_backend.py`,
+`tests/store/test_session_{graph,decisions,sessions}_backend.py`) test the string-resolution
+logic itself, not any actual SQLite behavior — so removing the dead machinery means updating
+that whole test surface too, which is a real, separately-scoped cleanup, not a docs fix.
+Operator decision (2026-09-23): register as a follow-up, don't fold into this branch.
+Tracked as [#217](https://github.com/sammyjdev/axon/issues/217).
 
 ## Root documents
 

@@ -118,7 +118,7 @@ async def test_axon_export_now_denied_without_consent_env(
 async def test_axon_health_reports_subsystems(store: SessionStore) -> None:
     report = await server.axon_health()
     assert report.startswith("# AXON health")
-    for subsystem in ("sqlite", "pgvector", "vault", "git"):
+    for subsystem in ("pgvector", "vault", "git"):
         assert subsystem in report
 
 
