@@ -115,8 +115,8 @@ from `AXON_PROVIDER_PROFILE`:
 
 Local Ollama is opt-in (`AXON_PROVIDER_OLLAMA=1`, default off). `ctx=work` is
 never routed to cloud. Rate-limit breaches raise `DENY_RATE_LIMIT` (not a model
-failure). Per machine policy: **no local models/Postgres/Langfuse on the Mac** —
-cloud free-tier (NIM/Groq) is the default.
+failure). Per machine policy: Postgres and any local models run on the Linux
+workstation; the Mac is a thin client and runs nothing locally.
 
 ## Local roles (dec-122) — landed
 

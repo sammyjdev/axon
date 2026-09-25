@@ -139,7 +139,10 @@ def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None
     assert "AXON_RUNTIME_MODE=remote-infra" in env_payload
     assert "docker compose" not in log_output
     assert "ollama pull" not in log_output
-    assert "curl -sf http://desktop.local:6333/collections" in log_output
+    # dec-121: Postgres is the only backend; Qdrant/Langfuse are no longer probed.
+    assert "Postgres" in result.stdout
+    assert ":6333" not in log_output
+    assert ":3000" not in log_output
     assert "curl -sf http://desktop.local:11434/api/tags" in log_output
 
 
@@ -159,6 +162,8 @@ def test_setup_full_local_without_nvidia_keeps_small_models_only(tmp_path: Path)
 
     assert "AXON_RUNTIME_MODE=full-local" in env_payload
     assert "docker compose --profile cpu up -d" in log_output
+    assert "docker compose exec -T axon-postgres pg_isready" in log_output
+    assert ":6333" not in log_output
     assert "ollama pull phi3:mini" in log_output
     assert "ollama pull gemma4:e4b" in log_output
     assert "ollama pull gemma4:26b" not in log_output
