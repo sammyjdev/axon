@@ -31,9 +31,9 @@ change would violate one of these, STOP and surface it - do not work around it.
 
 ## Decisions storage (dec-121)
 
-- The relational source of truth is Postgres by default; SQLite is the one-flag
-  rollback (`AXON_<CONCERN>_BACKEND=sqlite` / `AXON_DB_BACKEND=sqlite`). A change
-  must keep the SQLite rollback working.
+- Postgres is the only relational source of truth. The SQLite repositories are
+  deleted (`tests/test_no_sqlite.py`), so the leftover `AXON_*_BACKEND=sqlite`
+  flags select nothing; do not rely on them as a rollback (removal: #217).
 - `Decision.judged: bool` is the canonical "scored" flag. NEVER use
   `validation_score == 0.0` as a sentinel for unscored decisions.
 

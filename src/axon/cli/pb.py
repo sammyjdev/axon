@@ -29,7 +29,7 @@ app = typer.Typer(
 )
 adr_app = typer.Typer(help="Gerencia ADRs (Architectural Decision Records)")
 session_app = typer.Typer(help="Gerencia sessão de contexto ativa")
-graph_app = typer.Typer(help="Grafo estrutural de código (SQLite)")
+graph_app = typer.Typer(help="Grafo estrutural de código (Postgres)")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
 portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
 pending_app = typer.Typer(help="Gerencia o backlog .axon/pending/ (dec-112)")
@@ -2042,7 +2042,7 @@ def pending_recover(
 def graph_index(
     repo: Annotated[str, typer.Option("--repo", help="Repo a indexar no grafo de código")],
 ) -> None:
-    """Indexa símbolos e edges de um repo no grafo de código (SQLite)."""
+    """Indexa símbolos e edges de um repo no grafo de código (Postgres)."""
     from axon.code.indexer import index_repo
     from axon.code.resolver import index_edges
     from axon.store.session_store import SessionStore
@@ -2071,7 +2071,7 @@ def graph_neighbors(
     node: Annotated[str, typer.Argument(help="Nome/id/símbolo do nó")],
     depth: Annotated[int, typer.Option("--depth", help="Profundidade de vizinhança")] = 1,
 ) -> None:
-    """Lista vizinhos de um nó no grafo de código (SQLite)."""
+    """Lista vizinhos de um nó no grafo de código (Postgres)."""
     from axon.store.session_store import SessionStore
 
     async def _neighbors() -> list[dict[str, str]]:
@@ -2096,7 +2096,7 @@ def graph_path(
     from_node: Annotated[str, typer.Argument(help="Nó de origem")],
     to_node: Annotated[str, typer.Argument(help="Nó de destino")],
 ) -> None:
-    """Mostra o caminho mais curto entre dois nós no grafo de código (SQLite)."""
+    """Mostra o caminho mais curto entre dois nós no grafo de código (Postgres)."""
     from axon.store.session_store import SessionStore
 
     async def _path() -> list[str] | None:

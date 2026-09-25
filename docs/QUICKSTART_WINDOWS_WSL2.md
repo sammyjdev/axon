@@ -16,9 +16,9 @@ Inside WSL2, install these first:
 
 You also need:
 
-- a reachable remote AXON infra host with Qdrant, Redis, Langfuse, and Ollama
-  running (Ollama is optional unless you use `ctx=work` or another local-only
-  path)
+- a reachable remote AXON infra host running the `axon-postgres` service
+  (Postgres + pgvector) and, optionally, Ollama (needed only for `ctx=work` or
+  another local-only path)
 - API keys for the active provider profile (default is `budget`):
   - `GROQ_API_KEY` from <https://console.groq.com/keys>
   - `NVIDIA_NIM_API_KEY` from <https://build.nvidia.com>
