@@ -188,6 +188,20 @@ check_service() {
     fi
 }
 
+# Postgres is not HTTP; probe the port with bash's /dev/tcp (dec-121 backend).
+check_tcp() {
+    local name=$1
+    local host=$2
+    local port=$3
+    local t=""
+    command -v timeout &>/dev/null && t="timeout 3"  # absent on stock macOS
+    if $t bash -c "exec 3<>/dev/tcp/$host/$port" &>/dev/null; then
+        echo "    [OK] $name"
+    else
+        echo "    [WARN] $name não respondeu em $host:$port - pode ainda estar iniciando"
+    fi
+}
+
 if [[ "$SETUP_MODE" == "remote-infra" ]]; then
     if [[ -z "$REMOTE_INFRA_HOST" ]]; then
         echo ""
@@ -199,8 +213,7 @@ if [[ "$SETUP_MODE" == "remote-infra" ]]; then
     echo "    Docker local e pull de modelos serão ignorados."
     echo ""
     echo "==> Validando serviços remotos..."
-    check_service "Qdrant"   "http://${REMOTE_INFRA_HOST}:6333/collections"
-    check_service "Langfuse" "http://${REMOTE_INFRA_HOST}:3000"
+    check_tcp     "Postgres" "$REMOTE_INFRA_HOST" 5433
     check_service "Ollama"   "http://${REMOTE_INFRA_HOST}:11434/api/tags"
 elif [[ "$SETUP_MODE" == "minimal" ]]; then
     echo ""
@@ -209,7 +222,7 @@ elif [[ "$SETUP_MODE" == "minimal" ]]; then
 elif [[ "$PLAN_START_LOCAL_STACK" == "1" ]]; then
     echo ""
     echo "==> Criando diretórios de dados..."
-    mkdir -p data/{qdrant,redis,postgres,ollama}
+    mkdir -p data/ollama
 
     echo ""
     echo "==> Subindo stack Docker com profile: $COMPOSE_PROFILE"
@@ -219,9 +232,11 @@ elif [[ "$PLAN_START_LOCAL_STACK" == "1" ]]; then
     echo "==> Aguardando serviços ficarem healthy..."
     sleep 5
 
-    check_service "Qdrant"   "http://localhost:6333/collections"
-    check_service "Redis"    "http://localhost:6379" || true  # redis não é HTTP
-    check_service "Langfuse" "http://localhost:3000"
+    if docker compose exec -T axon-postgres pg_isready -U axon &>/dev/null; then
+        echo "    [OK] Postgres"
+    else
+        echo "    [WARN] Postgres (axon-postgres) não respondeu - pode ainda estar iniciando"
+    fi
     check_service "Ollama"   "http://localhost:11434/api/tags"
 
     echo ""

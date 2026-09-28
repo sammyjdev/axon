@@ -270,6 +270,18 @@
       "tell": "After a store migration (real dirs -> symlinks into one source) the tree looks right and git is clean, but a consumer (agent file, router, README, hook) names something that is not there, and you cannot say WHEN it disappeared. Or: the repo has branches older than the migration that still track files under the now-gitignored, symlinked path.",
       "fix": "Two sweeps, not one. (1) Every migration ends with `grep -rn '<old-path>\\|<name>'` over every root that can name the thing (~/.claude ~/.agents ~/.codex) and a fix or an explicit 'intentionally stale' note per hit. (2) Symlinks living in a gitignored path inside a git repo are not durable: any checkout of a ref that tracks files there overwrites them. Either retire those refs, or keep an idempotent script that recreates the links (`scripts/skills-link.sh`) and run it after checkouts. Date the loss with the directory mtime and the reflog before naming a cause.",
       "seen": "2026-08, ~/.claude: symlinks created 07-26, destroyed by `git switch main` on 08-10 19:52 (reflog), noticed 08-22; six local and eight remote branches still track the old files"
+    },
+    {
+      "id": "agy-writes-live-repo-not-clone",
+      "triggers": [
+        "model-dispatch",
+        "executor-containment",
+        "claim-about-state"
+      ],
+      "mistake": "Dispatched agy (Gemini) through agy_run.py with --workspace pointing at a throwaway clone from agy_clone.sh and a brief that named no absolute path, and treated that as containment. It was not: every write of the task (pyproject.toml, a new tests file, a temporary edit and byte-for-byte restore of an untracked script) and its pytest and ruff runs landed in the live repo the clone was made from, while the clone stayed untouched. A second agy dispatch in the same hour, on another repo, did stay inside its clone, so the escape is not deterministic. Cause not verified; the clone's `origin` remote pointed at the live repo path (git clone --local).",
+      "tell": "agy reports DONE with tests passing, but `git -C <clone> status` shows no changes and `git diff` in the clone is empty, while `git status` in the REAL repo suddenly shows modified or new files you never touched, plus fresh `.pytest_cache` / `.ruff_cache` mtimes. The executor's final message mentions no absolute path, so grepping its output for an escape finds nothing.",
+      "fix": "Never assume a clone contains agy. Before dispatch, snapshot the live repo (`git status --porcelain` and `find <repo> -newer <brief> -type f` baseline); after every agy run, diff the LIVE repo as well as the clone, and treat any live change as an escape to report, not as the deliverable. Validate the content on its merits only after that. Prefer codex (workspace-write sandbox) for multi-file or long tasks; if agy must be used, remove the clone's `origin` remote (`git -C <clone> remote remove origin`) and keep the live repo clean before dispatch so an escape is visible.",
+      "seen": "2026-09, sage: agy task A1 (Gemini 3.1 Pro High, 5 characterization tests + black pin) wrote into ~/dev/products/sage instead of its $TMPDIR clone; merit task A2 same hour stayed contained; 2026-09-17 follow-up: three agy dispatches with `git remote remove origin` on the clone all stayed contained, checked against a git status snapshot of the live repo before and after each run"
     }
   ]
 }

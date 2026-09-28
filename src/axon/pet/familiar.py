@@ -4,7 +4,7 @@ Reacts to the AXON activity stream, not TTY access-time:
 
   - dendrites: N branches (up to 8), one per detected activity type.
     A dendrite fires when new TraceStore records arrive.
-  - counters: ADRs from data/axon.db, tokens saved via load_gain().
+  - counters: ADRs from the decision repository, tokens saved via load_gain().
   - timeline: recent ADR moments + compression moments via TraceStore +
     CompressionTelemetryStore (using is_compression_record).
   - activity poller: tails records.jsonl by byte offset; reads only new

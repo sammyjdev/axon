@@ -146,7 +146,7 @@ pythonpath = ["."]
 #
 # axon.embedder.pipeline is intentionally below 80% at the unit level:
 #   index_path / ingest_file / _flush are runtime integration paths that
-#   require a live embedder + Qdrant. These paths are wired and
+#   require a live embedder + pgvector. These paths are wired and
 #   integration-tested in Plan C. Do NOT add --cov-fail-under globally;
 #   that would fail the suite on pipeline.py prematurely.
 # ---------------------------------------------------------------------------

@@ -74,7 +74,8 @@ nothing, silently. About 8 test files
 logic itself, not any actual SQLite behavior — so removing the dead machinery means updating
 that whole test surface too, which is a real, separately-scoped cleanup, not a docs fix.
 Operator decision (2026-09-23): register as a follow-up, don't fold into this branch.
-Tracked as [#217](https://github.com/sammyjdev/axon/issues/217).
+Tracked as [#217](https://github.com/sammyjdev/axon/issues/217). `RULES.md` no longer
+promises the rollback; the dead flags themselves are still #217.
 
 ## Root documents
 
@@ -91,7 +92,7 @@ Tracked as [#217](https://github.com/sammyjdev/axon/issues/217).
 | `PROJECT_OVERVIEW.md` | Single-page map of the engine | current, global entry point (see intro above), but its own "Branch state" section is self-flagged stale (last touched 2026-07-09, ~2.5 months and PRs #206-#215 behind) |
 | `QUICKSTART_LINUX.md` | Linux setup | current — rewritten in this pass (dead `pb` commands, wrong provider-profile keys) |
 | `QUICKSTART_MACOS.md` | macOS setup | current — rewritten in this pass (same defects as Linux) |
-| `QUICKSTART_WINDOWS_WSL2.md` | Windows/WSL2 setup | stale — mentions a remote infra host with Qdrant/Redis, **not fixed in this pass** (out of scope, flagged only) |
+| `QUICKSTART_WINDOWS_WSL2.md` | Windows/WSL2 setup | current - the remote infra host now needs only `axon-postgres` (+ optional Ollama) |
 | `ROADMAP.md` | Product roadmap (state as of 2026-06-20) | stale — self-declared active but 3+ months behind, not clearly finished so not archived |
 | `SUPPORT_MATRIX.md` | Support matrix by mode/platform | current — rewritten in this pass (dead `pb` commands, wrong provider-profile keys, fabricated rate-limit defaults) |
 | `TIL_AUTOMATION.md` | TIL automation | current (one incidental "qdrant" tag example, not an architecture claim) |

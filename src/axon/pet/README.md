@@ -14,7 +14,7 @@ time:
 - **Dendrites**: up to 8 compass-direction branches; fire colour is keyed to
   the record's `payload.risk` field (`read` → cyan, `write` → amber,
   `destructive` → red-orange).
-- **Counters**: ADR count from SQLite (`data_root/axon.db`); tokens saved via
+- **Counters**: ADR count from the decision repository (Postgres); tokens saved via
   `load_gain()` (centralised T-104 pollution filter, dec-119 §5).
 - **Timeline**: recent ADR moments and compression moments (via
   `is_compression_record`).
@@ -47,7 +47,7 @@ filesystem paths.
 - `axon.observability.trace_store.TraceStore` (file-backed JSONL).
 - `axon.observability.gain.load_gain()` / `is_compression_record()`.
 - Truecolor terminal (24-bit ANSI). All modern terminals support this.
-- Read access to `data_root/axon.db` and `data_root/trace/records.jsonl`.
+- A reachable `AXON_PG_URL` and read access to `data_root/trace/records.jsonl`.
 
 ## Not in scope
 
