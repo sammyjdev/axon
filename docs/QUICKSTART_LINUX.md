@@ -54,6 +54,23 @@ export AXON_ENGINE="$PWD"
 export AXON_VAULT="$HOME/vault"
 ```
 
+### Keeping the keys out of the shell
+
+An exported key lives in one shell: an MCP server or git hook started by
+another program never sees it. On a systemd host the keys can live in an
+encrypted store instead:
+
+```bash
+./scripts/axon-secrets.sh set DEEPINFRA_API_KEY   # prompts, hidden
+./scripts/axon-secrets.sh list                    # names only
+```
+
+The engine reads `~/.config/axon/credentials.cred` at start and fills any
+variable that is still unset; exported variables and `.env` files win. The blob
+is bound to the machine and the user, so a copy does not open elsewhere.
+Decrypting costs about 1.2 s per process start. `AXON_CREDENTIALS_FILE` points
+the engine and the script at another store.
+
 ## 4. Create a small vault
 
 ```bash

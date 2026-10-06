@@ -16,6 +16,10 @@ from pathlib import Path
 
 import pytest
 
+# Set before anything imports axon: the suite must never decrypt the operator's
+# credential store, which would hand real provider keys to every test.
+os.environ["AXON_CREDENTIALS_FILE"] = os.devnull
+
 # Every AXON-owned relational/vector table, truncated between tests so the
 # shared Postgres container gives each test a clean slate (the isolation that
 # the retired per-test SQLite files used to provide - dec-121 Phase 3).

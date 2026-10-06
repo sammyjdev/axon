@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from datetime import date
@@ -21,6 +22,39 @@ logger = logging.getLogger(__name__)
 # Carrega .env.local sobre .env, sem sobrescrever vars já exportadas pelo shell
 load_dotenv(Path(__file__).parents[3] / ".env", override=False)
 load_dotenv(Path(__file__).parents[3] / ".env.local", override=False)
+
+
+def _load_credential_store() -> None:
+    """Fill unset env vars from the systemd-creds store written by scripts/axon-secrets.sh."""
+    store = Path(
+        os.environ.get("AXON_CREDENTIALS_FILE")
+        or Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        / "axon"
+        / "credentials.cred"
+    )
+    if not store.is_file():
+        return
+    try:
+        decrypted = subprocess.run(  # noqa: S603
+            ["systemd-creds", "--user", "decrypt", "--name=axon", str(store), "-"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("credential store %s not loaded: %s", store, exc)
+        return
+    for line in decrypted.splitlines():
+        name, sep, value = line.partition("=")
+        if sep:
+            os.environ.setdefault(name, value)
+
+
+# Same precedence as the .env files: the store only fills what is still unset.
+# ponytail: decrypts on every process start (~1.2 s measured), including git hooks
+# that never reach an LLM. Move the call to the LLM entry points if that matters.
+_load_credential_store()
 
 RuntimeMode = Literal["full-local", "hybrid-local", "remote-infra", "minimal"]
 _RUNTIME_MODES: tuple[RuntimeMode, ...] = (
