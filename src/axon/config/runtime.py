@@ -58,10 +58,6 @@ def credential_from_store(name: str) -> str | None:
     return _decoded_store().get(name) or None
 
 
-# ponytail: decrypts on every process start (~1.2 s measured), including git hooks
-# that never reach an LLM. Move the call to the LLM entry points if that matters.
-_decoded_store()
-
 RuntimeMode = Literal["full-local", "hybrid-local", "remote-infra", "minimal"]
 _RUNTIME_MODES: tuple[RuntimeMode, ...] = (
     "full-local",

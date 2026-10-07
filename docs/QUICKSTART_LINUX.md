@@ -65,11 +65,13 @@ encrypted store instead:
 ./scripts/axon-secrets.sh list                    # names only
 ```
 
-The engine reads `~/.config/axon/credentials.cred` at start and fills any
-variable that is still unset; exported variables and `.env` files win. The blob
-is bound to the machine and the user, so a copy does not open elsewhere.
-Decrypting costs about 1.2 s per process start. `AXON_CREDENTIALS_FILE` points
-the engine and the script at another store.
+The engine reads `~/.config/axon/credentials.cred` on the first embed that
+finds the key unset, once per process (a failed read included), and only for
+that one name - it is not copied into the environment, so a child process
+inherits nothing; exported variables and `.env` files win. The blob is bound to
+the machine and the user, so a copy does not open elsewhere. The ~1.2s decrypt
+cost is paid once, by the first embed. `AXON_CREDENTIALS_FILE` points the
+engine and the script at another store.
 
 ## 4. Create a small vault
 
