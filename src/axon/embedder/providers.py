@@ -85,7 +85,10 @@ def _call_openai_compatible(
     if not config.api_key_env:
         api_key = ""
     else:
-        api_key = os.environ.get(config.api_key_env) or credential_from_store(config.api_key_env)
+        # Stripped: httpx rejects a header value with trailing whitespace and quotes the
+        # whole value in the error, which embed_via_chain logs and re-raises.
+        env_value = (os.environ.get(config.api_key_env) or "").strip()
+        api_key = env_value or (credential_from_store(config.api_key_env) or "").strip()
         if not api_key:
             raise MissingApiKeyError(config.api_key_env)
     resp = httpx.post(

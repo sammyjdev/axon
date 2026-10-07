@@ -198,3 +198,43 @@ def test_provider_fn_forwards_the_timeout_to_httpx(
     providers.provider_fn(deepinfra_cfg)(["x"])
 
     assert [request["timeout"] for request in requests] == [5.0, 30.0]
+
+
+@pytest.mark.parametrize("stored", ("stub-value-one ", "stub-value-one\t"))
+def test_a_stored_key_is_sent_without_its_trailing_whitespace(
+    store_env: Path, monkeypatch: pytest.MonkeyPatch, stored: str
+) -> None:
+    # httpx rejects a header value with trailing whitespace and quotes the whole
+    # value in the error, which embed_via_chain then logs.
+    _decrypt_returns(monkeypatch, f"DEEPINFRA_API_KEY={stored}\n")
+    requests = _fake_post(monkeypatch)
+    deepinfra_cfg = load_embedder_chain_config().providers[-1]
+
+    providers.provider_fn(deepinfra_cfg)(["probe"])
+
+    assert requests[0]["headers"] == {"Authorization": "Bearer stub-value-one"}
+
+
+def test_an_exported_key_is_sent_without_its_trailing_whitespace(
+    store_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEEPINFRA_API_KEY", "exported-value-one ")
+    requests = _fake_post(monkeypatch)
+    deepinfra_cfg = load_embedder_chain_config().providers[-1]
+
+    providers.provider_fn(deepinfra_cfg)(["probe"])
+
+    assert requests[0]["headers"] == {"Authorization": "Bearer exported-value-one"}
+
+
+def test_a_whitespace_only_stored_key_counts_as_missing(
+    store_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _decrypt_returns(monkeypatch, "DEEPINFRA_API_KEY=   \n")
+    requests = _fake_post(monkeypatch)
+    deepinfra_cfg = load_embedder_chain_config().providers[-1]
+
+    with pytest.raises(providers.MissingApiKeyError):
+        providers.provider_fn(deepinfra_cfg)(["probe"])
+
+    assert requests == []
