@@ -13,7 +13,11 @@ import math
 import os
 from collections.abc import Callable
 
-from axon.config.runtime import EmbedderProviderConfig, load_embedder_chain_config
+from axon.config.runtime import (
+    EmbedderProviderConfig,
+    credential_from_store,
+    load_embedder_chain_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +32,14 @@ class AllProvidersFailedError(RuntimeError):
     Never silently return a wrong-dim/empty/zero vector -- callers must handle
     this explicitly (e.g. surface an ingest/query error).
     """
+
+
+class MissingApiKeyError(RuntimeError):
+    """Raised when an embedding provider requires an API key that is not set."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"{name} is not set")
+        self.name = name
 
 
 def _l2_normalize(vectors: list[list[float]]) -> list[list[float]]:
@@ -47,46 +59,65 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-def _call_ollama(texts: list[str], config: EmbedderProviderConfig) -> list[list[float]]:
+def _call_ollama(
+    texts: list[str],
+    config: EmbedderProviderConfig,
+    timeout: float = _TIMEOUT_SECONDS,
+) -> list[list[float]]:
     import httpx
 
     resp = httpx.post(
         config.endpoint,
         json={"model": config.model, "input": texts},
-        timeout=_TIMEOUT_SECONDS,
+        timeout=timeout,
     )
     resp.raise_for_status()
     return resp.json()["embeddings"]
 
 
-def _call_openai_compatible(texts: list[str], config: EmbedderProviderConfig) -> list[list[float]]:
+def _call_openai_compatible(
+    texts: list[str],
+    config: EmbedderProviderConfig,
+    timeout: float = _TIMEOUT_SECONDS,
+) -> list[list[float]]:
     import httpx
 
-    api_key = os.environ.get(config.api_key_env, "") if config.api_key_env else ""
-    if config.api_key_env and not api_key:
-        raise RuntimeError(f"{config.api_key_env} is not set")
+    if not config.api_key_env:
+        api_key = ""
+    else:
+        # Stripped: httpx rejects a header value with trailing whitespace and quotes the
+        # whole value in the error, which embed_via_chain logs and re-raises.
+        env_value = (os.environ.get(config.api_key_env) or "").strip()
+        api_key = env_value or (credential_from_store(config.api_key_env) or "").strip()
+        if not api_key:
+            raise MissingApiKeyError(config.api_key_env)
     resp = httpx.post(
         config.endpoint,
         json={"model": config.model, "input": texts},
         headers={"Authorization": f"Bearer {api_key}"},
-        timeout=_TIMEOUT_SECONDS,
+        timeout=timeout,
     )
     resp.raise_for_status()
     payload = resp.json()
     return [item["embedding"] for item in payload["data"]]
 
 
-_CALLERS: dict[str, Callable[[list[str], EmbedderProviderConfig], list[list[float]]]] = {
+_CALLERS: dict[
+    str, Callable[[list[str], EmbedderProviderConfig, float], list[list[float]]]
+] = {
     "ollama": _call_ollama,
     "nim": _call_openai_compatible,
     "deepinfra": _call_openai_compatible,
 }
 
 
-def provider_fn(config: EmbedderProviderConfig) -> ProviderFn:
+def provider_fn(
+    config: EmbedderProviderConfig,
+    timeout: float = _TIMEOUT_SECONDS,
+) -> ProviderFn:
     """Build a callable that embeds texts via a single configured provider."""
     caller = _CALLERS[config.name]
-    return lambda texts: caller(texts, config)
+    return lambda texts: caller(texts, config, timeout)
 
 
 def embed_via_chain(

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import functools
 import logging
 import os
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from datetime import date
@@ -21,6 +23,40 @@ logger = logging.getLogger(__name__)
 # Carrega .env.local sobre .env, sem sobrescrever vars já exportadas pelo shell
 load_dotenv(Path(__file__).parents[3] / ".env", override=False)
 load_dotenv(Path(__file__).parents[3] / ".env.local", override=False)
+
+
+@functools.cache
+def _decoded_store() -> dict[str, str]:
+    store = Path(
+        os.environ.get("AXON_CREDENTIALS_FILE")
+        or Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        / "axon"
+        / "credentials.cred"
+    )
+    if not store.is_file():
+        return {}
+    try:
+        decrypted = subprocess.run(  # noqa: S603
+            ["systemd-creds", "--user", "decrypt", "--name=axon", str(store), "-"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("credential store %s not loaded: %s", store, exc)
+        return {}
+    creds: dict[str, str] = {}
+    for line in decrypted.splitlines():
+        name, sep, value = line.partition("=")
+        if sep:
+            creds[name] = value
+    return creds
+
+
+def credential_from_store(name: str) -> str | None:
+    return _decoded_store().get(name) or None
+
 
 RuntimeMode = Literal["full-local", "hybrid-local", "remote-infra", "minimal"]
 _RUNTIME_MODES: tuple[RuntimeMode, ...] = (

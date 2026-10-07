@@ -16,6 +16,10 @@ from pathlib import Path
 
 import pytest
 
+# Set before anything imports axon: the suite must never decrypt the operator's
+# credential store, which would hand real provider keys to every test.
+os.environ["AXON_CREDENTIALS_FILE"] = os.devnull
+
 # Every AXON-owned relational/vector table, truncated between tests so the
 # shared Postgres container gives each test a clean slate (the isolation that
 # the retired per-test SQLite files used to provide - dec-121 Phase 3).
@@ -223,6 +227,24 @@ def _isolate_global_git_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+
+
+@pytest.fixture(autouse=True)
+def _embedder_live_probe_stays_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the ``embedder.live`` doctor check offline under the suite.
+
+    The check does one real embed round trip, and about ten existing tests call
+    ``run_all_checks()`` with no stub. None may open a socket or decrypt the
+    operator's store, so the per-provider probe is replaced by one that just
+    succeeds (EK-16).
+    """
+    try:
+        from axon.doctor.checks import embedder_live
+    except ImportError:
+        # The module does not exist yet on this branch; keep the suite importable
+        # and green until the executor creates it.
+        return
+    monkeypatch.setattr(embedder_live, "_probe", lambda config, timeout: None)
 
 
 @pytest.fixture(autouse=True)

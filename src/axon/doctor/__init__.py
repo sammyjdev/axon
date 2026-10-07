@@ -44,6 +44,7 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_hook_interpreters,
         check_install_freshness,
     )
+    from axon.doctor.checks.embedder_live import check_embedder_live
     from axon.doctor.checks.index_composition import check_index_composition
     from axon.doctor.checks.install_branch import check_install_branch
     from axon.doctor.checks.recall_savings import check_recall_savings
@@ -63,6 +64,7 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_hook_interpreters(),
         check_install_freshness(),
         check_capture_gap(),
+        check_embedder_live(),
     ]
 
 
