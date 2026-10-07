@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import subprocess
@@ -24,8 +25,8 @@ load_dotenv(Path(__file__).parents[3] / ".env", override=False)
 load_dotenv(Path(__file__).parents[3] / ".env.local", override=False)
 
 
-def _load_credential_store() -> None:
-    """Fill unset env vars from the systemd-creds store written by scripts/axon-secrets.sh."""
+@functools.cache
+def _decoded_store() -> dict[str, str]:
     store = Path(
         os.environ.get("AXON_CREDENTIALS_FILE")
         or Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
@@ -33,7 +34,7 @@ def _load_credential_store() -> None:
         / "credentials.cred"
     )
     if not store.is_file():
-        return
+        return {}
     try:
         decrypted = subprocess.run(  # noqa: S603
             ["systemd-creds", "--user", "decrypt", "--name=axon", str(store), "-"],  # noqa: S607
@@ -44,17 +45,22 @@ def _load_credential_store() -> None:
         ).stdout
     except (OSError, subprocess.SubprocessError) as exc:
         logger.warning("credential store %s not loaded: %s", store, exc)
-        return
+        return {}
+    creds: dict[str, str] = {}
     for line in decrypted.splitlines():
         name, sep, value = line.partition("=")
         if sep:
-            os.environ.setdefault(name, value)
+            creds[name] = value
+    return creds
 
 
-# Same precedence as the .env files: the store only fills what is still unset.
+def credential_from_store(name: str) -> str | None:
+    return _decoded_store().get(name) or None
+
+
 # ponytail: decrypts on every process start (~1.2 s measured), including git hooks
 # that never reach an LLM. Move the call to the LLM entry points if that matters.
-_load_credential_store()
+_decoded_store()
 
 RuntimeMode = Literal["full-local", "hybrid-local", "remote-infra", "minimal"]
 _RUNTIME_MODES: tuple[RuntimeMode, ...] = (
