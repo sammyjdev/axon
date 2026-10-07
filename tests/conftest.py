@@ -230,6 +230,24 @@ def _isolate_global_git_config(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _embedder_live_probe_stays_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the ``embedder.live`` doctor check offline under the suite.
+
+    The check does one real embed round trip, and about ten existing tests call
+    ``run_all_checks()`` with no stub. None may open a socket or decrypt the
+    operator's store, so the per-provider probe is replaced by one that just
+    succeeds (EK-16).
+    """
+    try:
+        from axon.doctor.checks import embedder_live
+    except ImportError:
+        # The module does not exist yet on this branch; keep the suite importable
+        # and green until the executor creates it.
+        return
+    monkeypatch.setattr(embedder_live, "_probe", lambda config, timeout: None)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_axon_engine(
     _shared_pg, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
