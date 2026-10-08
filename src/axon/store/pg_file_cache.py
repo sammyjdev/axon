@@ -35,7 +35,8 @@ class PostgresFileCache:
                     chunk_count integer NOT NULL DEFAULT 0,
                     indexed_at  timestamptz NOT NULL,
                     chunker_version text,
-                    PRIMARY KEY (file_path, ctx)
+                    repo        text    NOT NULL DEFAULT '',
+                    CONSTRAINT file_index_repo_pkey PRIMARY KEY (repo, file_path, ctx)
                 )
                 """
             )
@@ -43,6 +44,37 @@ class PostgresFileCache:
             # which reads as stale and reindexes once.
             await con.execute(
                 "ALTER TABLE file_index ADD COLUMN IF NOT EXISTS chunker_version text"
+            )
+            # Retrofit repo column and move PK to (repo, file_path, ctx) for
+            # pre-existing databases (matching 0007_identity_and_kind.sql). A
+            # PRIMARY KEY inline in CREATE TABLE IF NOT EXISTS never retrofits
+            # an existing table, and CLI index commands call ensure_schema
+            # directly without running migrations.
+            await con.execute(
+                "ALTER TABLE file_index ADD COLUMN IF NOT EXISTS repo text NOT NULL DEFAULT ''"
+            )
+            await con.execute(
+                """
+                DO $$
+                DECLARE
+                    existing_pk text;
+                BEGIN
+                    IF to_regclass('file_index') IS NULL THEN
+                        RETURN;
+                    END IF;
+                    SELECT conname INTO existing_pk
+                      FROM pg_constraint
+                     WHERE conrelid = 'file_index'::regclass AND contype = 'p';
+                    IF existing_pk = 'file_index_repo_pkey' THEN
+                        RETURN;
+                    END IF;
+                    IF existing_pk IS NOT NULL THEN
+                        EXECUTE format('ALTER TABLE file_index DROP CONSTRAINT %I', existing_pk);
+                    END IF;
+                    ALTER TABLE file_index
+                        ADD CONSTRAINT file_index_repo_pkey PRIMARY KEY (repo, file_path, ctx);
+                END $$;
+                """
             )
             await con.execute(
                 "CREATE INDEX IF NOT EXISTS ix_file_index_ctx ON file_index (ctx)"
@@ -97,7 +129,7 @@ class PostgresFileCache:
                     (file_path, ctx, sha1, status, chunk_count, indexed_at,
                      chunker_version)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (file_path, ctx) DO UPDATE SET
+                ON CONFLICT (repo, file_path, ctx) DO UPDATE SET
                     sha1            = excluded.sha1,
                     status          = excluded.status,
                     chunk_count     = excluded.chunk_count,

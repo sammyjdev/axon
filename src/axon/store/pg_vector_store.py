@@ -110,7 +110,8 @@ class PgVectorStore:
                         to_tsvector('simple', content)
                     ) STORED,
                     git_commit  text DEFAULT '',
-                    modified_at timestamptz NOT NULL DEFAULT now()
+                    modified_at timestamptz NOT NULL DEFAULT now(),
+                    kind        text
                 )
                 """
             )
@@ -121,6 +122,9 @@ class PgVectorStore:
             await con.execute(
                 f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS content_tsv "
                 "tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED"
+            )
+            await con.execute(
+                f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS kind text"
             )
             await con.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{t}_hnsw "
