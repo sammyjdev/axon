@@ -505,6 +505,7 @@ class ExpansionService:
         )
 
     async def _reindex_publish_path(self, publish_path: Path, ctx: str) -> None:
+        from axon.core.file_identity import load_repo_roots
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.file_cache import make_file_cache
@@ -518,6 +519,7 @@ class ExpansionService:
             from axon.store.index_lock import IndexLockError, acquire_index_lock
 
             try:
+                repo_roots = load_repo_roots(self.runtime)
                 async with acquire_index_lock(self.runtime.data_root):
                     await index_path(
                         publish_path,
@@ -526,6 +528,7 @@ class ExpansionService:
                         vault_root=self.runtime.vault_root,
                         file_cache=file_cache,
                         forced_ctx=ctx,
+                        repo_roots=repo_roots,
                     )
             except IndexLockError:
                 # Another indexer holds the lock; the published file is picked

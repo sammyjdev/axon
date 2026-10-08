@@ -84,7 +84,7 @@ class PostgresFileCache:
             )
 
     async def get_all_sha1s(
-        self, ctx: str, *, chunker_version: str | None = None
+        self, ctx: str, *, chunker_version: str | None = None, repo: str = ""
     ) -> dict[str, str]:
         """Cached sha1s for ctx, excluding anything a different chunker produced.
 
@@ -98,14 +98,17 @@ class PostgresFileCache:
             if chunker_version is None:
                 rows = await con.fetch(
                     "SELECT file_path, sha1 FROM file_index"
-                    " WHERE ctx=$1 AND status='done'",
+                    " WHERE ctx=$1 AND status='done' AND repo=$2",
                     ctx,
+                    repo,
                 )
             else:
                 rows = await con.fetch(
                     "SELECT file_path, sha1 FROM file_index"
-                    " WHERE ctx=$1 AND status='done' AND chunker_version=$2",
-                    ctx, chunker_version,
+                    " WHERE ctx=$1 AND status='done' AND chunker_version=$2 AND repo=$3",
+                    ctx,
+                    chunker_version,
+                    repo,
                 )
         return {r["file_path"]: r["sha1"] for r in rows}
 
@@ -118,6 +121,7 @@ class PostgresFileCache:
         *,
         status: str = "done",
         chunker_version: str | None = None,
+        repo: str = "",
     ) -> None:
         fp = Path(file_path.replace("\\", "/")).as_posix()
         now = datetime.now(UTC)
@@ -127,8 +131,8 @@ class PostgresFileCache:
                 """
                 INSERT INTO file_index
                     (file_path, ctx, sha1, status, chunk_count, indexed_at,
-                     chunker_version)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                     chunker_version, repo)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (repo, file_path, ctx) DO UPDATE SET
                     sha1            = excluded.sha1,
                     status          = excluded.status,
@@ -136,22 +140,34 @@ class PostgresFileCache:
                     indexed_at      = excluded.indexed_at,
                     chunker_version = excluded.chunker_version
                 """,
-                fp, ctx, sha1, status, chunk_count, now, chunker_version,
+                fp,
+                ctx,
+                sha1,
+                status,
+                chunk_count,
+                now,
+                chunker_version,
+                repo,
             )
 
-    async def delete_entry(self, file_path: str, ctx: str) -> None:
+    async def delete_entry(self, file_path: str, ctx: str, *, repo: str = "") -> None:
         fp = Path(file_path.replace("\\", "/")).as_posix()
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             await con.execute(
-                "DELETE FROM file_index WHERE file_path=$1 AND ctx=$2", fp, ctx
+                "DELETE FROM file_index WHERE file_path=$1 AND ctx=$2 AND repo=$3",
+                fp,
+                ctx,
+                repo,
             )
 
-    async def list_entries(self, ctx: str) -> list[tuple[str, str]]:
+    async def list_entries(self, ctx: str, *, repo: str = "") -> list[tuple[str, str]]:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             rows = await con.fetch(
-                "SELECT file_path, sha1 FROM file_index WHERE ctx=$1", ctx
+                "SELECT file_path, sha1 FROM file_index WHERE ctx=$1 AND repo=$2",
+                ctx,
+                repo,
             )
         return [(r["file_path"], r["sha1"]) for r in rows]
 

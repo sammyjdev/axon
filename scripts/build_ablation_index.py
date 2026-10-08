@@ -42,8 +42,15 @@ class NamespacedFileCache:
     def _ctx(self, ctx: str) -> str:
         return f"{self._namespace}:{ctx}"
 
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
-        return await self._inner.get_all_sha1s(self._ctx(ctx))
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None, repo: str = ""
+    ) -> dict[str, str]:
+        kwargs = {}
+        if chunker_version is not None:
+            kwargs["chunker_version"] = chunker_version
+        if repo:
+            kwargs["repo"] = repo
+        return await self._inner.get_all_sha1s(self._ctx(ctx), **kwargs)
 
     async def set_entry(
         self,
@@ -53,24 +60,35 @@ class NamespacedFileCache:
         chunk_count: int,
         *,
         status: str = "done",
+        chunker_version: str | None = None,
+        repo: str = "",
     ) -> None:
+        kwargs = {"status": status}
+        if chunker_version is not None:
+            kwargs["chunker_version"] = chunker_version
+        if repo:
+            kwargs["repo"] = repo
         await self._inner.set_entry(
             file_path,
             self._ctx(ctx),
             sha1,
             chunk_count,
-            status=status,
+            **kwargs,
         )
 
-    async def delete_entry(self, file_path: str, ctx: str) -> None:
-        await self._inner.delete_entry(file_path, self._ctx(ctx))
+    async def delete_entry(self, file_path: str, ctx: str, *, repo: str = "") -> None:
+        kwargs = {"repo": repo} if repo else {}
+        await self._inner.delete_entry(file_path, self._ctx(ctx), **kwargs)
 
-    async def list_entries(self, ctx: str) -> list[tuple[str, str]]:
-        return await self._inner.list_entries(self._ctx(ctx))
+    async def list_entries(self, ctx: str, *, repo: str = "") -> list[tuple[str, str]]:
+        kwargs = {"repo": repo} if repo else {}
+        return await self._inner.list_entries(self._ctx(ctx), **kwargs)
 
 
 class NoCache:
-    async def get_all_sha1s(self, ctx: str) -> dict[str, str]:
+    async def get_all_sha1s(
+        self, ctx: str, *, chunker_version: str | None = None, repo: str = ""
+    ) -> dict[str, str]:
         return {}
 
     async def set_entry(
@@ -81,13 +99,15 @@ class NoCache:
         chunk_count: int,
         *,
         status: str = "done",
+        chunker_version: str | None = None,
+        repo: str = "",
     ) -> None:
         return None
 
-    async def delete_entry(self, file_path: str, ctx: str) -> None:
+    async def delete_entry(self, file_path: str, ctx: str, *, repo: str = "") -> None:
         return None
 
-    async def list_entries(self, ctx: str) -> list[tuple[str, str]]:
+    async def list_entries(self, ctx: str, *, repo: str = "") -> list[tuple[str, str]]:
         return []
 
 

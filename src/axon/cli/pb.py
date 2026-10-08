@@ -2171,6 +2171,7 @@ def index_dev(
         return
 
     async def _index_dev() -> None:
+        from axon.core.file_identity import load_repo_roots
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.pg_symbol_deps import PostgresSymbolDeps
@@ -2180,6 +2181,7 @@ def index_dev(
         store = make_vector_store(_RUNTIME)
         graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
         file_cache, db_conn = await _open_file_cache()
+        repo_roots = load_repo_roots(_RUNTIME)
 
         try:
             await store.ensure_collections()
@@ -2197,6 +2199,7 @@ def index_dev(
                         forced_ctx=entry.ctx,
                         graph_store=graph_store,
                         languages=set(entry.languages),
+                        repo_roots=repo_roots,
                     )
                 total_files += indexed_files
                 total_chunks += chunks
@@ -2237,6 +2240,7 @@ def index_vault(
         return
 
     async def _index_vault() -> None:
+        from axon.core.file_identity import load_repo_roots
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.pg_symbol_deps import PostgresSymbolDeps
@@ -2246,6 +2250,7 @@ def index_vault(
         store = make_vector_store(_RUNTIME)
         graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
         file_cache, db_conn = await _open_file_cache()
+        repo_roots = load_repo_roots(_RUNTIME)
 
         try:
             await store.ensure_collections()
@@ -2260,6 +2265,7 @@ def index_vault(
                     forced_ctx=None,
                     graph_store=graph_store,
                     languages={"markdown"},
+                    repo_roots=repo_roots,
                 )
         finally:
             await store.close()
@@ -2405,6 +2411,7 @@ def scan(
             typer.echo(f"Indexando {entry.name}...")
 
             async def _index_one(entry: ProjectEntry = entry) -> None:
+                from axon.core.file_identity import load_repo_roots
                 from axon.embedder.engine import EmbedderEngine
                 from axon.embedder.pipeline import index_path
                 from axon.store.pg_symbol_deps import PostgresSymbolDeps
@@ -2414,6 +2421,7 @@ def scan(
                 store = make_vector_store(_RUNTIME)
                 graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
                 file_cache, db_conn = await _open_file_cache()
+                repo_roots = load_repo_roots(_RUNTIME)
                 try:
                     await store.ensure_collections()
                     await graph_store.ensure_schema()
@@ -2426,6 +2434,7 @@ def scan(
                             file_cache=file_cache,
                             forced_ctx=entry.ctx,
                             graph_store=graph_store,
+                            repo_roots=repo_roots,
                         )
                         typer.echo(f"  {entry.name}: {indexed} arquivo(s), {chunks} chunk(s)")
                 finally:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import Literal
@@ -123,3 +124,23 @@ def kind_for_path(rel_path: str) -> Kind:
 
     # 6. Code rule: default for all other supported chunker paths
     return "code"
+
+
+def load_repo_roots(runtime: object) -> RepoRoots:
+    """Load repo roots mapping from runtime.data_root / "onboarded_repos.json" and vault_root.
+
+    Tolerates absent or corrupt registry file. Never scans parent directory.
+    """
+    data_root = getattr(runtime, "data_root", None)
+    vault_root = getattr(runtime, "vault_root", "")
+    entries: list[str] = []
+    if data_root is not None:
+        registry_file = Path(data_root) / "onboarded_repos.json"
+        try:
+            if registry_file.is_file():
+                raw = json.loads(registry_file.read_text(encoding="utf-8"))
+                if isinstance(raw, list):
+                    entries = [str(e) for e in raw if isinstance(e, (str, Path))]
+        except (OSError, ValueError):
+            entries = []
+    return build_repo_roots(entries, vault_root)
