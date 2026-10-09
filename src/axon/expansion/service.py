@@ -511,6 +511,8 @@ class ExpansionService:
         from axon.store.file_cache import make_file_cache
         from axon.store.vector_store_factory import make_vector_store
 
+        # First, and strict: an unreadable registry must stop the run before a store opens.
+        repo_roots = load_repo_roots(self.runtime, strict=True)
         engine = EmbedderEngine()
         store = make_vector_store(self.runtime)
         file_cache, cache_closer = await make_file_cache(self.runtime)
@@ -519,7 +521,6 @@ class ExpansionService:
             from axon.store.index_lock import IndexLockError, acquire_index_lock
 
             try:
-                repo_roots = load_repo_roots(self.runtime)
                 async with acquire_index_lock(self.runtime.data_root):
                     await index_path(
                         publish_path,

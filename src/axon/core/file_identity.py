@@ -148,10 +148,14 @@ def kind_for_path(rel_path: str) -> Kind:
     return "code"
 
 
-def load_repo_roots(runtime: object) -> RepoRoots:
+def load_repo_roots(runtime: object, *, strict: bool = False) -> RepoRoots:
     """Load repo roots mapping from runtime.data_root / "onboarded_repos.json" and vault_root.
 
     Tolerates absent or corrupt registry file. Never scans parent directory.
+
+    A writer passes ``strict=True``: with a registry that exists and cannot be read, an
+    already migrated repo resolves to no root and would be indexed a second time under its
+    absolute paths. An absent registry stays valid in both modes.
     """
     data_root = getattr(runtime, "data_root", None)
     vault_root = getattr(runtime, "vault_root", "")
@@ -161,9 +165,12 @@ def load_repo_roots(runtime: object) -> RepoRoots:
         try:
             if registry_file.is_file():
                 raw = json.loads(registry_file.read_text(encoding="utf-8"))
-                if isinstance(raw, list):
-                    entries = [str(e) for e in raw if isinstance(e, (str, Path))]
-        except (OSError, ValueError):
+                if not isinstance(raw, list):
+                    raise ValueError("not a JSON list")
+                entries = [str(e) for e in raw if isinstance(e, (str, Path))]
+        except (OSError, ValueError) as exc:
+            if strict:
+                raise ValueError(f"{registry_file} exists and cannot be read: {exc}") from exc
             entries = []
     return build_repo_roots(entries, vault_root)
 

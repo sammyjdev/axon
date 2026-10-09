@@ -2185,11 +2185,12 @@ def index_dev(
         from axon.store.pg_symbol_deps import PostgresSymbolDeps
         from axon.store.vector_store_factory import make_vector_store
 
+        # First, and strict: an unreadable registry must stop the run before a store opens.
+        repo_roots = load_repo_roots(_RUNTIME, strict=True)
         engine = EmbedderEngine()
         store = make_vector_store(_RUNTIME)
         graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
         file_cache, db_conn = await _open_file_cache()
-        repo_roots = load_repo_roots(_RUNTIME)
 
         try:
             await store.ensure_collections()
@@ -2254,11 +2255,12 @@ def index_vault(
         from axon.store.pg_symbol_deps import PostgresSymbolDeps
         from axon.store.vector_store_factory import make_vector_store
 
+        # First, and strict: an unreadable registry must stop the run before a store opens.
+        repo_roots = load_repo_roots(_RUNTIME, strict=True)
         engine = EmbedderEngine()
         store = make_vector_store(_RUNTIME)
         graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
         file_cache, db_conn = await _open_file_cache()
-        repo_roots = load_repo_roots(_RUNTIME)
 
         try:
             await store.ensure_collections()
@@ -2425,11 +2427,13 @@ def scan(
                 from axon.store.pg_symbol_deps import PostgresSymbolDeps
                 from axon.store.vector_store_factory import make_vector_store
 
+                # First, and strict: an unreadable registry must stop the run before a
+                # store opens.
+                repo_roots = load_repo_roots(_RUNTIME, strict=True)
                 engine = EmbedderEngine()
                 store = make_vector_store(_RUNTIME)
                 graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
                 file_cache, db_conn = await _open_file_cache()
-                repo_roots = load_repo_roots(_RUNTIME)
                 try:
                     await store.ensure_collections()
                     await graph_store.ensure_schema()
