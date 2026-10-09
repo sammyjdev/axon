@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 Kind = Literal[
     "code",
@@ -37,12 +40,25 @@ def build_repo_roots(
     roots: RepoRoots = {}
     for entry in onboarded:
         p = Path(entry)
+        if not _is_root(p):
+            continue
         # Use directory basename instead of repo_identity() to avoid git subprocesses.
         # Entries in onboarded_repos.json are already resolved at install time, so no
         # filesystem resolve() is called here.
-        roots.setdefault(p.name, p)
-    roots[VAULT_REPO] = Path(vault_root)
+        kept = roots.setdefault(p.name, p)
+        if kept != p:
+            logger.warning("repo root %s ignored: %s already holds the name %r", p, kept, p.name)
+    vault = Path(vault_root)
+    if _is_root(vault):
+        roots[VAULT_REPO] = vault
     return roots
+
+
+def _is_root(path: Path) -> bool:
+    # A root is matched as a path prefix. An empty AXON_VAULT is Path('.'), whose parts are
+    # (), and would claim every absolute path; "/" would do the same.
+    posix = PurePosixPath(str(path).replace("\\", "/"))
+    return posix.is_absolute() and len(posix.parts) > 1 and ".." not in posix.parts
 
 
 def identity_for_path(
@@ -56,6 +72,10 @@ def identity_for_path(
         return None
 
     parts = posix_path.parts
+    # Not normalized: resolving ".." needs the filesystem, and a prefix match on the raw
+    # parts would place the file inside a root it escapes.
+    if ".." in parts:
+        return None
     best_repo: str | None = None
     best_root_parts: tuple[str, ...] | None = None
 
@@ -86,6 +106,8 @@ def absolute_for_identity(
     if root is None:
         return None
     clean_rel = rel_path.lstrip("/\\")
+    if ".." in PurePosixPath(clean_rel.replace("\\", "/")).parts:
+        return None
     return root / clean_rel
 
 

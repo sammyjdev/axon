@@ -137,3 +137,18 @@ def test_career_and_plan_counts_are_unchanged(
     result = check_index_composition(pg_url=_get_test_pg_url(), table=probe_table)
     assert "career=1" in result.detail
     assert "plans=1" in result.detail
+
+
+def test_a_plans_directory_at_the_repo_root_is_counted(
+    probe_table: str,
+) -> None:
+    _insert_rows(
+        probe_table,
+        [
+            ("1", "knowledge", "plans/p.md", "vault", "spec"),
+            ("2", "knowledge", "/Users/s/vault/plans/p.md", "plans", None),
+            ("3", "knowledge", "src/plans.py", "axon", "code"),
+        ],
+    )
+    result = check_index_composition(pg_url=_get_test_pg_url(), table=probe_table)
+    assert "plans=2" in result.detail
