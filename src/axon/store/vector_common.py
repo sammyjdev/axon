@@ -10,6 +10,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from axon.context.staleness import assess_staleness, detect_stale_replacements
+from axon.core.file_identity import Kind
 from axon.embedder.engine import default_embedding_dimension
 
 # AXON_VECTOR_SIZE overrides the default; the default is derived from the
@@ -72,6 +73,7 @@ class Chunk(BaseModel):
     content: str
     git_commit: str = ""
     modified_at: datetime = Field(default_factory=datetime.utcnow)
+    kind: Kind | None = None
 
 
 def _rank_and_limit(

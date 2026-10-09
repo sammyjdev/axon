@@ -110,7 +110,8 @@ class PgVectorStore:
                         to_tsvector('simple', content)
                     ) STORED,
                     git_commit  text DEFAULT '',
-                    modified_at timestamptz NOT NULL DEFAULT now()
+                    modified_at timestamptz NOT NULL DEFAULT now(),
+                    kind        text
                 )
                 """
             )
@@ -121,6 +122,9 @@ class PgVectorStore:
             await con.execute(
                 f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS content_tsv "
                 "tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED"
+            )
+            await con.execute(
+                f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS kind text"
             )
             await con.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{t}_hnsw "
@@ -168,6 +172,7 @@ class PgVectorStore:
                 c.content,
                 c.git_commit,
                 c.modified_at,
+                c.kind,
             )
             for c in chunks
         ]
@@ -177,13 +182,14 @@ class PgVectorStore:
                 f"""
                 INSERT INTO {t}
                     (id, vector, ctx, file_path, language, chunk_type, symbol,
-                     project, content, git_commit, modified_at)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                     project, content, git_commit, modified_at, kind)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                 ON CONFLICT (id) DO UPDATE SET
                     vector=EXCLUDED.vector, ctx=EXCLUDED.ctx, file_path=EXCLUDED.file_path,
                     language=EXCLUDED.language, chunk_type=EXCLUDED.chunk_type,
                     symbol=EXCLUDED.symbol, project=EXCLUDED.project, content=EXCLUDED.content,
-                    git_commit=EXCLUDED.git_commit, modified_at=EXCLUDED.modified_at
+                    git_commit=EXCLUDED.git_commit, modified_at=EXCLUDED.modified_at,
+                    kind=EXCLUDED.kind
                 """,  # noqa: S608
                 rows,
             )
@@ -247,14 +253,22 @@ class PgVectorStore:
             prefer_ctx=prefer_ctx,
         )
 
-    async def delete_by_file(self, ctx: str, file_path: str) -> None:
+    async def delete_by_file(self, ctx: str, file_path: str, *, repo: str = "") -> None:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            await con.execute(
-                f"DELETE FROM {self._table} WHERE ctx=$1 AND file_path=$2",  # noqa: S608
-                ctx,
-                file_path,
-            )
+            if repo:
+                await con.execute(
+                    f"DELETE FROM {self._table} WHERE ctx=$1 AND file_path=$2 AND project=$3",  # noqa: S608
+                    ctx,
+                    file_path,
+                    repo,
+                )
+            else:
+                await con.execute(
+                    f"DELETE FROM {self._table} WHERE ctx=$1 AND file_path=$2",  # noqa: S608
+                    ctx,
+                    file_path,
+                )
 
     async def close(self) -> None:
         if self._pool is not None:

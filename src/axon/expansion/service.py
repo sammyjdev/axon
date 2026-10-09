@@ -505,11 +505,14 @@ class ExpansionService:
         )
 
     async def _reindex_publish_path(self, publish_path: Path, ctx: str) -> None:
+        from axon.core.file_identity import load_repo_roots
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.file_cache import make_file_cache
         from axon.store.vector_store_factory import make_vector_store
 
+        # First, and strict: an unreadable registry must stop the run before a store opens.
+        repo_roots = load_repo_roots(self.runtime, strict=True)
         engine = EmbedderEngine()
         store = make_vector_store(self.runtime)
         file_cache, cache_closer = await make_file_cache(self.runtime)
@@ -526,6 +529,7 @@ class ExpansionService:
                         vault_root=self.runtime.vault_root,
                         file_cache=file_cache,
                         forced_ctx=ctx,
+                        repo_roots=repo_roots,
                     )
             except IndexLockError:
                 # Another indexer holds the lock; the published file is picked

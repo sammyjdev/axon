@@ -32,9 +32,13 @@ async def _fetch_index_composition(*, pg_url: str, table: str) -> dict[str, int]
             f"""
             SELECT
                 COUNT(*)::bigint AS total_chunks,
-                COUNT(*) FILTER (WHERE file_path LIKE '%/vault/%')::bigint AS vault_chunks,
+                COUNT(*) FILTER (
+                    WHERE project = 'vault' OR file_path LIKE '%/vault/%'
+                )::bigint AS vault_chunks,
                 COUNT(*) FILTER (WHERE ctx = 'career')::bigint AS career_chunks,
-                COUNT(*) FILTER (WHERE file_path LIKE '%/plans/%')::bigint AS plan_artifacts
+                COUNT(*) FILTER (
+                    WHERE file_path LIKE '%/plans/%' OR file_path LIKE 'plans/%'
+                )::bigint AS plan_artifacts
             FROM {table}
             """  # noqa: S608
         )
