@@ -21,6 +21,7 @@ from axon.config.runtime import load_runtime_config
 from axon.context.compression_quality import compression_quality_note
 from axon.context.registry import VALID_CONTEXTS
 from axon.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
+from axon.core.file_identity import RepoRoots, display_path, load_repo_roots
 
 app = typer.Typer(
     name="axon",
@@ -300,6 +301,7 @@ def _build_context_pack(
     mode: str,
     effective_ctx: str | None,
     hits: list[dict],
+    roots: RepoRoots | None = None,
 ):
     from axon.context.contracts import ContextPack
 
@@ -309,7 +311,9 @@ def _build_context_pack(
 
     for hit in hits[: strategy.max_segments]:
         payload = hit.get("payload", {})
-        file_path = payload.get("file_path", "<sem arquivo>")
+        raw_path = str(payload.get("file_path", "<sem arquivo>"))
+        project = str(payload.get("project", ""))
+        file_path = display_path(raw_path, project, roots or {})
         symbol = payload.get("symbol", "<sem símbolo>")
         score = hit.get("score", 0.0)
         content = str(payload.get("content", "")).strip().replace("\n", " ")
@@ -1157,6 +1161,7 @@ def search(
             typer.echo("Nenhum resultado encontrado.")
             return
 
+        roots = load_repo_roots(_RUNTIME)
         pack = _build_context_pack(
             strategy=strategy,
             task_type=task_type,
@@ -1164,11 +1169,14 @@ def search(
             mode=mode,
             effective_ctx=resolved_ctx,
             hits=hits,
+            roots=roots,
         )
 
         for i, hit in enumerate(hits, start=1):
             payload = hit.get("payload", {})
-            file_path = payload.get("file_path", "<sem arquivo>")
+            raw_path = str(payload.get("file_path", "<sem arquivo>"))
+            project = str(payload.get("project", ""))
+            file_path = display_path(raw_path, project, roots)
             symbol = payload.get("symbol", "<sem símbolo>")
             chunk_type = payload.get("chunk_type", "<sem tipo>")
             score = hit.get("score", 0.0)

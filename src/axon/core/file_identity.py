@@ -144,3 +144,19 @@ def load_repo_roots(runtime: object) -> RepoRoots:
         except (OSError, ValueError):
             entries = []
     return build_repo_roots(entries, vault_root)
+
+
+def display_path(file_path: str, project: str, roots: RepoRoots) -> str:
+    """Format a stored file path for display or agent consumption.
+
+    Legacy rows with absolute paths or empty project identities are returned verbatim.
+    Relative paths under a known repo root expand to an absolute posix path.
+    Relative paths without a known root on this machine are formatted with a warning.
+    """
+    posix_path = PurePosixPath(str(file_path).replace("\\", "/"))
+    if posix_path.is_absolute() or not project:
+        return file_path
+    abs_path = absolute_for_identity(project, file_path, roots)
+    if abs_path is not None:
+        return abs_path.as_posix()
+    return f"{project}:{file_path} (not on this machine)"
