@@ -131,7 +131,7 @@ class EmbedderProviderConfig:
 
 @dataclass(frozen=True)
 class EmbedderChainConfig:
-    """Ordered bge-m3 provider chain (default: Ollama -> DeepInfra).
+    """Ordered bge-m3 provider chain (default: DeepInfra; Ollama first when opted in).
 
     Order and membership are configurable via AXON_EMBEDDER_CHAIN (comma-separated
     provider names); each listed provider's endpoint/model id is fixed per the
@@ -730,7 +730,10 @@ _EMBEDDER_CHAIN_MODEL = "bge-m3"
 # NIM removed from the default: its bge-m3 embedding endpoint returns
 # HTTP 500 upstream (verified live 2026-07-21). Re-enable by name via
 # AXON_EMBEDDER_CHAIN if the provider fixes it.
-_DEFAULT_EMBEDDER_CHAIN_ORDER = ("ollama", "deepinfra")
+# Ollama joins the default only when opted in (dec-106): on a machine without it every
+# embed pays a refused connection and logs a traceback before DeepInfra serves.
+_DEFAULT_EMBEDDER_CHAIN_ORDER = ("deepinfra",)
+_OLLAMA_EMBEDDER_CHAIN_ORDER = ("ollama", "deepinfra")
 
 
 def _embedder_provider_specs(ollama_local_host: str) -> dict[str, EmbedderProviderConfig]:
@@ -759,10 +762,16 @@ def load_embedder_chain_config() -> EmbedderChainConfig:
     """Load the bge-m3 provider chain.
 
     Order/membership: AXON_EMBEDDER_CHAIN env (comma-separated provider names,
-    default "ollama,deepinfra"). Each provider's endpoint/model id is fixed.
+    default "deepinfra", or "ollama,deepinfra" with AXON_PROVIDER_OLLAMA=1). Each
+    provider's endpoint/model id is fixed.
     """
     ollama_local_host = os.environ.get("AXON_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434")
-    raw_order = os.environ.get("AXON_EMBEDDER_CHAIN", ",".join(_DEFAULT_EMBEDDER_CHAIN_ORDER))
+    default_order = (
+        _OLLAMA_EMBEDDER_CHAIN_ORDER
+        if os.environ.get("AXON_PROVIDER_OLLAMA", "0") == "1"
+        else _DEFAULT_EMBEDDER_CHAIN_ORDER
+    )
+    raw_order = os.environ.get("AXON_EMBEDDER_CHAIN", ",".join(default_order))
     specs = _embedder_provider_specs(ollama_local_host)
     order = [name.strip().lower() for name in raw_order.split(",") if name.strip()]
     unknown = [name for name in order if name not in specs]
