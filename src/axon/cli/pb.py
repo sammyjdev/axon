@@ -2287,6 +2287,120 @@ def index_vault(
     asyncio.run(_index_vault())
 
 
+@app.command("sync")
+def sync(
+    path: Annotated[
+        str | None, typer.Argument(help="A path inside a registered root (default: cwd)")
+    ] = None,
+    all_roots: Annotated[
+        bool, typer.Option("--all", help="Every registered root, and the vault")
+    ] = False,
+    ctx: Annotated[
+        str | None, typer.Option("--ctx", help="The ctx of the repo, on its first sync")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print files and characters, embed nothing")
+    ] = False,
+) -> None:
+    """Bring a registered root, or every one with --all, to its HEAD."""
+    from axon.core.file_identity import VAULT_REPO, load_repo_roots
+    from axon.core.repo_identity import repo_identity
+    from axon.embedder.sync import SyncCtxError, resolve_root, sync_root, tree_size
+
+    # First, and strict: an unreadable registry must stop the run before a store opens.
+    roots = load_repo_roots(_RUNTIME, strict=True)
+    if all_roots:
+        if path or ctx:
+            typer.echo("--all takes no path and no --ctx: a ctx belongs to one repo.", err=True)
+            raise typer.Exit(2)
+        targets = list(roots.items())
+    else:
+        found = resolve_root(Path(path) if path else Path.cwd(), roots)
+        if found is None:
+            typer.echo(
+                f"{path or Path.cwd()} is under no registered root. "
+                "Run `axon init <path>` in the repo first."
+            )
+            raise typer.Exit(1)
+        targets = [found]
+    if ctx == "work":
+        _resolve_ctx("work")
+
+    problems = 0
+    ready: list[tuple[str, Path]] = []
+    for repo, root in targets:
+        if not root.is_dir():
+            typer.echo(f"{repo}: root {root} does not exist; fix or remove the registry entry")
+            problems += 1
+        elif repo != VAULT_REPO and repo_identity(root) != repo:
+            typer.echo(
+                f"{repo}: registered under this name but its repo identity is "
+                f"{repo_identity(root)}; not synced"
+            )
+            problems += 1
+        else:
+            ready.append((repo, root))
+
+    if dry_run:
+        for repo, root in ready:
+            files, chars = tree_size(
+                root, vault_root=_RUNTIME.vault_root, per_file_ctx=repo == VAULT_REPO
+            )
+            typer.echo(f"{repo}: {files} file(s), {chars} char(s)")
+        if problems:
+            raise typer.Exit(1)
+        return
+
+    async def _sync() -> int:
+        from axon.embedder.engine import EmbedderEngine
+        from axon.store.pg_symbol_deps import PostgresSymbolDeps
+        from axon.store.vector_store_factory import make_vector_store
+
+        engine = EmbedderEngine()
+        store = make_vector_store(_RUNTIME)
+        graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
+        file_cache, db_conn = await _open_file_cache()
+        failed = 0
+        try:
+            await store.ensure_collections()
+            await graph_store.ensure_schema()
+            for repo, root in ready:
+                try:
+                    async with _index_lock_guard(fatal=True):
+                        result = await sync_root(
+                            root,
+                            repo,
+                            engine=engine,
+                            store=store,
+                            file_cache=file_cache,
+                            vault_root=_RUNTIME.vault_root,
+                            repo_roots=roots,
+                            ctx=ctx,
+                            per_file_ctx=repo == VAULT_REPO,
+                            graph_store=graph_store,
+                        )
+                except SyncCtxError as exc:
+                    typer.echo(str(exc))
+                    failed += 1
+                    continue
+                at = (result.commit or "no commit")[:8]
+                if result.skipped:
+                    typer.echo(f"{repo}: up to date at {at}")
+                else:
+                    typer.echo(
+                        f"{repo}: {result.files} file(s), {result.chunks} chunk(s) at {at}"
+                    )
+        finally:
+            await store.close()
+            await graph_store.close()
+            await db_conn.close()
+        return failed
+
+    problems += asyncio.run(_sync())
+    if problems:
+        raise typer.Exit(1)
+
+
 # ---------------------------------------------------------------------------
 # pb portability
 # ---------------------------------------------------------------------------

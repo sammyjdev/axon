@@ -11,9 +11,14 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from axon.core.file_identity import RepoRoots
+from axon.core.file_identity import RepoRoots, identity_for_path
 from axon.embedder.engine import EmbedderEngine
-from axon.embedder.pipeline import index_path
+from axon.embedder.pipeline import (
+    index_path,
+    infer_ctx_from_path,
+    is_ctx_indexable,
+    iter_supported_files,
+)
 from axon.store.pg_file_cache import PostgresFileCache
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.pg_vector_store import PgVectorStore
@@ -47,6 +52,51 @@ def _head(root: Path) -> str | None:
         ).stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+
+
+def resolve_root(path: Path, roots: RepoRoots) -> tuple[str, Path] | None:
+    """The registered (repo, root) a path belongs to, or None.
+
+    A linked worktree resolves to its main checkout: the index follows the
+    registered root, never the worktree's own tree.
+    """
+    here = Path(path).resolve()
+    if here.is_file():
+        here = here.parent
+    candidate = here
+    try:
+        common = subprocess.run(  # noqa: S603
+            ["git", "-C", str(here), "rev-parse", "--path-format=absolute", "--git-common-dir"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, OSError):
+        common = ""
+    if common and Path(common).name == ".git":
+        candidate = Path(common).resolve().parent
+    for repo, root in roots.items():
+        if root.resolve() == candidate:
+            return repo, root
+    # Not a checkout root: the vault, or a plain directory below a registered root.
+    identity = identity_for_path(candidate / "_", roots)
+    return None if identity is None else (identity[0], roots[identity[0]])
+
+
+def _vault_languages(per_file_ctx: bool) -> set[str] | None:
+    # The vault is indexed as notes only, as `index-vault` always did.
+    return {"markdown"} if per_file_ctx else None
+
+
+def tree_size(root: Path, *, vault_root: Path, per_file_ctx: bool = False) -> tuple[int, int]:
+    """Files and characters a first sync of the root would embed. Embeds nothing."""
+    files = chars = 0
+    for path in iter_supported_files(root, languages=_vault_languages(per_file_ctx)):
+        if per_file_ctx and not is_ctx_indexable(infer_ctx_from_path(path, vault_root), None):
+            continue
+        files += 1
+        chars += len(path.read_text(encoding="utf-8", errors="replace"))
+    return files, chars
 
 
 async def _repo_ctx(
@@ -109,6 +159,7 @@ async def sync_root(
             file_cache=file_cache,
             forced_ctx=repo_ctx or None,
             graph_store=graph_store,
+            languages=_vault_languages(per_file_ctx),
             repo_roots=repo_roots,
         )
         files += indexed

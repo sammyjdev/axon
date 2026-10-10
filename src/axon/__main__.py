@@ -593,6 +593,7 @@ from axon.cli.pb import (  # noqa: E402
     session_hook,
     session_save,
     setup,
+    sync,
 )
 from axon.cli.pb import init as pb_bootstrap  # noqa: E402
 
@@ -620,6 +621,7 @@ app.command("setup")(setup)
 app.command("configure")(configure)
 app.command("index-dev")(index_dev)
 app.command("index-vault")(index_vault)
+app.command("sync")(sync)
 app.command("note")(note)
 app.command("session-save")(session_save)
 app.command("seed-lessons")(seed_lessons)
