@@ -82,6 +82,45 @@ class PostgresFileCache:
             await con.execute(
                 "CREATE INDEX IF NOT EXISTS ix_file_index_status ON file_index (status)"
             )
+            # Which commit each repo's index was walked at. No root column: the root
+            # is per machine and comes from the onboarding registry.
+            await con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS repo_state (
+                    repo           text PRIMARY KEY,
+                    ctx            text NOT NULL DEFAULT '',
+                    indexed_commit text,
+                    synced_at      timestamptz NOT NULL
+                )
+                """
+            )
+
+    async def get_repo_state(self, repo: str) -> tuple[str, str | None] | None:
+        """(ctx, indexed_commit) of a synced repo, or None when it never synced."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            row = await con.fetchrow(
+                "SELECT ctx, indexed_commit FROM repo_state WHERE repo=$1", repo
+            )
+        return None if row is None else (row["ctx"], row["indexed_commit"])
+
+    async def set_repo_state(self, repo: str, ctx: str, indexed_commit: str | None) -> None:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            await con.execute(
+                """
+                INSERT INTO repo_state (repo, ctx, indexed_commit, synced_at)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (repo) DO UPDATE SET
+                    ctx            = excluded.ctx,
+                    indexed_commit = excluded.indexed_commit,
+                    synced_at      = excluded.synced_at
+                """,
+                repo,
+                ctx,
+                indexed_commit,
+                datetime.now(UTC),
+            )
 
     async def get_all_sha1s(
         self, ctx: str, *, chunker_version: str | None = None, repo: str = ""
