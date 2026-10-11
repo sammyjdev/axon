@@ -22,12 +22,13 @@ def dedup_hits(hits: list[dict], *, max_per_file: int = _DEFAULT_MAX_PER_FILE) -
     store returned.
     """
     seen_content: set[str] = set()
-    per_file: dict[str, int] = {}
+    per_file: dict[tuple[str, str], int] = {}
     kept: list[dict] = []
     for hit in hits:
         payload = hit.get("payload") or {}
         content = str(payload.get("content") or "")
-        file_path = str(payload.get("file_path", ""))
+        # A relative path repeats across repos, so the repo is part of the key.
+        file_path = (str(payload.get("project", "")), str(payload.get("file_path", "")))
         if content in seen_content:
             continue
         if per_file.get(file_path, 0) >= max_per_file:
