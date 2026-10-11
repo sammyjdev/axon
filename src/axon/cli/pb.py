@@ -2401,6 +2401,71 @@ def sync(
         raise typer.Exit(1)
 
 
+_LEGACY_VAULT_ROOT_HELP = "Absolute vault path on the machine that wrote the legacy rows"
+
+
+@app.command("index-compare")
+def index_compare(
+    legacy_vault_root: Annotated[
+        str, typer.Option("--legacy-vault-root", help=_LEGACY_VAULT_ROOT_HELP)
+    ],
+) -> None:
+    """Old rows against new rows, per repo, and whether the old ones may be deleted."""
+    from axon.core.file_identity import load_repo_roots
+    from axon.embedder.legacy import legacy_report
+
+    roots = load_repo_roots(_RUNTIME, strict=True)
+    rows = asyncio.run(legacy_report(_RUNTIME.pg_url, roots, legacy_vault_root))
+    typer.echo("repo old_chunks new_chunks old_files new_files verdict")
+    for row in rows:
+        typer.echo(
+            f"{row.repo} {row.old_chunks} {row.new_chunks} {row.old_files} {row.new_files} "
+            f"{row.blocked or 'eligible'}"
+        )
+
+
+@app.command("index-prune-legacy")
+def index_prune_legacy(
+    repo: Annotated[str, typer.Argument(help="The repo whose legacy rows are deleted")],
+    legacy_vault_root: Annotated[
+        str, typer.Option("--legacy-vault-root", help=_LEGACY_VAULT_ROOT_HELP)
+    ],
+    apply: Annotated[
+        bool, typer.Option("--apply", help="Delete. Without it the command only reports.")
+    ] = False,
+) -> None:
+    """Delete one repo's legacy rows, only when its reindex is verified."""
+    from axon.core.file_identity import load_repo_roots
+    from axon.embedder.legacy import legacy_report, prune_legacy
+
+    roots = load_repo_roots(_RUNTIME, strict=True)
+    rows = asyncio.run(legacy_report(_RUNTIME.pg_url, roots, legacy_vault_root))
+    row = next((r for r in rows if r.repo == repo), None)
+    if row is None:
+        typer.echo(f"{repo}: no legacy rows.")
+        return
+    if row.blocked:
+        typer.echo(f"{repo}: refused, {row.blocked}.")
+        raise typer.Exit(1)
+    summary = (
+        f"{repo}: {row.old_chunks} legacy chunk(s) in {row.old_files} file(s), "
+        f"replaced by {row.new_chunks} chunk(s) in {row.new_files} file(s)"
+    )
+    if not apply:
+        typer.echo(f"{summary}. Nothing deleted; pass --apply to delete.")
+        return
+    if os.environ.get("AXON_ALLOW_DESTRUCTIVE", "").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        typer.echo("Refused: deleting rows needs AXON_ALLOW_DESTRUCTIVE=1.")
+        raise typer.Exit(1)
+    chunks, cached = asyncio.run(prune_legacy(_RUNTIME.pg_url, repo, legacy_vault_root))
+    typer.echo(f"{summary}. Deleted {chunks} embeddings row(s) and {cached} file_index row(s).")
+
+
 # ---------------------------------------------------------------------------
 # pb portability
 # ---------------------------------------------------------------------------

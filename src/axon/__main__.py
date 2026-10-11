@@ -574,7 +574,9 @@ from axon.cli.pb import (  # noqa: E402
     git_proxy,
     graph_app,
     hooks_app,
+    index_compare,
     index_dev,
+    index_prune_legacy,
     index_vault,
     note,
     pending_app,
@@ -622,6 +624,8 @@ app.command("configure")(configure)
 app.command("index-dev")(index_dev)
 app.command("index-vault")(index_vault)
 app.command("sync")(sync)
+app.command("index-compare")(index_compare)
+app.command("index-prune-legacy")(index_prune_legacy)
 app.command("note")(note)
 app.command("session-save")(session_save)
 app.command("seed-lessons")(seed_lessons)
