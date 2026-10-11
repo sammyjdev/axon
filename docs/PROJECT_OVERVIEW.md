@@ -60,7 +60,9 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 `ingest-vault`, `index-vault`, `bootstrap` (env/config scaffold, formerly
 `pb init`), `setup`, `configure`, `index-dev`, `note`, `session-save`,
 `seed-lessons`, `rekey-repo`, `session-hook`, `compact-hook`, `scan`, `search`,
-`rtk*`, `run`, `git`. Sub-apps: `axon adr {list,add,sync,hook,infer-commit,review,audit,validate-drafts}`,
+`sync` (bring a registered root, or every one with `--all`, to its HEAD),
+`index-compare` and `index-prune-legacy` (legacy rows against the reindex, then
+their verified delete), `rtk*`, `run`, `git`. Sub-apps: `axon adr {list,add,sync,hook,infer-commit,review,audit,validate-drafts}`,
 `axon graph {index,neighbors,path}`, `axon hooks {install,status}`,
 `axon pending {drain,recover}`, `axon session {note,save}`,
 `axon profile {list,use,show,create,export}`, `axon portability {export,import}`,
