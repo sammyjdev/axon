@@ -86,7 +86,13 @@ async def legacy_report(dsn: str, roots: RepoRoots, legacy_vault_root: str) -> l
     try:
         old = await con.fetch(_OLD, _vault_prefix(legacy_vault_root), VAULT_REPO)
         new = {r["repo"]: r for r in await con.fetch(_NEW)}
-        states = {r["repo"]: r for r in await con.fetch("SELECT * FROM repo_state")}
+        # The first sync creates repo_state; until then every repo is never synced.
+        has_state = await con.fetchval("SELECT to_regclass('repo_state') IS NOT NULL")
+        states = (
+            {r["repo"]: r for r in await con.fetch("SELECT * FROM repo_state")}
+            if has_state
+            else {}
+        )
     finally:
         await con.close()
     rows = []

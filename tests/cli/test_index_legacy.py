@@ -42,6 +42,17 @@ def _fetch(sql: str) -> list[asyncpg.Record]:
     return asyncio.run(run())
 
 
+def _execute(sql: str) -> None:
+    async def run() -> None:
+        con = await asyncpg.connect(os.environ["AXON_PG_URL"])
+        try:
+            await con.execute(sql)
+        finally:
+            await con.close()
+
+    asyncio.run(run())
+
+
 def _paths(table: str) -> set[str]:
     return {r["file_path"] for r in _fetch(f"SELECT file_path FROM {table}")}  # noqa: S608
 
@@ -208,6 +219,19 @@ def test_prune_is_refused_when_the_index_is_behind_head(alpha: Path) -> None:
     assert result.exit_code != 0
     assert "HEAD" in result.output
     assert _paths("embeddings") == before
+
+
+def test_compare_reports_before_any_sync_created_its_table(alpha: Path) -> None:
+    asyncio.run(_seed_legacy([("alpha", "/Users/someone/dev/alpha/old0.md")]))
+    # The state an upgraded database is in until the first sync.
+    _execute("ALTER TABLE repo_state RENAME TO repo_state_hidden")
+    try:
+        result = runner.invoke(main_app, ["index-compare", "--legacy-vault-root", _LEGACY_VAULT])
+    finally:
+        _execute("ALTER TABLE repo_state_hidden RENAME TO repo_state")
+
+    assert result.exit_code == 0, result.output
+    assert "never synced" in result.output
 
 
 def test_prune_is_refused_for_a_root_with_no_git_head(alpha: Path) -> None:
