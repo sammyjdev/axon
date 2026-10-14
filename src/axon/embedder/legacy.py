@@ -68,8 +68,12 @@ def _blocked(repo: str, old_files: int, new_files: int, roots: RepoRoots, state)
         return "no root on this machine"
     if state is None:
         return "never synced"
-    if repo != VAULT_REPO and state["indexed_commit"] != _head(root):
-        return "index is behind HEAD, run axon sync"
+    if repo != VAULT_REPO:
+        head = _head(root)
+        if head is None:
+            return "no git HEAD to check the index against"
+        if state["indexed_commit"] != head:
+            return "index is behind HEAD, run axon sync"
     if new_files < old_files * STOP_LINE:
         share = round(100 * new_files / old_files)
         return f"new files are {share} percent of old, under the {round(STOP_LINE * 100)} line"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import types
 from pathlib import Path
@@ -206,6 +207,17 @@ def test_prune_is_refused_when_the_index_is_behind_head(alpha: Path) -> None:
 
     assert result.exit_code != 0
     assert "HEAD" in result.output
+    assert _paths("embeddings") == before
+
+
+def test_prune_is_refused_for_a_root_with_no_git_head(alpha: Path) -> None:
+    shutil.rmtree(alpha / ".git")
+    _mixed_index(alpha)
+    before = _paths("embeddings")
+
+    result = _prune("--apply")
+
+    assert result.exit_code != 0
     assert _paths("embeddings") == before
 
 
