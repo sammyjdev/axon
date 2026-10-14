@@ -216,6 +216,16 @@ async def test_head_moving_on_every_walk_still_ends_at_the_newest_head(
     assert {"late0.md", "late1.md"} <= await bench.indexed_paths()
 
 
+async def test_removing_the_last_file_empties_the_repo_in_the_index(bench: _Bench) -> None:
+    await bench.sync()
+    _git(bench.repo, "rm", "-q", "README.md")
+    _git(bench.repo, "commit", "-m", "remove the last file")
+
+    await bench.sync()
+
+    assert await bench.indexed_paths() == set()
+
+
 async def test_a_tree_restored_after_a_dirty_sync_is_indexed_again(bench: _Bench) -> None:
     (bench.repo / "README.md").write_text("# Title\nuncommitted\n", encoding="utf-8")
     await bench.sync()
