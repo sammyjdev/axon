@@ -14,6 +14,7 @@ from pathlib import Path
 import asyncpg
 
 from axon.core.file_identity import VAULT_REPO, RepoRoots
+from axon.store.pg_file_cache import PostgresFileCache
 
 # A reindexed repo holding under half the files of its old index stops the delete:
 # the walker dropped something, and the old rows are the only copy.
@@ -92,17 +93,19 @@ def _blocked(
 
 async def legacy_report(dsn: str, roots: RepoRoots, legacy_vault_root: str) -> list[LegacyRow]:
     """One row per repo that has legacy rows, plus one for the vault."""
+    prefix = _vault_prefix(legacy_vault_root)
+    # A database no process of this build has opened yet lacks file_index.repo and
+    # repo_state; the same idempotent DDL every sync runs brings it up to date.
+    cache = PostgresFileCache(dsn)
+    try:
+        await cache.ensure_schema()
+    finally:
+        await cache.close()
     con = await asyncpg.connect(dsn)
     try:
-        old = await con.fetch(_OLD, _vault_prefix(legacy_vault_root), VAULT_REPO)
+        old = await con.fetch(_OLD, prefix, VAULT_REPO)
         new = {r["repo"]: r for r in await con.fetch(_NEW)}
-        # The first sync creates repo_state; until then every repo is never synced.
-        has_state = await con.fetchval("SELECT to_regclass('repo_state') IS NOT NULL")
-        states = (
-            {r["repo"]: r for r in await con.fetch("SELECT * FROM repo_state")}
-            if has_state
-            else {}
-        )
+        states = {r["repo"]: r for r in await con.fetch("SELECT * FROM repo_state")}
         pending = {
             r["repo"]: r["n"]
             for r in await con.fetch(

@@ -58,6 +58,14 @@ def _paths(table: str) -> set[str]:
     return {r["file_path"] for r in _fetch(f"SELECT file_path FROM {table}")}  # noqa: S608
 
 
+async def _current_schema() -> None:
+    cache = PostgresFileCache(os.environ["AXON_PG_URL"])
+    try:
+        await cache.ensure_schema()
+    finally:
+        await cache.close()
+
+
 async def _seed_legacy(
     rows: list[tuple[str, str]], ctx: str = "knowledge", first_id: int = 0
 ) -> None:
@@ -259,14 +267,20 @@ def test_prune_keeps_the_cache_entry_of_another_ctx_on_the_same_path(alpha: Path
     assert {(r["file_path"], r["ctx"]) for r in legacy_cache} == {(shared, "personal")}
 
 
-def test_compare_reports_before_any_sync_created_its_table(alpha: Path) -> None:
+def test_compare_reports_on_a_database_from_before_this_build(alpha: Path) -> None:
     asyncio.run(_seed_legacy([("alpha", "/Users/someone/dev/alpha/old0.md")]))
-    # The state an upgraded database is in until the first sync.
-    _execute("ALTER TABLE repo_state RENAME TO repo_state_hidden")
+    # The schema an upgraded database has until something of this build opens it:
+    # no repo_state, and file_index keyed on (file_path, ctx) with no repo column.
+    _execute(
+        "DROP TABLE repo_state;"
+        " ALTER TABLE file_index DROP CONSTRAINT file_index_repo_pkey;"
+        " ALTER TABLE file_index DROP COLUMN repo;"
+        " ALTER TABLE file_index ADD PRIMARY KEY (file_path, ctx);"
+    )
     try:
         result = runner.invoke(main_app, ["index-compare", "--legacy-vault-root", _LEGACY_VAULT])
     finally:
-        _execute("ALTER TABLE repo_state_hidden RENAME TO repo_state")
+        asyncio.run(_current_schema())
 
     assert result.exit_code == 0, result.output
     assert "never synced" in result.output
