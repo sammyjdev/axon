@@ -47,7 +47,12 @@ class LegacyRow:
 
 
 def _vault_prefix(legacy_vault_root: str) -> str:
-    return legacy_vault_root.rstrip("/") + "/"
+    root = legacy_vault_root.rstrip("/")
+    # "" or "/" would make every legacy row the vault's, and the vault's prune a delete
+    # of every repo's legacy rows.
+    if not root.startswith("/"):
+        raise ValueError(f"legacy vault root must be an absolute directory: {legacy_vault_root!r}")
+    return root + "/"
 
 
 def _head(root: Path) -> str | None:

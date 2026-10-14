@@ -283,6 +283,30 @@ def test_prune_is_refused_for_a_root_with_no_git_head(alpha: Path) -> None:
     assert _paths("embeddings") == before
 
 
+def test_an_empty_legacy_vault_root_is_refused(alpha: Path) -> None:
+    vault = pb._RUNTIME.vault_root
+    _git(vault, "init", "-b", "main")
+    _git(vault, "config", "user.email", "t@t")
+    _git(vault, "config", "user.name", "t")
+    (vault / "knowledge").mkdir()
+    for i in range(2):
+        (vault / "knowledge" / f"n{i}.md").write_text(f"# N{i}\nbody\n", encoding="utf-8")
+    _git(vault, "add", "-A")
+    _git(vault, "commit", "-m", "notes")
+    asyncio.run(_seed_legacy([("alpha", f"/Users/someone/dev/alpha/old{i}.md") for i in range(2)]))
+    synced = runner.invoke(main_app, ["sync", str(vault)])
+    assert synced.exit_code == 0, synced.output
+    before = _paths("embeddings")
+
+    # An empty root would make "/" the vault prefix, and every legacy row the vault's.
+    result = runner.invoke(
+        main_app, ["index-prune-legacy", "vault", "--legacy-vault-root", "", "--apply"]
+    )
+
+    assert result.exit_code != 0
+    assert _paths("embeddings") == before
+
+
 def test_prune_of_the_vault_also_needs_a_git_head(alpha: Path) -> None:
     vault = pb._RUNTIME.vault_root
     (vault / "knowledge").mkdir()
