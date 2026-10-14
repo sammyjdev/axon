@@ -102,6 +102,12 @@ async def _repo_ctx(
     repo: str, explicit: str | None, stored: str | None, store: PgVectorStore
 ) -> str:
     if explicit:
+        if stored and explicit != stored:
+            # A new ctx would index every file again beside the old copy, which no
+            # reconcile reaches: it only visits the ctx it walks.
+            raise SyncCtxError(
+                f"{repo}: indexed under ctx {stored}; moving it to {explicit} is not supported"
+            )
         return explicit
     if stored:
         ctx = stored

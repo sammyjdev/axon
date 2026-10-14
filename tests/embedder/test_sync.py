@@ -232,6 +232,16 @@ async def test_head_moving_on_every_walk_still_ends_at_the_newest_head(
     assert {"late0.md", "late1.md"} <= await bench.indexed_paths()
 
 
+async def test_a_later_sync_refuses_a_ctx_other_than_the_stored_one(bench: _Bench) -> None:
+    await bench.sync(ctx="personal")
+    state = await bench.cache.get_repo_state("myrepo")
+
+    with pytest.raises(SyncCtxError):
+        await bench.sync(ctx="knowledge")
+
+    assert await bench.cache.get_repo_state("myrepo") == state
+
+
 async def test_removing_the_last_file_empties_the_repo_in_the_index(bench: _Bench) -> None:
     await bench.sync()
     _git(bench.repo, "rm", "-q", "README.md")
