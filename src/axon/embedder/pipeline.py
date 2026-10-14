@@ -409,10 +409,16 @@ async def index_path(
                 file_ctx, chunker_version=CHUNKER_VERSION, **scope
             )
 
+        try:
+            source = file_path.read_text(encoding="utf-8", errors="replace")
+        except FileNotFoundError:
+            # Removed between the listing and the read (a checkout or rebase under a
+            # running walk): it is gone, and reconcile treats it as such.
+            continue
+
         # FIX 2: track seen files per (repo, ctx) for D6 reconcile.
         found_by_scope.setdefault(scope_key, set()).add(key)
 
-        source = file_path.read_text(encoding="utf-8", errors="replace")
         current_sha1 = sha1_of_source(source)
 
         # FIX 2: skip-check uses the per-(repo, ctx) sha1 map.

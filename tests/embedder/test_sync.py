@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from axon.core.file_identity import RepoRoots, build_repo_roots
+from axon.embedder import pipeline
 from axon.embedder import sync as sync_module
 from axon.embedder.sync import SyncCtxError, sync_root
 from axon.store.pg_file_cache import PostgresFileCache
@@ -240,6 +241,29 @@ async def test_a_later_sync_refuses_a_ctx_other_than_the_stored_one(bench: _Benc
         await bench.sync(ctx="knowledge")
 
     assert await bench.cache.get_repo_state("myrepo") == state
+
+
+async def test_a_file_removed_while_the_walk_runs_does_not_stop_the_sync(
+    bench: _Bench, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _commit(bench.repo, "doomed.md", "# Doomed\nbody\n")
+    real_iter = pipeline.iter_supported_files
+    removed: list[str] = []
+
+    def list_then_remove(*args, **kwargs):
+        files = list(real_iter(*args, **kwargs))
+        if not removed:
+            _git(bench.repo, "rm", "-q", "doomed.md")
+            _git(bench.repo, "commit", "-m", "remove doomed")
+            removed.append(_git(bench.repo, "rev-parse", "HEAD"))
+        return files
+
+    monkeypatch.setattr(pipeline, "iter_supported_files", list_then_remove)
+
+    await bench.sync()
+
+    assert await bench.cache.get_repo_state("myrepo") == ("knowledge", removed[0])
+    assert await bench.indexed_paths() == {"README.md"}
 
 
 async def test_removing_the_last_file_empties_the_repo_in_the_index(bench: _Bench) -> None:
