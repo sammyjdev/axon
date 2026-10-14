@@ -236,21 +236,35 @@ def test_a_prune_that_fails_midway_deletes_nothing(alpha: Path) -> None:
     _mixed_index(alpha)
     cache_before = _paths("file_index")
     chunks_before = _paths("embeddings")
-    # The file_index delete runs first; the embeddings delete then fails.
+    # The embeddings delete runs first; the file_index delete then fails.
     _execute(
         "CREATE FUNCTION refuse_delete() RETURNS trigger LANGUAGE plpgsql"
         " AS $$ BEGIN RAISE EXCEPTION 'delete refused'; END $$;"
-        " CREATE TRIGGER refuse_delete BEFORE DELETE ON embeddings"
+        " CREATE TRIGGER refuse_delete BEFORE DELETE ON file_index"
         " FOR EACH ROW EXECUTE FUNCTION refuse_delete();"
     )
     try:
         result = _prune("--apply")
     finally:
-        _execute("DROP TRIGGER refuse_delete ON embeddings; DROP FUNCTION refuse_delete();")
+        _execute("DROP TRIGGER refuse_delete ON file_index; DROP FUNCTION refuse_delete();")
 
     assert "delete refused" in str(result.exception)
     assert _paths("file_index") == cache_before
     assert _paths("embeddings") == chunks_before
+
+
+def test_prune_keeps_a_cache_entry_another_repo_still_has_chunks_under(alpha: Path) -> None:
+    shared = "/Users/someone/dev/shared/p.md"
+    # Same path and ctx: file_index holds one row for both projects' chunks.
+    asyncio.run(_seed_legacy([("alpha", shared), ("beta", shared)]))
+    synced = runner.invoke(main_app, ["sync", str(alpha), "--ctx", "knowledge"])
+    assert synced.exit_code == 0, synced.output
+
+    result = _prune("--apply")
+
+    assert result.exit_code == 0, result.output
+    legacy_cache = _fetch("SELECT file_path, ctx FROM file_index WHERE repo = ''")
+    assert {(r["file_path"], r["ctx"]) for r in legacy_cache} == {(shared, "knowledge")}
 
 
 def test_prune_keeps_the_cache_entry_of_another_ctx_on_the_same_path(alpha: Path) -> None:

@@ -150,13 +150,22 @@ async def prune_legacy(dsn: str, repo: str, legacy_vault_root: str) -> tuple[int
     try:
         async with con.transaction():
             # file_index has no project column: its legacy rows are found through
-            # the chunks they belong to, so they go first.
-            cached = await con.execute(
-                "DELETE FROM file_index WHERE repo = '' AND (file_path, ctx) IN"  # noqa: S608
-                f" (SELECT DISTINCT file_path, ctx FROM embeddings WHERE {_MINE})",
+            # the chunks they belong to. One row can serve several projects' chunks
+            # at the same (file_path, ctx), so it goes only with the last of them.
+            pairs = await con.fetch(
+                f"SELECT DISTINCT file_path, ctx FROM embeddings WHERE {_MINE}",  # noqa: S608
                 *args,
             )
             chunks = await con.execute(f"DELETE FROM embeddings WHERE {_MINE}", *args)  # noqa: S608
+            cached = await con.execute(
+                "DELETE FROM file_index fi"
+                " USING unnest($1::text[], $2::text[]) AS gone(file_path, ctx)"
+                " WHERE fi.repo = '' AND fi.file_path = gone.file_path AND fi.ctx = gone.ctx"
+                " AND NOT EXISTS (SELECT 1 FROM embeddings e"
+                "   WHERE e.file_path = fi.file_path AND e.ctx = fi.ctx)",
+                [p["file_path"] for p in pairs],
+                [p["ctx"] for p in pairs],
+            )
     finally:
         await con.close()
     return int(chunks.split()[-1]), int(cached.split()[-1])
