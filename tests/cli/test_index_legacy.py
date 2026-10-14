@@ -223,6 +223,27 @@ def test_prune_is_refused_when_the_index_is_behind_head(alpha: Path) -> None:
     assert _paths("embeddings") == before
 
 
+def test_a_prune_that_fails_midway_deletes_nothing(alpha: Path) -> None:
+    _mixed_index(alpha)
+    cache_before = _paths("file_index")
+    chunks_before = _paths("embeddings")
+    # The file_index delete runs first; the embeddings delete then fails.
+    _execute(
+        "CREATE FUNCTION refuse_delete() RETURNS trigger LANGUAGE plpgsql"
+        " AS $$ BEGIN RAISE EXCEPTION 'delete refused'; END $$;"
+        " CREATE TRIGGER refuse_delete BEFORE DELETE ON embeddings"
+        " FOR EACH ROW EXECUTE FUNCTION refuse_delete();"
+    )
+    try:
+        result = _prune("--apply")
+    finally:
+        _execute("DROP TRIGGER refuse_delete ON embeddings; DROP FUNCTION refuse_delete();")
+
+    assert "delete refused" in str(result.exception)
+    assert _paths("file_index") == cache_before
+    assert _paths("embeddings") == chunks_before
+
+
 def test_prune_keeps_the_cache_entry_of_another_ctx_on_the_same_path(alpha: Path) -> None:
     shared = "/Users/someone/dev/shared/p.md"
     asyncio.run(_seed_legacy([("alpha", shared)], ctx="knowledge"))

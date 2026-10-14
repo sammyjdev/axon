@@ -159,6 +159,22 @@ async def test_a_merge_converges_to_head(bench: _Bench) -> None:
     assert await bench.indexed_paths() == {"README.md", "feature.md", "main_only.md"}
 
 
+async def test_a_rebase_converges_to_head(bench: _Bench) -> None:
+    _git(bench.repo, "switch", "-c", "feature")
+    _commit(bench.repo, "feature.md", "# Feature\nbody\n")
+    await bench.sync()
+    _git(bench.repo, "switch", "main")
+    _commit(bench.repo, "main_only.md", "# Main\nbody\n")
+    _git(bench.repo, "switch", "feature")
+    _git(bench.repo, "rebase", "-q", "main")
+    head = _git(bench.repo, "rev-parse", "HEAD")
+
+    await bench.sync()
+
+    assert await bench.cache.get_repo_state("myrepo") == ("knowledge", head)
+    assert await bench.indexed_paths() == {"README.md", "feature.md", "main_only.md"}
+
+
 async def test_a_rewritten_history_converges_and_drops_the_removed_file(
     bench: _Bench,
 ) -> None:
