@@ -58,6 +58,11 @@ def _paths(table: str) -> set[str]:
     return {r["file_path"] for r in _fetch(f"SELECT file_path FROM {table}")}  # noqa: S608
 
 
+def _rows() -> tuple[set[str], set[str]]:
+    """Both tables a prune deletes from: a refusal must leave each untouched."""
+    return _paths("embeddings"), _paths("file_index")
+
+
 async def _current_schema() -> None:
     cache = PostgresFileCache(os.environ["AXON_PG_URL"])
     try:
@@ -184,38 +189,38 @@ def test_prune_removes_only_that_repos_legacy_rows(alpha: Path) -> None:
 
 def test_prune_without_apply_deletes_nothing(alpha: Path) -> None:
     _mixed_index(alpha)
-    before = _paths("embeddings")
+    before = _rows()
 
     result = _prune()
 
     assert result.exit_code == 0, result.output
     assert "--apply" in result.output
-    assert _paths("embeddings") == before
+    assert _rows() == before
 
 
 def test_prune_is_refused_without_destructive_consent(
     alpha: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _mixed_index(alpha)
-    before = _paths("embeddings")
+    before = _rows()
     monkeypatch.delenv("AXON_ALLOW_DESTRUCTIVE")
 
     result = _prune("--apply")
 
     assert result.exit_code != 0
     assert "AXON_ALLOW_DESTRUCTIVE" in result.output
-    assert _paths("embeddings") == before
+    assert _rows() == before
 
 
 def test_prune_is_refused_under_the_stop_line(alpha: Path) -> None:
     _mixed_index(alpha, alpha_legacy_files=5)  # 2 new files against 5 old: 40 percent
-    before = _paths("embeddings")
+    before = _rows()
 
     result = _prune("--apply")
 
     assert result.exit_code != 0
     assert "50" in result.output
-    assert _paths("embeddings") == before
+    assert _rows() == before
 
 
 def test_prune_is_refused_when_the_index_is_behind_head(alpha: Path) -> None:
@@ -223,13 +228,13 @@ def test_prune_is_refused_when_the_index_is_behind_head(alpha: Path) -> None:
     (alpha / "c.md").write_text("# C\nbody\n", encoding="utf-8")
     _git(alpha, "add", "-A")
     _git(alpha, "commit", "-m", "second")
-    before = _paths("embeddings")
+    before = _rows()
 
     result = _prune("--apply")
 
     assert result.exit_code != 0
     assert "HEAD" in result.output
-    assert _paths("embeddings") == before
+    assert _rows() == before
 
 
 def test_a_prune_that_fails_midway_deletes_nothing(alpha: Path) -> None:
@@ -300,15 +305,61 @@ def test_compare_reports_on_a_database_from_before_this_build(alpha: Path) -> No
     assert "never synced" in result.output
 
 
-def test_prune_is_refused_for_a_root_with_no_git_head(alpha: Path) -> None:
-    shutil.rmtree(alpha / ".git")
+def test_prune_is_refused_for_a_repo_never_synced(alpha: Path) -> None:
     _mixed_index(alpha)
-    before = _paths("embeddings")
+    _execute("DELETE FROM repo_state")
+    before = _rows()
 
     result = _prune("--apply")
 
     assert result.exit_code != 0
-    assert _paths("embeddings") == before
+    assert "never synced" in result.output
+    assert _rows() == before
+
+
+def test_a_pending_legacy_row_does_not_block_the_prune(alpha: Path) -> None:
+    _mixed_index(alpha)
+    _execute(
+        "UPDATE file_index SET status = 'pending'"
+        " WHERE repo = '' AND file_path LIKE '/Users/someone/dev/alpha/%'"
+    )
+
+    result = _prune("--apply")
+
+    assert result.exit_code == 0, result.output
+    assert not {p for p in _paths("embeddings") if p.startswith("/Users/someone/dev/alpha/")}
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["sync", "--all"],
+        ["index-compare", "--legacy-vault-root", _LEGACY_VAULT],
+        ["index-prune-legacy", "alpha", "--legacy-vault-root", _LEGACY_VAULT, "--apply"],
+    ],
+)
+def test_an_unreadable_registry_stops_the_command_and_changes_nothing(
+    alpha: Path, args: list[str]
+) -> None:
+    _mixed_index(alpha)
+    (pb._RUNTIME.data_root / "onboarded_repos.json").write_text("{not json", encoding="utf-8")
+    before = _rows()
+
+    result = runner.invoke(main_app, args)
+
+    assert result.exit_code != 0, result.output
+    assert _rows() == before
+
+
+def test_prune_is_refused_for_a_root_with_no_git_head(alpha: Path) -> None:
+    shutil.rmtree(alpha / ".git")
+    _mixed_index(alpha)
+    before = _rows()
+
+    result = _prune("--apply")
+
+    assert result.exit_code != 0
+    assert _rows() == before
 
 
 def test_an_empty_legacy_vault_root_is_refused(alpha: Path) -> None:
@@ -324,7 +375,7 @@ def test_an_empty_legacy_vault_root_is_refused(alpha: Path) -> None:
     asyncio.run(_seed_legacy([("alpha", f"/Users/someone/dev/alpha/old{i}.md") for i in range(2)]))
     synced = runner.invoke(main_app, ["sync", str(vault)])
     assert synced.exit_code == 0, synced.output
-    before = _paths("embeddings")
+    before = _rows()
 
     # An empty root would make "/" the vault prefix, and every legacy row the vault's.
     result = runner.invoke(
@@ -332,7 +383,7 @@ def test_an_empty_legacy_vault_root_is_refused(alpha: Path) -> None:
     )
 
     assert result.exit_code != 0
-    assert _paths("embeddings") == before
+    assert _rows() == before
 
 
 def test_prune_of_the_vault_also_needs_a_git_head(alpha: Path) -> None:
@@ -343,7 +394,7 @@ def test_prune_of_the_vault_also_needs_a_git_head(alpha: Path) -> None:
     asyncio.run(_seed_legacy([("inbox", f"{_LEGACY_VAULT}/inbox/n.md")]))
     synced = runner.invoke(main_app, ["sync", str(vault)])
     assert synced.exit_code == 0, synced.output
-    before = _paths("embeddings")
+    before = _rows()
 
     result = runner.invoke(
         main_app,
@@ -352,7 +403,7 @@ def test_prune_of_the_vault_also_needs_a_git_head(alpha: Path) -> None:
 
     assert result.exit_code != 0
     assert "HEAD" in result.output
-    assert _paths("embeddings") == before
+    assert _rows() == before
 
 
 def test_prune_is_refused_after_a_sync_that_did_not_finish(
@@ -365,12 +416,12 @@ def test_prune_is_refused_after_a_sync_that_did_not_finish(
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", lambda: broken)
     failed = runner.invoke(main_app, ["sync", str(alpha)])
     assert isinstance(failed.exception, RuntimeError), failed.output
-    before = _paths("embeddings")
+    before = _rows()
 
     result = _prune("--apply")
 
     assert result.exit_code != 0
-    assert _paths("embeddings") == before
+    assert _rows() == before
 
 
 def test_prune_holds_the_index_lock_from_the_check_to_the_delete(
@@ -403,17 +454,17 @@ def test_prune_is_refused_while_another_indexer_runs(alpha: Path) -> None:
     lock = pb._RUNTIME.data_root / ".axon" / "index.lock"
     lock.parent.mkdir(parents=True, exist_ok=True)
     lock.write_text(str(os.getpid()), encoding="utf-8")
-    before = _paths("embeddings")
+    before = _rows()
 
     result = _prune("--apply")
 
     assert result.exit_code != 0
-    assert _paths("embeddings") == before
+    assert _rows() == before
 
 
 def test_prune_is_refused_for_a_repo_with_no_root_here(alpha: Path) -> None:
     _mixed_index(alpha)
-    before = _paths("embeddings")
+    before = _rows()
 
     result = runner.invoke(
         main_app,
@@ -421,4 +472,4 @@ def test_prune_is_refused_for_a_repo_with_no_root_here(alpha: Path) -> None:
     )
 
     assert result.exit_code != 0
-    assert _paths("embeddings") == before
+    assert _rows() == before

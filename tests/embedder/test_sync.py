@@ -327,6 +327,21 @@ async def test_a_vault_sync_never_drops_work_entries(bench: _Bench) -> None:
     secret.parent.mkdir(parents=True)
     secret.write_text("# S\nbody\n", encoding="utf-8")
     await bench.cache.set_entry("work/s.md", "work", "0" * 40, 1, repo=VAULT_REPO)
+    await bench.store.upsert_batch(
+        [
+            VectorChunk(
+                id="00000000-0000-0000-0000-000000000777",
+                vector=[0.0] * VECTOR_SIZE,
+                file_path="work/s.md",
+                language="markdown",
+                chunk_type="file",
+                symbol="s",
+                project=VAULT_REPO,
+                ctx="work",
+                content="restricted",
+            )
+        ]
+    )
     (bench.vault / "personal").mkdir()
     (bench.vault / "personal" / "n.md").write_text("# N\nbody\n", encoding="utf-8")
 
@@ -335,6 +350,7 @@ async def test_a_vault_sync_never_drops_work_entries(bench: _Bench) -> None:
     assert [p for p, _ in await bench.cache.list_entries("work", repo=VAULT_REPO)] == [
         "work/s.md"
     ]
+    assert "work/s.md" in await bench.vault_paths()
 
 
 def test_a_file_removed_while_the_dry_run_measures_the_tree_is_left_out(
