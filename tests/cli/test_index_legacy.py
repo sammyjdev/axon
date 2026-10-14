@@ -209,6 +209,19 @@ def test_prune_is_refused_when_the_index_is_behind_head(alpha: Path) -> None:
     assert _paths("embeddings") == before
 
 
+def test_prune_is_refused_while_another_indexer_runs(alpha: Path) -> None:
+    _mixed_index(alpha)
+    lock = pb._RUNTIME.data_root / ".axon" / "index.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(str(os.getpid()), encoding="utf-8")
+    before = _paths("embeddings")
+
+    result = _prune("--apply")
+
+    assert result.exit_code != 0
+    assert _paths("embeddings") == before
+
+
 def test_prune_is_refused_for_a_repo_with_no_root_here(alpha: Path) -> None:
     _mixed_index(alpha)
     before = _paths("embeddings")

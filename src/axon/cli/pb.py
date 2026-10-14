@@ -2434,31 +2434,40 @@ def index_prune_legacy(
     from axon.embedder.legacy import legacy_report, prune_legacy
 
     roots = load_repo_roots(_RUNTIME, strict=True)
-    rows = asyncio.run(legacy_report(_RUNTIME.pg_url, roots, legacy_vault_root))
-    row = next((r for r in rows if r.repo == repo), None)
-    if row is None:
-        typer.echo(f"{repo}: no legacy rows.")
-        return
-    if row.blocked:
-        typer.echo(f"{repo}: refused, {row.blocked}.")
-        raise typer.Exit(1)
-    summary = (
-        f"{repo}: {row.old_chunks} legacy chunk(s) in {row.old_files} file(s), "
-        f"replaced by {row.new_chunks} chunk(s) in {row.new_files} file(s)"
-    )
-    if not apply:
-        typer.echo(f"{summary}. Nothing deleted; pass --apply to delete.")
-        return
-    if os.environ.get("AXON_ALLOW_DESTRUCTIVE", "").strip().lower() not in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    ):
-        typer.echo("Refused: deleting rows needs AXON_ALLOW_DESTRUCTIVE=1.")
-        raise typer.Exit(1)
-    chunks, cached = asyncio.run(prune_legacy(_RUNTIME.pg_url, repo, legacy_vault_root))
-    typer.echo(f"{summary}. Deleted {chunks} embeddings row(s) and {cached} file_index row(s).")
+
+    async def _prune() -> None:
+        # Held from the check to the delete: an indexer running in between could
+        # drop the new rows the check counted.
+        async with _index_lock_guard(fatal=True):
+            rows = await legacy_report(_RUNTIME.pg_url, roots, legacy_vault_root)
+            row = next((r for r in rows if r.repo == repo), None)
+            if row is None:
+                typer.echo(f"{repo}: no legacy rows.")
+                return
+            if row.blocked:
+                typer.echo(f"{repo}: refused, {row.blocked}.")
+                raise typer.Exit(1)
+            summary = (
+                f"{repo}: {row.old_chunks} legacy chunk(s) in {row.old_files} file(s), "
+                f"replaced by {row.new_chunks} chunk(s) in {row.new_files} file(s)"
+            )
+            if not apply:
+                typer.echo(f"{summary}. Nothing deleted; pass --apply to delete.")
+                return
+            if os.environ.get("AXON_ALLOW_DESTRUCTIVE", "").strip().lower() not in (
+                "1",
+                "true",
+                "yes",
+                "on",
+            ):
+                typer.echo("Refused: deleting rows needs AXON_ALLOW_DESTRUCTIVE=1.")
+                raise typer.Exit(1)
+            chunks, cached = await prune_legacy(_RUNTIME.pg_url, repo, legacy_vault_root)
+            typer.echo(
+                f"{summary}. Deleted {chunks} embeddings row(s) and {cached} file_index row(s)."
+            )
+
+    asyncio.run(_prune())
 
 
 # ---------------------------------------------------------------------------
