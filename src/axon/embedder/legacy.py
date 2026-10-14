@@ -67,12 +67,18 @@ def _head(root: Path) -> str | None:
         return None
 
 
-def _blocked(repo: str, old_files: int, new_files: int, roots: RepoRoots, state) -> str:
+def _blocked(
+    repo: str, old_files: int, new_files: int, roots: RepoRoots, state, pending: int
+) -> str:
     root = roots.get(repo)
     if root is None or not root.is_dir():
         return "no root on this machine"
     if state is None:
         return "never synced"
+    if pending:
+        # An index run marks a file pending before it touches its chunks and done
+        # after: a pending file is one whose chunks a failed run may have dropped.
+        return f"{pending} file(s) left pending by an unfinished index run, run axon sync"
     head = _head(root)
     if head is None:
         return "no git HEAD to check the index against"
@@ -97,6 +103,13 @@ async def legacy_report(dsn: str, roots: RepoRoots, legacy_vault_root: str) -> l
             if has_state
             else {}
         )
+        pending = {
+            r["repo"]: r["n"]
+            for r in await con.fetch(
+                "SELECT repo, count(*) AS n FROM file_index"
+                " WHERE status <> 'done' AND repo <> '' GROUP BY repo"
+            )
+        }
     finally:
         await con.close()
     rows = []
@@ -110,7 +123,14 @@ async def legacy_report(dsn: str, roots: RepoRoots, legacy_vault_root: str) -> l
                 new_chunks=fresh["chunks"] if fresh else 0,
                 old_files=r["files"],
                 new_files=new_files,
-                blocked=_blocked(r["repo"], r["files"], new_files, roots, states.get(r["repo"])),
+                blocked=_blocked(
+                    r["repo"],
+                    r["files"],
+                    new_files,
+                    roots,
+                    states.get(r["repo"]),
+                    pending.get(r["repo"], 0),
+                ),
             )
         )
     return rows

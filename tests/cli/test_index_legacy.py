@@ -327,6 +327,24 @@ def test_prune_of_the_vault_also_needs_a_git_head(alpha: Path) -> None:
     assert _paths("embeddings") == before
 
 
+def test_prune_is_refused_after_a_sync_that_did_not_finish(
+    alpha: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mixed_index(alpha)
+    (alpha / "a.md").write_text("# A\nchanged\n", encoding="utf-8")
+    broken = MagicMock()
+    broken.embed.side_effect = RuntimeError("provider down")
+    monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", lambda: broken)
+    failed = runner.invoke(main_app, ["sync", str(alpha)])
+    assert isinstance(failed.exception, RuntimeError), failed.output
+    before = _paths("embeddings")
+
+    result = _prune("--apply")
+
+    assert result.exit_code != 0
+    assert _paths("embeddings") == before
+
+
 def test_prune_holds_the_index_lock_from_the_check_to_the_delete(
     alpha: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
