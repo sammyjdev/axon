@@ -17,6 +17,7 @@ from typer.testing import CliRunner
 
 from axon.__main__ import app as main_app
 from axon.cli import pb
+from axon.embedder import legacy
 from axon.store.pg_file_cache import PostgresFileCache
 from axon.store.pg_vector_store import VECTOR_SIZE, PgVectorStore
 from axon.store.vector_common import Chunk as VectorChunk
@@ -300,6 +301,31 @@ def test_prune_of_the_vault_also_needs_a_git_head(alpha: Path) -> None:
     assert result.exit_code != 0
     assert "HEAD" in result.output
     assert _paths("embeddings") == before
+
+
+def test_prune_holds_the_index_lock_from_the_check_to_the_delete(
+    alpha: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mixed_index(alpha)
+    lock = pb._RUNTIME.data_root / ".axon" / "index.lock"
+    held: list[tuple[str, bool]] = []
+    real_report, real_prune = legacy.legacy_report, legacy.prune_legacy
+
+    async def report(*args, **kwargs):
+        held.append(("check", lock.exists()))
+        return await real_report(*args, **kwargs)
+
+    async def prune(*args, **kwargs):
+        held.append(("delete", lock.exists()))
+        return await real_prune(*args, **kwargs)
+
+    monkeypatch.setattr(legacy, "legacy_report", report)
+    monkeypatch.setattr(legacy, "prune_legacy", prune)
+
+    result = _prune("--apply")
+
+    assert result.exit_code == 0, result.output
+    assert held == [("check", True), ("delete", True)]
 
 
 def test_prune_is_refused_while_another_indexer_runs(alpha: Path) -> None:

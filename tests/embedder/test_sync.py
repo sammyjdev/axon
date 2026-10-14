@@ -279,6 +279,7 @@ async def test_removing_the_last_file_empties_the_repo_in_the_index(bench: _Benc
 async def test_a_tree_restored_after_a_dirty_sync_is_indexed_again(bench: _Bench) -> None:
     (bench.repo / "README.md").write_text("# Title\nuncommitted\n", encoding="utf-8")
     await bench.sync()
+    assert "uncommitted" in await bench.content_of("README.md")
     _git(bench.repo, "checkout", "--", "README.md")
 
     await bench.sync()
