@@ -309,6 +309,34 @@ async def test_a_directory_replaced_by_a_file_while_the_walk_runs_does_not_stop_
     assert await bench.indexed_paths() == {"README.md", "docs.md"}
 
 
+async def test_emptying_a_vault_folder_drops_it_from_the_index(bench: _Bench) -> None:
+    note = bench.vault / "personal" / "n.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("# N\nbody\n", encoding="utf-8")
+    await bench.sync_vault()
+    assert await bench.vault_paths() == {"personal/n.md"}
+    note.unlink()
+
+    await bench.sync_vault()
+
+    assert await bench.vault_paths() == set()
+
+
+async def test_a_vault_sync_never_drops_work_entries(bench: _Bench) -> None:
+    secret = bench.vault / "work" / "s.md"
+    secret.parent.mkdir(parents=True)
+    secret.write_text("# S\nbody\n", encoding="utf-8")
+    await bench.cache.set_entry("work/s.md", "work", "0" * 40, 1, repo=VAULT_REPO)
+    (bench.vault / "personal").mkdir()
+    (bench.vault / "personal" / "n.md").write_text("# N\nbody\n", encoding="utf-8")
+
+    await bench.sync_vault()
+
+    assert [p for p, _ in await bench.cache.list_entries("work", repo=VAULT_REPO)] == [
+        "work/s.md"
+    ]
+
+
 async def test_removing_the_last_file_empties_the_repo_in_the_index(bench: _Bench) -> None:
     await bench.sync()
     _git(bench.repo, "rm", "-q", "README.md")
