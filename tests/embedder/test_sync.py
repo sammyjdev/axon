@@ -337,6 +337,27 @@ async def test_a_vault_sync_never_drops_work_entries(bench: _Bench) -> None:
     ]
 
 
+def test_a_file_removed_while_the_dry_run_measures_the_tree_is_left_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "r"
+    repo.mkdir()
+    (repo / "a.md").write_text("# A\nbody\n", encoding="utf-8")
+    (repo / "b.md").write_text("# B\nbody\n", encoding="utf-8")
+    real_iter = sync_module.iter_supported_files
+
+    def list_then_remove(*args, **kwargs):
+        files = list(real_iter(*args, **kwargs))
+        (repo / "b.md").unlink()
+        return files
+
+    monkeypatch.setattr(sync_module, "iter_supported_files", list_then_remove)
+
+    measured = sync_module.tree_size(repo, vault_root=tmp_path / "vault")
+
+    assert measured == (1, len("# A\nbody\n"))
+
+
 async def test_removing_the_last_file_empties_the_repo_in_the_index(bench: _Bench) -> None:
     await bench.sync()
     _git(bench.repo, "rm", "-q", "README.md")

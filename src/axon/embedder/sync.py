@@ -93,8 +93,12 @@ def tree_size(root: Path, *, vault_root: Path, per_file_ctx: bool = False) -> tu
     for path in iter_supported_files(root, languages=_vault_languages(per_file_ctx)):
         if per_file_ctx and not is_ctx_indexable(infer_ctx_from_path(path, vault_root), None):
             continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
+            continue  # gone since the listing, as index_path treats it
         files += 1
-        chars += len(path.read_text(encoding="utf-8", errors="replace"))
+        chars += len(text)
     return files, chars
 
 
