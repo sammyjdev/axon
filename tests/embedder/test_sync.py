@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from axon.core.file_identity import RepoRoots, build_repo_roots
+from axon.core.file_identity import VAULT_REPO, RepoRoots, build_repo_roots
 from axon.embedder import pipeline
 from axon.embedder import sync as sync_module
 from axon.embedder.sync import SyncCtxError, sync_root
@@ -69,6 +69,26 @@ class _Bench:
             repo_roots=self.roots,
             ctx=ctx,
         )
+
+    async def sync_vault(self):
+        return await sync_root(
+            self.vault,
+            VAULT_REPO,
+            engine=self.engine,
+            store=self.store,
+            file_cache=self.cache,
+            vault_root=self.vault,
+            repo_roots=self.roots,
+            per_file_ctx=True,
+        )
+
+    async def vault_paths(self) -> set[str]:
+        pool = await self.store._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                "SELECT DISTINCT file_path FROM embeddings WHERE project = $1", VAULT_REPO
+            )
+        return {r["file_path"] for r in rows}
 
     async def indexed_paths(self) -> set[str]:
         pool = await self.store._ensure_pool()
@@ -264,6 +284,29 @@ async def test_a_file_removed_while_the_walk_runs_does_not_stop_the_sync(
 
     assert await bench.cache.get_repo_state("myrepo") == ("knowledge", removed[0])
     assert await bench.indexed_paths() == {"README.md"}
+
+
+async def test_a_directory_replaced_by_a_file_while_the_walk_runs_does_not_stop_the_sync(
+    bench: _Bench, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (bench.repo / "docs.md").mkdir()
+    _commit(bench.repo, "docs.md/note.md", "# Note\nbody\n")
+    real_iter = pipeline.iter_supported_files
+    replaced: list[str] = []
+
+    def list_then_replace(*args, **kwargs):
+        files = list(real_iter(*args, **kwargs))
+        if not replaced:
+            _git(bench.repo, "rm", "-q", "-r", "docs.md")
+            replaced.append(_commit(bench.repo, "docs.md", "# Docs\nbody\n"))
+        return files
+
+    monkeypatch.setattr(pipeline, "iter_supported_files", list_then_replace)
+
+    await bench.sync()
+
+    assert await bench.cache.get_repo_state("myrepo") == ("knowledge", replaced[0])
+    assert await bench.indexed_paths() == {"README.md", "docs.md"}
 
 
 async def test_removing_the_last_file_empties_the_repo_in_the_index(bench: _Bench) -> None:

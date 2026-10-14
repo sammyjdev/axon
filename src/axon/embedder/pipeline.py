@@ -411,9 +411,10 @@ async def index_path(
 
         try:
             source = file_path.read_text(encoding="utf-8", errors="replace")
-        except FileNotFoundError:
-            # Removed between the listing and the read (a checkout or rebase under a
-            # running walk): it is gone, and reconcile treats it as such.
+        except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
+            # Removed, or turned into or out of a directory, between the listing and
+            # the read (a checkout or rebase under a running walk): it is gone, and
+            # reconcile treats it as such.
             continue
 
         # FIX 2: track seen files per (repo, ctx) for D6 reconcile.
