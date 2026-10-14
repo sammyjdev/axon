@@ -282,6 +282,26 @@ def test_prune_is_refused_for_a_root_with_no_git_head(alpha: Path) -> None:
     assert _paths("embeddings") == before
 
 
+def test_prune_of_the_vault_also_needs_a_git_head(alpha: Path) -> None:
+    vault = pb._RUNTIME.vault_root
+    (vault / "knowledge").mkdir()
+    for i in range(2):
+        (vault / "knowledge" / f"n{i}.md").write_text(f"# N{i}\nbody\n", encoding="utf-8")
+    asyncio.run(_seed_legacy([("inbox", f"{_LEGACY_VAULT}/inbox/n.md")]))
+    synced = runner.invoke(main_app, ["sync", str(vault)])
+    assert synced.exit_code == 0, synced.output
+    before = _paths("embeddings")
+
+    result = runner.invoke(
+        main_app,
+        ["index-prune-legacy", "vault", "--legacy-vault-root", _LEGACY_VAULT, "--apply"],
+    )
+
+    assert result.exit_code != 0
+    assert "HEAD" in result.output
+    assert _paths("embeddings") == before
+
+
 def test_prune_is_refused_while_another_indexer_runs(alpha: Path) -> None:
     _mixed_index(alpha)
     lock = pb._RUNTIME.data_root / ".axon" / "index.lock"
