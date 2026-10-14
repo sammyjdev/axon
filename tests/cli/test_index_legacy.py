@@ -57,7 +57,9 @@ def _paths(table: str) -> set[str]:
     return {r["file_path"] for r in _fetch(f"SELECT file_path FROM {table}")}  # noqa: S608
 
 
-async def _seed_legacy(rows: list[tuple[str, str]]) -> None:
+async def _seed_legacy(
+    rows: list[tuple[str, str]], ctx: str = "knowledge", first_id: int = 0
+) -> None:
     """Legacy rows: (project, absolute path), in both tables."""
     store = PgVectorStore(os.environ["AXON_PG_URL"])
     await store.ensure_collections()
@@ -73,14 +75,14 @@ async def _seed_legacy(rows: list[tuple[str, str]]) -> None:
                 chunk_type="file",
                 symbol="s",
                 project=project,
-                ctx="knowledge",
+                ctx=ctx,
                 content="legacy",
             )
-            for i, (project, path) in enumerate(rows)
+            for i, (project, path) in enumerate(rows, start=first_id)
         ]
     )
     for _, path in rows:
-        await cache.set_entry(path, "knowledge", "0" * 40, 1)
+        await cache.set_entry(path, ctx, "0" * 40, 1)
     await store.close()
     await cache.close()
 
@@ -219,6 +221,20 @@ def test_prune_is_refused_when_the_index_is_behind_head(alpha: Path) -> None:
     assert result.exit_code != 0
     assert "HEAD" in result.output
     assert _paths("embeddings") == before
+
+
+def test_prune_keeps_the_cache_entry_of_another_ctx_on_the_same_path(alpha: Path) -> None:
+    shared = "/Users/someone/dev/shared/p.md"
+    asyncio.run(_seed_legacy([("alpha", shared)], ctx="knowledge"))
+    asyncio.run(_seed_legacy([("beta", shared)], ctx="personal", first_id=100))
+    synced = runner.invoke(main_app, ["sync", str(alpha), "--ctx", "knowledge"])
+    assert synced.exit_code == 0, synced.output
+
+    result = _prune("--apply")
+
+    assert result.exit_code == 0, result.output
+    legacy_cache = _fetch("SELECT file_path, ctx FROM file_index WHERE repo = ''")
+    assert {(r["file_path"], r["ctx"]) for r in legacy_cache} == {(shared, "personal")}
 
 
 def test_compare_reports_before_any_sync_created_its_table(alpha: Path) -> None:
