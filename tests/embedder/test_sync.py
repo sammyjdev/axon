@@ -78,6 +78,15 @@ class _Bench:
             )
         return {r["file_path"] for r in rows}
 
+    async def content_of(self, name: str) -> str:
+        pool = await self.store._ensure_pool()
+        async with pool.acquire() as con:
+            return await con.fetchval(
+                "SELECT string_agg(content, '') FROM embeddings"
+                " WHERE project = 'myrepo' AND file_path = $1",
+                name,
+            )
+
     async def legacy_row(self, ctx: str, name: str) -> None:
         await self.store.upsert_batch(
             [
@@ -130,9 +139,8 @@ async def test_a_second_sync_at_the_same_head_embeds_nothing(bench: _Bench) -> N
     await bench.sync()
     calls = bench.engine.embed.call_count
 
-    result = await bench.sync()
+    await bench.sync()
 
-    assert result.skipped
     assert bench.engine.embed.call_count == calls
 
 
@@ -186,6 +194,38 @@ async def test_head_moving_during_a_sync_still_ends_at_the_newer_head(
 
     assert await bench.cache.get_repo_state("myrepo") == ("knowledge", moved[0])
     assert "late.md" in await bench.indexed_paths()
+
+
+async def test_head_moving_on_every_walk_still_ends_at_the_newest_head(
+    bench: _Bench, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_index_path = sync_module.index_path
+    moved: list[str] = []
+
+    async def index_then_commit(*args, **kwargs):
+        out = await real_index_path(*args, **kwargs)
+        if len(moved) < 2:
+            moved.append(_commit(bench.repo, f"late{len(moved)}.md", "# Late\nbody\n"))
+        return out
+
+    monkeypatch.setattr(sync_module, "index_path", index_then_commit)
+
+    await bench.sync()
+
+    assert await bench.cache.get_repo_state("myrepo") == ("knowledge", moved[-1])
+    assert {"late0.md", "late1.md"} <= await bench.indexed_paths()
+
+
+async def test_a_tree_restored_after_a_dirty_sync_is_indexed_again(bench: _Bench) -> None:
+    (bench.repo / "README.md").write_text("# Title\nuncommitted\n", encoding="utf-8")
+    await bench.sync()
+    _git(bench.repo, "checkout", "--", "README.md")
+
+    await bench.sync()
+
+    content = await bench.content_of("README.md")
+    assert "first" in content
+    assert "uncommitted" not in content
 
 
 async def test_first_sync_takes_the_ctx_of_the_legacy_rows(bench: _Bench) -> None:

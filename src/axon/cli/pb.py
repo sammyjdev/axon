@@ -2384,12 +2384,7 @@ def sync(
                     failed += 1
                     continue
                 at = (result.commit or "no commit")[:8]
-                if result.skipped:
-                    typer.echo(f"{repo}: up to date at {at}")
-                else:
-                    typer.echo(
-                        f"{repo}: {result.files} file(s), {result.chunks} chunk(s) at {at}"
-                    )
+                typer.echo(f"{repo}: {result.files} file(s), {result.chunks} chunk(s) at {at}")
         finally:
             await store.close()
             await graph_store.close()

@@ -3,6 +3,10 @@
 Git is the event log: a sync walks the root with the same indexer every other
 writer uses, lets the sha1 cache skip what did not change, and records the
 commit it walked. A missed trigger costs nothing, the next sync converges.
+
+A sync always walks, even when HEAD equals the recorded commit: the walk reads
+the working tree, which can differ from HEAD, and a no-change walk is cheap
+(0.13 s for 843 files, measured 2026-10-10).
 """
 
 from __future__ import annotations
@@ -23,10 +27,6 @@ from axon.store.pg_file_cache import PostgresFileCache
 from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.pg_vector_store import PgVectorStore
 
-# One extra walk when HEAD moved during the first, so two commits in a row do not
-# leave the index one behind. A HEAD that keeps moving is left to the next sync.
-_MAX_WALKS = 2
-
 
 class SyncCtxError(ValueError):
     """The ctx of a repo could not be decided without the caller."""
@@ -38,7 +38,6 @@ class SyncResult:
     commit: str | None
     files: int = 0
     chunks: int = 0
-    skipped: bool = False
 
 
 def _head(root: Path) -> str | None:
@@ -138,10 +137,6 @@ async def sync_root(
     folder; a repo has one ctx, stored after its first sync.
     """
     state = await file_cache.get_repo_state(repo)
-    head = _head(root)
-    if state is not None and head is not None and state[1] == head:
-        return SyncResult(repo=repo, commit=head, skipped=True)
-
     repo_ctx = (
         ""
         if per_file_ctx
@@ -149,7 +144,9 @@ async def sync_root(
     )
 
     files = chunks = 0
-    for _ in range(_MAX_WALKS):
+    # Walk again while HEAD moved during the walk (a rebase commits many times).
+    # ponytail: no cap; a HEAD that moved during every walk would keep it walking.
+    while True:
         walked = _head(root)
         indexed, written = await index_path(
             root,
