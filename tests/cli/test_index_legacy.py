@@ -338,16 +338,25 @@ def test_a_pending_legacy_row_does_not_block_the_prune(alpha: Path) -> None:
         ["index-prune-legacy", "alpha", "--legacy-vault-root", _LEGACY_VAULT, "--apply"],
     ],
 )
-def test_an_unreadable_registry_stops_the_command_and_changes_nothing(
-    alpha: Path, args: list[str]
+def test_an_unreadable_registry_stops_the_command_before_any_store_opens(
+    alpha: Path, args: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _mixed_index(alpha)
     (pb._RUNTIME.data_root / "onboarded_repos.json").write_text("{not json", encoding="utf-8")
     before = _rows()
 
-    result = runner.invoke(main_app, args)
+    def no_store(*args, **kwargs):
+        raise AssertionError("a store was opened")
 
-    assert result.exit_code != 0, result.output
+    # Every store reaches Postgres through one of these two. A scoped context, not
+    # monkeypatch.undo(): undo would also drop conftest's AXON_PG_URL, and the
+    # snapshot below would then read the operator's live database.
+    with monkeypatch.context() as scoped:
+        scoped.setattr(asyncpg, "connect", no_store)
+        scoped.setattr(asyncpg, "create_pool", no_store)
+        result = runner.invoke(main_app, args)
+
+    assert "cannot be read" in str(result.exception), result.output
     assert _rows() == before
 
 

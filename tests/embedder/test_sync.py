@@ -99,6 +99,14 @@ class _Bench:
             )
         return {r["file_path"] for r in rows}
 
+    async def indexed_by_ctx(self) -> set[tuple[str, str]]:
+        pool = await self.store._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                "SELECT DISTINCT file_path, ctx FROM embeddings WHERE project = 'myrepo'"
+            )
+        return {(r["file_path"], r["ctx"]) for r in rows}
+
     async def content_of(self, name: str) -> str:
         pool = await self.store._ensure_pool()
         async with pool.acquire() as con:
@@ -256,11 +264,13 @@ async def test_head_moving_on_every_walk_still_ends_at_the_newest_head(
 async def test_a_later_sync_refuses_a_ctx_other_than_the_stored_one(bench: _Bench) -> None:
     await bench.sync(ctx="personal")
     state = await bench.cache.get_repo_state("myrepo")
+    indexed = await bench.indexed_by_ctx()
 
     with pytest.raises(SyncCtxError):
         await bench.sync(ctx="knowledge")
 
     assert await bench.cache.get_repo_state("myrepo") == state
+    assert await bench.indexed_by_ctx() == indexed
 
 
 async def test_a_file_removed_while_the_walk_runs_does_not_stop_the_sync(
@@ -409,6 +419,26 @@ async def test_first_sync_takes_the_ctx_of_the_legacy_rows(bench: _Bench) -> Non
 
 async def test_a_later_sync_reuses_the_stored_ctx(bench: _Bench) -> None:
     await bench.sync(ctx="personal")
+    _commit(bench.repo, "more.md", "# More\nbody\n")
+
+    await bench.sync(ctx=None)
+
+    state = await bench.cache.get_repo_state("myrepo")
+    assert state is not None and state[0] == "personal"
+
+
+async def test_an_explicit_ctx_wins_over_the_legacy_rows(bench: _Bench) -> None:
+    await bench.legacy_row("saas", "a.md")
+
+    await bench.sync(ctx="personal")
+
+    state = await bench.cache.get_repo_state("myrepo")
+    assert state is not None and state[0] == "personal"
+
+
+async def test_the_stored_ctx_wins_over_the_legacy_rows(bench: _Bench) -> None:
+    await bench.sync(ctx="personal")
+    await bench.legacy_row("saas", "a.md")
     _commit(bench.repo, "more.md", "# More\nbody\n")
 
     await bench.sync(ctx=None)
