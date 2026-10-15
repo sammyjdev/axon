@@ -18,10 +18,11 @@ if TYPE_CHECKING:
 
 class FileCache(Protocol):
     async def get_all_sha1s(
-        self, ctx: str, *, chunker_version: str | None = None
+        self, ctx: str, *, chunker_version: str | None = None, repo: str = ""
     ) -> dict[str, str]:
         """Return {file_path_posix: sha1} for all 'done' entries in ctx.
 
+        '' means "unscoped: the path is absolute, and the row is a legacy or ID-4 row".
         Uses a single SELECT. Pending rows (crash sentinels) are excluded -
         they are treated as hash misses and trigger a full re-index.
         """
@@ -34,20 +35,28 @@ class FileCache(Protocol):
         sha1: str,
         chunk_count: int,
         *,
-        status: str = "done", chunker_version: str | None = None
+        status: str = "done",
+        chunker_version: str | None = None,
+        repo: str = "",
     ) -> None:
         """Insert or update a file_index row. Use status='pending' before
         vector-store mutation; status='done' only after _flush_batch() succeeds.
+
+        '' means "unscoped: the path is absolute, and the row is a legacy or ID-4 row".
         """
         ...
 
-    async def delete_entry(self, file_path: str, ctx: str) -> None:
-        """Remove a file_index entry (used when file is deleted from repo)."""
+    async def delete_entry(self, file_path: str, ctx: str, *, repo: str = "") -> None:
+        """Remove a file_index entry (used when file is deleted from repo).
+
+        '' means "unscoped: the path is absolute, and the row is a legacy or ID-4 row".
+        """
         ...
 
-    async def list_entries(self, ctx: str) -> list[tuple[str, str]]:
+    async def list_entries(self, ctx: str, *, repo: str = "") -> list[tuple[str, str]]:
         """Return [(file_path_posix, sha1)] for ALL entries in ctx (any status).
 
+        '' means "unscoped: the path is absolute, and the row is a legacy or ID-4 row".
         Used to detect files removed from the repo (compare against walk result).
         """
         ...

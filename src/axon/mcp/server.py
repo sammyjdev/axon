@@ -26,6 +26,7 @@ from axon.context.rtk import (
     store_original_with_rtk,
 )
 from axon.core.decision import SUMMARY_MAX_LEN, Decision
+from axon.core.file_identity import RepoRoots, display_path, load_repo_roots
 from axon.core.repo_identity import repo_identity
 from axon.embedder.engine import EmbedderEngine
 from axon.embedder.lesson_embedding import embed_lesson
@@ -369,6 +370,7 @@ def _build_context_pack(
     mode: str,
     effective_ctx: str | None,
     hits: list[dict],
+    roots: RepoRoots | None = None,
 ) -> ContextPack:
     contexts = (effective_ctx,) if effective_ctx else strategy.contexts
     segments: list[str] = []
@@ -376,7 +378,8 @@ def _build_context_pack(
 
     for hit in hits[: strategy.max_segments]:
         payload = hit.get("payload") or {}
-        file_path = payload.get("file_path", "?")
+        project = str(payload.get("project", ""))
+        file_path = display_path(str(payload.get("file_path", "?")), project, roots or {})
         symbol = payload.get("symbol", "unknown")
         language = payload.get("language", "?")
         score = float(hit.get("score", 0.0))
@@ -384,9 +387,11 @@ def _build_context_pack(
         remaining = strategy.max_chars - total_chars
         if remaining <= 0:
             break
+        repo_line = f"\nRepo: {project}" if project else ""
         segment = (
             f"### {symbol} ({language})\n"
-            f"Arquivo: {file_path}\n"
+            f"Arquivo: {file_path}"
+            f"{repo_line}\n"
             f"Score: {score:.3f}\n"
             f"Trecho: {content[:remaining]}"
         ).strip()
@@ -563,6 +568,7 @@ async def _retrieve_context(
         mode=mode,
         effective_ctx=ctx,
         hits=pack_hits,
+        roots=load_repo_roots(_RUNTIME),
     )
     if not pack_hits:
         return "Nenhum resultado encontrado.", pack, results

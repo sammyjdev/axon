@@ -7,6 +7,12 @@ from collections.abc import Iterable
 from pathlib import Path, PurePath
 
 from axon.context.registry import VALID_CONTEXTS
+from axon.core.file_identity import (
+    RepoRoots,
+    absolute_for_identity,
+    identity_for_path,
+    kind_for_path,
+)
 from axon.core.repo_identity import repo_identity
 from axon.embedder.chunker import CHUNKER_VERSION, Chunk, chunk_source
 from axon.embedder.engine import EmbedderEngine
@@ -234,7 +240,23 @@ def infer_ctx_from_path(path: Path, vault_root: Path) -> str:
     return "knowledge"
 
 
-async def ingest_file(path: Path, engine: EmbedderEngine, store: PgVectorStore) -> int:
+def _repo_scope(repo: str) -> dict[str, str]:
+    """The repo keyword for a cache/store call, empty for an ID-4 file.
+
+    A file under no known root keeps today's call shape exactly - the FileCache
+    mocks in tests/policy/test_work_barrier.py and tests/embedder/ take no repo
+    argument, and ID-16 pins them byte-identical.
+    """
+    return {"repo": repo} if repo else {}
+
+
+async def ingest_file(
+    path: Path,
+    engine: EmbedderEngine,
+    store: PgVectorStore,
+    *,
+    repo_roots: RepoRoots | None = None,
+) -> int:
     """Chunks a file, embeds each chunk, and upserts into the vector store.
 
     Returns the number of chunks upserted.
@@ -253,7 +275,12 @@ async def ingest_file(path: Path, engine: EmbedderEngine, store: PgVectorStore) 
 
     vectors = _embed_in_token_batches(engine, chunks)
 
-    project = repo_identity(path.parent)
+    roots = repo_roots or {}
+    identity = identity_for_path(path, roots)
+    repo, key = identity if identity is not None else ("", path.as_posix())
+    project = repo or repo_identity(path.parent)
+    kind = kind_for_path(key) if repo else None
+
     _occ_counter: dict[str, int] = {}
     vector_chunks = []
     for c, vec in zip(chunks, vectors):
@@ -261,15 +288,16 @@ async def ingest_file(path: Path, engine: EmbedderEngine, store: PgVectorStore) 
         _occ_counter[c.symbol] = occ + 1
         vector_chunks.append(
             VectorChunk(
-                id=_chunk_id(str(path), c.symbol, occ),
+                id=_chunk_id(key, c.symbol, occ, repo=repo),
                 vector=vec,
-                file_path=c.file_path,
+                file_path=key,
                 language=c.language,
                 chunk_type=c.chunk_type,
                 symbol=c.symbol,
                 project=project,
                 ctx="knowledge",
                 content=c.content,
+                kind=kind,
             )
         )
 
@@ -288,6 +316,7 @@ async def index_path(
     forced_ctx: str | None = None,
     graph_store: PostgresSymbolDeps | None = None,
     languages: set[str] | None = None,
+    repo_roots: RepoRoots | None = None,
 ) -> tuple[int, int]:
     """Index all supported files under target.
 
@@ -299,25 +328,26 @@ async def index_path(
     these two points leaves status='pending', which is treated as a hash miss
     on the next run (triggering full re-index of that file).
 
-    Per-ctx reconcile (FIX 1+2): pending_file_meta carries (fp_posix, file_ctx,
+    Per-ctx reconcile (FIX 1+2): pending_file_meta carries (key, repo, file_ctx,
     sha1, chunk_count) so that _flush_batch writes done under the SAME ctx used
-    when the pending sentinel was written. sha1_maps is loaded lazily per-ctx,
-    and found_by_ctx tracks which files were seen per-ctx so that D6 orphan
-    cleanup only touches the ctxs actually walked this run.
+    when the pending sentinel was written. sha1_maps is loaded lazily per (repo, ctx),
+    and found_by_scope tracks which files were seen per (repo, ctx) so that D6 orphan
+    cleanup only touches the scopes actually walked this run.
     """
+    roots = repo_roots or {}
     files = list(iter_supported_files(target, languages=languages))
 
     total_chunks = 0
     indexed_files = 0
     pending_batch: list[VectorChunk] = []
-    # FIX 1: 4-tuple (fp_posix, file_ctx, sha1, chunk_count) carries per-file
+    # 5-tuple (key, repo, file_ctx, sha1, chunk_count) carries per-file
     # ctx so that _flush_batch writes done under the SAME ctx used for pending.
-    pending_file_meta: list[tuple[str, str, str, int]] = []
+    pending_file_meta: list[tuple[str, str, str, str, int]] = []
     graph_chunks: list[Chunk] = []
 
-    # FIX 2: lazy per-ctx sha1 maps; found_by_ctx scopes D6 reconcile.
-    sha1_maps: dict[str, dict[str, str]] = {}
-    found_by_ctx: dict[str, set[str]] = {}
+    # lazy per-(repo, ctx) sha1 maps; found_by_scope scopes D6 reconcile.
+    sha1_maps: dict[tuple[str, str], dict[str, str]] = {}
+    found_by_scope: dict[tuple[str, str], set[str]] = {}
 
     async def _flush_batch() -> int:
         if not pending_batch:
@@ -326,14 +356,23 @@ async def index_path(
         await store.upsert_batch(list(pending_batch))
         pending_batch.clear()
         # FIX 1: write done under each file's OWN ctx, not a single default ctx.
-        for fp, fctx, s1, cc in pending_file_meta:
+        for key, repo, fctx, s1, cc in pending_file_meta:
             await file_cache.set_entry(
-                fp, fctx, s1, cc, status="done", chunker_version=CHUNKER_VERSION
+                key,
+                fctx,
+                s1,
+                cc,
+                status="done",
+                chunker_version=CHUNKER_VERSION,
+                **_repo_scope(repo),
             )
         pending_file_meta.clear()
         return batch_size
 
     project_by_dir: dict[Path, str] = {}
+    unidentified_count = 0
+    first_unidentified_path: str | None = None
+
     for file_path in files:
         if _is_excluded_path(file_path):
             continue
@@ -347,46 +386,69 @@ async def index_path(
             continue
 
         fp_posix = file_path.as_posix()
+        identity = identity_for_path(file_path, roots)
+        repo, key = identity if identity is not None else ("", fp_posix)
+        scope = _repo_scope(repo)
+        kind = kind_for_path(key) if repo else None
 
-        # FIX 2: load sha1 map for this ctx lazily (one SELECT per ctx per run).
-        if file_ctx not in sha1_maps:
-            sha1_maps[file_ctx] = await file_cache.get_all_sha1s(
-                file_ctx, chunker_version=CHUNKER_VERSION
+        if not repo:
+            unidentified_count += 1
+            if first_unidentified_path is None:
+                first_unidentified_path = fp_posix
+
+        scope_key = (repo, file_ctx)
+        # FIX 2: load sha1 map for this (repo, ctx) lazily (one SELECT per scope per run).
+        if scope_key not in sha1_maps:
+            sha1_maps[scope_key] = await file_cache.get_all_sha1s(
+                file_ctx, chunker_version=CHUNKER_VERSION, **scope
             )
 
-        # FIX 2: track seen files per-ctx for D6 reconcile.
-        found_by_ctx.setdefault(file_ctx, set()).add(fp_posix)
+        # FIX 2: track seen files per (repo, ctx) for D6 reconcile.
+        found_by_scope.setdefault(scope_key, set()).add(key)
 
         source = file_path.read_text(encoding="utf-8", errors="replace")
         current_sha1 = sha1_of_source(source)
 
-        # FIX 2: skip-check uses per-ctx sha1 map.
-        if sha1_maps[file_ctx].get(fp_posix) == current_sha1:
+        # FIX 2: skip-check uses the per-(repo, ctx) sha1 map.
+        if sha1_maps[scope_key].get(key) == current_sha1:
             continue  # file unchanged - skip
 
         # D2: write crash sentinel BEFORE any vector-store mutation.
         await file_cache.set_entry(
-            fp_posix, file_ctx, current_sha1, 0, status="pending",
+            key,
+            file_ctx,
+            current_sha1,
+            0,
+            status="pending",
             chunker_version=CHUNKER_VERSION,
+            **scope,
         )
 
         # D4: delete stale points for this file before re-adding.
-        await store.delete_by_file(file_ctx, fp_posix)
+        await store.delete_by_file(file_ctx, key, **scope)
 
         chunks: list[Chunk] = chunk_source(source, language, str(file_path))
         if not chunks:
             # No chunks - mark done immediately (empty file is valid).
             await file_cache.set_entry(
-                fp_posix, file_ctx, current_sha1, 0, status="done",
+                key,
+                file_ctx,
+                current_sha1,
+                0,
+                status="done",
                 chunker_version=CHUNKER_VERSION,
+                **scope,
             )
             continue
 
-        file_dir = file_path.parent
-        project = project_by_dir.get(file_dir)
-        if project is None:
-            project = repo_identity(file_dir)
-            project_by_dir[file_dir] = project
+        if repo:
+            project = repo
+        else:
+            file_dir = file_path.parent
+            project = project_by_dir.get(file_dir)
+            if project is None:
+                project = repo_identity(file_dir)
+                project_by_dir[file_dir] = project
 
         # Embed in token-bounded batches to keep the onnxruntime activation
         # arena within safe bounds on CPU fallback (Phase 0: batch 64 -> 4.1 GB RSS).
@@ -398,23 +460,24 @@ async def index_path(
             _occ[c.symbol] = occ + 1
             vector_chunks.append(
                 VectorChunk(
-                    id=_chunk_id(fp_posix, c.symbol, occ),
+                    id=_chunk_id(key, c.symbol, occ, repo=repo),
                     vector=vec,
-                    # FIX 3: store fp_posix so delete_by_file keys match.
-                    file_path=fp_posix,
+                    # FIX 3: store the same key the cache and delete_by_file use.
+                    file_path=key,
                     language=c.language,
                     chunk_type=c.chunk_type,
                     symbol=c.symbol,
                     project=project,
                     ctx=file_ctx,
                     content=c.content,
+                    kind=kind,
                 )
             )
 
         pending_batch.extend(vector_chunks)
         graph_chunks.extend(chunks)
-        # FIX 1: store 4-tuple with per-file ctx.
-        pending_file_meta.append((fp_posix, file_ctx, current_sha1, len(chunks)))
+        # FIX 1: store the tuple with per-file repo and ctx.
+        pending_file_meta.append((key, repo, file_ctx, current_sha1, len(chunks)))
 
         if len(pending_batch) >= _BATCH_SIZE:
             flushed = await _flush_batch()
@@ -425,6 +488,13 @@ async def index_path(
     # Flush any remaining chunks in the last partial batch.
     flushed = await _flush_batch()
     total_chunks += flushed
+
+    if unidentified_count > 0:
+        logger.warning(
+            "%d file(s) under no known repo root kept their absolute path (first: %s)",
+            unidentified_count,
+            first_unidentified_path,
+        )
 
     if graph_store is not None and graph_chunks:
         for record in build_dependency_records(graph_chunks):
@@ -439,28 +509,49 @@ async def index_path(
         _chunk.metadata.pop("_tree", None)
 
     # D6: detect files removed from the indexed scope.
-    # FIX 2: iterate only ctxs we actually walked; never touch sibling ctxs.
+    # FIX 2: iterate only scopes we actually walked; never touch sibling ctxs.
     # FIX (whole-branch review C1): a cached entry is only an orphan if it lives
     # INSIDE the walked target subtree. index_path is also invoked on a single
     # file (watch, per-howto, expansion publish); without this scope check, a
     # single-file index would delete every sibling in the ctx (data loss), since
-    # found_by_ctx then holds only that one file. Errs toward not deleting.
+    # found_by_scope then holds only that one file. Errs toward not deleting.
     target_posix = Path(target).as_posix()
     target_prefix = target_posix.rstrip("/") + "/"
 
     def _in_walked_scope(path: str) -> bool:
         return path == target_posix or path.startswith(target_prefix)
 
-    for ctx, found in found_by_ctx.items():
-        for cached_path, _ in await file_cache.list_entries(ctx):
-            if cached_path not in found and _in_walked_scope(cached_path):
-                await store.delete_by_file(ctx, cached_path)
-                await file_cache.delete_entry(cached_path, ctx)
+    for (repo, ctx), found in found_by_scope.items():
+        scope = _repo_scope(repo)
+        for cached_path, _ in await file_cache.list_entries(ctx, **scope):
+            if cached_path in found:
+                continue
+
+            if repo:
+                abs_path = absolute_for_identity(repo, cached_path, roots)
+                if abs_path is None:
+                    # A repo with no root on this machine cannot be scope-checked,
+                    # so its entries are never deleted.
+                    continue
+                abs_posix = abs_path.as_posix()
+            else:
+                if identity_for_path(cached_path, roots) is not None:
+                    # An unscoped (legacy) row whose absolute path now resolves to
+                    # an identity belongs to slice 2 (spec ID-15: no delete of
+                    # legacy rows) and is never deleted here.
+                    continue
+                abs_posix = Path(cached_path).as_posix()
+
+            if _in_walked_scope(abs_posix):
+                await store.delete_by_file(ctx, cached_path, **scope)
+                await file_cache.delete_entry(cached_path, ctx, **scope)
 
     return indexed_files, total_chunks
 
 
-def _chunk_id(file_path: str, symbol: str, occurrence_index: int) -> str:
+def _chunk_id(
+    file_path: str, symbol: str, occurrence_index: int, *, repo: str = ""
+) -> str:
     """Stable chunk ID: does not change when lines above the symbol are edited (D1).
 
     occurrence_index: 0-based count of times this symbol name has appeared
@@ -468,5 +559,5 @@ def _chunk_id(file_path: str, symbol: str, occurrence_index: int) -> str:
     """
     import uuid
 
-    key = f"{file_path}::{symbol}::{occurrence_index}"
+    key = f"{repo}::{file_path}::{symbol}::{occurrence_index}"
     return str(uuid.uuid5(uuid.NAMESPACE_URL, key))

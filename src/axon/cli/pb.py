@@ -21,6 +21,7 @@ from axon.config.runtime import load_runtime_config
 from axon.context.compression_quality import compression_quality_note
 from axon.context.registry import VALID_CONTEXTS
 from axon.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
+from axon.core.file_identity import RepoRoots, display_path, load_repo_roots
 
 app = typer.Typer(
     name="axon",
@@ -300,6 +301,7 @@ def _build_context_pack(
     mode: str,
     effective_ctx: str | None,
     hits: list[dict],
+    roots: RepoRoots | None = None,
 ):
     from axon.context.contracts import ContextPack
 
@@ -309,7 +311,9 @@ def _build_context_pack(
 
     for hit in hits[: strategy.max_segments]:
         payload = hit.get("payload", {})
-        file_path = payload.get("file_path", "<sem arquivo>")
+        raw_path = str(payload.get("file_path", "<sem arquivo>"))
+        project = str(payload.get("project", ""))
+        file_path = display_path(raw_path, project, roots or {})
         symbol = payload.get("symbol", "<sem símbolo>")
         score = hit.get("score", 0.0)
         content = str(payload.get("content", "")).strip().replace("\n", " ")
@@ -1157,6 +1161,7 @@ def search(
             typer.echo("Nenhum resultado encontrado.")
             return
 
+        roots = load_repo_roots(_RUNTIME)
         pack = _build_context_pack(
             strategy=strategy,
             task_type=task_type,
@@ -1164,11 +1169,14 @@ def search(
             mode=mode,
             effective_ctx=resolved_ctx,
             hits=hits,
+            roots=roots,
         )
 
         for i, hit in enumerate(hits, start=1):
             payload = hit.get("payload", {})
-            file_path = payload.get("file_path", "<sem arquivo>")
+            raw_path = str(payload.get("file_path", "<sem arquivo>"))
+            project = str(payload.get("project", ""))
+            file_path = display_path(raw_path, project, roots)
             symbol = payload.get("symbol", "<sem símbolo>")
             chunk_type = payload.get("chunk_type", "<sem tipo>")
             score = hit.get("score", 0.0)
@@ -2171,11 +2179,14 @@ def index_dev(
         return
 
     async def _index_dev() -> None:
+        from axon.core.file_identity import load_repo_roots
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.pg_symbol_deps import PostgresSymbolDeps
         from axon.store.vector_store_factory import make_vector_store
 
+        # First, and strict: an unreadable registry must stop the run before a store opens.
+        repo_roots = load_repo_roots(_RUNTIME, strict=True)
         engine = EmbedderEngine()
         store = make_vector_store(_RUNTIME)
         graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
@@ -2197,6 +2208,7 @@ def index_dev(
                         forced_ctx=entry.ctx,
                         graph_store=graph_store,
                         languages=set(entry.languages),
+                        repo_roots=repo_roots,
                     )
                 total_files += indexed_files
                 total_chunks += chunks
@@ -2237,11 +2249,14 @@ def index_vault(
         return
 
     async def _index_vault() -> None:
+        from axon.core.file_identity import load_repo_roots
         from axon.embedder.engine import EmbedderEngine
         from axon.embedder.pipeline import index_path
         from axon.store.pg_symbol_deps import PostgresSymbolDeps
         from axon.store.vector_store_factory import make_vector_store
 
+        # First, and strict: an unreadable registry must stop the run before a store opens.
+        repo_roots = load_repo_roots(_RUNTIME, strict=True)
         engine = EmbedderEngine()
         store = make_vector_store(_RUNTIME)
         graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
@@ -2260,6 +2275,7 @@ def index_vault(
                     forced_ctx=None,
                     graph_store=graph_store,
                     languages={"markdown"},
+                    repo_roots=repo_roots,
                 )
         finally:
             await store.close()
@@ -2405,11 +2421,15 @@ def scan(
             typer.echo(f"Indexando {entry.name}...")
 
             async def _index_one(entry: ProjectEntry = entry) -> None:
+                from axon.core.file_identity import load_repo_roots
                 from axon.embedder.engine import EmbedderEngine
                 from axon.embedder.pipeline import index_path
                 from axon.store.pg_symbol_deps import PostgresSymbolDeps
                 from axon.store.vector_store_factory import make_vector_store
 
+                # First, and strict: an unreadable registry must stop the run before a
+                # store opens.
+                repo_roots = load_repo_roots(_RUNTIME, strict=True)
                 engine = EmbedderEngine()
                 store = make_vector_store(_RUNTIME)
                 graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
@@ -2426,6 +2446,7 @@ def scan(
                             file_cache=file_cache,
                             forced_ctx=entry.ctx,
                             graph_store=graph_store,
+                            repo_roots=repo_roots,
                         )
                         typer.echo(f"  {entry.name}: {indexed} arquivo(s), {chunks} chunk(s)")
                 finally:

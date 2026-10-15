@@ -39,8 +39,12 @@ def test_chunk_id_is_valid_uuid() -> None:
 
 
 def test_chunk_id_exact_value() -> None:
-    """Pin the exact UUID so a future refactor cannot silently change stored IDs."""
-    expected = str(uuid.uuid5(uuid.NAMESPACE_URL, "src/foo.py::my_func::0"))
+    """Pin the exact UUID so a future refactor cannot silently change stored IDs.
+
+    The key gained a repo field in slice 1 (ID-2): an unscoped call keys on
+    "::src/foo.py::my_func::0". Every stored id changes once (A5).
+    """
+    expected = str(uuid.uuid5(uuid.NAMESPACE_URL, "::src/foo.py::my_func::0"))
     assert _chunk_id("src/foo.py", "my_func", 0) == expected
 
 
