@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 import pytest
 
+from axon.store.pg_vector_store import TEST_PATH_PATTERN
+
 
 class _Acquire:
     def __init__(self, con):
@@ -94,11 +96,11 @@ async def test_flag_off_uses_the_old_dense_query_shape(monkeypatch) -> None:
             SELECT id, ctx, file_path, language, chunk_type, symbol, project, content,
                    git_commit, modified_at, 1 - (vector <=> $1) AS score
             FROM embeddings
-            WHERE ctx = ANY($2) AND language = $3 AND project = $4
+            WHERE ctx = ANY($2) AND language = $3 AND project = $4 AND file_path !~ $5
             ORDER BY vector <=> $1
             LIMIT 3
         """.strip()
-    assert params == ([1.0, 0.0], ["knowledge"], "markdown", "axon")
+    assert params == ([1.0, 0.0], ["knowledge"], "markdown", "axon", TEST_PATH_PATTERN)
 
 
 async def test_flag_on_issues_dense_and_lexical_queries(monkeypatch) -> None:
@@ -114,9 +116,9 @@ async def test_flag_on_issues_dense_and_lexical_queries(monkeypatch) -> None:
     lexical_sql, lexical_params = con.fetch_calls[1]
     assert "websearch_to_tsquery('simple', $1)" in lexical_sql
     assert "content_tsv @@ q.query" in lexical_sql
-    assert "ctx = ANY($2) AND language = $3 AND project = $4" in lexical_sql
+    assert "ctx = ANY($2) AND language = $3 AND project = $4 AND file_path !~ $5" in lexical_sql
     assert "ORDER BY ts_rank(content_tsv, q.query) DESC" in lexical_sql
-    assert lexical_params == ("density gate", ["knowledge"], "markdown", "axon")
+    assert lexical_params == ("density gate", ["knowledge"], "markdown", "axon", TEST_PATH_PATTERN)
 
 
 def test_rrf_math_for_item_in_both_arms() -> None:

@@ -378,6 +378,7 @@ async def _semantic_search_hits(
     language: str | None = None,
     top_k: int = 5,
     prefer_ctx: str | None = None,
+    include_tests: bool = False,
 ) -> list[dict]:
     from axon.embedder.engine import EmbedderEngine
     from axon.store.vector_store_factory import make_vector_store
@@ -393,6 +394,7 @@ async def _semantic_search_hits(
             language=language,
             top_k=top_k,
             prefer_ctx=prefer_ctx,
+            include_tests=include_tests,
         )
     finally:
         await store.close()
@@ -1124,6 +1126,9 @@ def search(
     ctx: Annotated[str | None, typer.Option("--ctx", help=_CTX_HELP)] = None,
     language: Annotated[str | None, typer.Option("--lang", help="Filtrar por linguagem")] = None,
     top_k: Annotated[int, typer.Option("--top", help="Número de resultados")] = 5,
+    include_tests: Annotated[
+        bool, typer.Option("--tests", help="Inclui arquivos de teste nos resultados")
+    ] = False,
 ) -> None:
     """Busca semântica no vault. Sem --ctx exclui work automaticamente."""
     from axon.store.collections import get_search_collections
@@ -1144,6 +1149,7 @@ def search(
             language=language,
             top_k=top_k,
             prefer_ctx=resolved_ctx,
+            include_tests=include_tests,
         )
         trace.append_stage(
             "retrieval",
