@@ -67,3 +67,29 @@ def test_a_background_task_notice_is_not_reported_as_what_the_user_last_asked():
 
     assert "last asked: now write the spec" in text
     assert "task-notification" not in text
+
+
+def test_a_turn_the_harness_marks_as_not_typed_is_not_what_the_user_asked(tmp_path):
+    """Claude Code marks what it injects with role=user: isMeta, or promptSource
+    "system" with a turnOrigin such as "peer" (a subagent's hand-back). Measured
+    2026-10-15: a hand-back that matches no known prefix became "last asked"."""
+    import json
+
+    from axon.memory.transcript import parse_transcript_turns
+
+    entries = [
+        {"type": "user", "promptSource": "typed", "turnOrigin": "human",
+         "message": {"role": "user", "content": "plan the revolution"}},
+        {"type": "assistant", "message": {"role": "assistant", "content": "delegated"}},
+        {"type": "user", "promptSource": "typed", "turnOrigin": "human",
+         "message": {"role": "user", "content": "now write the spec"}},
+        {"type": "user", "isMeta": True, "promptSource": "system", "turnOrigin": "peer",
+         "message": {"role": "user", "content": "Another Claude session sent a message: done"}},
+    ]
+    path = tmp_path / "t.jsonl"
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+
+    text = digest_turns(parse_transcript_turns(path))
+
+    assert "last asked: now write the spec" in text
+    assert "Another Claude session" not in text

@@ -29,8 +29,12 @@ _INJECTED_PREFIXES = (
 )
 
 
-def _is_injected(text: str) -> bool:
-    return text.lstrip().startswith(_INJECTED_PREFIXES)
+def _is_injected(turn: dict) -> bool:
+    """The transcript parser marks what the harness says it injected; the text
+    prefixes cover transcripts that carry no such mark."""
+    return bool(turn.get("injected")) or turn.get("content", "").lstrip().startswith(
+        _INJECTED_PREFIXES
+    )
 
 
 def _clip(text: str) -> str:
@@ -45,7 +49,7 @@ def digest_turns(turns: list[dict[str, str]]) -> str:
     prompts = [
         t["content"]
         for t in turns
-        if t.get("role") == "user" and not _is_injected(t.get("content", ""))
+        if t.get("role") == "user" and not _is_injected(t)
     ]
     files: list[str] = []
     for turn in turns:

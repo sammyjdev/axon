@@ -77,8 +77,24 @@ def parse_transcript_turns(path: str | Path) -> list[dict[str, str]]:
                 continue
             text = _text_of(message.get("content", "")).strip()
             if text:
-                turns.append({"role": role, "content": text})
+                turn = {"role": role, "content": text}
+                if _harness_injected(entry):
+                    turn["injected"] = True
+                turns.append(turn)
     return turns
+
+
+def _harness_injected(entry: dict) -> bool:
+    """True for a user-role line Claude Code wrote itself rather than the
+    operator typed: skill bodies, subagent hand-backs, task notifications.
+    Lines without these fields (older transcripts, Codex rollouts) say nothing,
+    and the digest falls back to known text prefixes for them."""
+    origin = entry.get("turnOrigin")
+    return (
+        entry.get("isMeta") is True
+        or entry.get("promptSource") == "system"
+        or (origin is not None and origin != "human")
+    )
 
 
 def last_compact_summary(path: str | Path) -> str:
