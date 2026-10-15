@@ -71,9 +71,11 @@ def test_make_token_bounded_batches_preserves_all_chunks() -> None:
     assert [c.symbol for c in flattened] == [c.symbol for c in chunks]
 
 
-def test_make_token_bounded_batches_giant_chunk_own_batch() -> None:
-    """A single chunk exceeding _MAX_BATCH_TOKENS goes in its own batch (not dropped)."""
+def test_a_giant_chunk_is_kept_and_no_batch_exceeds_the_budget() -> None:
+    """A single chunk exceeding _MAX_BATCH_TOKENS is kept (truncated, not dropped),
+    and no batch it lands in exceeds the budget."""
     from axon.embedder.pipeline import _MAX_BATCH_TOKENS, _make_token_bounded_batches
+    from axon.embedder.tokens import estimate_tokens
 
     # Create a chunk that definitely exceeds the budget at 0.35 chars/token:
     # _MAX_BATCH_TOKENS / 0.35 chars_per_token -> chars needed to exceed budget
@@ -82,16 +84,16 @@ def test_make_token_bounded_batches_giant_chunk_own_batch() -> None:
     normal = _make_chunk("short", "normal_func")
 
     batches = _make_token_bounded_batches([giant, normal])
-    # giant must be alone in its batch
-    giant_batches = [b for b in batches if any(c.symbol == "giant_func" for c in b)]
-    assert len(giant_batches) == 1
-    assert len(giant_batches[0]) == 1, "Giant chunk must be in its own batch"
+
+    assert [c.symbol for b in batches for c in b] == ["giant_func", "normal_func"]
+    assert all(sum(estimate_tokens(c.content) for c in b) <= _MAX_BATCH_TOKENS for b in batches)
 
 
 def test_make_token_bounded_batches_giant_in_middle() -> None:
     """A giant chunk sandwiched between normal chunks: nothing dropped, order
-    preserved, giant alone in its own batch (the midstream flush path)."""
+    preserved, and no batch exceeds the budget (the midstream flush path)."""
     from axon.embedder.pipeline import _MAX_BATCH_TOKENS, _make_token_bounded_batches
+    from axon.embedder.tokens import estimate_tokens
 
     chars_needed = int(_MAX_BATCH_TOKENS / 0.35) + 100
     n1 = _make_chunk("short a", "n1")
@@ -102,8 +104,7 @@ def test_make_token_bounded_batches_giant_in_middle() -> None:
     flat = [c for b in batches for c in b]
     # no drop + order preserved across the midstream giant
     assert [c.symbol for c in flat] == ["n1", "giant", "n2"]
-    giant_batch = next(b for b in batches if any(c.symbol == "giant" for c in b))
-    assert len(giant_batch) == 1, "midstream giant must be alone in its batch"
+    assert all(sum(estimate_tokens(c.content) for c in b) <= _MAX_BATCH_TOKENS for b in batches)
 
 
 def test_make_token_bounded_batches_empty_input() -> None:
