@@ -1,7 +1,7 @@
 """AXON git event handlers.
 
 Invoked by the installed git hooks as ``python -m axon.hooks.git_event <event>``
-where ``<event>`` is ``commit``, ``post-merge``, ``post-checkout`` or ``init``.
+where ``<event>`` is ``commit``, ``post-merge`` or ``post-checkout``.
 Every handler fails silently — a hook must never block a git operation. An
 unknown event, including the ``push`` that pre-push hooks installed by older
 versions still send, does nothing.
@@ -182,13 +182,6 @@ async def on_commit(
             await store.close()
 
 
-async def on_init(
-    *, store: SessionStore | None = None, cwd: Path | None = None
-) -> None:
-    """Repo init hook. Code indexing lands in Phase 4."""
-    logger.info("init event received (code indexing lands in Phase 4)")
-
-
 async def on_post_merge_or_checkout(
     *, store: SessionStore | None = None, cwd: Path | None = None
 ) -> None:
@@ -304,7 +297,6 @@ async def on_post_merge(
 
 _HANDLERS = {
     "commit": on_commit,
-    "init": on_init,
     "post-merge": on_post_merge,
     "post-checkout": on_post_merge_or_checkout,
 }

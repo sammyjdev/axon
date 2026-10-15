@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from axon.core.decision import SUMMARY_MAX_LEN
-from axon.hooks.git_event import main, on_commit, on_init
+from axon.hooks.git_event import main, on_commit
 from axon.store.session_store import SessionStore
 
 
@@ -120,9 +120,6 @@ async def test_on_commit_links_touched_symbols(
     node = await store.get_node("alpha")
     assert node is not None and node["type"] == "symbol"
 
-
-async def test_on_init_is_a_safe_stub(store: SessionStore) -> None:
-    assert await on_init(store=store) is None
 
 
 async def test_on_commit_is_idempotent_for_same_sha(
