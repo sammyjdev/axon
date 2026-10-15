@@ -270,6 +270,17 @@ class PgVectorStore:
                     file_path,
                 )
 
+    async def legacy_ctxs(self, project: str) -> list[str]:
+        """Distinct ctx of a project's legacy rows (absolute file_path)."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                f"SELECT DISTINCT ctx FROM {self._table}"  # noqa: S608
+                " WHERE project=$1 AND file_path LIKE '/%' ORDER BY ctx",
+                project,
+            )
+        return [r["ctx"] for r in rows]
+
     async def close(self) -> None:
         if self._pool is not None:
             await self._pool.close()

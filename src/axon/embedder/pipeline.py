@@ -8,6 +8,7 @@ from pathlib import Path, PurePath
 
 from axon.context.registry import VALID_CONTEXTS
 from axon.core.file_identity import (
+    VAULT_REPO,
     RepoRoots,
     absolute_for_identity,
     identity_for_path,
@@ -348,6 +349,23 @@ async def index_path(
     # lazy per-(repo, ctx) sha1 maps; found_by_scope scopes D6 reconcile.
     sha1_maps: dict[tuple[str, str], dict[str, str]] = {}
     found_by_scope: dict[tuple[str, str], set[str]] = {}
+    target_identity = (
+        identity_for_path(Path(target) / "_", roots) if Path(target).is_dir() else None
+    )
+    if target_identity is not None:
+        # A walk that finds no file must still reconcile the scopes it was given, or
+        # the last file removed from a repo, or from a vault folder, stays indexed.
+        target_repo = target_identity[0]
+        if forced_ctx:
+            seeded = {forced_ctx}
+        elif target_repo == VAULT_REPO:
+            # The vault's ctx is each file's top-level folder; work is never seeded,
+            # since its files are skipped and would all read as removed.
+            seeded = {c for c in _CTX_ROOTS if is_ctx_indexable(c, None)}
+        else:
+            seeded = set()
+        for seeded_ctx in seeded:
+            found_by_scope[(target_repo, seeded_ctx)] = set()
 
     async def _flush_batch() -> int:
         if not pending_batch:
@@ -403,10 +421,17 @@ async def index_path(
                 file_ctx, chunker_version=CHUNKER_VERSION, **scope
             )
 
+        try:
+            source = file_path.read_text(encoding="utf-8", errors="replace")
+        except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
+            # Removed, or turned into or out of a directory, between the listing and
+            # the read (a checkout or rebase under a running walk): it is gone, and
+            # reconcile treats it as such.
+            continue
+
         # FIX 2: track seen files per (repo, ctx) for D6 reconcile.
         found_by_scope.setdefault(scope_key, set()).add(key)
 
-        source = file_path.read_text(encoding="utf-8", errors="replace")
         current_sha1 = sha1_of_source(source)
 
         # FIX 2: skip-check uses the per-(repo, ctx) sha1 map.
