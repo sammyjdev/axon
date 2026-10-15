@@ -265,6 +265,10 @@ def _isolate_axon_engine(
     """
     engine_dir = tmp_path_factory.mktemp("axon_engine")
     monkeypatch.setenv("AXON_ENGINE", str(engine_dir))
+    # data_root() falls back to `.axon` under the working directory, which is the
+    # checkout the suite runs in: the activity spool wrote .axon/.gitignore and
+    # .axon/activity-pending/ there. Tests that need their own root still set it.
+    monkeypatch.setenv("AXON_DATA_ROOT", str(engine_dir / "data-root"))
     # The test suite must never load a real cross-encoder; tests wanting
     # rerank set it to "1" in their body.
     monkeypatch.setenv("AXON_RERANK", "0")
