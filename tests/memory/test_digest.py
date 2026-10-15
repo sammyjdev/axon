@@ -1,6 +1,5 @@
-"""A session must survive with no LLM reachable: hooks run without an API key,
-and a subscription machine has none at all. The digest is the floor - never the
-ceiling - so an LLM summary still replaces it when one is configured."""
+"""A session is stored as this digest: hooks run without an API key, a
+subscription machine has none at all, and capture carries no LLM."""
 
 from axon.memory.digest import digest_turns
 
@@ -52,3 +51,19 @@ def test_digest_ignores_harness_injected_turns_when_picking_prompts():
     assert "opened with: the real question I actually typed" in text
     assert "system-reminder" not in text
     assert "Base directory for this skill" not in text
+
+
+def test_a_background_task_notice_is_not_reported_as_what_the_user_last_asked():
+    """Measured 2026-10-15 on a real transcript: the session's last user-role turn
+    was a harness <task-notification>, and the digest named it as the last ask."""
+    turns = [
+        {"role": "user", "content": "plan the revolution"},
+        {"role": "assistant", "content": "started an agent"},
+        {"role": "user", "content": "now write the spec"},
+        {"role": "user", "content": "<task-notification> <task-id>a33b</task-id> <status>failed"},
+    ]
+
+    text = digest_turns(turns)
+
+    assert "last asked: now write the spec" in text
+    assert "task-notification" not in text
