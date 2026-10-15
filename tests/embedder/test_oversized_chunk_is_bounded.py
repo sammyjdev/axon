@@ -15,6 +15,7 @@ entirely; sending it whole loses the entire project.
 from __future__ import annotations
 
 from axon.embedder.pipeline import _MAX_BATCH_TOKENS, _make_token_bounded_batches
+from axon.embedder.tokens import estimate_tokens
 
 
 class _Chunk:
@@ -43,6 +44,17 @@ def test_truncation_respects_the_token_budget() -> None:
 
     # 4 chars/token is the estimator this module uses.
     assert len(content) / 4 <= _MAX_BATCH_TOKENS
+
+
+def test_a_truncated_chunk_fits_the_budget_by_the_token_estimator() -> None:
+    # 2026-10-14: a markdown plan cut to 32768 chars (4 chars/token) was 11.5k real
+    # tokens, and DeepInfra refused it ("context length is only 8192 tokens"),
+    # stopping the reindex. The estimator every other budget here uses says so too.
+    oversized = _Chunk("x " * 100_000)
+
+    batches = _make_token_bounded_batches([oversized])
+
+    assert estimate_tokens(batches[0][0].content) <= _MAX_BATCH_TOKENS
 
 
 def test_normal_chunks_are_untouched() -> None:

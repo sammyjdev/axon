@@ -2383,6 +2383,12 @@ def sync(
                     typer.echo(str(exc))
                     failed += 1
                     continue
+                except Exception as exc:  # noqa: BLE001 - one repo must not stop the rest
+                    # The failed walk left its files pending, so the repo stays behind
+                    # and its legacy rows stay protected until a sync succeeds.
+                    typer.echo(f"{repo}: sync failed, {type(exc).__name__}: {exc}")
+                    failed += 1
+                    continue
                 at = (result.commit or "no commit")[:8]
                 typer.echo(f"{repo}: {result.files} file(s), {result.chunks} chunk(s) at {at}")
         finally:

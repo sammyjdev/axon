@@ -161,6 +161,29 @@ def test_sync_all_reports_what_it_cannot_sync_and_syncs_the_rest(
     assert _indexed("beta_wt") == set()
 
 
+def test_sync_all_goes_on_past_a_repo_whose_embedding_fails(
+    machine: types.SimpleNamespace,
+) -> None:
+    broken = _repo(machine.tmp / "alpha", {"README.md": "# A\nPROVIDER-REFUSES\n"})
+    healthy = _repo(machine.tmp / "beta", {"README.md": "# B\n"})
+    machine.register(broken, healthy)
+    asyncio.run(_seed_ctx("alpha", "personal"))
+    asyncio.run(_seed_ctx("beta", "personal"))
+
+    def embed(texts: list[str]) -> list[list[float]]:
+        if any("PROVIDER-REFUSES" in t for t in texts):
+            raise RuntimeError("400 Bad Request")
+        return [[0.0] * VECTOR_SIZE for _ in texts]
+
+    machine.engine.embed.side_effect = embed
+
+    result = runner.invoke(main_app, ["sync", "--all"])
+
+    assert result.exit_code != 0
+    assert "alpha" in result.output and "400 Bad Request" in result.output
+    assert _indexed("beta") == {"README.md"}
+
+
 def test_sync_dry_run_embeds_nothing_and_prints_files_and_characters(
     machine: types.SimpleNamespace,
 ) -> None:

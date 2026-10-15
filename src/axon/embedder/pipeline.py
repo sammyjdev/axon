@@ -68,8 +68,10 @@ def _truncate_to_budget(chunk: Chunk) -> Chunk:
     """Return the chunk, shortened to _MAX_BATCH_TOKENS if it exceeds it."""
     if _estimate_tokens(chunk.content) <= _MAX_BATCH_TOKENS:
         return chunk
-    # 4 chars per token is the estimator this module uses; stay just under.
-    limit = _MAX_BATCH_TOKENS * 4
+    # 2 chars per token. 4 sent a markdown plan of 32768 chars that was 11.5k real
+    # tokens, refused by DeepInfra (2026-10-14); that text ran 2.86 chars/token, so
+    # even the estimator's 0.35 tokens/char cut (23405 chars) came back 8193 tokens.
+    limit = _MAX_BATCH_TOKENS * 2
     shortened = copy.copy(chunk)
     shortened.content = chunk.content[:limit]
     logger.warning(
