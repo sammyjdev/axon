@@ -101,3 +101,33 @@ def test_rank_and_limit_ctx_preference_does_not_override_a_clearly_better_hit() 
         now=datetime(2025, 1, 2, tzinfo=UTC), prefer_ctx="knowledge",
     )
     assert [hit["id"] for hit in out] == ["0", "30"]
+
+
+def test_a_hit_too_big_for_the_budget_is_skipped_and_a_smaller_one_after_it_is_kept() -> None:
+    """Measured 2026-10-15: two docs fit, the third (679 tokens) did not, and the
+    search stopped there - a 135-token code hit further down never showed."""
+    from axon.store.vector_common import _rank_and_limit
+
+    results = [_r(0, "a" * 320), _r(1, "b" * 320), _r(2, "c" * 800), _r(3, "d" * 120)]
+
+    out = _rank_and_limit(
+        results, top_k=5, max_nodes=25, max_tokens=200,
+        now=datetime(2025, 1, 2, tzinfo=UTC),
+    )
+
+    assert [hit["id"] for hit in out] == ["0", "1", "3"]
+
+
+def test_the_retrieval_trim_skips_a_hit_too_big_and_keeps_a_smaller_one_after_it() -> None:
+    from axon.store.vector_common import _trim_to_budget
+
+    results = [
+        {"id": "a", "payload": {"content": "a" * 320}},
+        {"id": "b", "payload": {"content": "b" * 320}},
+        {"id": "c", "payload": {"content": "c" * 800}},
+        {"id": "d", "payload": {"content": "d" * 120}},
+    ]
+
+    out = _trim_to_budget(results, max_nodes=25, max_tokens=200)
+
+    assert [item["id"] for item in out] == ["a", "b", "d"]
