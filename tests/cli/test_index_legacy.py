@@ -424,7 +424,7 @@ def test_prune_is_refused_after_a_sync_that_did_not_finish(
     broken.embed.side_effect = RuntimeError("provider down")
     monkeypatch.setattr("axon.embedder.engine.EmbedderEngine", lambda: broken)
     failed = runner.invoke(main_app, ["sync", str(alpha)])
-    assert isinstance(failed.exception, RuntimeError), failed.output
+    assert failed.exit_code != 0 and "sync failed" in failed.output, failed.output
     before = _rows()
 
     result = _prune("--apply")
