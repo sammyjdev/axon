@@ -33,7 +33,7 @@ are all synced. `glyph-kg` was relicensed the same day for consistency.
 ### 1.3 Run the full test suite
 
 ```bash
-rtk pytest tests/ -q
+pytest tests/ -q
 ```
 
 All tests must pass. Do not proceed with publish if tests are failing.
@@ -41,7 +41,7 @@ All tests must pass. Do not proceed with publish if tests are failing.
 ### 1.4 Run linting
 
 ```bash
-rtk ruff check
+ruff check
 ```
 
 Fix any errors. Warnings are at your discretion.

@@ -221,13 +221,29 @@ def test_survivor_subapps_registered():
 
 def test_standalone_commands_registered():
     names = _registered_command_names()
-    for name in ("scan", "search", "rtk", "rtk-status", "rtk-init", "rtk-proxy", "run", "git"):
+    for name in ("scan", "search"):
         assert name in names
 
 
 def test_cut_commands_absent():
     names = _registered_command_names()
-    for name in ("ask", "index", "watch", "til", "deep", "expand", "career", "cost"):
+    for name in (
+        "ask",
+        "index",
+        "watch",
+        "til",
+        "deep",
+        "expand",
+        "career",
+        "cost",
+        "rtk",
+        "rtk-status",
+        "rtk-init",
+        "rtk-install",
+        "rtk-proxy",
+        "run",
+        "git",
+    ):
         assert name not in names
 
 

@@ -17,23 +17,19 @@ any agent.
 
 ## The stack
 
-AXON is the front of a three-part, self-hosted context stack — install one
-thing, get all three:
+AXON is the front of a two-part, self-hosted context stack — install one
+thing, get both:
 
 | Layer | Role | Project |
 |---|---|---|
 | **AXON** | Cross-agent memory + MCP orchestration (this repo) | `axon` |
 | **GLYPH** | Graph-aware retrieval — decides *what* context to bring | [`glyph-kg`](https://github.com/sammyjdev/glyph-kg), pulled in via pip |
-| **rtkx** | Context compression + reversible store — decides *how compact* | [`rtkx`](https://github.com/sammyjdev/rtkx), installed via `axon rtk-install` |
 
-GLYPH and rtkx are clean, independently-tested dependencies, not a monolith.
-The compressed context stays in the LLM window; the full pre-compression
-original is one `restore_context` MCP call away (opt-in via
-`AXON_RTK_REVERSIBLE`). Bundled compression layers like Headroom cover adjacent
-ground — including reversible retrieval (its CCR cache) — but as one broad
+GLYPH is a clean, independently-tested dependency, not a monolith. Bundled
+compression layers like Headroom cover adjacent ground, but as one broad
 engine. AXON instead keeps each tier narrow-and-deep and independently
-swappable, so the graph (GLYPH) and compression (rtkx) layers can evolve, be
-benchmarked, or be replaced on their own without touching the rest of the stack.
+swappable, so the graph (GLYPH) layer can evolve, be benchmarked, or be
+replaced on its own without touching the rest of the stack.
 
 ---
 
@@ -47,14 +43,8 @@ cd axon
 pip install -e .
 ```
 
-This pulls in GLYPH automatically. Install the **rtkx** compression engine too
-(downloads a prebuilt binary into `~/.axon/bin`, no Rust toolchain needed):
-
-```bash
-axon rtk-install
-```
-
-`axon doctor` then reports the whole stack (axon, rtkx, caveman, GLYPH).
+This pulls in GLYPH automatically. `axon doctor` reports the whole stack
+(axon, caveman, GLYPH).
 
 Initialize AXON in a repo (installs git hooks and indexes the code):
 
@@ -213,7 +203,7 @@ editing agents (Aider, Cline) whose histories are built-in and single-agent:
 |---|---|---|---|---|
 | **Primary goal** | Decision capture + cross-agent continuity | Auto-capture of all session activity | Token compression layer | Hosted cross-agent memory API |
 | **What it captures** | Decisions at crystallisation points (git / session) | Every tool use, continuously | Whatever passes through (compresses it) | Facts / observations via API |
-| **Reversible compression** | Yes (`restore_context`, rtkx) | No | Yes (CCR cache) | No |
+| **Reversible compression** | No (removed, dec-137) | No | Yes (CCR cache) | No |
 | **Decision / ADR inference** | Yes (LLM judge → Obsidian) | No | No (failure-driven `learn`) | No |
 | **Governance** | Per-tool risk class + restricted ctx (ADR-013) | `<private>` tags | A/B holdouts / measured savings | Access controls |
 | **Works across agents** | Yes (MCP + file fallback) | Yes (MCP) | Yes (wrap / proxy) | Yes (plugins) |
@@ -224,7 +214,7 @@ The crowded part of this space is **raw recall** — tools like
 strong LongMemEval scores and optimise for that directly. AXON does not compete
 on that axis. Its defensible niche is the intersection none of the above
 combine: capturing *decisions* (not every keystroke) at git and session
-boundaries, inferring ADRs from them, keeping compression reversible, and gating
+boundaries, inferring ADRs from them, and gating
 every MCP tool by risk class with a full audit trail. If you want the best raw
 recall benchmark, those tools win; if you want decisions and architecture to
 survive across agents and months, auditably, that is AXON.
@@ -271,7 +261,7 @@ further declared directory moves (2026-08-07) resolved 62 more requests and
 produced the figure above, which anyone can recompute.
 
 Measured compression telemetry from running the real pipeline (`phi3:mini`
-via Ollama, caveman + RTK) over 69 representative technical context windows
+via Ollama, caveman, plus the since-removed rtk stage) over 69 representative technical context windows
 (source and docs drawn from this repo), in the committed
 [`data/compression/stats.jsonl`](data/compression/stats.jsonl): **p50 = 85.5%**,
 **mean = 78.8%**, **p95 = 95.5%**, **max = 97.0%** over **n=69 compressed

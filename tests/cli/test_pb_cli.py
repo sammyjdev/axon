@@ -7,7 +7,6 @@ import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from typer.testing import CliRunner
 
 from axon.cli import pb
@@ -16,32 +15,6 @@ from axon.router.classifier import TaskType
 runner = CliRunner()
 
 
-def test_git_command_proxies_to_rtk(monkeypatch) -> None:
-    captured: list[str] = []
-
-    def fake_rtk_proxy(command: str) -> None:
-        captured.append(command)
-
-    monkeypatch.setattr(pb, "rtk_proxy", fake_rtk_proxy)
-
-    result = runner.invoke(pb.app, ["git", "status"])
-
-    assert result.exit_code == 0
-    assert captured == ["git status"]
-
-
-def test_run_command_proxies_raw_shell(monkeypatch) -> None:
-    captured: list[str] = []
-
-    def fake_rtk_proxy(command: str) -> None:
-        captured.append(command)
-
-    monkeypatch.setattr(pb, "rtk_proxy", fake_rtk_proxy)
-
-    result = runner.invoke(pb.app, ["run", "git status"])
-
-    assert result.exit_code == 0
-    assert captured == ["git status"]
 
 
 def test_search_shows_semantic_results(monkeypatch) -> None:
@@ -767,62 +740,6 @@ def test_profile_export_prints_toml_snippet(monkeypatch, tmp_path) -> None:
     assert result.exit_code == 0
     assert "[profiles.team-dev]" in result.stdout
     assert 'mode = "remote-infra"' in result.stdout
-
-
-def test_rtk_reduces_and_prints_summary() -> None:
-    text = (
-        "AXON indexa contexto técnico. "
-        "AXON indexa contexto técnico. "
-        "Use prompts curtos para reduzir custo sem perder precisão."
-    )
-
-    def fake_compress(_text: str, max_tokens: int) -> tuple[str, str | None]:
-        _ = max_tokens
-        return "texto comprimido", None
-
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(pb, "_compress_with_rtk", fake_compress)
-    result = runner.invoke(pb.app, ["rtk", text, "--max-tokens", "20"])
-    monkeypatch.undo()
-
-    assert result.exit_code == 0
-    assert "RTK tokens aprox:" in result.stdout
-    assert "Texto comprimido:" in result.stdout
-
-
-def test_rtk_status_without_binary_exits(monkeypatch) -> None:
-    monkeypatch.setattr(pb, "_rtk_binary_path", lambda: None)
-
-    result = runner.invoke(pb.app, ["rtk-status"])
-
-    assert result.exit_code == 1
-    assert "RTK: não instalado" in result.stdout
-
-
-def test_rtk_proxy_without_binary_exits(monkeypatch) -> None:
-    monkeypatch.setattr(pb, "_rtk_binary_path", lambda: None)
-
-    result = runner.invoke(pb.app, ["rtk-proxy", "git status"])
-
-    assert result.exit_code == 1
-    assert "rtkx não instalado" in result.stdout
-
-
-def test_rtk_init_codex_calls_expected_command(monkeypatch) -> None:
-    commands: list[list[str]] = []
-
-    def fake_run(cmd, **kwargs):
-        _ = kwargs
-        commands.append(cmd)
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
-
-    monkeypatch.setattr(pb, "_rtk_binary_path", lambda: "/usr/local/bin/rtk")
-    monkeypatch.setattr(pb.subprocess, "run", fake_run)
-
-    result = runner.invoke(pb.app, ["rtk-init", "--agent", "codex"])
-
-    assert result.exit_code == 0
-    assert commands == [["/usr/local/bin/rtk", "init", "-g", "--codex"]]
 
 
 def _seed_edges(db: Path, edges: list[tuple[str, str]]) -> None:

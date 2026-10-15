@@ -3,9 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shlex
 import shutil
-import subprocess
 import sys
 import uuid
 from contextlib import asynccontextmanager
@@ -18,9 +16,7 @@ if TYPE_CHECKING:
 import typer
 
 from axon.config.runtime import load_runtime_config
-from axon.context.compression_quality import compression_quality_note
 from axon.context.registry import VALID_CONTEXTS
-from axon.context.rtk import RTKError, compress_text_with_rtk, rtk_binary_path
 from axon.core.file_identity import RepoRoots, display_path, load_repo_roots
 
 app = typer.Typer(
@@ -118,77 +114,6 @@ def _resolve_ctx(ctx: str | None, require_work_confirmation: bool = True) -> str
 
 def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
-
-
-def _rtk_binary_path() -> str | None:
-    return rtk_binary_path()
-
-
-def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
-    try:
-        return compress_text_with_rtk(text, max_tokens=max_tokens), None
-    except RTKError as exc:
-        return text, str(exc)
-
-
-async def _compress_context_pipeline(
-    text: str,
-    *,
-    max_tokens: int,
-    caller: str,
-    ctx: str | None,
-) -> tuple[str, str, str | None, str | None, int, int, float]:
-    from datetime import UTC, datetime
-
-    from axon.observability.compression_telemetry import (
-        CompressionRecord,
-        CompressionTelemetryStore,
-    )
-    from axon.router.compressor import caveman_compress_guarded
-
-    before_tokens = _estimate_tokens(text)
-    caveman_out, caveman_note = await caveman_compress_guarded(text, max_tokens=max_tokens)
-
-    compressed_context, rtk_note = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
-    rtk_quality_note = compression_quality_note(text, compressed_context)
-    if rtk_quality_note:
-        compressed_context = caveman_out
-        rtk_note = rtk_quality_note
-
-    engines: list[str] = []
-    if caveman_note is None:
-        engines.append("caveman/phi3")
-    if rtk_note is None:
-        engines.append("rtkx")
-    engine_name = "+".join(engines) if engines else "fallback"
-
-    after_tokens = _estimate_tokens(compressed_context)
-    reduction = max(0, before_tokens - after_tokens)
-    reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
-
-    CompressionTelemetryStore().append(
-        CompressionRecord(
-            ts=datetime.now(UTC).isoformat(),
-            engine=engine_name,
-            caller=caller,
-            ctx=ctx,
-            before_tokens=before_tokens,
-            after_tokens=after_tokens,
-            reduction_tokens=reduction,
-            reduction_pct=round(reduction_pct, 1),
-            kind="compression",
-        )
-    )
-
-    return (
-        compressed_context,
-        engine_name,
-        caveman_note,
-        rtk_note,
-        before_tokens,
-        after_tokens,
-        reduction_pct,
-    )
 
 
 def _normalize_configure_value(
@@ -401,159 +326,6 @@ async def _semantic_search_hits(
 
 
 @app.command()
-def rtk(
-    text: Annotated[str, typer.Argument(help="Texto a comprimir")],
-    max_tokens: Annotated[int, typer.Option("--max-tokens", help="Budget de tokens alvo")] = 350,
-) -> None:
-    """Comprime texto com RTK binário para reduzir consumo de tokens."""
-    compressed, rtk_note = _compress_with_rtk(text, max_tokens=max_tokens)
-    if rtk_note:
-        raise typer.BadParameter(f"RTK externo indisponível: {rtk_note}")
-    before_tokens = _estimate_tokens(text)
-    after_tokens = _estimate_tokens(compressed)
-    reduction = max(0, before_tokens - after_tokens)
-    reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
-
-    typer.echo("RTK engine: external")
-    typer.echo(f"RTK tokens aprox: {before_tokens} -> {after_tokens} (-{reduction_pct:.1f}%)")
-    typer.echo("\nTexto comprimido:")
-    typer.echo(compressed)
-
-
-@app.command("rtk-status")
-def rtk_status() -> None:
-    """Mostra status da instalação RTK oficial e integração local."""
-    rtk_path = _rtk_binary_path()
-    if not rtk_path:
-        typer.echo("RTK: não instalado")
-        typer.echo("Instale com: axon rtk-install (ou brew install rtkx)")
-        raise typer.Exit(1)
-
-    typer.echo(f"RTK: instalado em {rtk_path}")
-    version = subprocess.run(  # noqa: S603
-        [rtk_path, "--version"], capture_output=True, text=True
-    )
-    typer.echo((version.stdout or version.stderr or "versão indisponível").strip())
-
-    show = subprocess.run(  # noqa: S603
-        [rtk_path, "init", "--show"], capture_output=True, text=True
-    )
-    if show.returncode == 0 and (show.stdout or "").strip():
-        typer.echo("\nRTK init --show:")
-        typer.echo(show.stdout.strip())
-    else:
-        typer.echo("RTK init --show indisponível ou sem configuração.")
-
-
-@app.command("rtk-init")
-def rtk_init(
-    agent: Annotated[
-        str, typer.Option("--agent", help="Agente alvo: claude|codex|copilot")
-    ] = "claude",
-    auto_patch: Annotated[
-        bool,
-        typer.Option("--auto-patch/--interactive", help="Executa init sem perguntas interativas"),
-    ] = True,
-) -> None:
-    """Inicializa RTK oficial para o agente escolhido."""
-    rtk_path = _rtk_binary_path()
-    if not rtk_path:
-        typer.echo("rtkx não instalado. Rode: axon rtk-install")
-        raise typer.Exit(1)
-
-    agent_name = agent.lower()
-    cmd = [rtk_path, "init", "-g"]
-    if agent_name == "codex":
-        cmd.append("--codex")
-    elif agent_name == "copilot":
-        if auto_patch:
-            cmd.append("--auto-patch")
-        cmd.append("--copilot")
-    elif agent_name == "claude":
-        if auto_patch:
-            cmd.append("--auto-patch")
-    else:
-        raise typer.BadParameter("agent deve ser claude, codex ou copilot")
-
-    typer.echo(f"Executando: {' '.join(cmd)}")
-    result = subprocess.run(cmd, text=True)  # noqa: S603
-    if result.returncode != 0:
-        raise typer.Exit(result.returncode)
-    typer.echo("RTK inicializado com sucesso.")
-
-
-@app.command("rtk-install")
-def rtk_install_cmd(
-    version: Annotated[
-        str, typer.Option("--version", help="Release tag a instalar (default: latest)")
-    ] = "latest",
-    pre: Annotated[
-        bool,
-        typer.Option("--pre/--stable", help="Inclui prereleases ao resolver o latest"),
-    ] = False,
-) -> None:
-    """Baixa o binário rtkx para ~/.axon/bin (sem precisar de toolchain Rust)."""
-    from axon.context import rtk_bootstrap as boot
-
-    try:
-        tag = version if version != "latest" else boot.resolve_latest_tag(include_prerelease=pre)
-    except boot.BootstrapError as exc:
-        typer.echo(f"rtkx: falha ao resolver release ({exc})")
-        raise typer.Exit(1) from exc
-
-    typer.echo(f"Instalando rtkx {tag} de {boot.RTKX_REPO}...")
-    try:
-        path = boot.bootstrap_rtkx(tag)
-    except boot.BootstrapError as exc:
-        typer.echo(f"rtkx: instalação falhou ({exc})")
-        raise typer.Exit(1) from exc
-
-    rtk_binary_path.cache_clear()
-    typer.echo(f"rtkx instalado em {path}")
-
-
-@app.command("rtk-proxy")
-def rtk_proxy(
-    command: Annotated[str, typer.Argument(help="Comando para executar via rtk proxy")],
-) -> None:
-    """Executa um comando via RTK proxy com saída compactada."""
-    rtk_path = _rtk_binary_path()
-    if not rtk_path:
-        typer.echo("rtkx não instalado. Rode: axon rtk-install")
-        raise typer.Exit(1)
-
-    parts = shlex.split(command)
-    if not parts:
-        raise typer.BadParameter("comando vazio")
-
-    cmd = [rtk_path, "proxy", *parts]
-    typer.echo(f"Executando: {' '.join(cmd)}")
-    result = subprocess.run(cmd, text=True)  # noqa: S603
-    if result.returncode != 0:
-        raise typer.Exit(result.returncode)
-
-
-@app.command("run")
-def run_proxy(
-    command: Annotated[str, typer.Argument(help="Comando shell para executar via RTK proxy")],
-) -> None:
-    """Atalho para executar qualquer comando shell com RTK proxy."""
-    rtk_proxy(command)
-
-
-@app.command("git")
-def git_proxy(
-    git_args: Annotated[
-        list[str], typer.Argument(help="Argumentos do git (ex.: status, diff, log -n 5)")
-    ],
-) -> None:
-    """Atalho para `axon git ...` com saída filtrada por RTK."""
-    if not git_args:
-        raise typer.BadParameter("informe ao menos um argumento, ex.: axon git status")
-    rtk_proxy(f"git {' '.join(git_args)}")
-
-
-@app.command()
 def doctor(
     stale_days: Annotated[
         int,
@@ -666,9 +438,7 @@ def doctor(
     typer.echo("\ncapture & adr checks (dec-114):")
     typer.echo(human_format(results))
 
-    # RTK/caveman presence + liveness (merged from the former axon.__main__ doctor)
-    import subprocess
-    import sys
+    # caveman presence + liveness (merged from the former axon.__main__ doctor)
     from datetime import UTC, datetime, timedelta
     from importlib.metadata import PackageNotFoundError
     from importlib.metadata import version as _pkg_version
@@ -689,20 +459,6 @@ def doctor(
     except PackageNotFoundError:
         v = "unknown"
     presence_lines.append(f"- axon: ok ({v})")
-
-    from axon.context.rtk import rtk_binary_path
-
-    rtk_path = rtk_binary_path()
-    if rtk_path:
-        try:
-            rtk_v = subprocess.check_output(  # noqa: S603
-                [rtk_path, "--version"], text=True, timeout=3
-            ).strip()
-        except Exception:
-            rtk_v = "unknown"
-        presence_lines.append(f"- rtkx: ok ({rtk_v}) [{rtk_path}]")
-    else:
-        presence_lines.append("- rtkx: not installed (run `axon rtk-install`)")
 
     try:
         from axon.router.compressor import caveman_compress  # noqa: F401
@@ -767,23 +523,6 @@ def doctor(
                 )
     except Exception as exc:
         presence_lines.append(f"- compression telemetry: error ({exc})")
-
-    if sys.platform == "darwin":
-        share_root = Path.home() / "Library" / "Application Support"
-    else:
-        share_root = Path.home() / ".local" / "share"
-    rtk_db = share_root / "rtkx" / "history.db"
-    for name in ("rtkx", "rtk"):
-        candidate = share_root / name / "history.db"
-        if candidate.exists():
-            rtk_db = candidate
-            break
-    if rtk_db.exists():
-        rtk_ts = datetime.fromtimestamp(rtk_db.stat().st_mtime, tz=UTC)
-        tag = "stale" if rtk_ts < stale_cutoff else "ok"
-        presence_lines.append(f"- rtkx activity: {tag} (history.db touched {fmt_age(rtk_ts)})")
-    else:
-        presence_lines.append(f"- rtkx activity: not found ({rtk_db})")
 
     typer.echo("\n".join(presence_lines))
 

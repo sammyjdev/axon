@@ -139,7 +139,7 @@ command yet.
 Run the current benchmark suite through tests:
 
 ```bash
-rtk pytest tests/benchmark -q
+pytest tests/benchmark -q
 ```
 
 The default benchmark suite in `axon.benchmark.suite` contains three

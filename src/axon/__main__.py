@@ -560,7 +560,6 @@ from axon.cli.pb import (  # noqa: E402
     compact_hook,
     configure,
     doctor,
-    git_proxy,
     graph_app,
     hooks_app,
     index_compare,
@@ -570,12 +569,6 @@ from axon.cli.pb import (  # noqa: E402
     note,
     pending_app,
     profile_app,
-    rtk,
-    rtk_init,
-    rtk_install_cmd,
-    rtk_proxy,
-    rtk_status,
-    run_proxy,
     scan,
     search,
     seed_lessons,
@@ -597,13 +590,6 @@ app.add_typer(session_app, name="session")
 
 app.command("scan")(scan)
 app.command("search")(search)
-app.command("rtk")(rtk)
-app.command("rtk-status")(rtk_status)
-app.command("rtk-init")(rtk_init)
-app.command("rtk-install")(rtk_install_cmd)
-app.command("rtk-proxy")(rtk_proxy)
-app.command("run")(run_proxy)
-app.command("git")(git_proxy)
 app.command("doctor")(doctor)
 app.command("bootstrap")(pb_bootstrap)
 app.command("setup")(setup)

@@ -199,7 +199,7 @@ are the durable record.
 - [dec-115](decisions/dec-115-supersession-ranking-penalty.md): soft supersession via ranking penalty in recall.
 - [dec-116](decisions/dec-116-glyph-graph-delegation.md): delegate graph-aware context retrieval to GLYPH.
 - [dec-117](decisions/dec-117-glyph-vs-graphiti-graph-layer.md): keep GLYPH for the code graph; borrow Graphiti's bi-temporal model for decision supersession.
-- [dec-118](decisions/dec-118-rtkx-vs-llmlingua-compression-baseline.md): keep rtkx for reversible compression; use LLMLingua-2 as the lossy benchmark baseline.
+- [dec-118](decisions/dec-118-rtkx-vs-llmlingua-compression-baseline.md): (superseded by dec-137) keep rtkx for reversible compression; use LLMLingua-2 as the lossy benchmark baseline.
 - [dec-119](decisions/dec-119-canonical-activity-stores-for-live-renderers.md): canonical activity/savings stores as the single source for live renderers (familiar, gain, dashboard).
 - [dec-120](decisions/dec-120-no-langchain-langgraph-chat.md): no LangChain / LangGraph / built-in chat; keep the governed router and lean deps.
 - [dec-121](decisions/dec-121-postgres-unified-storage.md): unify persistence on PostgreSQL (pgvector + JSONB); keep GLYPH as the graph retrieval layer.
@@ -259,3 +259,4 @@ are the durable record.
   durable evidence in a separate PostgreSQL subsystem, not semantic memory -
   links to existing memory/decision records require an explicit ID, never a
   shared timestamp or workspace path.
+- [dec-137](decisions/dec-137-remove-rtkx.md): rtkx and the rtk filter proxy are removed from AXON and the machine; the rtkx stage compressed 0 percent in AXON's own telemetry, and the proxy was net-neutral with measured failure modes (supersedes dec-118).

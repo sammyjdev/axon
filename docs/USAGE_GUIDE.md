@@ -125,20 +125,6 @@ maintained reference for what each number means.
 axon gain
 ```
 
-## RTK Helpers
-
-AXON includes helper commands around the external RTK binary when it is
-installed:
-
-```bash
-axon rtk-status
-axon rtk-init --agent codex
-axon rtk-proxy "git status"
-axon rtk "git diff"
-```
-
-If RTK is not installed, the main AXON workflows still work.
-
 ## Context Safety
 
 Available contexts:

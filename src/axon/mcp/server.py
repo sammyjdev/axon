@@ -19,12 +19,6 @@ from axon.context.compression_quality import compression_quality_note
 from axon.context.contracts import ContextPack
 from axon.context.pack_dedup import dedup_hits
 from axon.context.registry import PROTECTED_CONTEXTS, normalize_context
-from axon.context.rtk import (
-    RTKError,
-    compress_text_with_rtk,
-    restore_original_with_rtk,
-    store_original_with_rtk,
-)
 from axon.core.decision import SUMMARY_MAX_LEN, Decision
 from axon.core.file_identity import RepoRoots, display_path, load_repo_roots
 from axon.core.repo_identity import repo_identity
@@ -303,22 +297,6 @@ def _record_mcp_tool_call(
             kind="tool_io",
         )
     )
-
-
-def _compress_with_rtk(text: str, max_tokens: int) -> tuple[str, str | None]:
-    try:
-        return compress_text_with_rtk(text, max_tokens=max_tokens), None
-    except RTKError as exc:
-        return text, str(exc)
-
-
-def _reversible_enabled() -> bool:
-    return os.environ.get("AXON_RTK_REVERSIBLE", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
 
 
 def _build_planner_executor_prompts(
@@ -944,25 +922,9 @@ async def ask(
             pack.text, max_tokens=max_tokens, ctx=effective_ctx
         )
 
-        compressed_context, rtk_err = _compress_with_rtk(caveman_out, max_tokens=max_tokens)
-        rtk_quality_err = compression_quality_note(pack.text, compressed_context)
-        if rtk_quality_err:
-            compressed_context = caveman_out
-            rtk_err = rtk_quality_err
-
-        engines = []
-        if caveman_err is None:
-            engines.append("caveman/phi3")
-        if rtk_err is None:
-            engines.append("rtkx")
-        used_engine = "+".join(engines) if engines else "fallback"
-
-        # Reversible compression (opt-in): stash the original so the agent can
-        # restore it on demand via the `restore_context` tool. Off by default.
-        if _reversible_enabled() and used_engine != "fallback":
-            handle = store_original_with_rtk(pack.text)
-            if handle:
-                compressed_context = f"{compressed_context}\n\n[[ccr:{handle}]]"
+        compressed_context = caveman_out
+        quality_err = compression_quality_note(pack.text, compressed_context)
+        used_engine = "caveman/phi3" if caveman_err is None else "fallback"
 
         after_tokens = _estimate_tokens(compressed_context)
         # No max(0, ...): flooring at zero made a compressor that EXPANDS its
@@ -973,7 +935,7 @@ async def ask(
     else:
         compressed_context = pack.text
         caveman_err = f"strategy={pack.strategy.name}"
-        rtk_err = None
+        quality_err = None
         used_engine = "disabled"
         before_tokens = _estimate_tokens(pack.text)
         after_tokens = before_tokens
@@ -990,7 +952,7 @@ async def ask(
                 "reduction_pct": round(reduction_pct, 1),
                 "compression_enabled": pack.strategy.enable_compression,
                 "caveman_note": caveman_err or "",
-                "rtk_note": rtk_err or "",
+                "quality_note": quality_err or "",
             },
         )
 
@@ -1007,7 +969,7 @@ async def ask(
             reduction_tokens=reduction,
             reduction_pct=round(reduction_pct, 1),
             kind="compression",
-            rejection_note=caveman_err or rtk_err or None,
+            rejection_note=caveman_err or quality_err or None,
         )
     )
 
@@ -1024,8 +986,8 @@ async def ask(
     response += f"## compression\nengine: {used_engine}\n"
     if caveman_err:
         response += f"caveman_note: {caveman_err}\n"
-    if rtk_err:
-        response += f"rtk_note: {rtk_err}\n"
+    if quality_err:
+        response += f"quality_note: {quality_err}\n"
     response += f"tokens aprox: {before_tokens} -> {after_tokens} (-{reduction_pct:.1f}%)\n\n"
     response += f"## Prompt pronto — Claude (Planner)\n{planner_prompt}\n\n"
     response += f"## Prompt pronto — Codex (Executor)\n{executor_prompt}\n\n"
@@ -1084,23 +1046,6 @@ async def get_graph_context(query: str, token_budget: int = 1000) -> str:
     response = _truncate(response, token_budget)
     _record_mcp_tool_call("get_graph_context", query, response)
     return response
-
-
-@mcp.tool()
-@traced_tool(risk="read")
-async def restore_context(handle: str) -> str:
-    """Restaura o conteúdo original (pré-compressão) de um handle CCR via rtkx.
-
-    Com a compressão reversível ligada, o contexto comprimido carrega um marcador
-    ``[[ccr:<handle>]]``; passe o ``<handle>`` aqui para recuperar o original
-    completo sob demanda, sem reexecutar a recuperação.
-    """
-    try:
-        original = restore_original_with_rtk(handle)
-    except RTKError as exc:
-        return f"rtkx restore falhou: {exc}"
-    _record_mcp_tool_call("restore_context", handle, original)
-    return original
 
 
 # ---------------------------------------------------------------------------

@@ -41,7 +41,6 @@ EXPECTED_TOOLS = {
     "get_graph_neighbors",
     "get_graph_path",
     "get_session_memory",
-    "restore_context",
     "save_adr",
     "search_code",
 }

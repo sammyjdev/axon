@@ -166,16 +166,10 @@ about". Do **not** try to unify or sync them:
 
 ## Validation Defaults
 
-Use `rtk` where available. Typical validation commands:
+Typical validation commands:
 
 ```bash
-rtk pytest tests/ -q
-rtk ruff check
-rtk python3 -m compileall src
+pytest tests/ -q
+ruff check
+python3 -m compileall src
 ```
-
-## RTK Notes
-
-AXON is commonly used with RTK (Rust Token Killer) for compact command
-output. Prefix commands with `rtk` when possible; if no specialized filter is
-available, RTK passes the command through unchanged.

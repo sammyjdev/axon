@@ -17,7 +17,6 @@ Goal: let any agent (Claude Code, Codex, Cursor) resume work with full context.
 It is the front layer of a three-part stack:
 - **AXON** — cross-agent memory, decision capture, MCP surface (this repo).
 - **GLYPH** (`glyph-kg`) — graph-aware retrieval, delegated to since dec-116.
-- **rtkx** — reversible context compression (the `rtk` binary).
 
 Stack: Python 3.11+, Pydantic v2 domain models, async I/O, litellm for routing.
 Apache-2.0-licensed, installed from source (not on PyPI).
@@ -35,7 +34,7 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 | `mcp` | MCP stdio server (`server.py`); every tool wrapped by `@traced_tool` risk gate. |
 | `cli` | `axon` (`__main__.py`), the single CLI entry point (dec-125); re-registers the surviving commands from `cli/pb.py`, which is no longer its own entry point. |
 | `code` | Repo indexer (`index_repo`), diff-symbols, resolver. |
-| `context` | Context auto-detection, retrieval strategies, GLYPH adapter (`graph_source.py`), rtkx bootstrap. |
+| `context` | Context auto-detection, retrieval strategies, GLYPH adapter (`graph_source.py`). |
 | `memory` | Session transcript parsing (`transcript.py`), the rule-based digest a session is stored as (`digest.py`, no LLM) and hook (`session_hook.py`). mem0/Qdrant semantic memory was retired with dec-121. |
 | `doctor` | Stack diagnostics, 3 modes: read-only / `--apply` / `--ci` JSON (dec-114). |
 | `hooks` | Git hook install + post-commit capture (a push is not an AXON event); pre-commit framework bridge (dec-113). |
@@ -55,7 +54,7 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 `seed-lessons`, `rekey-repo`, `session-hook`, `compact-hook`, `scan`, `search`,
 `sync` (bring a registered root, or every one with `--all`, to its HEAD),
 `index-compare` and `index-prune-legacy` (legacy rows against the reindex, then
-their verified delete), `rtk*`, `run`, `git`. Sub-apps: `axon adr {list,add,sync,hook,infer-commit,review,audit,validate-drafts}`,
+their verified delete). Sub-apps: `axon adr {list,add,sync,hook,infer-commit,review,audit,validate-drafts}`,
 `axon graph {index,neighbors,path}`, `axon hooks {install,status}`,
 `axon pending {drain,recover}`, `axon session {note,save}`,
 `axon profile {list,use,show,create,export}`,
@@ -73,9 +72,8 @@ Risk class enforced by `@traced_tool`. Destructive needs `AXON_ALLOW_DESTRUCTIVE
 | `get_dependencies` | read | Caller/callee subgraph for a symbol. |
 | `get_adrs` | read | Stored ADRs; `ctx=work` gated. |
 | `save_adr` | write | Persist an ADR. |
-| `ask` | read | Unified context entry: detect ctx, retrieve, caveman+rtkx compress. |
+| `ask` | read | Unified context entry: detect ctx, retrieve, caveman compress. |
 | `get_graph_neighbors` / `get_graph_path` / `get_graph_context` | read | Graph navigation (Postgres `symbol_deps`; `get_graph_context` via GLYPH, dec-116). |
-| `restore_context` | read | Reverse rtkx compression from a `[[ccr:<handle>]]` marker. |
 | `axon_session_start` / `axon_session_end` | write | Open/close a session; refresh `.axon/context.md`. |
 | `axon_capture` / `axon_capture_event` | write | Capture in-session decision / universal event. |
 | `axon_get_context` | read | Ranked compact project context. |
@@ -153,11 +151,11 @@ it as a to-do, not a status report, until that happens.
 1. **TDD is non-negotiable** (CLAUDE.md): a failing test before production code,
    regression test for bugfixes, testable acceptance criteria for features. Never
    silence a failing test/guardrail to look done.
-2. **Validation commands** (prefix with `rtk`):
+2. **Validation commands**:
    ```bash
-   rtk pytest tests/ -q
-   rtk ruff check
-   rtk python3 -m compileall src
+   pytest tests/ -q
+   ruff check
+   python3 -m compileall src
    ```
 3. **`axon doctor`** (dec-114): read-only by default; `--apply` to fix; `--ci` JSON.
 4. **Hooks (dec-113):** AXON never mutates `.git/hooks/` or `core.hooksPath` by
