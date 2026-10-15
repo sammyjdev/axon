@@ -33,7 +33,7 @@ from axon.http.app import app  # noqa: E402
 @pytest.fixture
 def client():
     """TestClient backed by the shared AXON FastAPI app."""
-    with TestClient(app, raise_server_exceptions=True) as c:
+    with TestClient(app, base_url="http://127.0.0.1", raise_server_exceptions=True) as c:
         yield c
 
 

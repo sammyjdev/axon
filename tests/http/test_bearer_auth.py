@@ -24,7 +24,7 @@ from axon.http.app import app
 
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
-    with TestClient(app, raise_server_exceptions=True) as c:
+    with TestClient(app, base_url="http://127.0.0.1", raise_server_exceptions=True) as c:
         yield c
 
 
@@ -111,7 +111,7 @@ def test_a_non_ascii_configured_token_does_not_crash_the_server(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("AXON_HTTP_TOKEN", "töken-123")  # noqa: S105
-    client = TestClient(app, raise_server_exceptions=False)
+    client = TestClient(app, base_url="http://127.0.0.1", raise_server_exceptions=False)
     headers = {"Authorization": "Bearer wrong"}  # noqa: S105
     response = client.get("/api/gain", headers=headers)
 

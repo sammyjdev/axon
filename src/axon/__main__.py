@@ -213,6 +213,10 @@ def serve_http(
             err=True,
         )
         raise typer.Exit(1)
+    if allow_unauthenticated:
+        # The app reads the opt-in from the environment: with no token it serves
+        # loopback hosts only, unless the operator said otherwise here.
+        os.environ["AXON_HTTP_ALLOW_UNAUTHENTICATED"] = "1"
 
     try:
         import uvicorn

@@ -124,6 +124,20 @@ def _presented_token(authorization: str, cookie: str) -> str:
 #: dependency instead of replacing it - the exemption has to be explicit.
 _UNAUTHENTICATED_PATHS = frozenset({"/health"})
 
+#: With no token the server trusts whoever reaches it, which is only safe while
+#: "whoever" is this machine. A page can point its own domain at 127.0.0.1 (DNS
+#: rebinding) and read a token-less server as same-origin; the Host header still
+#: names that domain, so only loopback names are served.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _host_name(host_header: str) -> str:
+    """The host of a Host header, without port or IPv6 brackets, lowercased."""
+    host = host_header.strip().lower()
+    if host.startswith("["):
+        return host[1 : host.find("]")] if "]" in host else host
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
 
 async def _require_bearer_token(
     request: Request,
@@ -134,6 +148,12 @@ async def _require_bearer_token(
         return
     expected = os.environ.get("AXON_HTTP_TOKEN", "")
     if not expected:
+        unauthenticated_opt_in = os.environ.get(
+            "AXON_HTTP_ALLOW_UNAUTHENTICATED", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        host = _host_name(request.headers.get("host", ""))
+        if not unauthenticated_opt_in and host not in _LOOPBACK_HOSTS:
+            raise HTTPException(status_code=400, detail="Invalid host header")
         return
     presented = _presented_token(authorization, axon_dashboard)
     if presented and secrets.compare_digest(presented.encode(), expected.encode()):
