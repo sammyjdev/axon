@@ -17,7 +17,7 @@ _TABLE_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 #: were 41% of the hits the CLI returned for eight code questions, and the code
 #: a question was about was often not in the top 10.
 TEST_PATH_PATTERN = (
-    r"(^|/)(tests?|__tests__)/"
+    r"(^|/)(tests?|__tests__|integrationTests?)/"
     r"|(^|/)(test_[^/]*|conftest\.py)$"
     r"|_test\.[^/]+$"
     r"|\.(spec|test)\.[^/]+$"

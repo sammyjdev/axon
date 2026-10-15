@@ -20,6 +20,8 @@ _PATHS = {
     "pkg/store/foo_test.go": True,
     "web/src/app.spec.ts": True,
     "web/src/__tests__/app.js": True,
+    "app/src/integrationTest/java/com/acme/FooIT.java": True,
+    "app/src/test/java/com/acme/FooTest.java": True,
     "/Users/someone/dev/repo/tests/test_legacy.py": True,
 }
 
