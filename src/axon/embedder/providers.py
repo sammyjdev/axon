@@ -14,6 +14,8 @@ import os
 import threading
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from axon.config.runtime import (
@@ -63,10 +65,18 @@ def close_client() -> None:
 
 
 def _retry_wait(retry_after: str | None) -> float:
-    try:
-        seconds = float(retry_after) if retry_after is not None else _DEFAULT_RETRY_WAIT_S
-    except ValueError:  # an HTTP-date or garbage: wait the default
+    """Seconds to wait for a Retry-After header: delta-seconds or an HTTP-date."""
+    if retry_after is None:
         seconds = _DEFAULT_RETRY_WAIT_S
+    else:
+        try:
+            seconds = float(retry_after)
+        except ValueError:
+            try:
+                until = parsedate_to_datetime(retry_after)
+                seconds = (until - datetime.now(UTC)).total_seconds()
+            except (TypeError, ValueError):  # neither form: wait the default
+                seconds = _DEFAULT_RETRY_WAIT_S
     return min(max(seconds, 0.0), MAX_RETRY_WAIT_S)
 
 

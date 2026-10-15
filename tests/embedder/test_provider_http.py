@@ -123,6 +123,20 @@ def test_a_provider_still_rate_limited_after_three_attempts_fails(
     assert server.requests == 3
 
 
+def test_a_retry_after_given_as_a_date_waits_until_then_capped(
+    provider_key: None, fresh_client: None, waits: list[float]
+) -> None:
+    from datetime import UTC, datetime, timedelta
+    from email.utils import format_datetime
+
+    an_hour_from_now = format_datetime(datetime.now(UTC) + timedelta(hours=1), usegmt=True)
+    server = _start([429, 200], retry_after=an_hour_from_now)
+
+    providers.embed_via_chain(["x"], providers=[providers.provider_fn(server.config)])
+
+    assert waits == [providers.MAX_RETRY_WAIT_S]
+
+
 def test_a_long_retry_after_is_capped(
     provider_key: None, fresh_client: None, waits: list[float]
 ) -> None:
