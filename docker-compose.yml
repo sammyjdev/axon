@@ -10,6 +10,7 @@ services:
       - "5433:5432"
     volumes:
       - ./data/axon-postgres:/var/lib/postgresql/data
+    restart: unless-stopped
 
   # NVIDIA-enabled Ollama profile
   ollama:

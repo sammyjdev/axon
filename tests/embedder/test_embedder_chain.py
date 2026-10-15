@@ -89,11 +89,27 @@ def test_falls_through_when_provider_returns_fewer_vectors_than_texts() -> None:
     assert result == [[0.0, 1.0], [0.0, 1.0]]
 
 
-def test_default_chain_is_ollama_then_deepinfra(monkeypatch: pytest.MonkeyPatch) -> None:
-    """NIM's bge-m3 embedding endpoint is broken upstream (HTTP 500, verified
-    2026-07-21); DeepInfra is the remote provider for bge-m3. NIM stays
-    available opt-in by name via AXON_EMBEDDER_CHAIN."""
+def test_default_chain_is_deepinfra_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ollama is opt-in (dec-106): with AXON_PROVIDER_OLLAMA unset the default chain
+    must not pay a refused connection per embed. NIM's bge-m3 embedding endpoint is
+    broken upstream (HTTP 500, verified 2026-07-21) and stays opt-in by name via
+    AXON_EMBEDDER_CHAIN."""
     monkeypatch.delenv("AXON_EMBEDDER_CHAIN", raising=False)
+    monkeypatch.delenv("AXON_PROVIDER_OLLAMA", raising=False)
+    chain = load_embedder_chain_config()
+    assert [p.name for p in chain.providers] == ["deepinfra"]
+
+
+def test_default_chain_puts_ollama_first_when_opted_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AXON_EMBEDDER_CHAIN", raising=False)
+    monkeypatch.setenv("AXON_PROVIDER_OLLAMA", "1")
+    chain = load_embedder_chain_config()
+    assert [p.name for p in chain.providers] == ["ollama", "deepinfra"]
+
+
+def test_explicit_chain_naming_ollama_needs_no_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AXON_EMBEDDER_CHAIN", "ollama,deepinfra")
+    monkeypatch.delenv("AXON_PROVIDER_OLLAMA", raising=False)
     chain = load_embedder_chain_config()
     assert [p.name for p in chain.providers] == ["ollama", "deepinfra"]
 
