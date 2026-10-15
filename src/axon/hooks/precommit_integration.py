@@ -81,10 +81,10 @@ _RETIRED_ID = re.compile(r"- id: axon-pre-push\s*$")
 def _drop_retired_pre_push(text: str) -> str:
     """Remove the whole `- id: axon-pre-push` list item older versions wrote.
 
-    The item is its id line plus every following line that is blank or indented
-    deeper than its dash. Stopping at the first blank line instead would leave
-    its `entry` and `stages` under the hook above it, turning that hook into a
-    push hook.
+    The item is its id line plus every following line that is blank, a comment,
+    or indented deeper than its dash. Stopping at a blank or comment line instead
+    would leave its `entry` and `stages` under the hook above it, turning that
+    hook into a push hook.
     """
     kept: list[str] = []
     item_depth: int | None = None
@@ -92,7 +92,7 @@ def _drop_retired_pre_push(text: str) -> str:
         body = line.lstrip(" ")
         depth = len(line) - len(body)
         if item_depth is not None:
-            if not body.strip() or depth > item_depth:
+            if not body.strip() or body.startswith("#") or depth > item_depth:
                 continue
             item_depth = None
         if _RETIRED_ID.match(body):

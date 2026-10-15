@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from axon.hooks.precommit_integration import (
     axon_repo_entry,
     dry_run_message,
@@ -77,17 +79,19 @@ class TestMergeInto:
         assert cfg.read_text() == "repos:\n" + entry
         assert merge_into(cfg) is False
 
-    def test_a_blank_line_inside_the_retired_entry_does_not_leak_its_fields(
-        self, tmp_path: Path
+    @pytest.mark.parametrize("separator", ["\n", "# kept by hand\n", "    # indented note\n"])
+    def test_a_blank_or_comment_line_inside_the_retired_entry_does_not_leak_its_fields(
+        self, tmp_path: Path, separator: str
     ) -> None:
-        """Review of #225, round 2: a blank line between `name` and `entry` ended
-        the removal, and `entry: ... push` and `stages: [pre-push]` fell under
-        the hook above, turning axon-post-commit into a push hook."""
+        """Review of #225, rounds 2 and 3: a blank line, then a comment, between
+        `name` and `entry` ended the removal, and `entry: ... push` and
+        `stages: [pre-push]` fell under the hook above, turning axon-post-commit
+        into a push hook."""
         old_pre_push = (
             "      - id: axon-pre-push\n"
             "        name: AXON pre-push snapshot\n"
-            "\n"
-            "        entry: /opt/venv/bin/python -m axon.hooks.git_event push\n"
+            + separator
+            + "        entry: /opt/venv/bin/python -m axon.hooks.git_event push\n"
             "        language: system\n"
             "        stages: [pre-push]\n"
             "        always_run: true\n"
