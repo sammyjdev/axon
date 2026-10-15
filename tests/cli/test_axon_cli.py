@@ -344,9 +344,9 @@ def test_session_save_alias_is_bound_to_session_save_not_note():
     assert "Stop/SessionEnd" in help_text
 
 
-def test_hooks_pending_portability_subapps_registered():
+def test_hooks_and_pending_subapps_registered():
     names = _registered_command_names()
-    for name in ("hooks", "pending", "portability"):
+    for name in ("hooks", "pending"):
         assert name in names
 
 
@@ -360,15 +360,3 @@ def test_pending_subapp_is_invocable():
     result = runner.invoke(app, ["pending", "--help"])
     assert result.exit_code == 0
     assert "drain" in result.stdout
-
-
-def test_portability_subapp_is_invocable():
-    """Closes the same discrimination gap as Task 4's fix round: `hooks` and
-    `pending` each get a behavioral assertion above, but a sub-app registered
-    under the wrong Typer object (e.g. `hooks` accidentally bound to
-    `pending_app`) would still pass name-only checks. Assert on portability's
-    own subcommand so all three sub-apps have a behavioral check.
-    """
-    result = runner.invoke(app, ["portability", "--help"])
-    assert result.exit_code == 0
-    assert "export" in result.stdout

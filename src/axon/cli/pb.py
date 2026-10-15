@@ -32,7 +32,6 @@ adr_app = typer.Typer(help="Gerencia ADRs (Architectural Decision Records)")
 session_app = typer.Typer(help="Gerencia sessão de contexto ativa")
 graph_app = typer.Typer(help="Grafo estrutural de código (Postgres)")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
-portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
 pending_app = typer.Typer(help="Gerencia o backlog .axon/pending/ (dec-112)")
 hooks_app = typer.Typer(help="Instala hooks AXON (dec-113, opt-in com --apply)")
 activity_app = typer.Typer(help="Historico operacional (Claude Code/Codex/AGY) - dec-136")
@@ -41,7 +40,6 @@ app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
 app.add_typer(graph_app, name="graph")
 app.add_typer(profile_app, name="profile")
-app.add_typer(portability_app, name="portability")
 app.add_typer(pending_app, name="pending")
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(activity_app, name="activity")
@@ -2466,36 +2464,6 @@ def index_prune_legacy(
     asyncio.run(_prune())
 
 
-# ---------------------------------------------------------------------------
-# pb portability
-# ---------------------------------------------------------------------------
-
-
-@portability_app.command("export")
-def portability_export(
-    destination: Annotated[str, typer.Argument(help="Diretório do bundle exportado")],
-) -> None:
-    """Exporta config, stores e manifestos portáveis para um bundle."""
-    from axon.portability.exporter import export_portability_bundle
-
-    manifest = export_portability_bundle(Path(destination), runtime=_RUNTIME)
-    typer.echo(f"Bundle exportado em: {Path(destination)}")
-    typer.echo(f"Artefatos exportados: {len(manifest.artifacts)}")
-
-
-@portability_app.command("import")
-def portability_import(
-    source: Annotated[str, typer.Argument(help="Diretório do bundle exportado")],
-    engine_root: Annotated[str, typer.Argument(help="Novo engine root")],
-) -> None:
-    """Importa um bundle portátil para um engine root novo."""
-    from axon.portability.importer import import_portability_bundle
-
-    manifest = import_portability_bundle(Path(source), Path(engine_root))
-    typer.echo(f"Bundle importado em: {Path(engine_root)}")
-    typer.echo(f"Artefatos importados: {len(manifest.artifacts)}")
-
-
 @app.command()
 def scan(
     directory: Annotated[
@@ -2646,7 +2614,6 @@ def setup() -> None:
     run_setup(
         config_path=config_path,
         vault_root=_RUNTIME.vault_root,
-        packs_root=_RUNTIME.engine_root / "domain-packs",
     )
 
 

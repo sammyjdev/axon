@@ -20,7 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-FIXTURE = REPO_ROOT / "tests" / "benchmark" / "fixtures" / "retrieval_golden.json"
+FIXTURE = REPO_ROOT / "scripts" / "fixtures" / "retrieval_golden.json"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -65,8 +65,17 @@ def _doc_share(hits: list[dict], top_k: int) -> float:
     return docs / len(window)
 
 
+def symbols_of(hits: list[dict]) -> set[str]:
+    return {sym for h in hits if (sym := (h.get("payload") or {}).get("symbol"))}
+
+
+def recall(expected: frozenset[str], hits: list[dict]) -> float:
+    if not expected:
+        return 1.0
+    return len(expected & symbols_of(hits)) / len(expected)
+
+
 async def _run(args: argparse.Namespace) -> None:
-    from axon.benchmark.retrieval_eval import recall, symbols_of
     from axon.embedder.engine import EmbedderEngine
     from axon.store.pg_vector_store import PgVectorStore
 

@@ -6,7 +6,6 @@ import os
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -83,43 +82,6 @@ _BUILTIN_PROFILES: dict[str, dict[str, object]] = {
 
 
 @dataclass(frozen=True)
-class ExpansionPaths:
-    root: Path
-    staging_root: Path
-    telemetry_root: Path
-    budget_root: Path
-
-    def staging_context_root(self, ctx: str) -> Path:
-        return self.staging_root / ctx.strip().lower()
-
-    def monthly_budget_file(self, for_date: date | None = None) -> Path:
-        current = for_date or date.today()
-        return self.budget_root / f"{current:%Y-%m}.json"
-
-    @property
-    def execution_telemetry_file(self) -> Path:
-        return self.telemetry_root / "executions.jsonl"
-
-
-@dataclass(frozen=True)
-class ExpansionBudgetConfig:
-    monthly_budget_usd: float
-    soft_cap_usd: float
-    hard_cap_usd: float
-
-
-@dataclass(frozen=True)
-class ExpansionConfig:
-    enabled: bool
-    manual_trigger_only: bool
-    default_contexts: tuple[str, ...]
-    allow_cloud_research: bool
-    source_catalog_path: Path
-    paths: ExpansionPaths
-    budget: ExpansionBudgetConfig
-
-
-@dataclass(frozen=True)
 class EmbedderProviderConfig:
     """One provider in the bge-m3 embedding chain (EMB-2)."""
 
@@ -164,7 +126,6 @@ class RuntimeConfig:
     provider_ollama_enabled: bool
     provider_profile: str
     openrouter_compliance_required: bool
-    expansion: ExpansionConfig
     embedder_chain: EmbedderChainConfig = field(
         default_factory=lambda: load_embedder_chain_config()
     )
@@ -688,43 +649,6 @@ def _load_runtime_mode() -> RuntimeMode:
     return value
 
 
-def _load_expansion_config(engine_root: Path) -> ExpansionConfig:
-    expansion_root = _env_path("AXON_EXPANSION_ROOT", engine_root / "data" / "expansion")
-    default_contexts = tuple(
-        part.strip().lower()
-        for part in os.environ.get(
-            "AXON_EXPANSION_CONTEXTS",
-            "knowledge,career,personal",
-        ).split(",")
-        if part.strip()
-    )
-    paths = ExpansionPaths(
-        root=expansion_root,
-        staging_root=_env_path("AXON_EXPANSION_STAGING_ROOT", expansion_root / "staging"),
-        telemetry_root=_env_path(
-            "AXON_EXPANSION_TELEMETRY_ROOT",
-            expansion_root / "telemetry",
-        ),
-        budget_root=_env_path("AXON_EXPANSION_BUDGET_ROOT", expansion_root / "budget"),
-    )
-    budget = ExpansionBudgetConfig(
-        monthly_budget_usd=float(os.environ.get("AXON_EXPANSION_MONTHLY_BUDGET", "4.0")),
-        soft_cap_usd=float(os.environ.get("AXON_EXPANSION_SOFT_CAP", "3.2")),
-        hard_cap_usd=float(os.environ.get("AXON_EXPANSION_HARD_CAP", "4.0")),
-    )
-    return ExpansionConfig(
-        enabled=_env_bool("AXON_EXPANSION_ENABLED", True),
-        manual_trigger_only=_env_bool("AXON_EXPANSION_MANUAL_ONLY", True),
-        default_contexts=default_contexts,
-        allow_cloud_research=_env_bool("AXON_EXPANSION_ALLOW_CLOUD", True),
-        source_catalog_path=_env_path(
-            "AXON_EXPANSION_SOURCE_CATALOG",
-            engine_root / "config" / "expansion_sources.json",
-        ),
-        paths=paths,
-        budget=budget,
-    )
-
 
 _EMBEDDER_CHAIN_MODEL = "bge-m3"
 # NIM removed from the default: its bge-m3 embedding endpoint returns
@@ -825,7 +749,6 @@ def load_runtime_config() -> RuntimeConfig:
         bedrock_region=os.environ.get("AXON_BEDROCK_REGION", "us-east-1"),
         provider_profile=_resolve_provider_profile(),
         openrouter_compliance_required=_env_bool("AXON_OPENROUTER_COMPLIANCE", False),
-        expansion=_load_expansion_config(engine_root),
         embedder_chain=load_embedder_chain_config(),
         vector_backend=_resolve_vector_backend(overrides),
         fileindex_backend=_resolve_fileindex_backend(overrides),

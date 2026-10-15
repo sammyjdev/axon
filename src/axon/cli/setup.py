@@ -149,7 +149,6 @@ def run_step_commit(
     *,
     config_path: Path,
     vault_root: Path,
-    packs_root: Path | None = None,
 ) -> list[str]:
     messages: list[str] = []
 
@@ -175,20 +174,7 @@ def run_step_commit(
         f"Vault scaffolded: {vault_root} ({', '.join(all_contexts) or 'no contexts'})"
     )
 
-    # 3. Validate domain packs
-    if session.languages and packs_root is not None:
-        from axon.domains.pack import load_domain_pack
-
-        loaded: list[str] = []
-        for lang in session.languages:
-            pack_path = packs_root / f"{lang}.json"
-            if pack_path.exists():
-                load_domain_pack(pack_path)  # raises if invalid
-                loaded.append(lang)
-        if loaded:
-            messages.append(f"Domain packs validated: {', '.join(loaded)}")
-
-    # 4. Smoke test: compile src
+    # 3. Smoke test: compile src
     src_root = Path(__file__).parents[3] / "src" / "axon"
     result = _sp.run(  # noqa: S603
         ["python3", "-m", "compileall", "-q", str(src_root)],  # noqa: S607
@@ -244,7 +230,6 @@ def run_setup(
     *,
     config_path: Path,
     vault_root: Path,
-    packs_root: Path,
 ) -> None:
     typer.echo("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     typer.echo("  AXON Setup Wizard")
@@ -260,7 +245,6 @@ def run_setup(
         session,
         config_path=config_path,
         vault_root=vault_root,
-        packs_root=packs_root,
     )
     for msg in messages:
         typer.echo(f"  ✓ {msg}")
