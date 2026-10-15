@@ -207,6 +207,11 @@ class SessionStore:
         repo = await self._decisions()
         return await repo.save_decision(decision)
 
+    async def add_decision(self, decision: Decision) -> Decision:
+        """Insert a new decision; returns it under the id it was stored with."""
+        repo = await self._decisions()
+        return await repo.add_decision(decision)
+
     async def find_decisions_by_symbol(self, symbol_id: str) -> list[Decision]:
         repo = await self._decisions()
         return await repo.find_decisions_by_symbol(symbol_id)

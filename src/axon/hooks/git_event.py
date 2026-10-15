@@ -124,7 +124,7 @@ async def on_commit(
             git_hash=commit_hash,
             status="draft",
         )
-        await store.save_decision(decision)
+        decision = await store.add_decision(decision)
         await _link_touched_symbols(store, decision.id, root, commit_hash)
         try:
             await update_context_file(root, store=store)
@@ -271,7 +271,7 @@ async def _scan_pulled_range(
                 git_hash=commit_hash,
                 status="draft",
             )
-            await store.save_decision(decision)
+            decision = await store.add_decision(decision)
             await _link_touched_symbols(store, decision.id, root, commit_hash)
             try:
                 from axon.adr.inference import run_for_head_async

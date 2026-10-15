@@ -1412,7 +1412,7 @@ async def axon_capture(
         summary=summary[:SUMMARY_MAX_LEN],
         status="draft",
     )
-    await store.save_decision(decision)
+    decision = await store.add_decision(decision)
     return f"captured {decision.id} for {repo}."
 
 
