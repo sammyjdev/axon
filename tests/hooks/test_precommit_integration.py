@@ -76,3 +76,28 @@ class TestMergeInto:
         assert changed is True
         assert cfg.read_text() == "repos:\n" + entry
         assert merge_into(cfg) is False
+
+    def test_a_blank_line_inside_the_retired_entry_does_not_leak_its_fields(
+        self, tmp_path: Path
+    ) -> None:
+        """Review of #225, round 2: a blank line between `name` and `entry` ended
+        the removal, and `entry: ... push` and `stages: [pre-push]` fell under
+        the hook above, turning axon-post-commit into a push hook."""
+        old_pre_push = (
+            "      - id: axon-pre-push\n"
+            "        name: AXON pre-push snapshot\n"
+            "\n"
+            "        entry: /opt/venv/bin/python -m axon.hooks.git_event push\n"
+            "        language: system\n"
+            "        stages: [pre-push]\n"
+            "        always_run: true\n"
+            "        pass_filenames: false\n"
+        )
+        entry = axon_repo_entry()
+        marker = "      - id: axon-post-merge\n"
+        cfg = tmp_path / ".pre-commit-config.yaml"
+        cfg.write_text("repos:\n" + entry.replace(marker, old_pre_push + marker))
+
+        merge_into(cfg)
+
+        assert cfg.read_text() == "repos:\n" + entry

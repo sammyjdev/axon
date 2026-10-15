@@ -64,7 +64,7 @@ def merge_into(config_path: Path) -> bool:
     original = config_path.read_text(encoding="utf-8")
     # A config written by an older AXON still holds the pre-push entry; it goes
     # before the idempotency check, which would otherwise return first.
-    text = _RETIRED_PRE_PUSH.sub("", original)
+    text = _drop_retired_pre_push(original)
     if "id: axon-post-commit" not in text:
         if not text.endswith("\n"):
             text += "\n"
@@ -75,5 +75,28 @@ def merge_into(config_path: Path) -> bool:
     return True
 
 
-#: The pre-push entry older versions wrote: its id line and the fields under it.
-_RETIRED_PRE_PUSH = re.compile(r"^      - id: axon-pre-push\n(?:        .*\n)*", re.MULTILINE)
+_RETIRED_ID = re.compile(r"- id: axon-pre-push\s*$")
+
+
+def _drop_retired_pre_push(text: str) -> str:
+    """Remove the whole `- id: axon-pre-push` list item older versions wrote.
+
+    The item is its id line plus every following line that is blank or indented
+    deeper than its dash. Stopping at the first blank line instead would leave
+    its `entry` and `stages` under the hook above it, turning that hook into a
+    push hook.
+    """
+    kept: list[str] = []
+    item_depth: int | None = None
+    for line in text.splitlines(keepends=True):
+        body = line.lstrip(" ")
+        depth = len(line) - len(body)
+        if item_depth is not None:
+            if not body.strip() or depth > item_depth:
+                continue
+            item_depth = None
+        if _RETIRED_ID.match(body):
+            item_depth = depth
+            continue
+        kept.append(line)
+    return "".join(kept)
