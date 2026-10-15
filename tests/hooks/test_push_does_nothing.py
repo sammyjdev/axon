@@ -81,7 +81,10 @@ def test_a_push_event_never_opens_the_decision_store(
     assert opened == []
 
 
-def test_the_commit_hook_loads_no_llm_client() -> None:
+def test_importing_the_commit_hook_loads_no_llm_client() -> None:
+    """An ordinary commit pays only this import. A commit carrying an
+    architectural signal (arch:, decision:, ADR-Decision:) still runs ADR
+    inference, which loads litellm; that stays until the owner decides on it."""
     loaded = subprocess.run(
         [sys.executable, "-c", "import sys, axon.hooks.git_event; print('litellm' in sys.modules)"],
         check=True, capture_output=True, text=True,
