@@ -50,3 +50,29 @@ class TestMergeInto:
 
     def test_returns_false_for_missing_file(self, tmp_path: Path) -> None:
         assert merge_into(tmp_path / "nope.yaml") is False
+
+    def test_reinstalling_drops_the_retired_pre_push_entry_and_keeps_the_rest(
+        self, tmp_path: Path
+    ) -> None:
+        """A config written by an older AXON already holds axon-post-commit, so
+        the append-if-missing path returned before the pre-push entry was gone."""
+        old_pre_push = (
+            "      - id: axon-pre-push\n"
+            "        name: AXON pre-push snapshot\n"
+            "        entry: /opt/venv/bin/python -m axon.hooks.git_event push\n"
+            "        language: system\n"
+            "        stages: [pre-push]\n"
+            "        always_run: true\n"
+            "        pass_filenames: false\n"
+        )
+        entry = axon_repo_entry()
+        marker = "      - id: axon-post-merge\n"
+        old_config = "repos:\n" + entry.replace(marker, old_pre_push + marker)
+        cfg = tmp_path / ".pre-commit-config.yaml"
+        cfg.write_text(old_config)
+
+        changed = merge_into(cfg)
+
+        assert changed is True
+        assert cfg.read_text() == "repos:\n" + entry
+        assert merge_into(cfg) is False

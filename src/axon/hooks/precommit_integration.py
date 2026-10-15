@@ -7,6 +7,7 @@ their pipeline. Idempotent: re-running produces the same block.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -60,10 +61,19 @@ def merge_into(config_path: Path) -> bool:
     """
     if not config_path.exists():
         return False
-    text = config_path.read_text(encoding="utf-8")
-    if "id: axon-post-commit" in text:
+    original = config_path.read_text(encoding="utf-8")
+    # A config written by an older AXON still holds the pre-push entry; it goes
+    # before the idempotency check, which would otherwise return first.
+    text = _RETIRED_PRE_PUSH.sub("", original)
+    if "id: axon-post-commit" not in text:
+        if not text.endswith("\n"):
+            text += "\n"
+        text += axon_repo_entry()
+    if text == original:
         return False
-    if not text.endswith("\n"):
-        text += "\n"
-    config_path.write_text(text + axon_repo_entry(), encoding="utf-8")
+    config_path.write_text(text, encoding="utf-8")
     return True
+
+
+#: The pre-push entry older versions wrote: its id line and the fields under it.
+_RETIRED_PRE_PUSH = re.compile(r"^      - id: axon-pre-push\n(?:        .*\n)*", re.MULTILINE)
