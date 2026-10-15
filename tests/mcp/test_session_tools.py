@@ -22,6 +22,10 @@ async def store(tmp_path: Path) -> AsyncGenerator[SessionStore, None]:
 @pytest.fixture(autouse=True)
 def _use_test_store(store: SessionStore, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(server, "_get_session_store", lambda: store)
+    # The repo root comes from the working directory, which is the checkout the
+    # suite runs in; left alone, ending a session for repo "axon" rewrites that
+    # checkout's .axon/context.md from this empty store.
+    monkeypatch.setattr(server, "_detect_repo_root", lambda: None)
 
 
 async def test_session_start_returns_id_and_recalled_context() -> None:
