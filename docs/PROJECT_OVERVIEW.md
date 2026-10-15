@@ -29,34 +29,27 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 | `router` | Task classification (TRIVIAL/CODE_ANALYSIS/ARCHITECTURE/DEEP_REASONING) + model selection per profile; budget downgrade, circuit-break. Hosts `compressor.py` (caveman compression) and `llm_backend.py` (litellm kwarg builder). |
 | `embedder` | Code chunking (Python/Java/TS/Markdown via tree-sitter), embeddings (fastembed BGE-base 768d), `index_path` pipeline. Structure-aware Markdown chunker is recent (commits `b488f27`+). |
 | `store` | Persistence, all on Postgres (dec-121): `pg_session_repository`, `pg_decision_repository`, `pg_graph_repository` (code-dependency graph, `symbol_deps`), `pg_vector_store` (pgvector embeddings), `pg_file_cache`, `failure_store`, `outcome_store`. |
-| `validation` | LLM-judge scoring of captured Decisions; pass-rate aggregation. `Decision.judged` is the canonical "scored" flag. |
+| `validation` | Pass-rate aggregation over judged Decisions. `Decision.judged` is the canonical "scored" flag. |
 | `adr` | ADR lifecycle: draft pool, rejection audit, commit-signal extraction (dec-110). |
 | `recall` | Unified recall: merge + rank (recency × relevance × validation score) + token-budget truncation; soft supersession (dec-115). |
 | `mcp` | MCP stdio server (`server.py`); every tool wrapped by `@traced_tool` risk gate. |
 | `cli` | `axon` (`__main__.py`), the single CLI entry point (dec-125); re-registers the surviving commands from `cli/pb.py`, which is no longer its own entry point. |
 | `code` | Repo indexer (`index_repo`), diff-symbols, resolver. |
 | `context` | Context auto-detection, retrieval strategies, GLYPH adapter (`graph_source.py`), rtkx bootstrap. |
-| `memory` | Session transcript compression (`session_compressor.py`) and hook (`session_hook.py`). mem0/Qdrant semantic memory was retired with dec-121. |
-| `expansion` | Domain-pack knowledge expansion + candidate **scoring** (a local-role, dec-122). |
+| `memory` | Session transcript parsing (`transcript.py`), the rule-based digest a session is stored as (`digest.py`, no LLM) and hook (`session_hook.py`). mem0/Qdrant semantic memory was retired with dec-121. |
 | `doctor` | Stack diagnostics, 3 modes: read-only / `--apply` / `--ci` JSON (dec-114). |
-| `hooks` | Git hook install + post-commit/push capture; pre-commit framework bridge (dec-113). |
+| `hooks` | Git hook install + post-commit capture (a push is not an AXON event); pre-commit framework bridge (dec-113). |
 | `observability` | Tracing (`TraceStore`), `@traced_tool` decorator, compliance events, compression telemetry. |
-| `pet` | Terminal companion (`axon familiar`) driven by TraceStore activity (dec-119). |
 | `policy` | RESTRICTED-context isolation; blocks cloud + writes for `ctx=work` (dec-109). |
-| `registry` / `domains` | Local plugin/domain-pack discovery + manifest schema. |
 | `resilience` | Circuit breaker + rate limiter (per-minute/day, dec-106). |
-| `triggers` | Scope-end detection → fires judge + doc export. |
-| `vault` / `obsidian` | TIL promotion, deep-note suggestion; Obsidian discovery/export/import. |
-| `watcher` | Filesystem watcher → re-index on change. |
+| `vault` / `obsidian` | TIL promotion; Obsidian discovery/export/import. |
 | `http` | Optional OpenAI-compatible server + live token-savings dashboard (`[http]` extra). |
-| `portability` | Bundle export/import of config + stores. |
-| `benchmark` | Token-savings model, supersession A/B, **model-eval harness** (dec-122), recall regression guard. |
 | `core` | Canonical Pydantic v2 models: `Decision`, `Edge`, `Symbol`. |
 
 ## CLI surface
 
 **`axon`** (single CLI, dec-125): `init`, `serve`, `serve-http`, `install-hooks`,
-`familiar`, `health`, `doctor [--apply|--ci]`, `status`, `gain`, `export`,
+`health`, `doctor [--apply|--ci]`, `status`, `gain`, `export`,
 `ingest-vault`, `index-vault`, `bootstrap` (env/config scaffold, formerly
 `pb init`), `setup`, `configure`, `index-dev`, `note`, `session-save`,
 `seed-lessons`, `rekey-repo`, `session-hook`, `compact-hook`, `scan`, `search`,
@@ -65,7 +58,7 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 their verified delete), `rtk*`, `run`, `git`. Sub-apps: `axon adr {list,add,sync,hook,infer-commit,review,audit,validate-drafts}`,
 `axon graph {index,neighbors,path}`, `axon hooks {install,status}`,
 `axon pending {drain,recover}`, `axon session {note,save}`,
-`axon profile {list,use,show,create,export}`, `axon portability {export,import}`,
+`axon profile {list,use,show,create,export}`,
 `axon activity {import,collect,export,search,show}` (dec-136 operational
 activity history).
 
@@ -122,23 +115,20 @@ workstation; the Mac is a thin client and runs nothing locally.
 
 ## Local roles (dec-122) — landed
 
-Two subsystems run on a small instruct model instead of a frontier LLM:
-**scoring** (`expansion/scoring.py`, expansion-candidate verdicts) and the
-**caveman compressor** (`router/compressor.py`). dec-122 moved both off
-hard-wired local Ollama onto hosted **`gpt-oss-120b`**, split by provider:
+The **caveman compressor** (`router/compressor.py`) runs on a small instruct
+model instead of a frontier LLM. dec-122 moved it off hard-wired local Ollama
+onto hosted **`gpt-oss-120b`**:
 
-- **scoring → Groq** (`groq/openai/gpt-oss-120b`) — high RPM suits per-candidate bursts.
 - **compressor → Cerebras** (`cerebras/gpt-oss-120b`) — high TPM/TPD suits larger payloads.
 - `ctx=work` stays local/blocked, never reaches a hosted provider.
 
-Rationale (from the `benchmark/model_eval.py` harness): `phi3:mini` dropped
+Rationale (from the model-eval harness, since removed): `phi3:mini` dropped
 100% of required symbols; `gpt-oss-120b` scored 1.00 on all checks at
 ~0.7-1.2s; `qwen3:4b` matched quality but 2-40x slower; desktop Ollama had a
 KV-cache OOM trap from an unpinned `num_ctx`.
 
 Landed on `master`: `router/llm_backend.py` (`resolve_litellm_model()` +
 `litellm_kwargs()`), `config/runtime.py` (`scoring_model` / `scoring_num_ctx`),
-`expansion/scoring.py` (litellm-backed, dec-106 opt-in enforced),
 `router/compressor.py` (`caveman_compress(ctx=...)` + `is_corporate_context()`
 guard), `mcp/server.py` (`ask` threads `ctx=effective_ctx` through). TDD
 surface: `tests/router/test_llm_backend.py`, `tests/config/test_scoring_config.py`.
@@ -172,7 +162,7 @@ it as a to-do, not a status report, until that happens.
 3. **`axon doctor`** (dec-114): read-only by default; `--apply` to fix; `--ci` JSON.
 4. **Hooks (dec-113):** AXON never mutates `.git/hooks/` or `core.hooksPath` by
    default; installed explicitly via `axon hooks install --apply`. Points:
-   post-commit (signal + L1/L2/L3 gates), pre-push, post-checkout.
+   post-commit (signal + L1/L2/L3 gates), post-merge, post-checkout.
 5. **ADR capture (dec-110):** inference fires only on commits carrying a signal —
    `arch:`/`decision:` subject prefix or `ADR-Decision: <title>` trailer. No
    signal → `CodeChange` captured, LLM inference skipped.

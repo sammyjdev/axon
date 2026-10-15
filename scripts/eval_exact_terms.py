@@ -16,7 +16,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-FIXTURE = REPO_ROOT / "tests" / "benchmark" / "fixtures" / "exact_term_queries.json"
+FIXTURE = REPO_ROOT / "scripts" / "fixtures" / "exact_term_queries.json"
 DEFAULT_CONTEXTS = ("personal", "career", "knowledge", "saas")
 
 
@@ -70,6 +70,9 @@ async def _search(store, engine, query: str, contexts: list[str], top_k: int, *,
             top_k=top_k,
             max_nodes=top_k,
             max_tokens=10**9,
+            # Several expected answers are test files; this measures exact-term
+            # recall, not the default test-file filter.
+            include_tests=True,
         )
     finally:
         if old is None:

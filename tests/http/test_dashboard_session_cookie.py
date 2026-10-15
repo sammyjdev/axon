@@ -67,7 +67,8 @@ def test_a_wrong_cookie_is_still_rejected(client: TestClient) -> None:
 
 def test_no_cookie_is_issued_when_auth_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AXON_HTTP_TOKEN", raising=False)
-    unauthenticated = TestClient(app, base_url="https://testserver")
+    # Auth off serves loopback hosts only, so the client is a local one.
+    unauthenticated = TestClient(app, base_url="https://127.0.0.1")
 
     response = unauthenticated.get("/dashboard")
 

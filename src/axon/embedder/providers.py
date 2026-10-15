@@ -11,7 +11,12 @@ from __future__ import annotations
 import logging
 import math
 import os
+import threading
+import time
 from collections.abc import Callable
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+from typing import Any
 
 from axon.config.runtime import (
     EmbedderProviderConfig,
@@ -24,6 +29,67 @@ logger = logging.getLogger(__name__)
 ProviderFn = Callable[[list[str]], list[list[float]]]
 
 _TIMEOUT_SECONDS = 30.0
+
+#: A provider answering 429 is asked again, this many attempts in all, waiting
+#: what its Retry-After says up to MAX_RETRY_WAIT_S. The 2026-10-14 reindex hit
+#: 429 on four roots, and each one failed that root's whole sync.
+MAX_ATTEMPTS = 3
+MAX_RETRY_WAIT_S = 10.0
+_DEFAULT_RETRY_WAIT_S = 1.0
+
+_client: Any = None
+_client_lock = threading.Lock()
+
+
+def _http() -> Any:
+    """One HTTP client per process, so a long-lived MCP server keeps its
+    connection to the provider. Measured 2026-10-15: opening it took 0.29 s of
+    a 0.64 s embed, paid again on every search."""
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                import httpx
+
+                _client = httpx.Client()
+    return _client
+
+
+def close_client() -> None:
+    """Close the shared client; the next call opens a new one."""
+    global _client
+    with _client_lock:
+        if _client is not None:
+            _client.close()
+            _client = None
+
+
+def _retry_wait(retry_after: str | None) -> float:
+    """Seconds to wait for a Retry-After header: delta-seconds or an HTTP-date."""
+    if retry_after is None:
+        seconds = _DEFAULT_RETRY_WAIT_S
+    else:
+        try:
+            seconds = float(retry_after)
+        except ValueError:
+            try:
+                until = parsedate_to_datetime(retry_after)
+                seconds = (until - datetime.now(UTC)).total_seconds()
+            except (TypeError, ValueError):  # neither form: wait the default
+                seconds = _DEFAULT_RETRY_WAIT_S
+    return min(max(seconds, 0.0), MAX_RETRY_WAIT_S)
+
+
+def _post(url: str, *, timeout: float, **kwargs: Any) -> Any:
+    attempt = 1
+    while True:
+        resp = _http().post(url, timeout=timeout, **kwargs)
+        if resp.status_code == 429 and attempt < MAX_ATTEMPTS:
+            time.sleep(_retry_wait(resp.headers.get("retry-after")))
+            attempt += 1
+            continue
+        resp.raise_for_status()
+        return resp
 
 
 class AllProvidersFailedError(RuntimeError):
@@ -64,14 +130,11 @@ def _call_ollama(
     config: EmbedderProviderConfig,
     timeout: float = _TIMEOUT_SECONDS,
 ) -> list[list[float]]:
-    import httpx
-
-    resp = httpx.post(
+    resp = _post(
         config.endpoint,
         json={"model": config.model, "input": texts},
         timeout=timeout,
     )
-    resp.raise_for_status()
     return resp.json()["embeddings"]
 
 
@@ -80,8 +143,6 @@ def _call_openai_compatible(
     config: EmbedderProviderConfig,
     timeout: float = _TIMEOUT_SECONDS,
 ) -> list[list[float]]:
-    import httpx
-
     if not config.api_key_env:
         api_key = ""
     else:
@@ -91,13 +152,12 @@ def _call_openai_compatible(
         api_key = env_value or (credential_from_store(config.api_key_env) or "").strip()
         if not api_key:
             raise MissingApiKeyError(config.api_key_env)
-    resp = httpx.post(
+    resp = _post(
         config.endpoint,
         json={"model": config.model, "input": texts},
         headers={"Authorization": f"Bearer {api_key}"},
         timeout=timeout,
     )
-    resp.raise_for_status()
     payload = resp.json()
     return [item["embedding"] for item in payload["data"]]
 

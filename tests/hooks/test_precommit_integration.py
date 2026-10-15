@@ -15,7 +15,7 @@ class TestEntry:
     def test_entry_includes_all_four_hooks(self) -> None:
         entry = axon_repo_entry()
         assert "axon-post-commit" in entry
-        assert "axon-pre-push" in entry
+        assert "axon-pre-push" not in entry  # a push is not an AXON event
         assert "axon-post-merge" in entry
         assert "axon-post-checkout" in entry
 
@@ -50,3 +50,21 @@ class TestMergeInto:
 
     def test_returns_false_for_missing_file(self, tmp_path: Path) -> None:
         assert merge_into(tmp_path / "nope.yaml") is False
+
+    def test_a_config_written_by_an_older_axon_is_left_untouched(self, tmp_path: Path) -> None:
+        """Its axon-pre-push entry stays: the push event it sends does nothing now,
+        and two review rounds of #225 found text edits folding its fields into
+        axon-post-commit, which silently stopped commit capture."""
+        old_config = "repos:\n" + axon_repo_entry() + (
+            "      - id: axon-pre-push\n"
+            "        name: AXON pre-push snapshot\n"
+            "\n"
+            "        entry: /opt/venv/bin/python -m axon.hooks.git_event push\n"
+            "        stages: [pre-push]\n"
+        )
+        cfg = tmp_path / ".pre-commit-config.yaml"
+        cfg.write_text(old_config)
+
+        assert merge_into(cfg) is False
+        assert cfg.read_text() == old_config
+

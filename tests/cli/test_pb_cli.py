@@ -11,7 +11,6 @@ import pytest
 from typer.testing import CliRunner
 
 from axon.cli import pb
-from axon.portability.exporter import ExportArtifact, ExportManifest
 from axon.router.classifier import TaskType
 
 runner = CliRunner()
@@ -43,73 +42,6 @@ def test_run_command_proxies_raw_shell(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert captured == ["git status"]
-
-
-def test_portability_export_invokes_exporter(monkeypatch, tmp_path: Path) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_export_portability_bundle(destination: Path, *, runtime) -> ExportManifest:
-        captured["destination"] = destination
-        captured["runtime"] = runtime
-        return ExportManifest(
-            manifest_version="1",
-            artifacts=(
-                ExportArtifact(
-                    kind="metadata/env",
-                    path="metadata/env.json",
-                    sha256="abc",
-                    size_bytes=12,
-                ),
-            ),
-        )
-
-    monkeypatch.setattr(
-        "axon.portability.exporter.export_portability_bundle",
-        fake_export_portability_bundle,
-    )
-
-    destination = tmp_path / "bundle"
-    result = runner.invoke(pb.app, ["portability", "export", str(destination)])
-
-    assert result.exit_code == 0
-    assert captured["destination"] == destination
-    assert captured["runtime"] is pb._RUNTIME
-    assert "Bundle exportado em:" in result.stdout
-    assert "Artefatos exportados: 1" in result.stdout
-
-
-def test_portability_import_invokes_importer(monkeypatch, tmp_path: Path) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_import_portability_bundle(source: Path, engine_root: Path) -> ExportManifest:
-        captured["source"] = source
-        captured["engine_root"] = engine_root
-        return ExportManifest(
-            manifest_version="1",
-            artifacts=(
-                ExportArtifact(
-                    kind="config/axon_toml",
-                    path="config/axon.toml",
-                    sha256="def",
-                    size_bytes=24,
-                ),
-            ),
-        )
-
-    monkeypatch.setattr(
-        "axon.portability.importer.import_portability_bundle",
-        fake_import_portability_bundle,
-    )
-
-    source = tmp_path / "bundle"
-    engine_root = tmp_path / "engine"
-    result = runner.invoke(pb.app, ["portability", "import", str(source), str(engine_root)])
-
-    assert result.exit_code == 0
-    assert captured["source"] == source
-    assert captured["engine_root"] == engine_root
-    assert "Bundle importado em:" in result.stdout
-    assert "Artefatos importados: 1" in result.stdout
 
 
 def test_search_shows_semantic_results(monkeypatch) -> None:
@@ -244,9 +176,6 @@ def test_search_surfaces_staleness_warnings(monkeypatch) -> None:
 def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> None:
     from axon.config.platform import DoctorReport, PlatformConfig
     from axon.config.runtime import (
-        ExpansionBudgetConfig,
-        ExpansionConfig,
-        ExpansionPaths,
         RuntimeConfig,
     )
 
@@ -271,24 +200,6 @@ def test_doctor_prints_recommended_mode_and_checks(monkeypatch, tmp_path) -> Non
         provider_ollama_enabled=True,
         provider_profile="budget",
         openrouter_compliance_required=False,
-        expansion=ExpansionConfig(
-            enabled=True,
-            manual_trigger_only=True,
-            default_contexts=("knowledge", "career", "personal"),
-            allow_cloud_research=True,
-            source_catalog_path=tmp_path / "engine" / "config" / "expansion_sources.json",
-            paths=ExpansionPaths(
-                root=tmp_path / "engine" / "data" / "expansion",
-                staging_root=tmp_path / "engine" / "data" / "expansion" / "staging",
-                telemetry_root=tmp_path / "engine" / "data" / "expansion" / "telemetry",
-                budget_root=tmp_path / "engine" / "data" / "expansion" / "budget",
-            ),
-            budget=ExpansionBudgetConfig(
-                monthly_budget_usd=4.0,
-                soft_cap_usd=3.2,
-                hard_cap_usd=4.0,
-            ),
-        ),
     )
     runtime.engine_root.mkdir()
     runtime.vault_root.mkdir()

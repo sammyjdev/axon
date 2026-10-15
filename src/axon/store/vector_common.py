@@ -87,22 +87,29 @@ def _rank_and_limit(
 ) -> list[dict]:
     """Used by the pgvector backend to rank and truncate search hits."""
     ranked = _apply_staleness_ranking(results, now=now, prefer_ctx=prefer_ctx)
+    return _fit_budget(ranked, max_nodes=max_nodes, max_tokens=max_tokens)[:top_k]
+
+
+def _fit_budget(items: list[dict], *, max_nodes: int, max_tokens: int) -> list[dict]:
+    """The hits that fit the token budget, in order.
+
+    A hit too big for what is left is skipped, not the end of the list: a long
+    doc section must not hide the shorter hits ranked after it. The top hit is
+    always kept even if it alone exceeds the budget, so a real hit never turns
+    into an empty result (EMB-4 regression).
+    """
     limited: list[dict] = []
     token_budget = max_tokens
-    for item in ranked:
-        payload = item.get("payload") or {}
-        content = str(payload.get("content", ""))
-        estimated = max(1, len(content) // 4)
+    for item in items:
         if len(limited) >= max_nodes:
             break
-        # ponytail: always keep the top hit even if it alone exceeds the token
-        # budget; the budget cap only prunes the tail, it must never turn a real
-        # hit into an empty result (EMB-4 regression).
-        if limited and token_budget - estimated < 0:
-            break
+        payload = item.get("payload") or {}
+        estimated = max(1, len(str(payload.get("content", ""))) // 4)
+        if limited and estimated > token_budget:
+            continue
         token_budget -= estimated
         limited.append(item)
-    return limited[:top_k]
+    return limited
 
 
 def _trim_to_budget(
@@ -117,20 +124,7 @@ def _trim_to_budget(
     a copy - so a caller that passes the store's own list through an unnecessary
     trim still gets that list back (see dedup_hits, same contract).
     """
-    limited: list[dict] = []
-    token_budget = max_tokens
-    for item in items:
-        payload = item.get("payload") or {}
-        content = str(payload.get("content", ""))
-        estimated = max(1, len(content) // 4)
-        if len(limited) >= max_nodes:
-            break
-        # ponytail: always keep the top hit even if it alone exceeds the token
-        # budget; same tail-pruning semantics as _rank_and_limit.
-        if limited and token_budget - estimated < 0:
-            break
-        token_budget -= estimated
-        limited.append(item)
+    limited = _fit_budget(items, max_nodes=max_nodes, max_tokens=max_tokens)
     return items if len(limited) == len(items) else limited
 
 

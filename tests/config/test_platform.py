@@ -12,9 +12,6 @@ from axon.config.platform import (
     merge_env_text,
 )
 from axon.config.runtime import (
-    ExpansionBudgetConfig,
-    ExpansionConfig,
-    ExpansionPaths,
     RuntimeConfig,
 )
 
@@ -339,7 +336,6 @@ def _runtime(
     vault_root = tmp_path / "vault"
     engine_root.mkdir()
     vault_root.mkdir()
-    expansion_root = engine_root / "data" / "expansion"
     return RuntimeConfig(
         mode="full-local",
         engine_root=engine_root,
@@ -359,24 +355,6 @@ def _runtime(
         provider_anthropic_enabled=True,
         provider_openrouter_enabled=True,
         provider_ollama_enabled=True,
-        expansion=ExpansionConfig(
-            enabled=True,
-            manual_trigger_only=True,
-            default_contexts=("knowledge", "career", "personal"),
-            allow_cloud_research=True,
-            source_catalog_path=engine_root / "config" / "expansion_sources.json",
-            paths=ExpansionPaths(
-                root=expansion_root,
-                staging_root=expansion_root / "staging",
-                telemetry_root=expansion_root / "telemetry",
-                budget_root=expansion_root / "budget",
-            ),
-            budget=ExpansionBudgetConfig(
-                monthly_budget_usd=4.0,
-                soft_cap_usd=3.2,
-                hard_cap_usd=4.0,
-            ),
-        ),
         provider_profile="budget",
         openrouter_compliance_required=False,
         active_profile=active_profile,

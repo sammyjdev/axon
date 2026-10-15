@@ -108,6 +108,25 @@ def test_allow_unauthenticated_flag_permits_a_wide_bind(
     assert len(calls) == 1
 
 
+def test_the_allow_unauthenticated_flag_reaches_the_server_it_starts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no token the app serves loopback hosts only; the flag is the
+    operator's explicit word that remote hosts may read it unauthenticated."""
+    import os
+
+    seen: list[str | None] = []
+    fake_uvicorn = types.SimpleNamespace(
+        run=lambda *a, **kw: seen.append(os.environ.get("AXON_HTTP_ALLOW_UNAUTHENTICATED"))
+    )
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+
+    result = runner.invoke(app, ["serve-http", "--host", "0.0.0.0", "--allow-unauthenticated"])  # noqa: S104
+
+    assert result.exit_code == 0
+    assert seen == ["1"]
+
+
 def test_allow_unauthenticated_env_permits_a_wide_bind(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

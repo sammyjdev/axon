@@ -8,7 +8,6 @@ truncated registry, and must stop before it opens a store.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import types
 from pathlib import Path
@@ -19,7 +18,6 @@ from typer.testing import CliRunner
 from axon.__main__ import app as main_app
 from axon.cli import pb
 from axon.core.file_identity import load_repo_roots
-from axon.expansion.service import ExpansionService
 
 runner = CliRunner()
 
@@ -110,12 +108,3 @@ def test_scan_refuses_a_truncated_registry(
 
     _assert_refused(runner.invoke(main_app, ["scan", str(scan_root)], input="y\ny\n"))
 
-
-def test_expansion_reindex_refuses_a_truncated_registry(
-    tmp_path: Path, truncated_registry_runtime: types.SimpleNamespace
-) -> None:
-    service = ExpansionService.__new__(ExpansionService)
-    service.runtime = truncated_registry_runtime  # type: ignore[assignment]
-
-    with pytest.raises(ValueError, match="onboarded_repos.json"):
-        asyncio.run(service._reindex_publish_path(tmp_path / "vault" / "a.md", "knowledge"))

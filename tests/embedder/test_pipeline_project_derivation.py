@@ -122,12 +122,14 @@ async def test_index_path_assigns_different_projects_for_same_named_subdirs(
 
     # Search each repo's stored chunks
     hits_a = await store.search(
+        include_tests=True,
         query_vector=[0.0] * VECTOR_SIZE,
         collections=["knowledge"],
         query="test_one",
         project="repo_a",
     )
     hits_b = await store.search(
+        include_tests=True,
         query_vector=[0.0] * VECTOR_SIZE,
         collections=["knowledge"],
         query="test_two",
@@ -144,6 +146,7 @@ async def test_index_path_assigns_different_projects_for_same_named_subdirs(
 
     # Searching under the old 'tests' project returns nothing
     hits_tests = await store.search(
+        include_tests=True,
         query_vector=[0.0] * VECTOR_SIZE,
         collections=["knowledge"],
         query="test",
@@ -172,6 +175,7 @@ async def test_write_site_1_ingest_file_derives_project_from_repo_identity(
     assert count >= 1
 
     hits = await store.search(
+        include_tests=True,
         query_vector=[0.0] * VECTOR_SIZE,
         collections=["knowledge"],
         query="sample_fn",
@@ -209,6 +213,7 @@ async def test_write_site_2_index_path_derives_project_from_repo_identity(
     assert total_chunks >= 1
 
     hits = await store.search(
+        include_tests=True,
         query_vector=[0.0] * VECTOR_SIZE,
         collections=["knowledge"],
         query="alpha",
@@ -332,12 +337,14 @@ async def test_index_path_project_cache_keyed_by_full_path_not_dir_name(
 
     # Search each repo's stored chunks
     hits_a = await store.search(
+        include_tests=True,
         query_vector=[0.0] * VECTOR_SIZE,
         collections=["knowledge"],
         query="test_one",
         project="repo_a",
     )
     hits_b = await store.search(
+        include_tests=True,
         query_vector=[0.0] * VECTOR_SIZE,
         collections=["knowledge"],
         query="test_two",
@@ -354,12 +361,14 @@ async def test_index_path_project_cache_keyed_by_full_path_not_dir_name(
 
     # Cross-check: y.py must not be under repo_a, x.py must not be under repo_b
     hits_a_all = await store.search(
+        include_tests=True,
         query_vector=[0.0] * VECTOR_SIZE,
         collections=["knowledge"],
         query="test",
         project="repo_a",
     )
     hits_b_all = await store.search(
+        include_tests=True,
         query_vector=[0.0] * VECTOR_SIZE,
         collections=["knowledge"],
         query="test",

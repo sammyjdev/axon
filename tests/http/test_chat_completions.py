@@ -93,7 +93,7 @@ def client():
         patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
         patch(_PATCH_COMPLETE, new=_make_complete_mock()),
     ):
-        with TestClient(app, raise_server_exceptions=True) as c:
+        with TestClient(app, base_url="http://127.0.0.1", raise_server_exceptions=True) as c:
             yield c
 
 
@@ -187,7 +187,7 @@ def test_usage_falls_back_to_estimate_when_provider_omits_usage() -> None:
         patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
         patch(_PATCH_COMPLETE, new=AsyncMock(return_value=(_FAKE_ANSWER, None))),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             resp = c.post(
                 "/v1/chat/completions",
                 json={"messages": [{"role": "user", "content": "x"}]},
@@ -227,7 +227,7 @@ def test_uses_last_user_message_as_query() -> None:
         patch(_PATCH_RETRIEVE, new=mock_retrieve),
         patch(_PATCH_COMPLETE, new=_make_complete_mock()),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             c.post(
                 "/v1/chat/completions",
                 json={
@@ -249,7 +249,7 @@ def test_uses_last_user_message_as_query() -> None:
 
 
 def test_no_user_message_returns_422() -> None:
-    with TestClient(app) as c:
+    with TestClient(app, base_url="http://127.0.0.1") as c:
         resp = c.post(
             "/v1/chat/completions",
             json={"messages": [{"role": "system", "content": "you are helpful"}]},
@@ -264,7 +264,7 @@ def test_retrieval_error_returns_500() -> None:
             new=AsyncMock(side_effect=RuntimeError("qdrant down")),
         ),
     ):
-        with TestClient(app, raise_server_exceptions=False) as c:
+        with TestClient(app, base_url="http://127.0.0.1", raise_server_exceptions=False) as c:
             resp = c.post(
                 "/v1/chat/completions",
                 json={"messages": [{"role": "user", "content": "anything"}]},
@@ -282,7 +282,7 @@ def test_llm_error_still_returns_contexts() -> None:
             new=AsyncMock(side_effect=RuntimeError("model offline")),
         ),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             resp = c.post(
                 "/v1/chat/completions",
                 json={"messages": [{"role": "user", "content": "anything"}]},
@@ -304,7 +304,7 @@ def test_llm_error_still_returns_contexts() -> None:
 
 
 def test_health_endpoint() -> None:
-    with TestClient(app) as c:
+    with TestClient(app, base_url="http://127.0.0.1") as c:
         resp = c.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
@@ -322,7 +322,7 @@ def test_include_context_false_skips_retrieval() -> None:
         patch(_PATCH_RETRIEVE, new=mock_retrieve),
         patch(_PATCH_COMPLETE, new=mock_complete),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             resp = c.post(
                 "/v1/chat/completions",
                 json={
@@ -359,7 +359,7 @@ def test_request_appends_recall_telemetry_record() -> None:
             "axon.observability.recall_telemetry.RecallTelemetryStore.append"
         ) as mock_append,
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             c.post(
                 "/v1/chat/completions",
                 json={"messages": [{"role": "user", "content": "explain recall"}]},
@@ -382,7 +382,7 @@ def test_telemetry_failure_never_breaks_the_request() -> None:
             side_effect=OSError("disk full"),
         ),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             resp = c.post(
                 "/v1/chat/completions",
                 json={"messages": [{"role": "user", "content": "explain recall"}]},
@@ -404,7 +404,7 @@ def test_forward_history_passes_prior_messages_to_router() -> None:
         patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
         patch(_PATCH_COMPLETE, new=mock_complete),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             c.post(
                 "/v1/chat/completions",
                 json={
@@ -432,7 +432,7 @@ def test_history_not_forwarded_by_default() -> None:
         patch(_PATCH_RETRIEVE, new=_make_retrieve_mock()),
         patch(_PATCH_COMPLETE, new=mock_complete),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             c.post(
                 "/v1/chat/completions",
                 json={
@@ -452,7 +452,7 @@ def test_recall_max_tokens_overrides_retrieval_budget() -> None:
         patch(_PATCH_RETRIEVE, new=mock_retrieve),
         patch(_PATCH_COMPLETE, new=_make_complete_mock()),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             c.post(
                 "/v1/chat/completions",
                 json={
@@ -469,7 +469,7 @@ def test_recall_budget_defaults_to_4000() -> None:
         patch(_PATCH_RETRIEVE, new=mock_retrieve),
         patch(_PATCH_COMPLETE, new=_make_complete_mock()),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             c.post(
                 "/v1/chat/completions",
                 json={"messages": [{"role": "user", "content": "q"}]},
@@ -484,7 +484,7 @@ def test_delta_recall_forwards_prior_message_contents_to_retrieval(monkeypatch) 
         patch(_PATCH_RETRIEVE, new=mock_retrieve),
         patch(_PATCH_COMPLETE, new=_make_complete_mock()),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             c.post(
                 "/v1/chat/completions",
                 json={
@@ -510,7 +510,7 @@ def test_delta_recall_without_forward_history_does_not_pass_dedup_against(monkey
         patch(_PATCH_RETRIEVE, new=mock_retrieve),
         patch(_PATCH_COMPLETE, new=_make_complete_mock()),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             c.post(
                 "/v1/chat/completions",
                 json={
@@ -532,7 +532,7 @@ def test_delta_recall_flag_unset_does_not_pass_dedup_against(monkeypatch) -> Non
         patch(_PATCH_RETRIEVE, new=mock_retrieve),
         patch(_PATCH_COMPLETE, new=_make_complete_mock()),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             c.post(
                 "/v1/chat/completions",
                 json={
@@ -567,7 +567,7 @@ def test_all_covered_delta_recall_request_succeeds_with_empty_contexts(monkeypat
         patch(_PATCH_RETRIEVE, new=mock_retrieve),
         patch(_PATCH_COMPLETE, new=mock_complete),
     ):
-        with TestClient(app) as c:
+        with TestClient(app, base_url="http://127.0.0.1") as c:
             resp = c.post(
                 "/v1/chat/completions",
                 json={

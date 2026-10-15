@@ -24,13 +24,6 @@ def axon_repo_entry() -> str:
         "        stages: [post-commit]\n"
         "        always_run: true\n"
         "        pass_filenames: false\n"
-        "      - id: axon-pre-push\n"
-        "        name: AXON pre-push snapshot\n"
-        "        entry: " + py + " -m axon.hooks.git_event push\n"
-        "        language: system\n"
-        "        stages: [pre-push]\n"
-        "        always_run: true\n"
-        "        pass_filenames: false\n"
         "      - id: axon-post-merge\n"
         "        name: AXON post-merge revalidate drafts\n"
         "        entry: " + py + " -m axon.hooks.git_event post-merge\n"
@@ -64,6 +57,10 @@ def merge_into(config_path: Path) -> bool:
     AXON entries. This is intentionally a simple append-if-missing — full
     YAML re-serialisation would require PyYAML, which AXON does not
     depend on by default.
+
+    An `axon-pre-push` entry an older AXON wrote is left in place on purpose:
+    it sends the `push` event, which now does nothing, while editing the
+    operator's YAML by text risks folding its fields into the hook above.
     """
     if not config_path.exists():
         return False

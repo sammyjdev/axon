@@ -22,7 +22,7 @@ from axon.http.app import app
 
 @pytest.fixture
 def client():
-    with TestClient(app, raise_server_exceptions=True) as c:
+    with TestClient(app, base_url="http://127.0.0.1", raise_server_exceptions=True) as c:
         yield c
 
 

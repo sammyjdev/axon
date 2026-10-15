@@ -111,6 +111,10 @@ def _live_file_fingerprint() -> dict[str, tuple[int, int, bytes]]:
     if _OPERATOR_ENGINE:
         data = Path(os.path.abspath(os.path.expanduser(_OPERATOR_ENGINE))) / "data"
         roots.extend([data / "compression", data / "recall", data / "trace"])
+    # The checkout the suite runs in is an onboarded repo too: its `.axon/context.md`
+    # is what the SessionStart hook prints, and a test that resolves the repo root
+    # from the working directory rewrites it from an empty test store.
+    roots.append(Path(__file__).resolve().parents[1] / ".axon")
 
     fingerprint: dict[str, tuple[int, int, bytes]] = {}
     for root in roots:
@@ -261,6 +265,10 @@ def _isolate_axon_engine(
     """
     engine_dir = tmp_path_factory.mktemp("axon_engine")
     monkeypatch.setenv("AXON_ENGINE", str(engine_dir))
+    # data_root() falls back to `.axon` under the working directory, which is the
+    # checkout the suite runs in: the activity spool wrote .axon/.gitignore and
+    # .axon/activity-pending/ there. Tests that need their own root still set it.
+    monkeypatch.setenv("AXON_DATA_ROOT", str(engine_dir / "data-root"))
     # The test suite must never load a real cross-encoder; tests wanting
     # rerank set it to "1" in their body.
     monkeypatch.setenv("AXON_RERANK", "0")

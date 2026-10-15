@@ -16,6 +16,18 @@ from axon.core.decision import Decision
 from axon.store.session_store import ADR
 
 
+#: Advisory lock key that serialises new-decision inserts ("axondec1").
+_DECISION_ID_LOCK = 0x61786F6E64656331
+
+
+async def _next_id(con: asyncpg.Connection) -> str:
+    value = await con.fetchval(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(id FROM 5) AS INTEGER)), 0)"
+        " FROM decisions WHERE id LIKE 'dec-%'"
+    )
+    return f"dec-{(value or 0) + 1:03d}"
+
+
 async def _init_conn(conn: asyncpg.Connection) -> None:
     # Return jsonb as Python dicts (and accept dicts on write).
     await conn.set_type_codec(
@@ -176,11 +188,28 @@ class PostgresDecisionRepository:
     async def next_decision_id(self) -> str:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
-            value = await con.fetchval(
-                "SELECT COALESCE(MAX(CAST(SUBSTRING(id FROM 5) AS INTEGER)), 0)"
-                " FROM decisions WHERE id LIKE 'dec-%'"
+            return await _next_id(con)
+
+    async def add_decision(self, decision: Decision) -> Decision:
+        """Insert a new decision and return it under the id it was stored with.
+
+        Ids are MAX + 1, read before the insert, so two hooks committing at once
+        compute the same one, and an upsert would let the second replace the
+        first. Writers take a transaction-scoped advisory lock instead; an id
+        already taken by then is swapped for the next free one, never overwritten.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con, con.transaction():
+            await con.execute("SELECT pg_advisory_xact_lock($1)", _DECISION_ID_LOCK)
+            if await con.fetchval("SELECT 1 FROM decisions WHERE id = $1", decision.id):
+                decision = decision.model_copy(update={"id": await _next_id(con)})
+            await con.execute(
+                "INSERT INTO decisions (id, frontmatter, body, vault_path, created_at)"
+                " VALUES ($1, $2, $3, $4, $5)",
+                decision.id, decision.model_dump(mode="json"), decision.summary,
+                None, decision.timestamp,
             )
-        return f"dec-{(value or 0) + 1:03d}"
+        return decision
 
     async def save_adr_inner(self, adr: ADR) -> int:
         pool = await self._ensure_pool()

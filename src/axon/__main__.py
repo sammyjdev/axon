@@ -152,21 +152,6 @@ def init(
 
 
 @app.command()
-def familiar(
-    frames: int = typer.Option(
-        0,
-        "--frames",
-        help="Exit after N render ticks (0 = run live until Ctrl+C). Useful for CI.",
-    ),
-) -> None:
-    """Launch the AXON familiar — a live terminal companion driven by TraceStore activity."""
-    from axon.pet.familiar import main as _familiar_main
-
-    _frames: int | None = frames if frames > 0 else None
-    asyncio.run(_familiar_main(frames=_frames))
-
-
-@app.command()
 def serve() -> None:
     """Start the AXON MCP server (stdio transport)."""
     from axon.mcp.server import main as mcp_main
@@ -213,6 +198,10 @@ def serve_http(
             err=True,
         )
         raise typer.Exit(1)
+    if allow_unauthenticated:
+        # The app reads the opt-in from the environment: with no token it serves
+        # loopback hosts only, unless the operator said otherwise here.
+        os.environ["AXON_HTTP_ALLOW_UNAUTHENTICATED"] = "1"
 
     try:
         import uvicorn
@@ -580,7 +569,6 @@ from axon.cli.pb import (  # noqa: E402
     index_vault,
     note,
     pending_app,
-    portability_app,
     profile_app,
     rtk,
     rtk_init,
@@ -604,7 +592,6 @@ app.add_typer(adr_app, name="adr")
 app.add_typer(graph_app, name="graph")
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(pending_app, name="pending")
-app.add_typer(portability_app, name="portability")
 app.add_typer(profile_app, name="profile")
 app.add_typer(session_app, name="session")
 

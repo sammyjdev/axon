@@ -12,7 +12,21 @@ from axon.store.vector_common import VECTOR_SIZE, _rank_and_limit
 _TABLE_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
-def _append_filter_clauses(params: list, *, language: str | None, project: str | None) -> str:
+#: A test file's path, relative or absolute, in the layouts the onboarded repos
+#: use. A search leaves these out unless asked: measured 2026-10-15, test files
+#: were 41% of the hits the CLI returned for eight code questions, and the code
+#: a question was about was often not in the top 10.
+TEST_PATH_PATTERN = (
+    r"(^|/)(tests?|__tests__|integrationTests?)/"
+    r"|(^|/)(test_[^/]*|conftest\.py)$"
+    r"|_test\.[^/]+$"
+    r"|\.(spec|test)\.[^/]+$"
+)
+
+
+def _append_filter_clauses(
+    params: list, *, language: str | None, project: str | None, include_tests: bool
+) -> str:
     """Shared WHERE builder for the dense and lexical arms.
 
     Both arms MUST filter identically (ctx isolation is a security boundary);
@@ -25,6 +39,9 @@ def _append_filter_clauses(params: list, *, language: str | None, project: str |
     if project:
         params.append(project)
         clauses.append(f"project = ${len(params)}")
+    if not include_tests:
+        params.append(TEST_PATH_PATTERN)
+        clauses.append(f"file_path !~ ${len(params)}")
     return " AND ".join(clauses)
 
 
@@ -206,11 +223,14 @@ class PgVectorStore:
         max_nodes: int = 25,
         max_tokens: int = 1200,
         prefer_ctx: str | None = None,
+        include_tests: bool = False,
     ) -> list[dict]:
         _ = max_depth  # accepted for parity, unused (matches the vector backend interface)
         pool = await self._ensure_pool()
         params: list = [query_vector, list(collections)]
-        where = _append_filter_clauses(params, language=language, project=project)
+        where = _append_filter_clauses(
+            params, language=language, project=project, include_tests=include_tests
+        )
         sql = f"""
             SELECT id, ctx, file_path, language, chunk_type, symbol, project, content,
                    git_commit, modified_at, 1 - (vector <=> $1) AS score
@@ -231,7 +251,9 @@ class PgVectorStore:
             # scripts/eval_exact_terms.py, which is what this arm was built for.
             if os.environ.get("AXON_HYBRID_SEARCH") == "1" and query:
                 lex_params: list = [query, list(collections)]
-                lex_where = _append_filter_clauses(lex_params, language=language, project=project)
+                lex_where = _append_filter_clauses(
+                    lex_params, language=language, project=project, include_tests=include_tests
+                )
                 lex_sql = f"""
                     SELECT id, ctx, file_path, language, chunk_type, symbol, project, content,
                            git_commit, modified_at, ts_rank(content_tsv, q.query) AS score

@@ -135,30 +135,6 @@ def test_commit_scaffolds_vault_dirs(tmp_path):
     assert (vault_root / "work" / "README.md").exists()
 
 
-def test_commit_validates_domain_packs(tmp_path):
-    config_path = tmp_path / "axon.toml"
-    config_path.write_text("[runtime]\nmode = \"full-local\"\n", encoding="utf-8")
-    vault_root = tmp_path / "vault"
-
-    packs_root = tmp_path / "domain-packs"
-    packs_root.mkdir()
-    (packs_root / "python.json").write_text(
-        '{"schema_version":"1","domain_id":"python","display_name":"Python",'
-        '"description":"Python","signals":{"languages":["python"],'
-        '"artifact_types":[],"task_types":[]}}',
-        encoding="utf-8",
-    )
-
-    session = SetupSession(languages=("python",))
-    messages = run_step_commit(
-        session,
-        config_path=config_path,
-        vault_root=vault_root,
-        packs_root=packs_root,
-    )
-    assert any("python" in m.lower() for m in messages)
-
-
 def test_commit_returns_messages_list(tmp_path):
     config_path = tmp_path / "axon.toml"
     config_path.write_text("[runtime]\nmode = \"full-local\"\n", encoding="utf-8")

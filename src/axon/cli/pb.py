@@ -32,7 +32,6 @@ adr_app = typer.Typer(help="Gerencia ADRs (Architectural Decision Records)")
 session_app = typer.Typer(help="Gerencia sessão de contexto ativa")
 graph_app = typer.Typer(help="Grafo estrutural de código (Postgres)")
 profile_app = typer.Typer(help="Perfis de instalação e uso")
-portability_app = typer.Typer(help="Importa e exporta bundles de portabilidade")
 pending_app = typer.Typer(help="Gerencia o backlog .axon/pending/ (dec-112)")
 hooks_app = typer.Typer(help="Instala hooks AXON (dec-113, opt-in com --apply)")
 activity_app = typer.Typer(help="Historico operacional (Claude Code/Codex/AGY) - dec-136")
@@ -41,7 +40,6 @@ app.add_typer(adr_app, name="adr")
 app.add_typer(session_app, name="session")
 app.add_typer(graph_app, name="graph")
 app.add_typer(profile_app, name="profile")
-app.add_typer(portability_app, name="portability")
 app.add_typer(pending_app, name="pending")
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(activity_app, name="activity")
@@ -378,6 +376,7 @@ async def _semantic_search_hits(
     language: str | None = None,
     top_k: int = 5,
     prefer_ctx: str | None = None,
+    include_tests: bool = False,
 ) -> list[dict]:
     from axon.embedder.engine import EmbedderEngine
     from axon.store.vector_store_factory import make_vector_store
@@ -393,6 +392,7 @@ async def _semantic_search_hits(
             language=language,
             top_k=top_k,
             prefer_ctx=prefer_ctx,
+            include_tests=include_tests,
         )
     finally:
         await store.close()
@@ -1124,6 +1124,9 @@ def search(
     ctx: Annotated[str | None, typer.Option("--ctx", help=_CTX_HELP)] = None,
     language: Annotated[str | None, typer.Option("--lang", help="Filtrar por linguagem")] = None,
     top_k: Annotated[int, typer.Option("--top", help="Número de resultados")] = 5,
+    include_tests: Annotated[
+        bool, typer.Option("--tests", help="Inclui arquivos de teste nos resultados")
+    ] = False,
 ) -> None:
     """Busca semântica no vault. Sem --ctx exclui work automaticamente."""
     from axon.store.collections import get_search_collections
@@ -1144,6 +1147,7 @@ def search(
             language=language,
             top_k=top_k,
             prefer_ctx=resolved_ctx,
+            include_tests=include_tests,
         )
         trace.append_stage(
             "retrieval",
@@ -1304,10 +1308,9 @@ def session_save(
         str | None, typer.Option("--transcript", help="Path do transcript JSON")
     ] = None,
 ) -> None:
-    """Comprime e salva session memory (chamado pelo Stop/SessionEnd hook do Claude Code)."""
+    """Salva a session memory como digest (chamado pelo Stop/SessionEnd hook do Claude Code)."""
     from axon.core.repo_identity import is_git_repo, repo_identity
     from axon.memory.digest import digest_turns
-    from axon.memory.session_compressor import SessionCompressor
     from axon.memory.transcript import parse_transcript_turns
     from axon.store.session_store import SessionMemory
 
@@ -1334,26 +1337,10 @@ def session_save(
 
         turns = turns[-50:]
 
-        compressor = SessionCompressor()
-        for turn in turns:
-            compressor.add_turn(turn["role"], turn["content"])
-
-        try:
-            summary = await compressor.compress()
-        except Exception as e:
-            # A hook runs with no API key, and a subscription machine has none.
-            # Losing the session to that is the bug this replaced: the digest
-            # is worse than an LLM summary and infinitely better than nothing.
-            typer.echo(f"[axon] Compressão indisponível ({e}); gravando digest.", err=True)
-            summary = ""
-
-        if not summary.strip():
-            # An empty summary is a compression failure that did not raise: a
-            # reasoning model can spend the whole max_tokens budget on reasoning
-            # and return nothing. Either way the session must not be lost.
-            summary = digest_turns(turns)
-            typer.echo("[axon] Resumo vazio; gravando digest.", err=True)
-
+        # Capture carries no LLM: measured 2026-10-15, an LLM summary of a real
+        # session took 18 s and loaded litellm, and with no key it fell back to
+        # this same digest anyway.
+        summary = digest_turns(turns)
         if not summary.strip():
             typer.echo("[axon] Nada a gravar, skip.", err=True)
             return
@@ -1717,9 +1704,10 @@ def hooks_install(
             "them. Either delete the custom hooks first, or integrate "
             "AXON manually using the snippet below:\n"
         )
+        from axon.hooks.git_installer import HOOKS
         from axon.hooks.husky_integration import wrapper_text
 
-        for event in ("post-commit", "pre-push", "post-merge", "post-checkout"):
+        for event in HOOKS:
             typer.echo(f"# .git/hooks/{event}:")
             typer.echo(wrapper_text(event).rstrip())
             typer.echo("")
@@ -2476,36 +2464,6 @@ def index_prune_legacy(
     asyncio.run(_prune())
 
 
-# ---------------------------------------------------------------------------
-# pb portability
-# ---------------------------------------------------------------------------
-
-
-@portability_app.command("export")
-def portability_export(
-    destination: Annotated[str, typer.Argument(help="Diretório do bundle exportado")],
-) -> None:
-    """Exporta config, stores e manifestos portáveis para um bundle."""
-    from axon.portability.exporter import export_portability_bundle
-
-    manifest = export_portability_bundle(Path(destination), runtime=_RUNTIME)
-    typer.echo(f"Bundle exportado em: {Path(destination)}")
-    typer.echo(f"Artefatos exportados: {len(manifest.artifacts)}")
-
-
-@portability_app.command("import")
-def portability_import(
-    source: Annotated[str, typer.Argument(help="Diretório do bundle exportado")],
-    engine_root: Annotated[str, typer.Argument(help="Novo engine root")],
-) -> None:
-    """Importa um bundle portátil para um engine root novo."""
-    from axon.portability.importer import import_portability_bundle
-
-    manifest = import_portability_bundle(Path(source), Path(engine_root))
-    typer.echo(f"Bundle importado em: {Path(engine_root)}")
-    typer.echo(f"Artefatos importados: {len(manifest.artifacts)}")
-
-
 @app.command()
 def scan(
     directory: Annotated[
@@ -2656,7 +2614,6 @@ def setup() -> None:
     run_setup(
         config_path=config_path,
         vault_root=_RUNTIME.vault_root,
-        packs_root=_RUNTIME.engine_root / "domain-packs",
     )
 
 

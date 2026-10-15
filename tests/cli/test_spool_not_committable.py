@@ -33,12 +33,12 @@ from typer.testing import CliRunner
 
 from axon.cli.pb import app
 from axon.doctor.checks.capture import check_quarantine_size
-from axon.memory.session_compressor import SessionCompressor
+from axon.memory.digest import digest_turns
+from axon.memory.transcript import parse_transcript_turns
 from axon.store.session_store import SessionStore
 
 runner = CliRunner()
 
-_COMPRESSED = "fixed summary: the compressor is faked in this test"
 
 
 # ---------------------------------------------------------------------------
@@ -80,11 +80,9 @@ def _transcript(repo: Path) -> Path:
     return path
 
 
-def _fake_compressor(monkeypatch) -> None:
-    async def fake_compress(self):
-        return _COMPRESSED
-
-    monkeypatch.setattr(SessionCompressor, "compress", fake_compress)
+def _digest_of(path) -> str:
+    """What session_save stores for a transcript: its digest."""
+    return digest_turns(parse_transcript_turns(path))
 
 
 class _StoreDown:
@@ -116,7 +114,6 @@ class _Repo:
 
 def _spool_a_session_through_the_hook(repo: Path, monkeypatch) -> None:
     """Drive a store failure through `axon session-hook` so a session is spooled."""
-    _fake_compressor(monkeypatch)
     monkeypatch.setattr("axon.store.session_store.SessionStore", _StoreDown)
     payload = json.dumps({"transcript_path": str(_transcript(repo)), "cwd": str(repo)})
     result = runner.invoke(app, ["session-hook"], input=payload)
@@ -163,7 +160,9 @@ def test_git_add_all_stages_nothing_under_pending_after_the_hook_spooled(tmp_pat
     assert len(files) == 1, "the session was not spooled to .axon/pending/"
     payload = json.loads(files[0].read_text(encoding="utf-8"))
     assert payload["kind"] == "session_memory"
-    assert payload["summary"] == _COMPRESSED, "the spooled file carries conversation content"
+    assert payload["summary"] == _digest_of(repo / "t.jsonl"), (
+        "the spooled file carries conversation content"
+    )
 
     porcelain = _git(repo, "status", "--porcelain", "--untracked-files=all")
     assert ".axon/pending/" not in porcelain, "git lists the spool as untracked"

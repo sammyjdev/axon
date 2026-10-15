@@ -182,7 +182,6 @@ async def test_complete_passes_api_base_for_ollama_model(monkeypatch) -> None:
         provider_ollama_enabled=True,
         provider_profile=original_runtime.provider_profile,
         openrouter_compliance_required=original_runtime.openrouter_compliance_required,
-        expansion=original_runtime.expansion,
         active_profile=original_runtime.active_profile,
     )
     monkeypatch.setattr("axon.router.engine._RUNTIME", fake_runtime)
@@ -281,7 +280,6 @@ async def test_complete_ollama_uses_ollama_base_url_env(monkeypatch) -> None:
         provider_ollama_enabled=True,
         provider_profile=original_runtime.provider_profile,
         openrouter_compliance_required=original_runtime.openrouter_compliance_required,
-        expansion=original_runtime.expansion,
         active_profile=original_runtime.active_profile,
     )
     monkeypatch.setattr("axon.router.engine._RUNTIME", fake_runtime)

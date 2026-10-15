@@ -45,7 +45,7 @@ def client(pg_dsn, repo, monkeypatch):
         "_RUNTIME",
         dataclasses.replace(axon.http.app._RUNTIME, pg_url=pg_dsn),
     )
-    return TestClient(app)
+    return TestClient(app, base_url="http://127.0.0.1")
 
 
 @pytest.mark.parametrize("route", [
