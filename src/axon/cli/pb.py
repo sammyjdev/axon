@@ -1304,10 +1304,9 @@ def session_save(
         str | None, typer.Option("--transcript", help="Path do transcript JSON")
     ] = None,
 ) -> None:
-    """Comprime e salva session memory (chamado pelo Stop/SessionEnd hook do Claude Code)."""
+    """Salva a session memory como digest (chamado pelo Stop/SessionEnd hook do Claude Code)."""
     from axon.core.repo_identity import is_git_repo, repo_identity
     from axon.memory.digest import digest_turns
-    from axon.memory.session_compressor import SessionCompressor
     from axon.memory.transcript import parse_transcript_turns
     from axon.store.session_store import SessionMemory
 
@@ -1334,26 +1333,10 @@ def session_save(
 
         turns = turns[-50:]
 
-        compressor = SessionCompressor()
-        for turn in turns:
-            compressor.add_turn(turn["role"], turn["content"])
-
-        try:
-            summary = await compressor.compress()
-        except Exception as e:
-            # A hook runs with no API key, and a subscription machine has none.
-            # Losing the session to that is the bug this replaced: the digest
-            # is worse than an LLM summary and infinitely better than nothing.
-            typer.echo(f"[axon] Compressão indisponível ({e}); gravando digest.", err=True)
-            summary = ""
-
-        if not summary.strip():
-            # An empty summary is a compression failure that did not raise: a
-            # reasoning model can spend the whole max_tokens budget on reasoning
-            # and return nothing. Either way the session must not be lost.
-            summary = digest_turns(turns)
-            typer.echo("[axon] Resumo vazio; gravando digest.", err=True)
-
+        # Capture carries no LLM: measured 2026-10-15, an LLM summary of a real
+        # session took 18 s and loaded litellm, and with no key it fell back to
+        # this same digest anyway.
+        summary = digest_turns(turns)
         if not summary.strip():
             typer.echo("[axon] Nada a gravar, skip.", err=True)
             return

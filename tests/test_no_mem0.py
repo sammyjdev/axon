@@ -12,5 +12,5 @@ def test_mem0_modules_are_gone():
 
 
 def test_preserved_memory_modules_still_import():
-    importlib.import_module("axon.memory.session_compressor")
+    importlib.import_module("axon.memory.digest")
     importlib.import_module("axon.memory.session_hook")

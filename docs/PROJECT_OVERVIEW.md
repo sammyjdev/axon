@@ -36,7 +36,7 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 | `cli` | `axon` (`__main__.py`), the single CLI entry point (dec-125); re-registers the surviving commands from `cli/pb.py`, which is no longer its own entry point. |
 | `code` | Repo indexer (`index_repo`), diff-symbols, resolver. |
 | `context` | Context auto-detection, retrieval strategies, GLYPH adapter (`graph_source.py`), rtkx bootstrap. |
-| `memory` | Session transcript compression (`session_compressor.py`) and hook (`session_hook.py`). mem0/Qdrant semantic memory was retired with dec-121. |
+| `memory` | Session transcript parsing (`transcript.py`), the rule-based digest a session is stored as (`digest.py`, no LLM) and hook (`session_hook.py`). mem0/Qdrant semantic memory was retired with dec-121. |
 | `expansion` | Domain-pack knowledge expansion + candidate **scoring** (a local-role, dec-122). |
 | `doctor` | Stack diagnostics, 3 modes: read-only / `--apply` / `--ci` JSON (dec-114). |
 | `hooks` | Git hook install + post-commit/push capture; pre-commit framework bridge (dec-113). |

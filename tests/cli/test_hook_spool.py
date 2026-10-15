@@ -20,7 +20,8 @@ from typer.testing import CliRunner
 
 from axon.cli import pb
 from axon.cli.pb import app
-from axon.memory.session_compressor import SessionCompressor
+from axon.memory.digest import digest_turns
+from axon.memory.transcript import parse_transcript_turns
 from axon.store.session_store import SessionStore
 
 runner = CliRunner()
@@ -42,7 +43,6 @@ def _tmp_path_is_a_repo(tmp_path: Path) -> None:
     )
 
 
-_COMPRESSED = "fixed summary: the compressor is faked in this test"
 _SPOOLED_SUMMARY = "spooled while postgres was down"
 _SPOOLED_CREATED_AT = "2026-09-10T08:00:00+00:00"
 
@@ -79,11 +79,9 @@ def _compact_transcript(tmp_path, summary):
     return path
 
 
-def _fake_compressor(monkeypatch) -> None:
-    async def fake_compress(self):
-        return _COMPRESSED
-
-    monkeypatch.setattr(SessionCompressor, "compress", fake_compress)
+def _digest_of(path) -> str:
+    """What session_save stores for a transcript: its digest."""
+    return digest_turns(parse_transcript_turns(path))
 
 
 class _StoreDown:
@@ -129,7 +127,6 @@ def test_session_hook_spools_the_summary_when_the_store_save_fails(tmp_path, mon
     exactly what would have been saved."""
     data_root = tmp_path / ".axon"
     monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
-    _fake_compressor(monkeypatch)
     monkeypatch.setattr("axon.store.session_store.SessionStore", _StoreDown)
 
     path = _transcript(
@@ -149,7 +146,7 @@ def test_session_hook_spools_the_summary_when_the_store_save_fails(tmp_path, mon
     payload = json.loads(files[0].read_text(encoding="utf-8"))
     assert payload["kind"] == "session_memory"
     assert payload["project"] == tmp_path.name
-    assert payload["summary"] == _COMPRESSED
+    assert payload["summary"] == _digest_of(path)
     assert payload["raw_turns"] == 3
     created_at = datetime.fromisoformat(payload["created_at"])
     assert created_at.utcoffset() is not None, "created_at must carry the UTC offset"
@@ -160,7 +157,6 @@ def test_any_store_exception_spools_not_only_connection_errors(tmp_path, monkeyp
     the bug being fixed; drain quarantine decides the rest later."""
     data_root = tmp_path / ".axon"
     monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
-    _fake_compressor(monkeypatch)
 
     class _Broken(_StoreDown):
         async def save_session_memory(self, mem):
@@ -209,7 +205,6 @@ def test_successful_session_save_also_replays_a_spooled_session(tmp_path, monkey
     the new session AND replays the spooled one."""
     data_root = tmp_path / ".axon"
     monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
-    _fake_compressor(monkeypatch)
     _plant_spooled_session(data_root)
 
     saved = []
@@ -231,7 +226,7 @@ def test_successful_session_save_also_replays_a_spooled_session(tmp_path, monkey
     path = _transcript(tmp_path, ("user", "store is back"), ("assistant", "save and replay"))
     pb.session_save(cwd=str(tmp_path), transcript=str(path))
 
-    assert any(m.summary == _COMPRESSED for m in saved), "the new session was not saved"
+    assert any(m.summary == _digest_of(path) for m in saved), "the new session was not saved"
     assert any(
         m.summary == _SPOOLED_SUMMARY and m.raw_turns == 9 for m in saved
     ), "the spooled session was not replayed by the same call"
@@ -272,7 +267,6 @@ def test_a_drain_failure_never_fails_the_save(tmp_path, monkeypatch):
     still complete without propagating anything."""
     data_root = tmp_path / ".axon"
     monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
-    _fake_compressor(monkeypatch)
 
     saved = []
 
@@ -294,7 +288,7 @@ def test_a_drain_failure_never_fails_the_save(tmp_path, monkeypatch):
     path = _transcript(tmp_path, ("user", "a"), ("assistant", "b"))
     pb.session_save(cwd=str(tmp_path), transcript=str(path))  # must not raise
 
-    assert any(m.summary == _COMPRESSED for m in saved), "a drain failure lost the save"
+    assert any(m.summary == _digest_of(path) for m in saved), "a drain failure lost the save"
 
 
 def test_doctor_surfaces_the_spooled_session(tmp_path, monkeypatch):
@@ -304,7 +298,6 @@ def test_doctor_surfaces_the_spooled_session(tmp_path, monkeypatch):
 
     data_root = tmp_path / ".axon"
     monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
-    _fake_compressor(monkeypatch)
     monkeypatch.setattr("axon.store.session_store.SessionStore", _StoreDown)
 
     path = _transcript(tmp_path, ("user", "a"), ("assistant", "b"))
@@ -325,7 +318,6 @@ def test_a_failing_spool_write_prints_and_returns_without_raising(tmp_path, monk
     data_root.mkdir(parents=True, exist_ok=True)
     # A regular file where pending/ must go makes write_pending fail.
     (data_root / "pending").write_text("not a directory", encoding="utf-8")
-    _fake_compressor(monkeypatch)
     monkeypatch.setattr("axon.store.session_store.SessionStore", _StoreDown)
 
     path = _transcript(tmp_path, ("user", "a"), ("assistant", "b"))

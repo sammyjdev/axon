@@ -1,10 +1,9 @@
-"""Rule-based session digest - the floor when no LLM is reachable.
+"""Rule-based session digest - what a session is stored as.
 
-Hooks run without an API key and a subscription machine has none, so a session
-whose only summariser is an LLM call is a session that silently disappears.
-This produces a small, deterministic record from the turns alone: what was
-asked first and last, how much happened, and which files were touched. An LLM
-summary is strictly better and replaces this when one is configured.
+Capture carries no LLM: hooks run without an API key, and a subscription
+machine has none. This produces a small, deterministic record from the turns
+alone: what was asked first and last, how much happened, and which files were
+touched.
 """
 
 import re
@@ -53,7 +52,7 @@ def digest_turns(turns: list[dict[str, str]]) -> str:
             if match not in files:
                 files.append(match)
 
-    lines = [f"Session digest ({len(turns)} turns, no LLM summariser available)"]
+    lines = [f"Session digest ({len(turns)} turns)"]
     if prompts:
         lines.append(f"- opened with: {_clip(prompts[0])}")
         if len(prompts) > 1:

@@ -18,7 +18,6 @@ from pathlib import Path
 import pytest
 
 from axon.cli import pb
-from axon.memory.session_compressor import SessionCompressor
 
 REPO_DIRNAME = "session-key-repo"
 WORKTREE_DIRNAME = "agent-issue-186"
@@ -99,11 +98,6 @@ def _capture_session_save(monkeypatch: pytest.MonkeyPatch) -> list:
             return 1
 
     monkeypatch.setattr("axon.store.session_store.SessionStore", _Store)
-
-    async def _compress(_self: SessionCompressor) -> str:
-        return "a faithful summary"
-
-    monkeypatch.setattr(SessionCompressor, "compress", _compress)
     return saved
 
 
