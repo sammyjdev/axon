@@ -38,10 +38,19 @@ def _decrypt_returns(monkeypatch: pytest.MonkeyPatch, stdout: str) -> list[list[
     return calls
 
 
+def _fake_http(monkeypatch: pytest.MonkeyPatch, post: object) -> None:
+    """Stand in for the provider module's shared HTTP client."""
+    client = type("FakeClient", (), {"post": staticmethod(post)})()
+    monkeypatch.setattr(providers, "_http", lambda: client)
+
+
 def _fake_post(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
     requests: list[dict[str, object]] = []
 
     class FakeResponse:
+        status_code = 200
+        headers: dict[str, str] = {}
+
         def raise_for_status(self) -> None:
             pass
 
@@ -52,7 +61,7 @@ def _fake_post(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
         requests.append(kwargs)
         return FakeResponse()
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    _fake_http(monkeypatch, fake_post)
     return requests
 
 
@@ -174,7 +183,7 @@ def test_no_log_record_carries_the_stub_value(
     def failing_post(_url: str, **_kwargs: object) -> None:
         raise httpx.ConnectError("refused")
 
-    monkeypatch.setattr(httpx, "post", failing_post)
+    _fake_http(monkeypatch, failing_post)
     caplog.set_level(logging.DEBUG)
     deepinfra_cfg = load_embedder_chain_config().providers[-1]
 

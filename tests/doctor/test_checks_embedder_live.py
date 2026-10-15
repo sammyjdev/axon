@@ -311,7 +311,9 @@ def test_run_all_checks_stays_offline(monkeypatch: pytest.MonkeyPatch) -> None:
     def boom(*_args: object, **_kwargs: object) -> None:
         raise _OfflineViolation("run_all_checks attempted an HTTP request")
 
-    monkeypatch.setattr(httpx, "post", boom)
+    # Client.send is under every httpx request, the shared provider client's
+    # included; patching httpx.post alone would miss that client.
+    monkeypatch.setattr(httpx.Client, "send", boom)
     monkeypatch.setenv("AXON_EMBEDDER_CHAIN", "ollama")
     runtime._decoded_store.cache_clear()
     try:
