@@ -56,6 +56,7 @@ the per-request retrieval budget.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import secrets
@@ -127,8 +128,7 @@ _UNAUTHENTICATED_PATHS = frozenset({"/health"})
 #: With no token the server trusts whoever reaches it, which is only safe while
 #: "whoever" is this machine. A page can point its own domain at 127.0.0.1 (DNS
 #: rebinding) and read a token-less server as same-origin; the Host header still
-#: names that domain, so only loopback names are served.
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+#: names that domain, so only loopback hosts are served.
 
 
 def _host_name(host_header: str) -> str:
@@ -137,6 +137,16 @@ def _host_name(host_header: str) -> str:
     if host.startswith("["):
         return host[1 : host.find("]")] if "]" in host else host
     return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def _is_loopback_host(host: str) -> bool:
+    """`localhost`, or any loopback IP: the same set serve-http lets you bind."""
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 async def _require_bearer_token(
@@ -152,7 +162,7 @@ async def _require_bearer_token(
             "AXON_HTTP_ALLOW_UNAUTHENTICATED", ""
         ).strip().lower() in {"1", "true", "yes", "on"}
         host = _host_name(request.headers.get("host", ""))
-        if not unauthenticated_opt_in and host not in _LOOPBACK_HOSTS:
+        if not unauthenticated_opt_in and not _is_loopback_host(host):
             raise HTTPException(status_code=400, detail="Invalid host header")
         return
     presented = _presented_token(authorization, axon_dashboard)

@@ -25,13 +25,26 @@ def client() -> Generator[TestClient, None, None]:
         yield c
 
 
-def test_without_a_token_a_request_for_another_host_is_refused(client: TestClient) -> None:
-    response = client.get("/api/gain", headers={"host": "evil.example:8765"})
+@pytest.mark.parametrize("host", ["evil.example:8765", "127.0.0.1.evil.example", "10.0.0.5:8765"])
+def test_without_a_token_a_request_for_another_host_is_refused(
+    client: TestClient, host: str
+) -> None:
+    response = client.get("/api/gain", headers={"host": host})
 
     assert response.status_code == 400
 
 
-@pytest.mark.parametrize("host", ["127.0.0.1:8765", "localhost:8765", "[::1]:8765", "LOCALHOST"])
+@pytest.mark.parametrize(
+    "host",
+    [
+        "127.0.0.1:8765",
+        "localhost:8765",
+        "[::1]:8765",
+        "LOCALHOST",
+        "127.0.0.53:8765",
+        "[0:0:0:0:0:0:0:1]:8765",
+    ],
+)
 def test_without_a_token_loopback_hosts_are_served(client: TestClient, host: str) -> None:
     response = client.get("/api/gain", headers={"host": host})
 
