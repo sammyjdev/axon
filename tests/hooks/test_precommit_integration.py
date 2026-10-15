@@ -15,7 +15,7 @@ class TestEntry:
     def test_entry_includes_all_four_hooks(self) -> None:
         entry = axon_repo_entry()
         assert "axon-post-commit" in entry
-        assert "axon-pre-push" in entry
+        assert "axon-pre-push" not in entry  # a push is not an AXON event
         assert "axon-post-merge" in entry
         assert "axon-post-checkout" in entry
 

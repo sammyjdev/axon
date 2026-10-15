@@ -1,11 +1,10 @@
 """AXON git event handlers.
 
 Invoked by the installed git hooks as ``python -m axon.hooks.git_event <event>``
-where ``<event>`` is ``commit``, ``push`` or ``init``. Every handler fails
-silently — a hook must never block a git operation.
-
-``on_commit`` is fully implemented here. ``on_push`` (milestone / LLM-judge)
-lands in Phase 5; ``on_init`` (code indexing) lands in Phase 4.
+where ``<event>`` is ``commit``, ``post-merge``, ``post-checkout`` or ``init``.
+Every handler fails silently — a hook must never block a git operation. An
+unknown event, including the ``push`` that pre-push hooks installed by older
+versions still send, does nothing.
 """
 
 from __future__ import annotations
@@ -15,27 +14,18 @@ import logging
 import os
 import subprocess
 import sys
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from axon.adr.signal import detect
 from axon.code.diff_symbols import symbols_touched_by_commit
-from axon.config.runtime import load_runtime_config
 from axon.core.decision import SUMMARY_MAX_LEN, Decision
 from axon.core.edge import Edge
 from axon.core.repo_identity import repo_identity
 from axon.hooks.file_bridge import update_context_file
-from axon.observability.trace_store import TraceStore
-from axon.obsidian.discovery import discover_vault
-from axon.obsidian.exporter import export_adr, export_architecture_doc
 from axon.store.session_store import SessionStore
-from axon.triggers.scope_detector import detect_scope_end
-from axon.validation.judge import score_decision
 
 logger = logging.getLogger(__name__)
-
-_TRACE_STORE = TraceStore(load_runtime_config())
 
 _AGENTS = {"claude-code", "codex", "cursor", "manual"}
 
@@ -192,75 +182,6 @@ async def on_commit(
             await store.close()
 
 
-async def _judge_and_export(
-    store: SessionStore, decisions: list[Decision], repo: str
-) -> None:
-    """Score unjudged draft decisions and export the repo's docs to the vault."""
-    trace_id = uuid.uuid4().hex
-    recorder = _TRACE_STORE.recorder(trace_id=trace_id, caller="capture")
-    scored: list[Decision] = []
-    threshold = 3.5
-    for decision in decisions:
-        if decision.status == "draft" and not decision.judged:
-            score = await score_decision(decision)
-            if score is not None:
-                # model_validate re-runs Pydantic field validators
-                # (model_copy bypasses them) so an out-of-range score never
-                # poisons the persisted row.
-                decision = Decision.model_validate(
-                    {
-                        **decision.model_dump(mode="python"),
-                        "validation_score": float(score),
-                        "judged": True,
-                    }
-                )
-                await store.save_decision(decision)
-                recorder.append_stage(
-                    "validation_result",
-                    payload={
-                        "decision_id": decision.id,
-                        "score": float(score),
-                        "threshold": threshold,
-                        "passed": score >= threshold,
-                    },
-                )
-        scored.append(decision)
-
-    vault = discover_vault()
-    if vault is None:
-        logger.info("push: scope ended but no vault discovered — export skipped")
-        return
-    for decision in scored:
-        export_adr(decision, vault=vault)
-    export_architecture_doc(scored, vault=vault, name=repo)
-    logger.info("push: exported %d decision(s) to %s", len(scored), vault)
-
-
-async def on_push(
-    *, store: SessionStore | None = None, cwd: Path | None = None
-) -> None:
-    """On push, if the work scope has closed, judge decisions and export docs."""
-    owns_store = store is None
-    store = store or _default_store()
-    try:
-        await store.init()
-        root = _repo_root(cwd)
-        repo = repo_identity(root)
-        decisions = await store.find_decisions_by_repo(repo)
-        milestone = os.environ.get("AXON_MILESTONE", "") == "1"
-        signal = detect_scope_end(
-            root, milestone=milestone, decisions_since_export=len(decisions)
-        )
-        if signal is None:
-            logger.info("push: scope still open, no export")
-            return
-        logger.info("push: scope ended (%s: %s)", signal.reason, signal.detail)
-        await _judge_and_export(store, decisions, repo)
-    finally:
-        if owns_store:
-            await store.close()
-
-
 async def on_init(
     *, store: SessionStore | None = None, cwd: Path | None = None
 ) -> None:
@@ -383,7 +304,6 @@ async def on_post_merge(
 
 _HANDLERS = {
     "commit": on_commit,
-    "push": on_push,
     "init": on_init,
     "post-merge": on_post_merge,
     "post-checkout": on_post_merge_or_checkout,

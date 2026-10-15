@@ -1,10 +1,8 @@
 """Install and remove AXON git hooks.
 
 Each hook is a tiny shell snippet that calls ``python -m axon.hooks.git_event``.
-Hook failures are swallowed so they never block a git operation.
-
-Note: git has no ``post-push`` hook — the push event is captured by
-``pre-push``. ``on_init`` is not a git hook; it is invoked by ``axon init``.
+Hook failures are swallowed so they never block a git operation. A push is
+not an AXON event: no ``pre-push`` is installed.
 """
 
 from __future__ import annotations
@@ -22,10 +20,14 @@ from axon.exceptions import GitAnchorError
 # revalidation of pending ADR drafts.
 HOOKS: dict[str, str] = {
     "post-commit": "commit",
-    "pre-push": "push",
     "post-merge": "post-merge",
     "post-checkout": "post-checkout",
 }
+
+# Hooks older versions installed and this one does not. Installing or
+# uninstalling strips AXON's block from them, so a push stops paying for a
+# Python start that does nothing.
+RETIRED_HOOKS: tuple[str, ...] = ("pre-push",)
 
 _BEGIN = "# >>> AXON git hook >>>"
 _END = "# <<< AXON git hook <<<"
@@ -113,6 +115,7 @@ def install_hooks(repo_path: Path | str = ".") -> list[str]:
         target.write_text(new_text, encoding="utf-8")
         target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
         installed.append(hook_name)
+    _strip_hooks(hooks_dir, RETIRED_HOOKS)
     try:
         from axon.config.runtime import load_runtime_config
 
@@ -141,9 +144,13 @@ def install_hooks(repo_path: Path | str = ".") -> list[str]:
 
 def uninstall_hooks(repo_path: Path | str = ".") -> list[str]:
     """Remove AXON-managed hook blocks. Returns the hook names touched."""
-    hooks_dir = _hooks_dir(repo_path)
+    return _strip_hooks(_hooks_dir(repo_path), (*HOOKS, *RETIRED_HOOKS))
+
+
+def _strip_hooks(hooks_dir: Path, names: tuple[str, ...]) -> list[str]:
+    """Strip AXON's block from each named hook, deleting a hook left empty."""
     removed: list[str] = []
-    for hook_name in HOOKS:
+    for hook_name in names:
         target = hooks_dir / hook_name
         if not target.exists():
             continue

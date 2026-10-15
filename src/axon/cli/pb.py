@@ -1717,9 +1717,10 @@ def hooks_install(
             "them. Either delete the custom hooks first, or integrate "
             "AXON manually using the snippet below:\n"
         )
+        from axon.hooks.git_installer import HOOKS
         from axon.hooks.husky_integration import wrapper_text
 
-        for event in ("post-commit", "pre-push", "post-merge", "post-checkout"):
+        for event in HOOKS:
             typer.echo(f"# .git/hooks/{event}:")
             typer.echo(wrapper_text(event).rstrip())
             typer.echo("")

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from axon.core.decision import SUMMARY_MAX_LEN, Decision
-from axon.hooks.git_event import main, on_commit, on_init, on_push
+from axon.core.decision import SUMMARY_MAX_LEN
+from axon.hooks.git_event import main, on_commit, on_init
 from axon.store.session_store import SessionStore
 
 
@@ -229,160 +228,6 @@ async def test_on_commit_relinks_symbols_after_partial_failure(
     assert len(found) == 1
     subgraph = await store.query_subgraph(decision_id, depth=1)
     assert "beta" in subgraph["nodes"]
-
-
-def _init_repo(path: Path) -> None:
-    path.mkdir()
-    _git(["init"], path)
-    _git(["config", "user.email", "test@axon.dev"], path)
-    _git(["config", "user.name", "AXON Test"], path)
-    (path / "f.py").write_text("x = 1\n", encoding="utf-8")
-    _git(["add", "."], path)
-    _git(["commit", "-m", "init"], path)
-
-
-async def test_on_push_exports_when_scope_ends(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = tmp_path / "pushrepo"
-    _init_repo(repo)
-    _git(["tag", "v1.0"], repo)  # git-tag scope-end signal
-
-    await store.save_decision(
-        Decision(
-            id="dec-001",
-            timestamp=datetime(2026, 5, 1, tzinfo=UTC),
-            agent="manual",
-            repo="pushrepo",
-            summary="a decision",
-        )
-    )
-    vault = tmp_path / "vault"
-    (vault / ".obsidian").mkdir(parents=True)
-
-    async def no_judge(decision: Decision, context: str = "") -> None:
-        return None
-
-    monkeypatch.setattr("axon.hooks.git_event.discover_vault", lambda: vault)
-    monkeypatch.setattr("axon.hooks.git_event.score_decision", no_judge)
-
-    await on_push(store=store, cwd=repo)
-
-    assert (vault / "AXON" / "Architecture" / "pushrepo.md").exists()
-    assert (vault / "AXON" / "Journal" / "dec-001.md").exists()
-
-
-async def test_judge_emits_validation_result_trace_per_scored_decision(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from types import SimpleNamespace
-
-    from axon.hooks import git_event
-    from axon.observability.trace_store import TraceStore
-
-    repo = tmp_path / "judgerepo"
-    _init_repo(repo)
-    _git(["tag", "v1.0"], repo)
-
-    await store.save_decision(
-        Decision(
-            id="dec-001",
-            timestamp=datetime(2026, 5, 1, tzinfo=UTC),
-            agent="manual",
-            repo="judgerepo",
-            summary="a",
-        )
-    )
-    await store.save_decision(
-        Decision(
-            id="dec-002",
-            timestamp=datetime(2026, 5, 2, tzinfo=UTC),
-            agent="manual",
-            repo="judgerepo",
-            summary="b",
-        )
-    )
-    vault = tmp_path / "vault"
-    (vault / ".obsidian").mkdir(parents=True)
-
-    fixed_scores = {"dec-001": 4.5, "dec-002": 2.0}
-    judge_calls: list[str] = []
-
-    async def fake_judge(decision: Decision, context: str = "") -> float:
-        judge_calls.append(decision.id)
-        return fixed_scores[decision.id]
-
-    trace_store = TraceStore(runtime=SimpleNamespace(data_root=tmp_path / "traces"))
-    monkeypatch.setattr(git_event, "_TRACE_STORE", trace_store, raising=False)
-    monkeypatch.setattr("axon.hooks.git_event.discover_vault", lambda: vault)
-    monkeypatch.setattr("axon.hooks.git_event.score_decision", fake_judge)
-
-    await on_push(store=store, cwd=repo)
-
-    records = [r for r in trace_store.load_all() if r.stage == "validation_result"]
-    assert len(records) == 2
-    ids = {r.payload["decision_id"] for r in records}
-    assert ids == {"dec-001", "dec-002"}
-    passed_flags = {r.payload["decision_id"]: r.payload["passed"] for r in records}
-    assert passed_flags["dec-001"] is True
-    assert passed_flags["dec-002"] is False
-
-    # Re-running on_push must NOT re-judge already-judged decisions
-    # (previously gated on validation_score == 0.0, which mis-classified
-    # any legitimate 0.0 score as unjudged).
-    judge_calls.clear()
-    await on_push(store=store, cwd=repo)
-    assert judge_calls == []
-
-
-async def test_judge_does_not_rejudge_when_score_legitimately_zero(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = tmp_path / "zerorepo"
-    _init_repo(repo)
-    _git(["tag", "v1.0"], repo)
-
-    await store.save_decision(
-        Decision(
-            id="dec-001",
-            timestamp=datetime(2026, 5, 1, tzinfo=UTC),
-            agent="manual",
-            repo="zerorepo",
-            summary="bad decision",
-        )
-    )
-    vault = tmp_path / "vault"
-    (vault / ".obsidian").mkdir(parents=True)
-
-    call_count = {"n": 0}
-
-    async def judge_zero(decision: Decision, context: str = "") -> float:
-        call_count["n"] += 1
-        return 0.0  # legitimate clamped-to-zero score
-
-    monkeypatch.setattr("axon.hooks.git_event.discover_vault", lambda: vault)
-    monkeypatch.setattr("axon.hooks.git_event.score_decision", judge_zero)
-
-    await on_push(store=store, cwd=repo)
-    assert call_count["n"] == 1
-
-    # second push must not re-judge: judged flag persists
-    await on_push(store=store, cwd=repo)
-    assert call_count["n"] == 1, "0.0 score with judged=True should not re-judge"
-
-
-async def test_on_push_skips_export_when_scope_open(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = tmp_path / "openrepo"
-    _init_repo(repo)  # no tag, no milestone, no decisions
-
-    calls: list[int] = []
-    monkeypatch.setattr(
-        "axon.hooks.git_event.discover_vault", lambda: calls.append(1)
-    )
-    await on_push(store=store, cwd=repo)
-    assert calls == []
 
 
 def test_main_unknown_event_returns_zero() -> None:

@@ -9,20 +9,17 @@ from __future__ import annotations
 
 import sys
 
+from axon.hooks.git_installer import HOOKS
+
 
 def wrapper_text(event: str) -> str:
     """The shell snippet to paste into ``.husky/{hook}``.
 
-    ``event`` is ``post-commit``, ``pre-push``, ``post-merge`` or
-    ``post-checkout``. Failure is swallowed so husky chains continue.
+    ``event`` is a hook name from ``HOOKS``. Failure is swallowed so husky
+    chains continue.
     """
     py = sys.executable
-    logical = {
-        "post-commit": "commit",
-        "pre-push": "push",
-        "post-merge": "post-merge",
-        "post-checkout": "post-checkout",
-    }.get(event, event)
+    logical = HOOKS.get(event, event)
     return (
         "# >>> AXON >>>\n"
         f"{py} -m axon.hooks.git_event {logical} 2>/dev/null || true\n"
@@ -32,7 +29,7 @@ def wrapper_text(event: str) -> str:
 
 def dry_run_message() -> str:
     """Multi-hook preview message shown when ``--apply`` is not passed."""
-    hooks = ["post-commit", "pre-push", "post-merge", "post-checkout"]
+    hooks = list(HOOKS)
     lines = [
         "husky detected. AXON will NOT modify your .husky/ files.",
         "Paste the following lines into each husky hook:",

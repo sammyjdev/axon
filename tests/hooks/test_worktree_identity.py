@@ -12,7 +12,7 @@ import pytest
 
 from axon.core.decision import Decision
 from axon.hooks.file_bridge import update_context_file
-from axon.hooks.git_event import _scan_pulled_range, on_commit, on_push
+from axon.hooks.git_event import _scan_pulled_range, on_commit
 from axon.store.session_store import SessionStore
 
 
@@ -102,36 +102,6 @@ async def test_on_commit_from_a_worktree_files_under_the_parent_repo_key(
     assert len(found) == 1
     assert found[0].repo == "myrepo"
     assert await store.find_decisions_by_repo("agent-issue-158") == []
-
-
-async def test_on_push_from_a_worktree_counts_the_parent_repos_decisions(
-    store: SessionStore, tmp_path: Path, worktree: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("AXON_MILESTONE", raising=False)
-    for number in range(1, 11):
-        await store.save_decision(
-            Decision(
-                id=f"dec-{number:03}",
-                timestamp=datetime(2026, 5, number, tzinfo=UTC),
-                agent="manual",
-                repo="myrepo",
-                summary=f"decision {number}",
-            )
-        )
-    vault = tmp_path / "vault"
-    (vault / ".obsidian").mkdir(parents=True)
-
-    async def no_judge(decision: Decision, context: str = "") -> None:
-        return None
-
-    monkeypatch.setattr("axon.hooks.git_event.discover_vault", lambda: vault)
-    monkeypatch.setattr("axon.hooks.git_event.score_decision", no_judge)
-
-    await on_push(store=store, cwd=worktree)
-
-    assert (vault / "AXON" / "Architecture" / "myrepo.md").exists()
-    assert not (vault / "AXON" / "Architecture" / "agent-issue-158.md").exists()
-    assert (vault / "AXON" / "Journal" / "dec-001.md").exists()
 
 
 async def test_scan_pulled_range_from_a_worktree_files_under_the_parent_repo_key(
