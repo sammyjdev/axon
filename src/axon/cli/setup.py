@@ -11,7 +11,7 @@ _TRANSPORT_OPTIONS = ("1", "2", "3")
 
 
 def run_step_transport(session: SetupSession) -> SetupSession:
-    typer.echo("\n── Step 1/3: Deployment ──────────────────────────────")
+    typer.echo("\n── Step 1/2: Deployment ──────────────────────────────")
     typer.echo("Where will AXON run?\n")
     typer.echo("  [1] Local (Claude Code / Copilot / Cursor)  → stdio")
     typer.echo("  [2] Local with Claude Web/App               → HTTP + tunnel")
@@ -49,48 +49,6 @@ def run_step_transport(session: SetupSession) -> SetupSession:
     )
 
 
-_LANGUAGE_MAP: dict[str, str] = {
-    "1": "python",
-    "2": "kotlin",
-    "3": "typescript",
-    "4": "go",
-    "5": "rust",
-}
-_PROFILE_MAP: dict[str, str] = {
-    "1": "solo-dev",
-    "2": "team-dev",
-    "3": "privacy-first",
-}
-
-
-def run_step_domain(session: SetupSession) -> SetupSession:
-    typer.echo("\n── Step 2/3: Domain ──────────────────────────────────")
-    typer.echo("Which languages do you mainly work with? (multiple choice)\n")
-    typer.echo("  [1] Python   [2] Kotlin/Java   [3] TypeScript/JS")
-    typer.echo("  [4] Go       [5] Rust           [6] Other\n")
-
-    raw = typer.prompt("Choice(s), comma-separated (e.g. 1,3)").strip()
-    choices = {c.strip() for c in raw.split(",")}
-    languages = tuple(
-        sorted({_LANGUAGE_MAP[c] for c in choices if c in _LANGUAGE_MAP})
-    )
-
-    typer.echo("\nUsage profile?\n")
-    typer.echo("  [1] Solo development    → solo-dev")
-    typer.echo("  [2] Team / company      → team-dev")
-    typer.echo("  [3] Strict privacy      → privacy-first\n")
-
-    while True:
-        profile_choice = typer.prompt("Choice [1/2/3]").strip()
-        if profile_choice in _PROFILE_MAP:
-            break
-        typer.echo("Please enter 1, 2, or 3.", err=True)
-
-    return SetupSession(
-        **{**session.__dict__, "languages": languages, "profile": _PROFILE_MAP[profile_choice]}
-    )
-
-
 _VAULT_CONTEXT_MAP: dict[str, str] = {
     "1": "personal",
     "2": "knowledge",
@@ -100,7 +58,7 @@ _VAULT_CONTEXT_MAP: dict[str, str] = {
 
 
 def run_step_vault(session: SetupSession) -> SetupSession:
-    typer.echo("\n── Step 3/3: Vault ───────────────────────────────────")
+    typer.echo("\n── Step 2/2: Vault ───────────────────────────────────")
     typer.echo("Which contexts do you want in your vault? (multiple choice)\n")
     typer.echo("  [1] personal    ← personal projects")
     typer.echo("  [2] knowledge   ← notes, docs, references")
@@ -202,8 +160,7 @@ def format_next_steps(session: SetupSession) -> str:
             '        "args": ["serve"]\n'
             '      }\n'
             '    }\n'
-            '  }\n\n'
-            'Then run: axon index-dev'
+            '  }'
         )
 
     port = session.http_port or 8080
@@ -213,16 +170,14 @@ def format_next_steps(session: SetupSession) -> str:
             f"  axon serve-http --port {port}\n"
             f"  # in another terminal:\n"
             f"  ngrok http {port}          # or: cloudflare tunnel\n\n"
-            f"Add the public URL to Claude Web → Settings → Integrations → MCP.\n"
-            f"Then run: axon index-dev"
+            "Add the public URL to Claude Web → Settings → Integrations → MCP."
         )
 
     return (
         f"Start the server:\n\n"
         f"  axon serve-http --host 0.0.0.0 --port {port}\n\n"
         f"Configure your reverse proxy to forward to port {port}.\n"
-        f"Add the public URL to Claude Web → Settings → Integrations → MCP.\n"
-        f"Then run: axon index-dev"
+        "Add the public URL to Claude Web → Settings → Integrations → MCP."
     )
 
 
@@ -237,15 +192,10 @@ def run_setup(
 
     session = SetupSession()
     session = run_step_transport(session)
-    session = run_step_domain(session)
     session = run_step_vault(session)
 
     typer.echo("\n── Applying configuration ────────────────────────────")
-    messages = run_step_commit(
-        session,
-        config_path=config_path,
-        vault_root=vault_root,
-    )
+    messages = run_step_commit(session, config_path=config_path, vault_root=vault_root)
     for msg in messages:
         typer.echo(f"  ✓ {msg}")
 

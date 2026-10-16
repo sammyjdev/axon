@@ -22,12 +22,8 @@ from testcontainers.postgres import PostgresContainer  # noqa: E402
 
 _EXPECTED = {
     ("schema_version", "applied_at"),
-    ("nodes", "created_at"),
-    ("nodes", "updated_at"),
-    ("edges", "created_at"),
     ("decisions", "created_at"),
     ("adr", "created_at"),
-    ("file_index", "indexed_at"),
     ("failure_record", "created_at"),
     ("outcome_record", "created_at"),
 }
@@ -46,14 +42,10 @@ async def _ensure_every_schema(dsn: str) -> None:
     from axon.store.failure_store import FailureStore
     from axon.store.outcome_store import OutcomeStore
     from axon.store.pg_decision_repository import PostgresDecisionRepository
-    from axon.store.pg_file_cache import PostgresFileCache
-    from axon.store.pg_graph_repository import PostgresGraphRepository
     from axon.store.pg_session_repository import PostgresSessionRepository
 
     for factory in (
-        PostgresGraphRepository,
         PostgresDecisionRepository,
-        PostgresFileCache,
         FailureStore,
         OutcomeStore,
         PostgresSessionRepository,  # last: runs apply_pg_migrations

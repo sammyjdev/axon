@@ -54,14 +54,6 @@ async def test_pg_session_repository_ensure_pool_once():
 
 
 @pytest.mark.asyncio
-async def test_pg_graph_repository_ensure_pool_once():
-    from axon.store.pg_graph_repository import PostgresGraphRepository
-
-    count = await _count_create_pool_calls(PostgresGraphRepository, "postgresql://fake/db")
-    assert count == 1, f"Expected 1 pool creation, got {count}"
-
-
-@pytest.mark.asyncio
 async def test_pg_decision_repository_ensure_pool_once():
     from axon.store.pg_decision_repository import PostgresDecisionRepository
 
@@ -127,12 +119,6 @@ async def test_session_store_sessions_repo_init_once(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_session_store_graph_repo_init_once(tmp_path):
-    count = await _count_repo_constructor_calls("_graph", tmp_path)
-    assert count == 1, f"Expected 1 _graph repo construction, got {count}"
-
-
-@pytest.mark.asyncio
 async def test_session_store_decisions_repo_init_once(tmp_path):
     count = await _count_repo_constructor_calls("_decisions", tmp_path)
     assert count == 1, f"Expected 1 _decisions repo construction, got {count}"
@@ -160,16 +146,6 @@ def test_pg_session_repository_has_init_lock():
 
     repo = PostgresSessionRepository(dsn="postgresql://fake/db")
     assert hasattr(repo, "_pool_lock"), "PostgresSessionRepository must have _pool_lock"
-    assert isinstance(repo._pool_lock, asyncio.Lock)
-
-
-def test_pg_graph_repository_has_init_lock():
-    import asyncio
-
-    from axon.store.pg_graph_repository import PostgresGraphRepository
-
-    repo = PostgresGraphRepository(dsn="postgresql://fake/db")
-    assert hasattr(repo, "_pool_lock"), "PostgresGraphRepository must have _pool_lock"
     assert isinstance(repo._pool_lock, asyncio.Lock)
 
 

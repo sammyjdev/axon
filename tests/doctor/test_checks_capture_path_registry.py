@@ -31,7 +31,6 @@ from axon.doctor import CheckStatus
 from axon.doctor.checks import capture_path
 from axon.doctor.checks.capture_path import (
     _onboarded_repos,
-    check_capture_gap,
     check_hook_interpreters,
 )
 from axon.hooks.git_installer import _BEGIN, _END, install_hooks
@@ -346,38 +345,6 @@ class TestChecksSeeRegistryRepos:
         assert "claudehooks" in result.detail
         assert _BROKEN_INTERPRETER in result.detail
 
-    def test_capture_gap_reports_gapped_registry_repo_outside_dev_root(
-        self, isolated_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = isolated_env / "dev"
-        dev_root.mkdir(parents=True)
-        repo = isolated_env / "dotclaude" / "gappedrepo"
-        _make_capture_repo(repo, commits=2)
-        _write_registry(isolated_env, [repo])
-        _install_fake_store(monkeypatch)
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.name == "capture.gap"
-        assert result.status is CheckStatus.FAIL
-        assert "gappedrepo" in result.detail
-
-    def test_capture_gap_passes_registry_repo_whose_commits_are_captured(
-        self, isolated_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = isolated_env / "dev"
-        dev_root.mkdir(parents=True)
-        repo = isolated_env / "dotclaude" / "healthyrepo"
-        hashes = _make_capture_repo(repo, commits=2)
-        _write_registry(isolated_env, [repo])
-        _install_fake_store(monkeypatch, captured={hashes[-1]})
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is CheckStatus.OK
-        assert result.detail != _SKIP_NO_REPOS
-        assert "healthyrepo" not in result.detail
-
     def test_doctor_sees_a_repo_installed_outside_dev_root(
         self, isolated_env: Path
     ) -> None:
@@ -394,23 +361,3 @@ class TestChecksSeeRegistryRepos:
 
         assert result.status is CheckStatus.FAIL
         assert "clauderepo" in result.detail
-
-
-class TestCaptureGapLabels:
-    def test_gapped_repo_inside_dev_root_is_labeled_relative_to_dev_root(
-        self, isolated_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A gapped repo nested INSIDE dev_root is labeled by its path
-        relative to dev_root, exactly (#185: IDENTITY_RETURN on _repo_label
-        survived because the basename is a substring of the absolute path
-        too, so every substring assertion held under both spellings)."""
-        dev_root = isolated_env / "dev"
-        repo = dev_root / "group" / "gappedrepo"
-        _make_capture_repo(repo, commits=2)
-        _install_fake_store(monkeypatch)
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.name == "capture.gap"
-        assert result.status is CheckStatus.FAIL
-        assert result.detail == "1 of 1 repo(s) gapped: group/gappedrepo"

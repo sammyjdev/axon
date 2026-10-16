@@ -11,9 +11,7 @@ from axon.config.platform import (
     detect_platform,
     merge_env_text,
 )
-from axon.config.runtime import (
-    RuntimeConfig,
-)
+from axon.config.runtime import RuntimeConfig
 
 
 def test_detect_platform_pc_without_nvidia_uses_cpu_providers(monkeypatch) -> None:
@@ -342,21 +340,8 @@ def _runtime(
         vault_root=vault_root,
         db_path=engine_root / "data" / "axon.db",
         pg_url="postgresql://axon:axon@localhost:5433/axon",
-        rtk_max_tokens=450,
-        caveman_num_ctx=4096,
         ollama_remote_host=ollama_remote_host,
-        ollama_local_host="http://127.0.0.1:11434",
-        caveman_model="phi3:mini",
-        scoring_model="ollama/gemma4:e4b",
-        scoring_num_ctx=8192,
-        classifier_cloud_model="claude-haiku-4-5-20251001",
-        classifier_timeout_seconds=4.0,
         policy_version="2026-04-21",
-        provider_anthropic_enabled=True,
-        provider_openrouter_enabled=True,
-        provider_ollama_enabled=True,
-        provider_profile="budget",
-        openrouter_compliance_required=False,
         active_profile=active_profile,
     )
 

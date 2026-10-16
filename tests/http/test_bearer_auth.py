@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Generator
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -45,23 +44,6 @@ def test_every_route_requires_the_token_when_configured(
     monkeypatch.setenv("AXON_HTTP_TOKEN", "secret-bearer-token")  # noqa: S105
     response = client.get(path)
     assert response.status_code == 401
-
-
-def test_an_unauthenticated_chat_completion_never_reaches_retrieval_or_the_llm(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient
-) -> None:
-    monkeypatch.setenv("AXON_HTTP_TOKEN", "secret-bearer-token")  # noqa: S105
-    mock_retrieve = AsyncMock()
-    mock_complete = AsyncMock()
-    monkeypatch.setattr("axon.mcp.server._retrieve_context", mock_retrieve)
-    monkeypatch.setattr("axon.router.engine.complete_with_usage", mock_complete)
-
-    body = {"messages": [{"role": "user", "content": "hello"}]}
-    response = client.post("/v1/chat/completions", json=body)
-
-    assert response.status_code == 401
-    mock_retrieve.assert_not_called()
-    mock_complete.assert_not_called()
 
 
 def test_the_correct_bearer_token_is_accepted(

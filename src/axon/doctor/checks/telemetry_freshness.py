@@ -40,22 +40,9 @@ class Series:
     written_by: str
 
 
+# The recall and compression series stopped with code search and `ask`
+# (dec-138); their files stay as history and are no longer expected to grow.
 SERIES: tuple[Series, ...] = (
-    Series(
-        "recall/requests.jsonl",
-        timedelta(days=14),
-        "axon.observability.recall_telemetry",
-    ),
-    Series(
-        "recall/chunks.jsonl",
-        timedelta(days=14),
-        "axon.observability.recall_telemetry",
-    ),
-    Series(
-        "compression/stats.jsonl",
-        timedelta(days=14),
-        "axon.mcp.server (_COMPRESSION_TELEMETRY)",
-    ),
     Series(
         "trace/records.jsonl",
         timedelta(days=14),

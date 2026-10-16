@@ -28,13 +28,11 @@ lessons under the same free-text ``source`` would collide on it. Instead,
 ``seed_corpus`` looks up each entry by its own stable ``file#id`` source key
 before deciding what to do:
 
-* No existing row -> insert, through ``axon_record_lesson`` (embeds once).
-* An existing row whose content differs -> re-embed and overwrite it in
-  place (same id, same ``created_at``): the corpus is the source of truth,
-  so a corrected entry corrects the stored lesson too.
-* An existing row whose content is identical -> skip. No write, and no
-  embedding call - re-embedding unchanged rows would cost a network call
-  per entry, every run, for nothing.
+* No existing row -> insert, through ``axon_record_lesson``.
+* An existing row whose content differs -> overwrite it in place (same id,
+  same ``created_at``): the corpus is the source of truth, so a corrected
+  entry corrects the stored lesson too.
+* An existing row whose content is identical -> skip, with no write.
 """
 
 from __future__ import annotations
@@ -44,8 +42,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from axon.embedder.lesson_embedding import SupportsEmbedOne, embed_lesson
-from axon.models.lesson import LessonCreate, LessonRecord
+from axon.models.lesson import LessonRecord
 from axon.store.lessons import LessonStore
 
 CorpusEntry = dict[str, Any]
@@ -88,14 +85,12 @@ async def seed_corpus(
     record: Callable[..., Awaitable[str]],
     *,
     store: LessonStore,
-    engine: SupportsEmbedOne,
 ) -> list[str]:
     """Upsert each entry of the corpus at ``path`` into ``store``, by ``source``.
 
-    New entries go through ``record`` (``axon_record_lesson``), which embeds
-    and inserts. Existing entries are looked up directly in ``store``: an
-    unchanged one is skipped (no write, no embedding call); a changed one is
-    re-embedded and overwritten in place. Returns one status string per
+    New entries go through ``record`` (``axon_record_lesson``). Existing
+    entries are looked up directly in ``store``: an unchanged one is skipped;
+    a changed one is overwritten in place. Returns one status string per
     entry, in file order.
     """
     results = []
@@ -111,10 +106,7 @@ async def seed_corpus(
             results.append(f"lesson {existing.id} unchanged, skipped.")
             continue
 
-        embedding = embed_lesson(LessonCreate(**kwargs), engine=engine)
-        updated = LessonRecord(
-            **kwargs, id=existing.id, created_at=existing.created_at, embedding=embedding
-        )
+        updated = LessonRecord(**kwargs, id=existing.id, created_at=existing.created_at)
         await store.update(updated)
         results.append(f"updated lesson {existing.id} ({kwargs['kind']}).")
     return results

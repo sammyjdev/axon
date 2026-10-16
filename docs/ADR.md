@@ -18,7 +18,8 @@ project.
 
 ## ADR-002: Task-based model routing
 
-- Status: extended by dec-106 (concrete models now come from the active
+- Status: retired by dec-138 (the router is gone; no commit or MCP tool calls
+  an LLM). Kept for history. Previously extended by dec-106 (concrete models now come from the active
   provider profile; tier shape preserved).
 - Decision: route cloud models by task type with an explicit fallback.
 - Definition (tier shape):
@@ -37,7 +38,8 @@ project.
 
 ## ADR-003: Local Ollama models
 
-- Status: opt-in as of dec-106 (default `AXON_PROVIDER_OLLAMA=0`).
+- Status: retired by dec-138 (nothing classifies or compresses with a model any
+  more). Kept for history. Was opt-in as of dec-106.
 - Decision: standardize on lightweight local models for classification and
   compression, with heavier models reserved for larger hardware.
 - Default models when enabled:
@@ -51,7 +53,8 @@ project.
 
 ## ADR-004: Split graph backends by responsibility
 
-- Status: partially revoked by dec-101 (Neo4j dropped; see docs/decisions/);
+- Status: retired by dec-138 (the code-dependency graph and GLYPH retrieval are
+  gone). Kept for history. Partially revoked earlier by dec-101 (Neo4j dropped; see docs/decisions/);
   extended by dec-116 (graph-aware context retrieval is now delegated to the
   GLYPH library `glyph-kg`; AXON no longer reimplements graph retrieval).
 - Decision: use Redis for code dependency relationships and Neo4j only for
@@ -61,6 +64,7 @@ project.
 
 ## ADR-005: Java chunker quality gate
 
+- Status: retired by dec-138 (AXON no longer chunks or indexes code).
 - Decision: treat the Java chunker as a TDD-first, high-risk subsystem.
 - Quality bar:
   - real-world Spring fixtures;
@@ -102,6 +106,7 @@ project.
 
 ## ADR-010: Validated compression
 
+- Status: retired by dec-138 (the caveman compressor left with `ask`).
 - Decision: context compression is accepted only when it preserves required
   anchors and avoids prompt contamination.
 - Consequence: AXON may keep the original context when compression is not
@@ -199,7 +204,7 @@ are the durable record.
 - [dec-115](decisions/dec-115-supersession-ranking-penalty.md): soft supersession via ranking penalty in recall.
 - [dec-116](decisions/dec-116-glyph-graph-delegation.md): delegate graph-aware context retrieval to GLYPH.
 - [dec-117](decisions/dec-117-glyph-vs-graphiti-graph-layer.md): keep GLYPH for the code graph; borrow Graphiti's bi-temporal model for decision supersession.
-- [dec-118](decisions/dec-118-rtkx-vs-llmlingua-compression-baseline.md): keep rtkx for reversible compression; use LLMLingua-2 as the lossy benchmark baseline.
+- [dec-118](decisions/dec-118-rtkx-vs-llmlingua-compression-baseline.md): (superseded by dec-137) keep rtkx for reversible compression; use LLMLingua-2 as the lossy benchmark baseline.
 - [dec-119](decisions/dec-119-canonical-activity-stores-for-live-renderers.md): canonical activity/savings stores as the single source for live renderers (familiar, gain, dashboard).
 - [dec-120](decisions/dec-120-no-langchain-langgraph-chat.md): no LangChain / LangGraph / built-in chat; keep the governed router and lean deps.
 - [dec-121](decisions/dec-121-postgres-unified-storage.md): unify persistence on PostgreSQL (pgvector + JSONB); keep GLYPH as the graph retrieval layer.
@@ -259,3 +264,5 @@ are the durable record.
   durable evidence in a separate PostgreSQL subsystem, not semantic memory -
   links to existing memory/decision records require an explicit ID, never a
   shared timestamp or workspace path.
+- [dec-137](decisions/dec-137-remove-rtkx.md): rtkx and the rtk filter proxy are removed from AXON and the machine; the rtkx stage compressed 0 percent in AXON's own telemetry, and the proxy was net-neutral with measured failure modes (supersedes dec-118).
+- [dec-138](decisions/dec-138-stop-code-vectors.md): AXON stops vectorizing code and becomes the memory of the work done with agents; the code index, `search_code`, `ask`, ADR inference, the router and the gnomon HTTP endpoint are removed, only signal commits are captured, and lesson search is Postgres full-text (supersedes ADR-002 to 005, ADR-010, dec-106, dec-116, dec-122).

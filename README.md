@@ -15,25 +15,14 @@ any agent.
 
 ---
 
-## The stack
+## What AXON keeps
 
-AXON is the front of a three-part, self-hosted context stack — install one
-thing, get all three:
-
-| Layer | Role | Project |
-|---|---|---|
-| **AXON** | Cross-agent memory + MCP orchestration (this repo) | `axon` |
-| **GLYPH** | Graph-aware retrieval — decides *what* context to bring | [`glyph-kg`](https://github.com/sammyjdev/glyph-kg), pulled in via pip |
-| **rtkx** | Context compression + reversible store — decides *how compact* | [`rtkx`](https://github.com/sammyjdev/rtkx), installed via `axon rtk-install` |
-
-GLYPH and rtkx are clean, independently-tested dependencies, not a monolith.
-The compressed context stays in the LLM window; the full pre-compression
-original is one `restore_context` MCP call away (opt-in via
-`AXON_RTK_REVERSIBLE`). Bundled compression layers like Headroom cover adjacent
-ground — including reversible retrieval (its CCR cache) — but as one broad
-engine. AXON instead keeps each tier narrow-and-deep and independently
-swappable, so the graph (GLYPH) and compression (rtkx) layers can evolve, be
-benchmarked, or be replaced on their own without touching the rest of the stack.
+AXON is the memory of the work you do with coding agents: the decisions you
+make, the lessons from mistakes, a digest of each session and the activity
+history of Claude Code, Codex and agy. It does not index or embed code - agents
+read code with their own tools, and AXON holds what the code cannot say
+([dec-138](docs/decisions/dec-138-stop-code-vectors.md)). No commit and no MCP
+tool calls an LLM, so AXON needs no provider key.
 
 ---
 
@@ -47,16 +36,9 @@ cd axon
 pip install -e .
 ```
 
-This pulls in GLYPH automatically. Install the **rtkx** compression engine too
-(downloads a prebuilt binary into `~/.axon/bin`, no Rust toolchain needed):
+`axon doctor` reports the whole stack.
 
-```bash
-axon rtk-install
-```
-
-`axon doctor` then reports the whole stack (axon, rtkx, caveman, GLYPH).
-
-Initialize AXON in a repo (installs git hooks and indexes the code):
+Initialize AXON in a repo (installs its git hooks):
 
 ```bash
 axon init /path/to/your-repo
@@ -76,53 +58,20 @@ your project's `.claude/settings.json`:
 }
 ```
 
-`axon serve` runs the MCP server over stdio. Once registered, the tools
-`axon_get_context`, `axon_capture`, `axon_handoff`, `axon_search`,
-`axon_export_now`, `axon_validation_stats`, and `axon_health` are available
-inside your agent session.
+`axon serve` runs the MCP server over stdio. Once registered, tools such as
+`axon_get_context`, `get_session_memory`, `axon_capture`, `axon_handoff`,
+`axon_search`, `axon_record_lesson`, `axon_search_lessons` and `axon_health`
+are available inside your agent session
+([full list](docs/PROJECT_OVERVIEW.md#mcp-tools-srcaxonmcpserverpy)).
 
 Every tool is classified by risk (`read` / `write` / `destructive`) and
 emits structured trace records under a shared `trace_id` for tool-latency
-and success-rate dashboards. The two destructive tools — `axon_export_now`
-and `axon_mark_done` — require `AXON_ALLOW_DESTRUCTIVE=1` (or `true` /
-`yes` / `on`) as a consent token. Writes to a RESTRICTED context
+and success-rate dashboards. A destructive tool requires
+`AXON_ALLOW_DESTRUCTIVE=1` (or `true` / `yes` / `on`) as a consent token; none
+ships today. Writes to a RESTRICTED context
 (`ctx=work`) are always denied with `DENY_RESTRICTED_TOOL_WRITE`. See
 [ADR-013](docs/ADR.md#adr-013-tool-risk-classification-policy-gate-and-tracing-middleware)
 and [dec-109](docs/decisions/dec-109-tool-tracing-and-risk-gating.md).
-
----
-
-## Provider profiles
-
-AXON routes cloud calls through a **profile** chosen by `AXON_PROVIDER_PROFILE`.
-Two are built in:
-
-| Profile | Models | When to use |
-|---|---|---|
-| `budget` (default) | DeepInfra Llama 3.1 8B / 3.3 70B with an OpenRouter Llama 3.3 70B rung | Spend is cents per month; rate-limited; fine on a 16 GB laptop without local models |
-| `paid` | OpenRouter Claude Haiku/Sonnet/Opus (D2 tiers) + Groq paid | Higher quality and quotas; unified billing via OpenRouter |
-
-Rename the `free` value of `AXON_PROVIDER_PROFILE` to `budget` when upgrading.
-
-Minimum setup (budget):
-
-```bash
-export AXON_PROVIDER_PROFILE=budget
-export GROQ_API_KEY=gsk_...
-export DEEPINFRA_API_KEY=your-deepinfra-api-key
-export OPENROUTER_API_KEY=your-openrouter-api-key
-```
-
-Each provider has a **rate-limit gate** configurable via `AXON_<PROVIDER>_MAX_RPM` /
-`AXON_<PROVIDER>_MAX_RPD`. Groq ships defaults of 25/min and 13000/day; DeepInfra and
-OpenRouter have no default caps, so they run uncapped until you set those knobs. When a
-cap is hit, calls fail with `DENY_RATE_LIMIT` instead of being swallowed as model
-failures. See [`dec-106`](docs/decisions/dec-106-routing-profiles.md),
-[`dec-128`](docs/decisions/dec-128-budget-profile-model-substitution.md) and
-[`.env.example`](.env.example) for the full configuration surface.
-
-Local Ollama is **opt-in** as of dec-106 (`AXON_PROVIDER_OLLAMA=1`). It remains
-supported for users with capable hardware; D3 is unchanged.
 
 ---
 
@@ -131,12 +80,12 @@ supported for users with capable hardware; D3 is unchanged.
 ```mermaid
 flowchart LR
     subgraph Capture
-        GE[git events\npost-commit / post-push / init]
+        GE[signal commits\narch: / decision: / Lesson:]
         SH[session hooks\nstart / end]
     end
 
     subgraph Storage
-        PG[(PostgreSQL + pgvector\nsessions, decisions, graph, vectors)]
+        PG[(PostgreSQL\nsessions, decisions, lessons, activity)]
     end
 
     subgraph Recall
@@ -161,16 +110,18 @@ flowchart LR
     CF  --> CU
 ```
 
-Capture is **event-driven only** — git commit/push/init and agent session
+Capture is **event-driven only** — signal commits and agent session
 start/end. No background timer, no idle cost (see
-[dec-104](docs/decisions/dec-104-event-driven-not-time-driven.md)).
+[dec-104](docs/decisions/dec-104-event-driven-not-time-driven.md)). A commit is
+captured only when it says so: an `arch:` / `decision:` subject or an
+`ADR-Decision:` trailer becomes a draft decision, a `Lesson:` trailer a lesson
+draft ([dec-110](docs/decisions/dec-110-declarative-memory-signal.md)).
 
-Storage is a single **PostgreSQL** instance with **pgvector** for embeddings:
-sessions, decisions, ADRs, the code-dependency graph, and code vectors all
-live in Postgres
-([dec-121](docs/decisions/dec-121-postgres-unified-storage.md)). SQLite,
-Redis, Qdrant, and mem0 were retired as part of that consolidation. Neo4j was
-evaluated and dropped separately
+Storage is a single **PostgreSQL** instance: sessions, decisions, ADRs and
+activity history live there
+([dec-121](docs/decisions/dec-121-postgres-unified-storage.md)), and lessons
+are found with Postgres full-text search. SQLite, Redis, Qdrant, mem0 and
+pgvector were retired. Neo4j was evaluated and dropped separately
 ([dec-101](docs/decisions/dec-101-revoke-d4-drop-neo4j.md)).
 
 The primary transport is **MCP (stdio)**. A `.axon/context.md` file in the repo
@@ -185,22 +136,22 @@ is kept in sync as a fallback for agents without MCP support
 
 You spend an afternoon with Claude Code, push a branch, then continue the work
 in Codex the next day. Without AXON, Codex starts cold. With AXON, the MCP tool
-`axon_handoff` supplies Codex with the decisions, open questions, and code
-index from the previous session — no copy-pasting required.
+`axon_handoff` supplies Codex with the decisions and open questions from the
+previous session — no copy-pasting required.
 
 ### Multi-day project continuity
 
 On a project that spans weeks, the important context is not your last five
 messages but the architectural decisions made three sprints ago. AXON captures
-decisions from commit messages and session summaries into Postgres, so `axon
-search` and `axon_get_context` return what actually matters, not stale history.
+decisions from signal commits and explicit captures into Postgres, so
+`axon_search` and `axon_get_context` return what actually matters, not stale
+history.
 
-### Auto-generated architecture docs
+### Architecture docs from captured decisions
 
-AXON's LLM judge infers architectural decisions from commits and session events.
-`axon export adr` and `axon export architecture` write structured Markdown notes
-to an Obsidian vault, turning captured context into living documentation without
-any manual ADR writing.
+`axon export adr` and `axon export architecture` write the captured decisions
+as structured Markdown notes to an Obsidian vault, turning captured context
+into living documentation.
 
 ---
 
@@ -213,8 +164,8 @@ editing agents (Aider, Cline) whose histories are built-in and single-agent:
 |---|---|---|---|---|
 | **Primary goal** | Decision capture + cross-agent continuity | Auto-capture of all session activity | Token compression layer | Hosted cross-agent memory API |
 | **What it captures** | Decisions at crystallisation points (git / session) | Every tool use, continuously | Whatever passes through (compresses it) | Facts / observations via API |
-| **Reversible compression** | Yes (`restore_context`, rtkx) | No | Yes (CCR cache) | No |
-| **Decision / ADR inference** | Yes (LLM judge → Obsidian) | No | No (failure-driven `learn`) | No |
+| **Reversible compression** | No (removed, dec-137) | No | Yes (CCR cache) | No |
+| **Decision capture** | Yes (commit signals and explicit captures, no LLM) | No | No (failure-driven `learn`) | No |
 | **Governance** | Per-tool risk class + restricted ctx (ADR-013) | `<private>` tags | A/B holdouts / measured savings | Access controls |
 | **Works across agents** | Yes (MCP + file fallback) | Yes (MCP) | Yes (wrap / proxy) | Yes (plugins) |
 | **Self-hosted** | Yes | Yes | Yes | Hosted-first |
@@ -224,69 +175,21 @@ The crowded part of this space is **raw recall** — tools like
 strong LongMemEval scores and optimise for that directly. AXON does not compete
 on that axis. Its defensible niche is the intersection none of the above
 combine: capturing *decisions* (not every keystroke) at git and session
-boundaries, inferring ADRs from them, keeping compression reversible, and gating
+boundaries, and gating
 every MCP tool by risk class with a full audit trail. If you want the best raw
 recall benchmark, those tools win; if you want decisions and architecture to
 survive across agents and months, auditably, that is AXON.
 
 ---
 
-## Token savings
+## Token savings (historical)
 
-AXON's numbers are measured by [GNOMON](https://github.com/sammyjdev/gnomon-eval)
-with 95% confidence intervals, and every claim names its counterfactual
-(gnomon-eval ADR-0011):
-
-- **Quality uplift from recall** (vs no memory at all - A/B, N=17, judge x8,
-  2026-07-02): faithfulness rises from 0.40-0.52 (no recall) to 0.72-0.76
-  (recall on) at +2,151 input tokens per turn. After the retrieval ladder of
-  2026-07-04 (index hygiene, skeleton-chunk suppression, hybrid lexical
-  search), the recall arm reaches faithfulness 0.775 [0.735, 0.814] on the
-  same cases.
-- **Session cost** (vs re-sending the conversation - 10-turn sessions, 3
-  stable runs, 2026-07-04): cost parity (pooled +4%), crossing to net savings
-  at turn 6-9, with final-turn faithfulness at parity or better.
-- **Real-usage savings** (vs reading each source file in full): **90.7%** -
-  330,590 tokens returned where the Read workflow would have cost 3,537,838,
-  over the 333 instrumented requests whose source files all resolve (exact
-  counting, after the declared directory-move remaps in
-  [`benchmarks/recall_savings_remap.json`](benchmarks/recall_savings_remap.json)).
-  Including the requests with permanently missing files - whose counterfactual
-  is undercounted, biasing *against* the claim - the conservative floor over
-  all 448 requests is 88.6%. Reproducible from the committed snapshot alone:
-  `python3 scripts/recall_savings_report.py --snapshot benchmarks/recall_savings_snapshot.jsonl`
-  ([`benchmarks/recall_savings_snapshot.jsonl`](benchmarks/recall_savings_snapshot.jsonl):
-  whitelisted integer counts and opaque ids only - raw telemetry with local
-  paths never ships).
-
-Retired: an earlier version of this section cited **52.3%** token savings -
-a deterministic projection against an assumed 87,000-token baseline, a model,
-never a measurement (kept in [`benchmarks/model.py`](benchmarks/model.py) for
-provenance; see gnomon-eval ADR-0011). A later version cited **90.7%**
-(n=100, 2026-07-04) - a real measurement that validates in hindsight (its
-recoverable window reproduces at 90.5% under the declared remaps) but was
-computed live against local paths. The first committed-snapshot cut
-(2026-07-28) read **89.5%** exact over n=271 and 87.1% floor over n=418; five
-further declared directory moves (2026-08-07) resolved 62 more requests and
-produced the figure above, which anyone can recompute.
-
-Measured compression telemetry from running the real pipeline (`phi3:mini`
-via Ollama, caveman + RTK) over 69 representative technical context windows
-(source and docs drawn from this repo), in the committed
-[`data/compression/stats.jsonl`](data/compression/stats.jsonl): **p50 = 85.5%**,
-**mean = 78.8%**, **p95 = 95.5%**, **max = 97.0%** over **n=69 compressed
-windows** (75,258 → 15,778 tokens; 59,480 saved). Engines: 60
-`caveman/phi3+rtk`, 9 `caveman/phi3`. This is a committed local snapshot over
-representative context, not production usage.
-Reproduce with:
-
-```bash
-python -m axon.observability.compression_telemetry
-```
-
-The pipeline is gated by `strategy.enable_compression` and skips inputs too
-small to benefit; see the issue tracker for active work on extending the
-gate's coverage (T-105).
+Until 2026-10-15 AXON served code search (`search_code`) and compressed the
+results, and GNOMON measured both. Those numbers described a subsystem that no
+longer exists: code search was retired because agents rarely used it and went
+back to grep when they did
+([dec-138](docs/decisions/dec-138-stop-code-vectors.md)). The measurements
+stay in [`docs/METRICS.md`](docs/METRICS.md) and the git history for provenance.
 
 ---
 
@@ -300,10 +203,9 @@ gate's coverage (T-105).
 | [`docs/ARD.md`](docs/ARD.md) | Architectural requirements |
 | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) | CLI workflows |
 | [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap |
-| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-120) |
-| [`docs/decisions/dec-106-routing-profiles.md`](docs/decisions/dec-106-routing-profiles.md) | FREE/PAID provider profiles + rate limit gate |
+| [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-138) |
+| [`docs/decisions/dec-138-stop-code-vectors.md`](docs/decisions/dec-138-stop-code-vectors.md) | Code vectorization stopped; AXON is the memory of agent work |
 | [`docs/decisions/dec-109-tool-tracing-and-risk-gating.md`](docs/decisions/dec-109-tool-tracing-and-risk-gating.md) | Tool risk classes, policy gate, tracing middleware |
-| [`benchmarks/README.md`](benchmarks/README.md) | Token savings benchmark |
 
 ---
 

@@ -12,12 +12,14 @@ from axon.hooks.precommit_integration import (
 
 
 class TestEntry:
-    def test_entry_includes_all_four_hooks(self) -> None:
+    def test_entry_includes_the_capture_hooks(self) -> None:
         entry = axon_repo_entry()
         assert "axon-post-commit" in entry
         assert "axon-pre-push" not in entry  # a push is not an AXON event
         assert "axon-post-merge" in entry
-        assert "axon-post-checkout" in entry
+
+    def test_entry_leaves_out_the_retired_post_checkout(self) -> None:
+        assert "post-checkout" not in axon_repo_entry()
 
     def test_entry_uses_local_repo(self) -> None:
         assert "repo: local" in axon_repo_entry()

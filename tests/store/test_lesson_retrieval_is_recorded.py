@@ -1,7 +1,7 @@
 """A lesson that is never retrieved and one that is retrieved daily look identical.
 
 The `lessons` table records what was captured - id, kind, triggers, mistake, tell, fix,
-source, created_at, vector - and nothing about what was DELIVERED. So the only question that
+source, created_at - and nothing about what was DELIVERED. So the only question that
 matters about a memory system ("does anything ever read this?") has no answer, and the
 answer people assume is the flattering one.
 
@@ -33,7 +33,6 @@ from testcontainers.postgres import PostgresContainer  # noqa: E402
 
 from axon.models.lesson import LessonRecord  # noqa: E402
 from axon.store.lessons import LessonStore  # noqa: E402
-from axon.store.vector_common import VECTOR_SIZE  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -54,19 +53,6 @@ async def store(pg_dsn):
     yield s
 
 
-class _Engine:
-    """Embeds any query to the same point, so ranking is not what these tests measure."""
-
-    def embed_one(self, text: str) -> list[float]:
-        return _vector(1.0)
-
-
-def _vector(x: float) -> list[float]:
-    v = [0.0] * VECTOR_SIZE
-    v[0] = x
-    return v
-
-
 def _lesson(**over: object) -> LessonRecord:
     base = {
         "kind": "agent-error",
@@ -75,9 +61,6 @@ def _lesson(**over: object) -> LessonRecord:
         "tell": "the command hangs on stdin with no error",
         "fix": "give the heredoc its own command",
         "source": "forge/agent-errors",
-        # search filters `vector IS NOT NULL`, so a lesson with no embedding
-        # is never returned and never credited.
-        "embedding": _vector(1.0),
     }
     return LessonRecord(**{**base, **over})  # type: ignore[arg-type]
 
@@ -105,7 +88,7 @@ async def test_a_fresh_lesson_has_never_been_retrieved(store, pg_dsn):
 async def test_search_records_the_delivery(store, pg_dsn):
     lesson = _lesson()
     await store.insert(lesson)
-    await store.search("a command that hangs waiting on stdin", engine=_Engine())
+    await store.search("a command that hangs waiting on stdin")
     row = await _counts(pg_dsn, lesson.id)
     assert row["retrieved_count"] == 1, "a delivered lesson still reads as never delivered"
     assert row["last_retrieved_at"] is not None
@@ -116,7 +99,7 @@ async def test_the_count_accumulates(store, pg_dsn):
     lesson = _lesson()
     await store.insert(lesson)
     for _ in range(3):
-        await store.search("hangs on stdin", engine=_Engine())
+        await store.search("hangs on stdin")
     row = await _counts(pg_dsn, lesson.id)
     assert row["retrieved_count"] == 3
 
@@ -129,7 +112,7 @@ async def test_a_lesson_outside_the_result_set_is_not_credited(store, pg_dsn):
     other = _lesson(kind="craft-lesson")
     await store.insert(wanted)
     await store.insert(other)
-    await store.search("anything", engine=_Engine(), kind="agent-error")
+    await store.search("stdin", kind="agent-error")
     assert (await _counts(pg_dsn, wanted.id))["retrieved_count"] == 1
     assert (await _counts(pg_dsn, other.id))["retrieved_count"] == 0
 
@@ -145,5 +128,5 @@ async def test_bookkeeping_failure_never_costs_the_caller_its_lessons(store, pg_
     lesson = _lesson()
     await store.insert(lesson)
     monkeypatch.setattr(store, "_record_retrieval", boom, raising=False)
-    results = await store.search("hangs on stdin", engine=_Engine())
+    results = await store.search("hangs on stdin")
     assert results, "a failed counter write swallowed the lessons themselves"

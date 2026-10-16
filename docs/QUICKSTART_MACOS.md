@@ -2,9 +2,8 @@
 
 Recommended mode: `hybrid-local`
 
-This is the fastest product-facing macOS path to a working `axon search`: run
-the engine on your Mac, let AXON provision the local CPU stack, and keep
-cloud-routed calls available for heavier reasoning.
+This is the fastest product-facing macOS path to a working AXON: run the
+engine on your Mac and let AXON provision its local stack.
 
 ## Before you start
 
@@ -14,16 +13,9 @@ Install these first:
 - Python 3.11+
 - `pipx`
 - Docker Desktop
-- Ollama (optional — opt-in via `AXON_PROVIDER_OLLAMA=1`; skip on 16 GB Macs)
 
-You also need API keys for the active provider profile (default is `budget`):
-
-- `DEEPINFRA_API_KEY` from <https://deepinfra.com> — primary generation
-- `GROQ_API_KEY` from <https://console.groq.com/keys> — the classifier step (both profiles)
-
-If you prefer paid Claude routing via OpenRouter, set
-`AXON_PROVIDER_PROFILE=paid` and provide `OPENROUTER_API_KEY` instead of
-`DEEPINFRA_API_KEY`. See `docs/decisions/dec-106-routing-profiles.md`.
+No provider key is needed: AXON calls no LLM and no embedding provider
+(dec-138).
 
 ## 1. Clone the engine
 
@@ -48,9 +40,6 @@ set -a
 source .env.local
 set +a
 
-export AXON_PROVIDER_PROFILE=budget
-export DEEPINFRA_API_KEY=<your-deepinfra-key>
-export GROQ_API_KEY=<your-groq-key>
 export AXON_ENGINE="$PWD"
 export AXON_VAULT="$HOME/vault"
 ```
@@ -66,21 +55,21 @@ mkdir -p \
 cat > "$AXON_VAULT/knowledge/first-note.md" <<'EOF'
 # AXON
 
-AXON keeps technical notes in an external vault and retrieves them with `axon search`.
+AXON keeps its vault outside the engine repository.
 EOF
 ```
 
-## 5. Index and search
+## 5. Initialize a repo and check
 
 ```bash
-axon index-vault
-axon search "What does this vault contain?" --ctx knowledge
+axon init /path/to/your-repo
+axon health
 ```
 
-If you get a hit back, the quickstart worked.
+`axon health` should report `postgres: ok`. A commit whose subject starts with
+`decision:` now shows up in `axon status`.
 
 ## Next
 
 - Add more notes under `~/vault/knowledge`
-- Index `personal` and `career` when you need them
 - See [Vault setup](VAULT_SETUP.md) for the fuller vault layout

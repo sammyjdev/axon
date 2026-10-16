@@ -3,7 +3,6 @@ from __future__ import annotations
 from axon.cli.setup import (
     format_next_steps,
     run_step_commit,
-    run_step_domain,
     run_step_transport,
     run_step_vault,
 )
@@ -42,38 +41,6 @@ def test_transport_http_local_invalid_port_retries(monkeypatch):
     session = run_step_transport(SetupSession())
     assert session.transport == "http"
     assert session.http_port == 8080
-
-
-def test_domain_single_language(monkeypatch):
-    responses = iter(["1", "1"])  # Python, solo-dev
-    monkeypatch.setattr("typer.prompt", lambda *a, **kw: next(responses))
-    session = run_step_domain(SetupSession())
-    assert "python" in session.languages
-    assert session.profile == "solo-dev"
-
-
-def test_domain_multiple_languages(monkeypatch):
-    responses = iter(["1,2", "2"])  # Python + Kotlin, team-dev
-    monkeypatch.setattr("typer.prompt", lambda *a, **kw: next(responses))
-    session = run_step_domain(SetupSession())
-    assert "python" in session.languages
-    assert "kotlin" in session.languages
-    assert session.profile == "team-dev"
-
-
-def test_domain_other_language(monkeypatch):
-    responses = iter(["6", "1"])  # Other, solo-dev
-    monkeypatch.setattr("typer.prompt", lambda *a, **kw: next(responses))
-    session = run_step_domain(SetupSession())
-    assert session.languages == ()
-    assert session.profile == "solo-dev"
-
-
-def test_domain_privacy_profile(monkeypatch):
-    responses = iter(["1", "3"])  # Python, privacy-first
-    monkeypatch.setattr("typer.prompt", lambda *a, **kw: next(responses))
-    session = run_step_domain(SetupSession())
-    assert session.profile == "privacy-first"
 
 
 def test_vault_default_contexts(monkeypatch):
@@ -153,7 +120,7 @@ def test_next_steps_stdio():
     # dec-125 retired `pb` and deleted `index` outright; setup was still
     # printing both as the next step an operator should type.
     assert "axon" in text
-    assert "axon index-dev" in text
+    assert "index" not in text
 
 
 def test_next_steps_http_local():
@@ -161,7 +128,7 @@ def test_next_steps_http_local():
     text = format_next_steps(session)
     assert "8080" in text
     assert "ngrok" in text
-    assert "axon index-dev" in text
+    assert "index" not in text
 
 
 def test_next_steps_http_server():
@@ -169,4 +136,22 @@ def test_next_steps_http_server():
     text = format_next_steps(session)
     assert "9000" in text
     assert "reverse proxy" in text
-    assert "axon index-dev" in text
+    assert "index" not in text
+
+
+def test_the_wizard_never_asks_which_languages_are_used(tmp_path, monkeypatch):
+    """Nothing read the answer, so the question went (2026-10-15)."""
+    from axon.cli.setup import run_setup
+
+    asked: list[str] = []
+    answers = iter(["1", "1", "2"])  # stdio, personal, no work context
+
+    def fake_prompt(text, *args, **kwargs):
+        asked.append(text)
+        return next(answers)
+
+    monkeypatch.setattr("typer.prompt", fake_prompt)
+    run_setup(config_path=tmp_path / "axon.toml", vault_root=tmp_path / "vault")
+
+    assert len(asked) == 3
+    assert not any("language" in q.lower() or "profile" in q.lower() for q in asked)

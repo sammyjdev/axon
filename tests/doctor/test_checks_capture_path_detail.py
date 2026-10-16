@@ -25,7 +25,6 @@ import pytest
 
 from axon.doctor import CheckStatus
 from axon.doctor.checks.capture_path import (
-    check_capture_gap,
     check_hook_interpreters,
     check_install_freshness,
 )
@@ -120,23 +119,6 @@ class TestInstallFreshnessDetailTruncation:
         assert "e/mod.py" not in result.detail
         assert "f/mod.py" not in result.detail
         assert "(+2 more)" in result.detail
-
-
-class TestCaptureGapHonestSkipDetail:
-    def test_onboarded_repo_with_failing_git_log_is_not_reported_as_no_repos(
-        self, tmp_path: Path
-    ) -> None:
-        dev_root = tmp_path / "dev"
-        # Has an AXON hook (so it counts as onboarded) but is not an actual
-        # git repository - `git log` inside it fails.
-        _make_hook_repo(dev_root / "notarealrepo", sys.executable)
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is CheckStatus.OK
-        assert result.detail.startswith("skipped: ")
-        assert result.detail != "skipped: no onboarded repos"
-        assert "1" in result.detail
 
 
 class TestHookInterpreterMalformedBlock:

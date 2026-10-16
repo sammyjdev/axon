@@ -73,3 +73,21 @@ def test_install_outside_git_repo_raises(tmp_path: Path) -> None:
 
 def test_hooks_installed_false_when_absent(repo: Path) -> None:
     assert hooks_installed(repo) is False
+
+
+def test_post_checkout_is_no_longer_installed(repo: Path) -> None:
+    install_hooks(repo)
+    assert not (repo / ".git" / "hooks" / "post-checkout").exists()
+
+
+def test_reinstall_removes_a_retired_post_checkout_block(repo: Path) -> None:
+    hook = repo / ".git" / "hooks" / "post-checkout"
+    hook.write_text(
+        "#!/usr/bin/env bash\necho mine\n\n# >>> AXON git hook >>>\n"
+        "python -m axon.hooks.git_event post-checkout || true\n# <<< AXON git hook <<<\n",
+        encoding="utf-8",
+    )
+    install_hooks(repo)
+    text = hook.read_text(encoding="utf-8")
+    assert "echo mine" in text
+    assert "git_event" not in text

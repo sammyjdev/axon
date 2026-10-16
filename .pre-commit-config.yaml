@@ -16,7 +16,7 @@ repos:
         # repo's CI ruff job either). Mirrors ci.yml's dec-107 scope TODO.
         # This is an enumerated ratchet, not a directory exclude — any NEW
         # file added under scripts/ or tests/ is still linted.
-        exclude: ^(tests/(config/test_runtime_expansion|context/test_rtk_ccr|embedder/test_md_relations|store/test_stores|test_health_check)|scripts/(checks/(ci_status|coupling|drift|performance|versioning)|health-check|analyze_retrieval_telemetry))\.py$
+        exclude: ^(tests/(config/test_runtime_expansion|embedder/test_md_relations|store/test_stores|test_health_check)|scripts/(checks/(ci_status|coupling|drift|performance|versioning)|health-check|analyze_retrieval_telemetry))\.py$
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:

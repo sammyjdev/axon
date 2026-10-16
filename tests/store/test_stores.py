@@ -1,45 +1,12 @@
 """
-Testes unitários dos stores — T-034.
-graph_store e session_store usam Testcontainers.
-collections.py é testado sem infra (lógica pura).
-vector_store requer Qdrant real — testa apenas a lógica de agrupamento/batch.
+Testes unitários dos stores — T-034. session_store usa Testcontainers.
 """
 
 from collections.abc import AsyncGenerator
 
 import pytest
 
-from axon.store.collections import get_search_collections
 from axon.store.session_store import ADR, CodeChange, SessionMemory, SessionStore
-
-# ── collections.py ─────────────────────────────────────────────────────────────
-
-
-class TestGetSearchCollections:
-    def test_no_ctx_excludes_work(self) -> None:
-        result = get_search_collections(None)
-        assert "work" not in result
-        assert set(result) == {"personal", "career", "knowledge", "saas"}
-
-    def test_explicit_work_ctx_returns_only_work(self) -> None:
-        result = get_search_collections("work")
-        assert result == ["work"]
-
-    def test_personal_ctx_excludes_work(self) -> None:
-        result = get_search_collections("personal")
-        assert "work" not in result
-
-    def test_explicit_non_work_ctx_searches_every_non_protected_collection(self) -> None:
-        """dec-131: a non-protected ctx orders retrieval, it does not partition it."""
-        expected = ["personal", "career", "knowledge", "saas"]
-        assert get_search_collections("knowledge") == expected
-        assert get_search_collections("career") == expected
-        assert get_search_collections("saas") == expected
-
-    def test_empty_string_ctx_excludes_work(self) -> None:
-        result = get_search_collections("")
-        assert "work" not in result
-
 
 # ── session_store.py ────────────────────────────────────────────────────────────
 

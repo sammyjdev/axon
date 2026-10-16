@@ -1,6 +1,6 @@
 # dec-118 — Keep rtkx for reversible compression; use LLMLingua-2 as the lossy benchmark baseline
 
-- Status: accepted
+- Status: superseded by dec-137
 - Date: 2026-06-20
 - Relates to: dec-116/dec-117 (narrow-and-deep, swappable stack layers), the
   compression telemetry in `data/compression/stats.jsonl` and

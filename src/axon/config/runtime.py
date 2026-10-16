@@ -1,60 +1,19 @@
 from __future__ import annotations
 
-import functools
 import logging
 import os
-import subprocess
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-
-from axon.router.llm_backend import (
-    default_compressor_model,
-    default_scoring_model,
-    resolve_litellm_model,
-)
 
 logger = logging.getLogger(__name__)
 
 # Carrega .env.local sobre .env, sem sobrescrever vars já exportadas pelo shell
 load_dotenv(Path(__file__).parents[3] / ".env", override=False)
 load_dotenv(Path(__file__).parents[3] / ".env.local", override=False)
-
-
-@functools.cache
-def _decoded_store() -> dict[str, str]:
-    store = Path(
-        os.environ.get("AXON_CREDENTIALS_FILE")
-        or Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-        / "axon"
-        / "credentials.cred"
-    )
-    if not store.is_file():
-        return {}
-    try:
-        decrypted = subprocess.run(  # noqa: S603
-            ["systemd-creds", "--user", "decrypt", "--name=axon", str(store), "-"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=15,
-        ).stdout
-    except (OSError, subprocess.SubprocessError) as exc:
-        logger.warning("credential store %s not loaded: %s", store, exc)
-        return {}
-    creds: dict[str, str] = {}
-    for line in decrypted.splitlines():
-        name, sep, value = line.partition("=")
-        if sep:
-            creds[name] = value
-    return creds
-
-
-def credential_from_store(name: str) -> str | None:
-    return _decoded_store().get(name) or None
 
 
 RuntimeMode = Literal["full-local", "hybrid-local", "remote-infra", "minimal"]
@@ -82,64 +41,17 @@ _BUILTIN_PROFILES: dict[str, dict[str, object]] = {
 
 
 @dataclass(frozen=True)
-class EmbedderProviderConfig:
-    """One provider in the bge-m3 embedding chain (EMB-2)."""
-
-    name: str
-    endpoint: str
-    model: str
-    api_key_env: str | None = None
-
-
-@dataclass(frozen=True)
-class EmbedderChainConfig:
-    """Ordered bge-m3 provider chain (default: DeepInfra; Ollama first when opted in).
-
-    Order and membership are configurable via AXON_EMBEDDER_CHAIN (comma-separated
-    provider names); each listed provider's endpoint/model id is fixed per the
-    verified bge-m3 interchangeability design (see docs/decisions).
-    """
-
-    model_name: str
-    providers: tuple[EmbedderProviderConfig, ...]
-
-
-@dataclass(frozen=True)
 class RuntimeConfig:
     mode: RuntimeMode
     engine_root: Path
     vault_root: Path
     db_path: Path
     pg_url: str
-    rtk_max_tokens: int
-    caveman_num_ctx: int
     ollama_remote_host: str | None
-    ollama_local_host: str
-    caveman_model: str
-    scoring_model: str
-    scoring_num_ctx: int
-    classifier_cloud_model: str
-    classifier_timeout_seconds: float
     policy_version: str
-    provider_anthropic_enabled: bool
-    provider_openrouter_enabled: bool
-    provider_ollama_enabled: bool
-    provider_profile: str
-    openrouter_compliance_required: bool
-    embedder_chain: EmbedderChainConfig = field(
-        default_factory=lambda: load_embedder_chain_config()
-    )
     active_profile: str | None = None
-    vector_backend: str = "pgvector"
-    fileindex_backend: str = "sqlite"
-    graph_backend: str = "sqlite"
     decisions_backend: str = "sqlite"
     sessions_backend: str = "sqlite"
-    # Bedrock is opt-in (mirrors AXON_PROVIDER_BEDROCK default "0"), so the
-    # fields carry defaults and existing RuntimeConfig call sites stay valid.
-    provider_bedrock_enabled: bool = False
-    bedrock_profile: str | None = None
-    bedrock_region: str = "us-east-1"
 
     @property
     def data_root(self) -> Path:
@@ -169,9 +81,6 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-_VALID_VECTOR_BACKENDS = ("pgvector",)
-
-
 def _resolve_concern_backend(concern: str, overrides: dict) -> str:
     """Select a relational backend for ``concern``.
 
@@ -193,16 +102,6 @@ def _resolve_concern_backend(concern: str, overrides: dict) -> str:
     return backend
 
 
-def _resolve_fileindex_backend(overrides: dict) -> str:
-    """Select the file_index backend: AXON_FILEINDEX_BACKEND env > axon.toml > default."""
-    return _resolve_concern_backend("fileindex", overrides)
-
-
-def _resolve_graph_backend(overrides: dict) -> str:
-    """Select the graph backend: AXON_GRAPH_BACKEND env > axon.toml > default."""
-    return _resolve_concern_backend("graph", overrides)
-
-
 def _resolve_decisions_backend(overrides: dict) -> str:
     """Select the decisions backend: AXON_DECISIONS_BACKEND env > axon.toml > default."""
     return _resolve_concern_backend("decisions", overrides)
@@ -211,17 +110,6 @@ def _resolve_decisions_backend(overrides: dict) -> str:
 def _resolve_sessions_backend(overrides: dict) -> str:
     """Select the sessions backend: AXON_SESSIONS_BACKEND env > axon.toml > default."""
     return _resolve_concern_backend("sessions", overrides)
-
-
-def _resolve_vector_backend(overrides: dict) -> str:
-    """Select the vector backend: AXON_VECTOR_BACKEND env > axon.toml > default."""
-    raw = os.environ.get("AXON_VECTOR_BACKEND") or overrides.get("vector_backend") or "pgvector"
-    backend = raw.strip().lower()
-    if backend not in _VALID_VECTOR_BACKENDS:
-        raise ValueError(
-            f"Invalid vector_backend {backend!r}; expected one of {list(_VALID_VECTOR_BACKENDS)}"
-        )
-    return backend
 
 
 def _load_toml_runtime_overrides() -> dict[str, str]:
@@ -234,9 +122,8 @@ def _load_toml_runtime_overrides() -> dict[str, str]:
     if not isinstance(runtime, dict):
         return {}
     allowed = {
-        "mode", "engine_root", "vault_root", "active_profile", "vector_backend",
-        "fileindex_backend", "graph_backend", "decisions_backend", "sessions_backend",
-        "db_backend",
+        "mode", "engine_root", "vault_root", "active_profile",
+        "decisions_backend", "sessions_backend", "db_backend",
     }
     return {key: str(value) for key, value in runtime.items() if key in allowed}
 
@@ -649,66 +536,6 @@ def _load_runtime_mode() -> RuntimeMode:
     return value
 
 
-
-_EMBEDDER_CHAIN_MODEL = "bge-m3"
-# NIM removed from the default: its bge-m3 embedding endpoint returns
-# HTTP 500 upstream (verified live 2026-07-21). Re-enable by name via
-# AXON_EMBEDDER_CHAIN if the provider fixes it.
-# Ollama joins the default only when opted in (dec-106): on a machine without it every
-# embed pays a refused connection and logs a traceback before DeepInfra serves.
-_DEFAULT_EMBEDDER_CHAIN_ORDER = ("deepinfra",)
-_OLLAMA_EMBEDDER_CHAIN_ORDER = ("ollama", "deepinfra")
-
-
-def _embedder_provider_specs(ollama_local_host: str) -> dict[str, EmbedderProviderConfig]:
-    return {
-        "ollama": EmbedderProviderConfig(
-            name="ollama",
-            endpoint=f"{ollama_local_host.rstrip('/')}/api/embed",
-            model="bge-m3",
-        ),
-        "nim": EmbedderProviderConfig(
-            name="nim",
-            endpoint="https://integrate.api.nvidia.com/v1/embeddings",
-            model="baai/bge-m3",
-            api_key_env="NVIDIA_NIM_API_KEY",
-        ),
-        "deepinfra": EmbedderProviderConfig(
-            name="deepinfra",
-            endpoint="https://api.deepinfra.com/v1/openai/embeddings",
-            model="BAAI/bge-m3",
-            api_key_env="DEEPINFRA_API_KEY",
-        ),
-    }
-
-
-def load_embedder_chain_config() -> EmbedderChainConfig:
-    """Load the bge-m3 provider chain.
-
-    Order/membership: AXON_EMBEDDER_CHAIN env (comma-separated provider names,
-    default "deepinfra", or "ollama,deepinfra" with AXON_PROVIDER_OLLAMA=1). Each
-    provider's endpoint/model id is fixed.
-    """
-    ollama_local_host = os.environ.get("AXON_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434")
-    default_order = (
-        _OLLAMA_EMBEDDER_CHAIN_ORDER
-        if os.environ.get("AXON_PROVIDER_OLLAMA", "0") == "1"
-        else _DEFAULT_EMBEDDER_CHAIN_ORDER
-    )
-    raw_order = os.environ.get("AXON_EMBEDDER_CHAIN", ",".join(default_order))
-    specs = _embedder_provider_specs(ollama_local_host)
-    order = [name.strip().lower() for name in raw_order.split(",") if name.strip()]
-    unknown = [name for name in order if name not in specs]
-    for name in unknown:
-        logger.warning(
-            "AXON_EMBEDDER_CHAIN: unknown provider %r skipped (known: %s)",
-            name,
-            ", ".join(sorted(specs)),
-        )
-    providers = tuple(specs[name] for name in order if name in specs)
-    return EmbedderChainConfig(model_name=_EMBEDDER_CHAIN_MODEL, providers=providers)
-
-
 def load_runtime_config() -> RuntimeConfig:
     overrides = _load_toml_runtime_overrides()
     engine_root = _env_path(
@@ -726,57 +553,11 @@ def load_runtime_config() -> RuntimeConfig:
         vault_root=vault_root,
         db_path=engine_root / "data" / "axon.db",
         pg_url=os.environ.get("AXON_PG_URL", "postgresql://axon:axon@localhost:5433/axon"),
-        rtk_max_tokens=int(os.environ.get("AXON_RTK_MAX_TOKENS", "450")),
-        caveman_num_ctx=int(os.environ.get("AXON_CAVEMAN_NUM_CTX", "4096")),
         ollama_remote_host=os.environ.get("AXON_OLLAMA_REMOTE_HOST") or None,
-        ollama_local_host=os.environ.get("AXON_OLLAMA_LOCAL_HOST", "http://127.0.0.1:11434"),
-        caveman_model=os.environ.get(
-            "AXON_CAVEMAN_MODEL",
-            os.environ.get("OLLAMA_MODEL_PRIMARY", default_compressor_model()),
-        ),
-        scoring_model=resolve_litellm_model(
-            os.environ.get("AXON_SCORING_MODEL", default_scoring_model())
-        ),
-        scoring_num_ctx=int(os.environ.get("AXON_SCORING_NUM_CTX", "8192")),
-        classifier_cloud_model=_resolve_classifier_model(),
-        classifier_timeout_seconds=float(os.environ.get("AXON_CLASSIFIER_TIMEOUT", "4.0")),
         policy_version=os.environ.get("AXON_POLICY_VERSION", "2026-04-21"),
-        provider_anthropic_enabled=os.environ.get("AXON_PROVIDER_ANTHROPIC", "1") == "1",
-        provider_openrouter_enabled=os.environ.get("AXON_PROVIDER_OPENROUTER", "1") == "1",
-        provider_ollama_enabled=os.environ.get("AXON_PROVIDER_OLLAMA", "0") == "1",
-        provider_bedrock_enabled=os.environ.get("AXON_PROVIDER_BEDROCK", "0") == "1",
-        bedrock_profile=os.environ.get("AXON_BEDROCK_PROFILE") or None,
-        bedrock_region=os.environ.get("AXON_BEDROCK_REGION", "us-east-1"),
-        provider_profile=_resolve_provider_profile(),
-        openrouter_compliance_required=_env_bool("AXON_OPENROUTER_COMPLIANCE", False),
-        embedder_chain=load_embedder_chain_config(),
-        vector_backend=_resolve_vector_backend(overrides),
-        fileindex_backend=_resolve_fileindex_backend(overrides),
-        graph_backend=_resolve_graph_backend(overrides),
         decisions_backend=_resolve_decisions_backend(overrides),
         sessions_backend=_resolve_sessions_backend(overrides),
     )
-
-
-def _resolve_provider_profile() -> str:
-    from axon.router.profiles import available_profiles
-
-    raw = os.environ.get("AXON_PROVIDER_PROFILE", "budget").strip().lower()
-    if raw not in available_profiles():
-        raise ValueError(
-            f"AXON_PROVIDER_PROFILE invalido: {raw!r}. Disponiveis: {available_profiles()}"
-        )
-    return raw
-
-
-def _resolve_classifier_model() -> str:
-    from axon.router.profiles import get_profile
-
-    override = os.environ.get("AXON_CLASSIFIER_CLOUD_MODEL")
-    if override:
-        return override
-    profile = get_profile(_resolve_provider_profile())
-    return profile.classifier_model
 
 
 def is_corporate_context(ctx: str | None) -> bool:

@@ -17,17 +17,16 @@ from axon.exceptions import GitAnchorError
 
 # git hook filename -> logical event passed to `axon.hooks.git_event`.
 # post-merge / post-checkout were added by dec-111 to trigger L1-full
-# revalidation of pending ADR drafts.
+# revalidation of pending ADR drafts; post-checkout went with them (dec-138).
 HOOKS: dict[str, str] = {
     "post-commit": "commit",
     "post-merge": "post-merge",
-    "post-checkout": "post-checkout",
 }
 
 # Hooks older versions installed and this one does not. Installing or
-# uninstalling strips AXON's block from them, so a push stops paying for a
-# Python start that does nothing.
-RETIRED_HOOKS: tuple[str, ...] = ("pre-push",)
+# uninstalling strips AXON's block from them, so a push or a checkout stops
+# paying for a Python start that does nothing.
+RETIRED_HOOKS: tuple[str, ...] = ("pre-push", "post-checkout")
 
 _BEGIN = "# >>> AXON git hook >>>"
 _END = "# <<< AXON git hook <<<"

@@ -15,7 +15,6 @@ import asyncpg
 from axon.core.decision import Decision
 from axon.store.session_store import ADR
 
-
 #: Advisory lock key that serialises new-decision inserts ("axondec1").
 _DECISION_ID_LOCK = 0x61786F6E64656331
 

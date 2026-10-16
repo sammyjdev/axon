@@ -9,13 +9,13 @@ capture, recall, and handoff start working immediately.
    ```bash
    pipx install -e /path/to/axon
    ```
-2. Backend running locally (single Postgres instance, `pgvector` for vectors —
-   dec-121 retired Qdrant, Redis and mem0):
+2. Backend running locally (a single Postgres instance — dec-121 retired
+   Qdrant, Redis and mem0, dec-138 retired pgvector):
    ```bash
    cd /path/to/axon && docker compose up -d axon-postgres
    ```
-3. `axon health` prints `pgvector: ok` or `down (...)`, `vault: <path>` or
-   `not found`, and `git: ok` or `down (...)`. If `pgvector` reports
+3. `axon health` prints `postgres: ok` or `down (...)`, `vault: <path>` or
+   `not found`, and `git: ok` or `down (...)`. If `postgres` reports
    `down (timeout)`, check `AXON_PG_URL` — it defaults to port 5433, but a
    `docker-compose.override.yml` can remap it on a machine with a port
    collision.
@@ -32,21 +32,21 @@ It:
 
 - aborts if the repo already has a non-AXON `post-commit` / `pre-push` hook
   (so you can resolve husky / lefthook / project-specific hooks first);
-- runs `axon init .` (installs the four hooks — `post-commit`, `pre-push`,
-  `post-merge`, `post-checkout` — and indexes the code graph);
+- runs `axon init .` (installs the two hooks — `post-commit` and
+  `post-merge`);
 - creates or updates `.claude/settings.json` so Claude Code auto-loads the
   AXON MCP server next time it starts.
 
-After the script exits clean, restart your coding agent and make a commit —
-`axon status` should list the captured decision.
+After the script exits clean, restart your coding agent and make a commit
+whose subject starts with `decision:` — `axon status` should list it.
 
 ## What lives where
 
 | Concern | Location |
 |---|---|
-| AXON code, hooks, indexer | axon repo (engine) |
-| Backend (Postgres + pgvector) | `docker compose` in axon repo |
-| Per-repo capture / hooks | `.git/hooks/post-commit`, `.git/hooks/pre-push` |
+| AXON code and hooks | axon repo (engine) |
+| Backend (Postgres) | `docker compose` in axon repo |
+| Per-repo capture / hooks | `.git/hooks/post-commit`, `.git/hooks/post-merge` |
 | Agent MCP registration | `.claude/settings.json` in target repo |
 | Vault (optional, for ADR export) | `$AXON_VAULT` (defaults to `~/vault`) |
 

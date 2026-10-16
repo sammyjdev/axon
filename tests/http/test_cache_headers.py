@@ -40,3 +40,9 @@ def test_responses_are_not_cacheable(client, path: str) -> None:
 def test_unmatched_route_is_not_cacheable(client) -> None:
     """The scanner hit `/`, which has no route — the 404 must carry the header too."""
     assert "no-store" in client.get("/").headers.get("cache-control", "")
+
+
+def test_the_chat_completions_endpoint_is_gone(client) -> None:
+    """It served gnomon-eval through code search and the router, both retired."""
+    response = client.post("/v1/chat/completions", json={"messages": []})
+    assert response.status_code == 404

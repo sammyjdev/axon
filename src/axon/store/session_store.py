@@ -6,7 +6,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from axon.core.decision import Decision
-from axon.core.edge import Edge
 from axon.store.pending import DrainResult, _pending_paths
 
 
@@ -60,13 +59,12 @@ class SessionStore:
         # backend is Postgres-only (dec-121 Phase 3) and ignores it.
         self._path = str(db_path)
         self._repo_init_lock = asyncio.Lock()
-        self._graph_repo = None
         self._decision_repo = None
         self._session_repo = None
 
     async def init(self) -> None:
         """No-op: the Postgres repositories ensure their own schema lazily on
-        first access (see _graph/_decisions/_sessions)."""
+        first access (see _decisions/_sessions)."""
 
     # ── ADR ──────────────────────────────────────────────────────────────────
 
@@ -116,19 +114,7 @@ class SessionStore:
         repo = await self._sessions()
         return await repo.get_recent_changes(file_path, limit)
 
-    # ── Graph / Decisions ─────────────────────────────────────────────────────
-
-    async def _graph(self):
-        if self._graph_repo is None:
-            async with self._repo_init_lock:
-                if self._graph_repo is None:
-                    from axon.config.runtime import load_runtime_config
-                    from axon.store.pg_graph_repository import PostgresGraphRepository
-
-                    repo = PostgresGraphRepository(load_runtime_config().pg_url)
-                    await repo.ensure_schema()
-                    self._graph_repo = repo
-        return self._graph_repo
+    # ── Decisions ─────────────────────────────────────────────────────────────
 
     async def _decisions(self):
         if self._decision_repo is None:
@@ -153,55 +139,6 @@ class SessionStore:
                     await repo.ensure_schema()
                     self._session_repo = repo
         return self._session_repo
-
-    async def add_node(
-        self,
-        node_id: str,
-        node_type: str,
-        *,
-        label: str = "",
-        payload: dict | None = None,
-    ) -> None:
-        repo = await self._graph()
-        return await repo.add_node(node_id, node_type, label=label, payload=payload)
-
-    async def add_edge(self, edge: Edge) -> None:
-        repo = await self._graph()
-        return await repo.add_edge(edge)
-
-    async def get_node(self, node_id: str) -> dict[str, object] | None:
-        """Return a node by id with its payload parsed, or None if absent."""
-        repo = await self._graph()
-        return await repo.get_node(node_id)
-
-    async def query_subgraph(self, node_id: str, depth: int = 2) -> dict[str, object]:
-        repo = await self._graph()
-        return await repo.query_subgraph(node_id, depth)
-
-    async def shortest_path(
-        self, from_node: str, to_node: str, max_depth: int = 10
-    ) -> list[str] | None:
-        """Shortest directed path between two nodes (BFS over edges).
-
-        Returns the node ids from ``from_node`` to ``to_node`` inclusive, or
-        None if no path exists within ``max_depth`` hops.
-        """
-        repo = await self._graph()
-        return await repo.shortest_path(from_node, to_node, max_depth)
-
-    async def all_nodes(self) -> list[dict[str, object]]:
-        """Return every persisted node (id/type/label/payload) for graph export.
-
-        Read-only full scan used by the GLYPH bridge, which needs the whole
-        graph at once rather than a seed-anchored subgraph.
-        """
-        repo = await self._graph()
-        return await repo.all_nodes()
-
-    async def all_edges(self) -> list[Edge]:
-        """Return every persisted edge as :class:`Edge` for graph export."""
-        repo = await self._graph()
-        return await repo.all_edges()
 
     async def save_decision(self, decision: Decision) -> None:
         repo = await self._decisions()
@@ -259,8 +196,6 @@ class SessionStore:
         return await repo.next_decision_id()
 
     async def close(self) -> None:
-        if self._graph_repo is not None and hasattr(self._graph_repo, "close"):
-            await self._graph_repo.close()
         if self._decision_repo is not None and hasattr(self._decision_repo, "close"):
             await self._decision_repo.close()
         if self._session_repo is not None and hasattr(self._session_repo, "close"):

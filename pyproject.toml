@@ -29,21 +29,16 @@ classifiers = [
 # Ceilings are the next major above the version this project is actually tested
 # on, so patches and minors still float. 0.x pins to <1.0: for those projects the
 # 1.0 step is the breaking one, and their minors have shipped fine here (typer
-# 0.12 -> 0.25, fastembed 0.4 -> 0.8, tree-sitter 0.23 -> 0.25 all without issue,
-# which is why this is a ceiling and not a freeze).
+# 0.12 -> 0.25 without issue, which is why this is a ceiling and not a freeze).
 #
-# [dev], [bench] and [bedrock] are deliberately NOT capped: a break there fails
+# [dev] and [bench] are deliberately NOT capped: a break there fails
 # CI loudly and gets fixed in the same session, while a runtime break ships to
 # whoever runs pip install.
 #
 # Raising a ceiling is a normal change - bump it, let the full-suite CI job run,
 # and keep it if green.
 dependencies = [
-    "fastembed>=0.4.0,<1.0",
-    "tree-sitter>=0.23.0,<1.0",
-    "tree-sitter-java>=0.23.0,<1.0",
-    "tree-sitter-python>=0.23.0,<1.0",
-    "tree-sitter-typescript>=0.23.0,<1.0",
+    # Only the vault hook (vault/til_promoter) still calls an LLM.
     "litellm>=1.40.0,<2",
     # Migrated to 2.x on 2026-08-07 (DEBT-2). 2.0 dropped `mcp.server.fastmcp`
     # for `mcp.server.mcpserver.MCPServer`; the decorator API is unchanged, so
@@ -61,24 +56,6 @@ dependencies = [
     "structlog>=24.0,<27",
     "pyyaml>=6.0,<7",
     "asyncpg>=0.29,<1.0",
-    "pgvector>=0.3,<1.0",
-    # GLYPH is the canonical knowledge-graph retrieval lib (dec-116). AXON wires
-    # GraphRetriever/NetworkXStore through their constructors (not the
-    # file-based facade), which are stable across the 0.1.0 -> 0.2.0 jump.
-    # `retrieval` extra pulls numpy + scipy (InMemoryVectorIndex, PageRank); we
-    # wrap AXON's own EmbedderEngine, so the heavy `embeddings`/
-    # sentence-transformers extra is intentionally omitted. Pinned to ==0.2.0
-    # (not a range) for the same determinism dec-116 wanted from the old git
-    # tag pin - glyph-kg is now a normal PyPI dependency (GHSA-r7wg-f7r2-8wf7:
-    # PyPI rejects direct git+https Requires-Dist entries outright).
-    "glyph-kg[retrieval]==0.2.1",
-    # glyph's document extractor imports `fitz` at module level in
-    # glyph/extract/document/pdf.py, and axon/obsidian/importer.py imports that
-    # extractor - but neither glyph-kg nor axon declared PyMuPDF, so a clean
-    # install broke `axon obsidian import`. Only surfaced when the full suite
-    # entered CI (2026-08-04); it passed locally because PyMuPDF happened to be
-    # installed by an unrelated project.
-    "pymupdf>=1.24.0,<2",
 ]
 
 [project.urls]
@@ -91,15 +68,10 @@ axon = "axon.__main__:app"
 
 [project.optional-dependencies]
 http = [
-    # OpenAI-compatible HTTP endpoint (axon serve-http).
+    # Dashboard and activity API (axon serve-http).
     # Install with: pip install axon-context-mcp[http]
     "fastapi>=0.111.0,<1.0",
     "uvicorn[standard]>=0.29.0,<1.0",
-]
-bedrock = [
-    # AWS Bedrock generation backend (AXON_PROVIDER_BEDROCK=1). litellm
-    # drives the Converse API through boto3; only pulled by this extra.
-    "boto3>=1.34",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -117,10 +89,6 @@ bench = [
     "matplotlib>=3.8",
 ]
 
-[tool.hatch.metadata]
-# Required for the glyph-kg git+https direct reference (dec-116 delegation).
-allow-direct-references = true
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/axon"]
 
@@ -129,24 +97,6 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 pythonpath = ["."]
-# ---------------------------------------------------------------------------
-# Per-module coverage gate (Plan A touched modules). Run with:
-#
-#   pytest <test-files> \
-#     --cov=axon.embedder.chunker \
-#     --cov=axon.embedder.graph_extractor \
-#     --cov=axon.repo.file_walk \
-#     --cov=axon.embedder.pipeline \
-#     --cov-report=term-missing
-#
-# Target threshold: >= 80% for each module EXCEPT axon.embedder.pipeline.
-#
-# axon.embedder.pipeline is intentionally below 80% at the unit level:
-#   index_path / ingest_file / _flush are runtime integration paths that
-#   require a live embedder + pgvector. These paths are wired and
-#   integration-tested in Plan C. Do NOT add --cov-fail-under globally;
-#   that would fail the suite on pipeline.py prematurely.
-# ---------------------------------------------------------------------------
 
 [tool.ruff]
 # Match requires-python (>=3.11) so ruff never suggests py312-only syntax
@@ -158,7 +108,5 @@ line-length = 100
 select = ["E", "F", "I", "UP", "S"]
 
 [tool.ruff.lint.per-file-ignores]
-# Fixtures alimentam o chunker (ADR-005/D5); estilo nao deve ser modificado.
-"tests/embedder/fixtures/**" = ["UP", "E", "F"]
 # S101 (assert) is the standard pytest idiom in test files, not a security finding.
 "tests/**" = ["S101"]
