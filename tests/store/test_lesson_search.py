@@ -1,27 +1,11 @@
-"""Wave C Task 6: LessonStore.search by cosine distance.
+"""LessonStore.search is Postgres full-text search: no embedding, no provider key.
 
-Two arms, deliberately split:
-
-* The mechanism (ORDER BY <=>, kind filter, triggers filter, limit, excluding
-  rows with no vector) is proven fast and deterministically with a fake engine
-  that returns hand-picked orthogonal vectors - no network, always runs in the
-  gate.
-* The claim ``search()`` exists to make good on - PARAPHRASE retrieval, not
-  lexical matching in disguise - can only be proven with real semantics. A
-  fake or hash-derived vector would make that assertion vacuous: it would pass
-  while proving nothing about paraphrase, which is the entire reason this task
-  exists over ``axon_search`` (see the module docstring in
-  ``axon/store/lessons.py``). That test goes through the real bge-m3 chain
-  (Ollama is not run locally on this machine, so it falls through to
-  DeepInfra - see ``providers.py``) and is opt-in via AXON_RUN_LESSON_SEARCH=1,
-  matching the precedent already set by
-  ``tests/recall/test_recall_guard.py``'s AXON_RUN_RECALL gate: a
-  skipped-by-default test that is genuinely semantic beats a fast one that
-  tests nothing.
+Measured on the 41 real lessons on 2026-10-15 (`.specs/features/memory-direction/
+lesson_search_compare.py`): 20 English queries written the way an agent asks before a
+task put the expected lesson in the top 5 for 20 of 20, the same as pgvector, in about
+5 ms instead of 600. Triggers weigh most, then the mistake, the tell and the fix.
 """
 from __future__ import annotations
-
-import os
 
 import asyncpg
 import pytest
@@ -31,7 +15,6 @@ from testcontainers.postgres import PostgresContainer  # noqa: E402
 
 from axon.models.lesson import LessonRecord  # noqa: E402
 from axon.store.lessons import LessonStore  # noqa: E402
-from axon.store.vector_common import VECTOR_SIZE  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -64,135 +47,87 @@ def _lesson(**over: object) -> LessonRecord:
     return LessonRecord(**{**base, **over})  # type: ignore[arg-type]
 
 
-class _FakeEngine:
-    """Deterministic, orthogonal vectors - proves the SQL, not semantics."""
+async def test_the_lesson_that_shares_the_query_words_comes_first(store):
+    # Inserted first on purpose: a search that fell back to insertion order would
+    # put the unrelated lesson first and this would catch it.
+    await store.insert(
+        _lesson(
+            triggers=["imaplib"],
+            mistake="assumed select() raises on a missing mailbox",
+            tell="silently drops back to AUTH state",
+            fix="check the typ returned explicitly",
+        )
+    )
+    mapfile = await store.insert(_lesson())
 
-    def __init__(self, table: dict[str, list[float]]) -> None:
-        self._table = table
+    results = await store.search("reading command output into a bash array")
 
-    def embed_one(self, text: str) -> list[float]:
-        return self._table[text]
+    assert [r.id for r in results][0] == mapfile
 
 
-def _one_hot(index: int) -> list[float]:
-    vector = [0.0] * VECTOR_SIZE
-    vector[index] = 1.0
-    return vector
+async def test_word_forms_match_through_stemming(store):
+    wanted = await store.insert(
+        _lesson(triggers=["python-test"], mistake="a shared helper overwrote the test fixture")
+    )
+
+    results = await store.search("helpers overwriting fixtures")
+
+    assert [r.id for r in results] == [wanted]
 
 
-async def test_search_orders_by_cosine_distance_to_the_query(store):
-    # far inserted FIRST on purpose: a search that quietly fell back to
-    # insertion order (e.g. a dropped ORDER BY) would put it first too, and
-    # this assertion would still catch that instead of passing by accident.
-    far_id = await store.insert(_lesson(embedding=_one_hot(1), mistake="far"))
-    near_id = await store.insert(_lesson(embedding=_one_hot(0), mistake="near"))
+async def test_a_trigger_outranks_the_same_word_in_the_fix(store):
+    in_fix = await store.insert(
+        _lesson(triggers=["http"], mistake="retried at once", tell="429", fix="add jitter")
+    )
+    in_trigger = await store.insert(
+        _lesson(triggers=["jitter"], mistake="retried at once", tell="429", fix="back off")
+    )
 
-    engine = _FakeEngine({"q": _one_hot(0)})
-    results = await store.search("q", engine=engine)
+    results = await store.search("jitter")
 
-    ids = [r.id for r in results]
-    assert ids.index(near_id) < ids.index(far_id)
+    assert [r.id for r in results] == [in_trigger, in_fix]
+
+
+async def test_a_query_sharing_no_word_returns_nothing(store):
+    await store.insert(_lesson())
+
+    assert await store.search("kubernetes ingress certificate") == []
+
+
+async def test_a_query_of_only_stop_words_returns_nothing(store):
+    await store.insert(_lesson())
+
+    assert await store.search("the and of") == []
+
+
+async def test_punctuation_in_the_query_is_not_an_operator(store):
+    wanted = await store.insert(_lesson())
+
+    results = await store.search("bash & | ! mapfile: (array) 'quoted' <-> a&b")
+
+    assert [r.id for r in results] == [wanted]
 
 
 async def test_search_filters_by_kind(store):
-    await store.insert(_lesson(embedding=_one_hot(0), kind="agent-error", mistake="a"))
-    craft_id = await store.insert(
-        _lesson(embedding=_one_hot(0), kind="craft-lesson", mistake="b")
-    )
+    await store.insert(_lesson(kind="agent-error"))
+    craft_id = await store.insert(_lesson(kind="craft-lesson"))
 
-    engine = _FakeEngine({"q": _one_hot(0)})
-    results = await store.search("q", engine=engine, kind="craft-lesson")
+    results = await store.search("mapfile", kind="craft-lesson")
 
     assert [r.id for r in results] == [craft_id]
 
 
 async def test_search_filters_by_triggers_overlap(store):
-    bash_id = await store.insert(_lesson(embedding=_one_hot(0), triggers=["bash"], mistake="a"))
-    await store.insert(_lesson(embedding=_one_hot(0), triggers=["python"], mistake="b"))
+    bash_id = await store.insert(_lesson(triggers=["bash"]))
+    await store.insert(_lesson(triggers=["python"]))
 
-    engine = _FakeEngine({"q": _one_hot(0)})
-    results = await store.search("q", engine=engine, triggers=["bash"])
+    results = await store.search("mapfile", triggers=["bash"])
 
     assert [r.id for r in results] == [bash_id]
 
 
 async def test_search_respects_limit(store):
     for i in range(3):
-        await store.insert(_lesson(embedding=_one_hot(0), mistake=f"m{i}"))
+        await store.insert(_lesson(source=f"s{i}"))
 
-    engine = _FakeEngine({"q": _one_hot(0)})
-    results = await store.search("q", engine=engine, limit=2)
-
-    assert len(results) == 2
-
-
-async def test_search_excludes_lessons_with_no_embedding(store):
-    await store.insert(_lesson(embedding=None, mistake="no-vector"))
-    with_vector_id = await store.insert(_lesson(embedding=_one_hot(0), mistake="has-vector"))
-
-    engine = _FakeEngine({"q": _one_hot(0)})
-    results = await store.search("q", engine=engine)
-
-    assert [r.id for r in results] == [with_vector_id]
-
-
-@pytest.mark.skipif(
-    os.environ.get("AXON_RUN_LESSON_SEARCH") != "1",
-    reason="set AXON_RUN_LESSON_SEARCH=1 to run the real bge-m3 paraphrase gate",
-)
-async def test_paraphrased_query_ranks_the_paraphrased_lesson_first(store):
-    """The point of this task: axon_search already matches literal text and
-    misses exactly this. Proves the store finds a lesson whose WORDS the query
-    never uses.
-    """
-    from axon.embedder.engine import EmbedderEngine
-    from axon.embedder.lesson_embedding import embed_lesson
-    from axon.models.lesson import LessonCreate
-
-    engine = EmbedderEngine()
-
-    mapfile_lesson = LessonCreate(
-        kind="agent-error",
-        triggers=["shell-script", "bash"],
-        mistake="used mapfile, which bash 3.2 on macOS does not have",
-        tell="line 3: mapfile: command not found",
-        fix="read -r -d '' into an array instead",
-        source="forge/agent-errors",
-    )
-    unrelated_lesson = LessonCreate(
-        kind="craft-lesson",
-        triggers=["imaplib", "email"],
-        mistake="assumed IMAP4.select() raises on a missing mailbox",
-        tell="silently drops back to AUTH state instead of raising",
-        fix="check the typ returned by select()/search() explicitly",
-        source="merit/mail.py",
-    )
-
-    # unrelated_lesson goes in FIRST on purpose: an implementation that quietly
-    # degraded to insertion order (or any order not driven by the vector)
-    # would surface it first, not the paraphrased match, and get caught.
-    await store.insert(
-        LessonRecord(
-            **unrelated_lesson.model_dump(),
-            embedding=embed_lesson(unrelated_lesson, engine=engine),
-        )
-    )
-    mapfile_id = await store.insert(
-        LessonRecord(
-            **mapfile_lesson.model_dump(),
-            embedding=embed_lesson(mapfile_lesson, engine=engine),
-        )
-    )
-
-    # Paraphrase: avoids the one term axon_search's literal match relies on
-    # ("mapfile") plus "array"/"command not found" - a keyword match on the
-    # distinctive term would miss this entirely, even though "bash"/"shell
-    # script" survive as the ordinary shared vocabulary a real paraphrase has.
-    results = await store.search(
-        "a bash script failed because an old shell version lacks a newer "
-        "builtin for reading lines of output straight into a list variable",
-        engine=engine,
-    )
-
-    assert results
-    assert results[0].id == mapfile_id
+    assert len(await store.search("mapfile", limit=2)) == 2

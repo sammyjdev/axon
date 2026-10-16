@@ -23,7 +23,6 @@ from axon.core.decision import SUMMARY_MAX_LEN, Decision
 from axon.core.file_identity import RepoRoots, display_path, load_repo_roots
 from axon.core.repo_identity import repo_identity
 from axon.embedder.engine import EmbedderEngine
-from axon.embedder.lesson_embedding import embed_lesson
 from axon.hooks.file_bridge import update_context_file
 from axon.models.lesson import LessonCreate, LessonRecord
 from axon.observability.compression_telemetry import (
@@ -1265,13 +1264,12 @@ async def axon_record_lesson(
     fix: str,
     source: str,
 ) -> str:
-    """Record a lesson (agent-error or craft-lesson) for paraphrase retrieval.
+    """Record a lesson (agent-error or craft-lesson) for later search.
 
     ``kind`` is either ``agent-error`` or ``craft-lesson``; ``triggers`` are the
-    signals that should surface this lesson again. The lesson is embedded
-    through the same chain (Ollama -> NIM -> DeepInfra) every other vector in
-    this repo goes through, and stored in the lessons-only database resolved
-    by ``resolve_lessons_dsn()`` - never the shared ``AXON_PG_URL`` - so one
+    signals that should surface this lesson again and weigh most in search. The
+    lesson is stored in the lessons-only database resolved by
+    ``resolve_lessons_dsn()`` - never the shared ``AXON_PG_URL`` - so one
     client's lessons cannot land in another's database. Returns the new
     lesson's id.
     """
@@ -1283,9 +1281,7 @@ async def axon_record_lesson(
         fix=fix,
         source=source,
     )
-    engine = _get_embedder()
-    embedding = embed_lesson(create, engine=engine)
-    record = LessonRecord(**create.model_dump(), embedding=embedding)
+    record = LessonRecord(**create.model_dump())
 
     store = _get_lesson_store()
     await store.init()
@@ -1301,20 +1297,17 @@ async def axon_search_lessons(
     triggers: list[str] | None = None,
     limit: int = 5,
 ) -> str:
-    """Search recorded lessons by paraphrase, not literal text.
+    """Search recorded lessons by the words of the task at hand.
 
-    Unlike ``axon_search`` (substring match on decision summaries), this
-    embeds ``query`` through the same chain lessons were stored with and
-    ranks by cosine distance, so a query sharing no distinctive vocabulary
-    with a lesson can still retrieve it - e.g. ``axon_search("mapfile")``
-    misses a record whose body contains "mapfile", but a paraphrase of its
-    ``mistake``/``tell``/``fix`` still ranks it first. Optionally filter by
-    ``kind`` (``agent-error`` / ``craft-lesson``) or by ``triggers`` overlap.
+    Full-text search over each lesson's triggers, mistake, tell and fix, with
+    English stemming; any query word can match, and triggers weigh most. Write
+    the query in English with the concrete terms of the task (tool, command,
+    symptom). Optionally filter by ``kind`` (``agent-error`` / ``craft-lesson``)
+    or by ``triggers`` overlap.
     """
-    engine = _get_embedder()
     store = _get_lesson_store()
     await store.init()
-    results = await store.search(query, engine=engine, kind=kind, triggers=triggers, limit=limit)
+    results = await store.search(query, kind=kind, triggers=triggers, limit=limit)
     if not results:
         return f"no lessons matching {query!r}."
     return "\n".join(

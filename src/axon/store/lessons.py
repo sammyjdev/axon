@@ -1,17 +1,13 @@
 """Postgres-backed store for the lessons corpus.
 
-Two patterns are borrowed deliberately, from two different places:
+A fresh connection per call, like ``FailureStore``: this store is low-traffic and
+its callers are independent ``asyncio.run`` invocations; an asyncpg pool is bound
+to the loop that created it, so a pool could not be reused across them. The table
+is created here rather than by the session store's numbered migrations.
 
-* **A fresh connection per call**, like ``FailureStore``. This store is
-  low-traffic and its callers are independent ``asyncio.run`` invocations; an
-  asyncpg pool is bound to the loop that created it, so a pool could not be
-  reused across them.
-* **Extension bootstrap then dimension guard before any DDL**, like
-  ``PgVectorStore._ensure_pool``. The table is created here rather than by a
-  numbered migration: the migration chain belongs to the SESSION store and runs
-  against databases where pgvector was never installed, so a vector column in it
-  breaks every one of them (measured on the Wave A merge: 18 tests, ``type
-  "vector" does not exist``).
+Search is Postgres full-text search, so recording and finding a lesson needs no
+embedding provider and no key. A table created before 2026-10-15 still carries a
+``vector`` column; nothing reads or writes it any more.
 
 The DSN is its own config, ``AXON_LESSONS_PG_URL`` - not ``rt.pg_url`` /
 ``AXON_PG_URL``, the DSN every other store here shares. Reusing the shared
@@ -28,11 +24,8 @@ from dataclasses import dataclass
 from uuid import UUID
 
 import asyncpg
-from pgvector.asyncpg import register_vector
 
-from axon.embedder.lesson_embedding import SupportsEmbedOne
 from axon.models.lesson import LessonRecord
-from axon.store.vector_common import VECTOR_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +74,6 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
     fix         text NOT NULL,
     source      text NOT NULL,
     created_at  timestamptz NOT NULL,
-    vector      vector({VECTOR_SIZE}),
     -- Delivery, not capture. Without these, a lesson nobody has ever read and one read
     -- daily are the same row, so "does anything consume this?" has no answer and the
     -- assumed answer is the flattering one. Measured 2026-09-01: 24 lessons, zero way to
@@ -92,22 +84,33 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
 """
 
 
+_COLS = "id, kind, triggers, mistake, tell, fix, source, created_at"
+
+_DOCUMENT = (
+    "(setweight(to_tsvector('english', kind || ' ' || array_to_string(triggers, ' ')), 'A')"
+    " || setweight(to_tsvector('english', mistake), 'B')"
+    " || setweight(to_tsvector('english', tell), 'C')"
+    " || setweight(to_tsvector('english', fix), 'D'))"
+)
+
+# The query's own lexemes, OR-ed. Built from to_tsvector rather than by editing the
+# text of plainto_tsquery, so no character of the query can act as an operator.
+_ANY_WORD = (
+    "SELECT to_tsquery('simple', string_agg(quote_literal(word), ' | ')) AS query"
+    " FROM unnest(tsvector_to_array(to_tsvector('english', $1))) AS word"
+)
+
+
 class LessonStore:
-    """Insert, fetch and search lessons by cosine distance."""
+    """Insert, fetch and search lessons by full-text match."""
 
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
 
     async def init(self) -> None:
-        """Bootstrap the extension, refuse a mismatched table, then create it.
-
-        The bootstrap runs on a plain connection because ``register_vector``
-        introspects the type codec and cannot do so before the extension exists.
-        """
+        """Create the table and add the delivery counters if they are missing."""
         con = await asyncpg.connect(self._dsn)
         try:
-            await con.execute("CREATE EXTENSION IF NOT EXISTS vector")
-            await self._check_dimension_guard(con)
             await con.execute(_DDL)
             # CREATE TABLE IF NOT EXISTS is a no-op on a table that already exists, so the
             # DDL above never reaches a deployment that predates these columns. Additive and
@@ -123,36 +126,16 @@ class LessonStore:
         finally:
             await con.close()
 
-    async def _check_dimension_guard(self, con: asyncpg.Connection) -> None:
-        """Refuse an existing table whose vector dim is not the current one.
-
-        pgvector stores the declared dimension in ``atttypmod`` as-is (no
-        VARHDRSZ-style offset). An absent table is a no-op: the DDL below
-        creates it at VECTOR_SIZE.
-        """
-        existing_dim = await con.fetchval(
-            """
-            SELECT atttypmod FROM pg_attribute
-            WHERE attrelid = to_regclass($1) AND attname = 'vector' AND NOT attisdropped
-            """,
-            TABLE,
-        )
-        if existing_dim is not None and existing_dim != VECTOR_SIZE:
-            raise ValueError(
-                f"{TABLE}.vector is dim {existing_dim} but the embedder now produces "
-                f"{VECTOR_SIZE}; mixed dims are not allowed."
-            )
-
     async def insert(self, lesson: LessonRecord) -> UUID:
         """Store ``lesson`` and return its id."""
         con = await self._connect()
         try:
             await con.execute(
                 "INSERT INTO lessons"
-                " (id, kind, triggers, mistake, tell, fix, source, created_at, vector)"
-                " VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                " (id, kind, triggers, mistake, tell, fix, source, created_at)"
+                " VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                 lesson.id, lesson.kind, lesson.triggers, lesson.mistake, lesson.tell,
-                lesson.fix, lesson.source, lesson.created_at, self._as_vector(lesson.embedding),
+                lesson.fix, lesson.source, lesson.created_at,
             )
         finally:
             await con.close()
@@ -163,8 +146,7 @@ class LessonStore:
         con = await self._connect()
         try:
             row = await con.fetchrow(
-                "SELECT id, kind, triggers, mistake, tell, fix, source, created_at, vector"
-                " FROM lessons WHERE id = $1",
+                f"SELECT {_COLS} FROM lessons WHERE id = $1",  # noqa: S608
                 lesson_id,
             )
         finally:
@@ -183,8 +165,7 @@ class LessonStore:
         con = await self._connect()
         try:
             row = await con.fetchrow(
-                "SELECT id, kind, triggers, mistake, tell, fix, source, created_at, vector"
-                " FROM lessons WHERE source = $1 LIMIT 1",
+                f"SELECT {_COLS} FROM lessons WHERE source = $1 LIMIT 1",  # noqa: S608
                 source,
             )
         finally:
@@ -192,7 +173,7 @@ class LessonStore:
         return self._row_to_lesson(row) if row is not None else None
 
     async def update(self, lesson: LessonRecord) -> None:
-        """Overwrite the content and vector of the row at ``lesson.id``.
+        """Overwrite the content of the row at ``lesson.id``.
 
         ``id`` and ``created_at`` are not among the SET columns: an update
         corrects an existing entry, it does not mint a new one.
@@ -201,9 +182,9 @@ class LessonStore:
         try:
             await con.execute(
                 "UPDATE lessons SET kind = $2, triggers = $3, mistake = $4, tell = $5,"
-                " fix = $6, source = $7, vector = $8 WHERE id = $1",
+                " fix = $6, source = $7 WHERE id = $1",
                 lesson.id, lesson.kind, lesson.triggers, lesson.mistake, lesson.tell,
-                lesson.fix, lesson.source, self._as_vector(lesson.embedding),
+                lesson.fix, lesson.source,
             )
         finally:
             await con.close()
@@ -212,23 +193,21 @@ class LessonStore:
         self,
         query: str,
         *,
-        engine: SupportsEmbedOne,
         kind: str | None = None,
         triggers: list[str] | None = None,
         limit: int = 5,
     ) -> list[LessonRecord]:
-        """Return up to ``limit`` lessons nearest ``query`` by cosine distance.
+        """Return up to ``limit`` lessons that share a word with ``query``, best first.
 
-        ``query`` is embedded through ``engine`` - the same injected protocol
-        Task 5 uses for lessons themselves - so storage and retrieval share one
-        text-to-vector path rather than growing a second one here. A lesson
-        with no vector can never be nearest to anything and is excluded.
+        Any query word can match (an OR of its stemmed lexemes); rank is cover
+        density over a document weighted triggers > mistake > tell > fix,
+        normalised by document length. A query with no searchable word returns
+        nothing.
         """
-        vector = self._as_vector(engine.embed_one(query))
         con = await self._connect()
         try:
-            params: list = [vector]
-            clauses = ["vector IS NOT NULL"]
+            params: list = [query]
+            clauses = [f"{_DOCUMENT} @@ q.query"]
             if kind is not None:
                 params.append(kind)
                 clauses.append(f"kind = ${len(params)}")
@@ -236,8 +215,15 @@ class LessonStore:
                 params.append(triggers)
                 clauses.append(f"triggers && ${len(params)}::text[]")
             where = " AND ".join(clauses)
-            select_cols = "id, kind, triggers, mistake, tell, fix, source, created_at, vector"
-            sql = f"SELECT {select_cols} FROM {TABLE} WHERE {where} ORDER BY vector <=> $1 LIMIT {int(limit)}"  # noqa: S608, E501
+            # shortcut: the document is built per row on every search, fine for the
+            # dozens of lessons there are; add a stored tsvector column with a GIN
+            # index if the table reaches thousands of rows.
+            sql = (
+                f"SELECT {_COLS} FROM {TABLE}, ({_ANY_WORD}) q "  # noqa: S608
+                f"WHERE {where} "
+                f"ORDER BY ts_rank_cd({_DOCUMENT}, q.query, 1) DESC, created_at DESC "
+                f"LIMIT {int(limit)}"
+            )
             rows = await con.fetch(sql, *params)
             # Guarded HERE as well as inside: the rule is that delivery never depends on
             # measuring delivery, and a rule that only holds while the current
@@ -262,10 +248,6 @@ class LessonStore:
         would credit five lessons per session and overwrite the 24-lessons/0-deliveries
         baseline with a number that measures the hook instead of any agent's decision to
         consult one. The counters must keep meaning what they mean.
-
-        No `vector IS NOT NULL` filter either, unlike `search()`. That filter is there
-        because an unembedded lesson can never be nearest to anything; a catalogue is not a
-        ranking, and omitting a lesson that exists is the exact failure this list is for.
 
         Newest first: a corpus grows, the render truncates, and the lesson written today is
         the one most likely to be about a mistake still being made.
@@ -306,24 +288,10 @@ class LessonStore:
             logger.warning("could not record lesson retrieval", exc_info=True)
 
     async def _connect(self) -> asyncpg.Connection:
-        con = await asyncpg.connect(self._dsn)
-        await register_vector(con)
-        return con
-
-    @staticmethod
-    def _as_vector(embedding: list[float] | None) -> list[float] | None:
-        if embedding is None:
-            return None
-        if len(embedding) != VECTOR_SIZE:
-            raise ValueError(
-                f"embedding has {len(embedding)} dims but the table is {VECTOR_SIZE}"
-            )
-        return embedding
+        return await asyncpg.connect(self._dsn)
 
     @staticmethod
     def _row_to_lesson(row: asyncpg.Record) -> LessonRecord:
-        # register_vector decodes the column into a pgvector Vector, not a list.
-        vector = row["vector"]
         return LessonRecord(
             id=row["id"],
             kind=row["kind"],
@@ -333,7 +301,6 @@ class LessonStore:
             fix=row["fix"],
             source=row["source"],
             created_at=row["created_at"],
-            embedding=None if vector is None else [float(v) for v in vector.to_list()],
         )
 
     async def close(self) -> None:

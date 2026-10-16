@@ -11,7 +11,6 @@ from testcontainers.postgres import PostgresContainer  # noqa: E402
 
 from axon.models.lesson import LessonRecord  # noqa: E402
 from axon.store.lessons import LessonStore  # noqa: E402
-from axon.store.vector_common import VECTOR_SIZE  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -58,34 +57,6 @@ async def test_inserted_lesson_comes_back_by_id_with_triggers_intact(store):
     assert got.tell == lesson.tell
     assert got.fix == lesson.fix
     assert got.source == lesson.source
-
-
-async def test_a_lesson_round_trips_its_vector(store):
-    """The column that broke Wave A on merge, exercised rather than assumed.
-
-    Creating a ``vector`` column proves nothing on its own: the failure mode was
-    a database where the extension was never installed. Writing and reading one
-    is what proves the bootstrap in ``init`` actually ran.
-    """
-    embedding = [0.0] * VECTOR_SIZE
-    embedding[0] = 1.0
-
-    lesson_id = await store.insert(_lesson(embedding=embedding))
-    got = await store.get(lesson_id)
-
-    assert got is not None
-    assert got.embedding is not None
-    assert len(got.embedding) == VECTOR_SIZE
-    assert got.embedding[0] == pytest.approx(1.0)
-
-
-async def test_a_lesson_without_an_embedding_is_allowed(store):
-    """Task 4 inserts; embedding arrives with the recorder in Wave D."""
-    lesson_id = await store.insert(_lesson())
-    got = await store.get(lesson_id)
-
-    assert got is not None
-    assert got.embedding is None
 
 
 async def test_get_returns_none_for_an_unknown_id(store):

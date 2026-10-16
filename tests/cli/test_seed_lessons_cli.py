@@ -20,7 +20,6 @@ from axon.__main__ import app as cli_app
 from axon.cli import pb
 from axon.mcp import server
 from axon.models.lesson import LessonRecord
-from axon.store.vector_common import VECTOR_SIZE
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "lessons" / "agent-errors.json"
 
@@ -53,17 +52,6 @@ class _FakeLessonStore:
         raise AssertionError(f"update() called for unknown id {lesson.id}")
 
 
-class _FakeEngine:
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def embed_one(self, text: str) -> list[float]:
-        self.calls += 1
-        vector = [0.0] * VECTOR_SIZE
-        vector[0] = 1.0
-        return vector
-
-
 def test_exposes_a_corpus_option() -> None:
     """The option is asserted on the command, not on the rendered help text.
 
@@ -90,15 +78,13 @@ def test_defaults_to_the_shipped_corpus_path_when_corpus_omitted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_store = _FakeLessonStore()
-    fake_engine = _FakeEngine()
     captured: dict[str, Path] = {}
 
-    async def fake_seed_corpus(path, record, *, store, engine) -> list[str]:
+    async def fake_seed_corpus(path, record, *, store) -> list[str]:
         captured["path"] = path
         return []
 
     monkeypatch.setattr(server, "_get_lesson_store", lambda: fake_store)
-    monkeypatch.setattr(server, "_get_embedder", lambda: fake_engine)
     monkeypatch.setattr(seed_module, "seed_corpus", fake_seed_corpus)
 
     result = runner.invoke(cli_app, ["seed-lessons"])
@@ -109,9 +95,7 @@ def test_defaults_to_the_shipped_corpus_path_when_corpus_omitted(
 
 def test_prints_one_status_line_per_corpus_entry(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_store = _FakeLessonStore()
-    fake_engine = _FakeEngine()
     monkeypatch.setattr(server, "_get_lesson_store", lambda: fake_store)
-    monkeypatch.setattr(server, "_get_embedder", lambda: fake_engine)
 
     result = runner.invoke(cli_app, ["seed-lessons", "--corpus", str(FIXTURE)])
 
@@ -123,18 +107,14 @@ def test_prints_one_status_line_per_corpus_entry(monkeypatch: pytest.MonkeyPatch
         assert line.startswith("recorded lesson ")
 
 
-def test_second_run_reports_unchanged_and_issues_zero_embedding_calls(
+def test_second_run_reports_every_entry_unchanged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_store = _FakeLessonStore()
-    fake_engine = _FakeEngine()
     monkeypatch.setattr(server, "_get_lesson_store", lambda: fake_store)
-    monkeypatch.setattr(server, "_get_embedder", lambda: fake_engine)
 
     first = runner.invoke(cli_app, ["seed-lessons", "--corpus", str(FIXTURE)])
     assert first.exit_code == 0, first.output
-    calls_after_first_run = fake_engine.calls
-    assert calls_after_first_run > 0, "first run must have embedded something"
 
     second = runner.invoke(cli_app, ["seed-lessons", "--corpus", str(FIXTURE)])
     assert second.exit_code == 0, second.output
@@ -144,4 +124,3 @@ def test_second_run_reports_unchanged_and_issues_zero_embedding_calls(
     for line in lines:
         assert line.endswith("unchanged, skipped.")
 
-    assert fake_engine.calls == calls_after_first_run

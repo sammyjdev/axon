@@ -23,7 +23,6 @@ from testcontainers.postgres import PostgresContainer  # noqa: E402
 
 from axon.models.lesson import LessonRecord  # noqa: E402
 from axon.store.lessons import LessonStore  # noqa: E402
-from axon.store.vector_common import VECTOR_SIZE  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -44,12 +43,6 @@ async def store(pg_dsn):
     yield s
 
 
-def _vector(x: float) -> list[float]:
-    v = [0.0] * VECTOR_SIZE
-    v[0] = x
-    return v
-
-
 def _lesson(**over: object) -> LessonRecord:
     base = {
         "kind": "agent-error",
@@ -58,7 +51,6 @@ def _lesson(**over: object) -> LessonRecord:
         "tell": "the command hangs on stdin with no error",
         "fix": "give the heredoc its own command",
         "source": "forge/agent-errors",
-        "embedding": _vector(1.0),
     }
     return LessonRecord(**{**base, **over})  # type: ignore[arg-type]
 
@@ -97,12 +89,3 @@ async def test_the_catalogue_carries_the_handle_and_not_the_content(store):
     assert entry.triggers == ["shell-script", "heredoc"]
     assert not hasattr(entry, "mistake")
     assert not hasattr(entry, "fix")
-
-
-@pytest.mark.asyncio
-async def test_a_lesson_with_no_vector_is_still_catalogued(store):
-    """`search()` filters `vector IS NOT NULL` because an unembedded lesson can never be
-    nearest to anything. The catalogue is not a ranking, so excluding it there would hide a
-    lesson that exists - and hiding it is the failure this whole item is about."""
-    await store.insert(_lesson(embedding=None))
-    assert len(await store.catalog()) == 1

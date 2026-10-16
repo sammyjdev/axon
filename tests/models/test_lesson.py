@@ -99,18 +99,16 @@ def test_lesson_record_defaults() -> None:
     assert isinstance(record.id, UUID)
     assert isinstance(record.created_at, datetime)
     assert record.created_at.tzinfo == UTC
-    assert record.embedding is None
+    assert not hasattr(record, "embedding")
 
 
 def test_lesson_record_explicit_fields() -> None:
     custom_id = uuid4()
     custom_dt = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
-    custom_embedding = [0.1, 0.2, 0.3]
 
     record = LessonRecord(
         id=custom_id,
         created_at=custom_dt,
-        embedding=custom_embedding,
         kind="agent-error",
         triggers=["trigger1"],
         mistake="A mistake",
@@ -120,4 +118,3 @@ def test_lesson_record_explicit_fields() -> None:
     )
     assert record.id == custom_id
     assert record.created_at == custom_dt
-    assert record.embedding == [0.1, 0.2, 0.3]

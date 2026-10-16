@@ -1712,9 +1712,8 @@ def seed_lessons(
 ) -> None:
     """Seed the lessons store from the agent-error corpus (issue #142).
 
-    Idempotent: an unchanged entry is skipped with no embedding call, a
-    changed entry is re-embedded and updated in place, and a new entry is
-    inserted. Prints one status line per corpus entry.
+    Idempotent: an unchanged entry is skipped, a changed entry is updated in
+    place, and a new entry is inserted. Prints one status line per corpus entry.
     """
     from axon.lessons.seed import seed_corpus
     from axon.mcp import server
@@ -1723,9 +1722,7 @@ def seed_lessons(
         store = server._get_lesson_store()
         await store.init()
         try:
-            results = await seed_corpus(
-                corpus, server.axon_record_lesson, store=store, engine=server._get_embedder()
-            )
+            results = await seed_corpus(corpus, server.axon_record_lesson, store=store)
             for line in results:
                 typer.echo(line)
         finally:
