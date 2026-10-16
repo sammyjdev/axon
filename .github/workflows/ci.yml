@@ -1,7 +1,8 @@
 name: ci
 
-# dec-107 — validation strategy. Lint, compile, and router/resilience tests
-# under both provider profiles (budget, paid). dec-106 defines the profile system.
+# dec-107 — validation strategy: lint, compile, a narrow test job on two Python
+# versions and the whole suite once. The router and its provider profiles were
+# retired with code vectorization (dec-138).
 
 on:
   pull_request:
@@ -24,11 +25,10 @@ jobs:
           python-version: "3.11"
       - name: install ruff
         run: pip install "ruff>=0.4.0"
-      # TODO(dec-107): expand to `src/ tests/` once the existing lint debt
-      # outside router/resilience is cleared. Today the broader scope has
-      # 22 pre-existing UP/I001/F401/E501 findings. Tracked separately.
-      - name: ruff check (router + resilience)
-        run: ruff check src/axon/router src/axon/resilience tests/router tests/resilience
+      # TODO(dec-107): expand to `tests/` once its lint debt is cleared; `src/`
+      # has none since the router and the code index left (dec-138).
+      - name: ruff check (src)
+        run: ruff check src
 
   compile:
     name: compileall
@@ -43,14 +43,13 @@ jobs:
         run: python3 -m compileall -q src
 
   test:
-    name: pytest (${{ matrix.profile }} / py${{ matrix.python }})
+    name: pytest (py${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12"]
-        profile: [budget, paid]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -60,13 +59,10 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: install project + dev deps
         run: pip install -e ".[dev]"
-      - name: pytest router + resilience + config
-        env:
-          AXON_PROVIDER_PROFILE: ${{ matrix.profile }}
-        run: python3 -m pytest tests/router tests/resilience tests/config -q
+      - name: pytest config + hooks
+        run: python3 -m pytest tests/config tests/hooks -q
 
-  # The matrix job above stays narrow (router + resilience + config) because it
-  # runs four times. This runs the WHOLE suite once - breadth, not permutations.
+  # The matrix job above stays narrow (config + hooks) because it runs twice. This runs the WHOLE suite once - breadth, not permutations.
   # Held back on 2026-08-04 because the suite was red on ubuntu; landed once
   # DEBT-3 was fixed, per "do not widen onto red".
   #
@@ -90,38 +86,6 @@ jobs:
         run: pip install -e ".[dev,http]"
       - name: pytest (whole suite)
         run: python3 -m pytest -q
-
-  profile-smoke:
-    name: profile import smoke (${{ matrix.profile }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        profile: [budget, paid]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: install project
-        run: pip install -e .
-      - name: import and resolve profile
-        env:
-          AXON_PROVIDER_PROFILE: ${{ matrix.profile }}
-        run: |
-          python3 -c "
-          from axon.router.profiles import get_profile, available_profiles
-          from axon.router.engine import _MODEL_MAP, _COST_PER_1K, _PROFILE
-          # budget is the only low-cost profile spelling; the alias was removed in issue #156.
-          assert _PROFILE is get_profile('${{ matrix.profile }}')
-          assert _MODEL_MAP, 'model map empty'
-          assert all(v for v in _MODEL_MAP.values()), 'unmapped task type'
-          print('profile:', _PROFILE.name)
-          print('models:', dict(_MODEL_MAP))
-          "
 
   audit:
     name: pip-audit

@@ -61,7 +61,7 @@ mode = 123
 engine_root = 45.67
 vault_root = true
 active_profile = ["a", "b", "c"]
-vector_backend = { x = 1, y = 2 }
+decisions_backend = { x = 1, y = 2 }
 """
     config_path.write_text(toml_content, encoding="utf-8")
     monkeypatch.setenv("AXON_CONFIG", str(config_path))
@@ -78,7 +78,7 @@ vector_backend = { x = 1, y = 2 }
     assert result["engine_root"] == "45.67"
     assert result["vault_root"] == "True"
     assert result["active_profile"] == "['a', 'b', 'c']"
-    assert result["vector_backend"] == "{'x': 1, 'y': 2}"
+    assert result["decisions_backend"] == "{'x': 1, 'y': 2}"
 
 
 @settings(
@@ -158,9 +158,8 @@ def test_very_large_string_value_no_crash(
         min_size=1,
         max_size=20,
     ).filter(lambda k: k not in [
-        "mode", "engine_root", "vault_root", "active_profile", "vector_backend",
-        "fileindex_backend", "graph_backend", "decisions_backend", "sessions_backend",
-        "db_backend",
+        "mode", "engine_root", "vault_root", "active_profile",
+        "decisions_backend", "sessions_backend", "db_backend",
     ]),
     value=st.text(
         alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",

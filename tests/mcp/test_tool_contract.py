@@ -20,14 +20,11 @@ from axon.mcp import server
 # Every tool the server exposes. Adding or removing one is a client-visible
 # change: update this list in the same commit, so the diff shows it.
 EXPECTED_TOOLS = {
-    "ask",
     "axon_capture",
     "axon_capture_event",
-    "axon_export_now",
     "axon_get_context",
     "axon_handoff",
     "axon_health",
-    "axon_mark_done",
     "axon_record_lesson",
     "axon_record_outcome",
     "axon_search",
@@ -36,13 +33,8 @@ EXPECTED_TOOLS = {
     "axon_session_start",
     "axon_validation_stats",
     "get_adrs",
-    "get_dependencies",
-    "get_graph_context",
-    "get_graph_neighbors",
-    "get_graph_path",
     "get_session_memory",
     "save_adr",
-    "search_code",
 }
 
 
@@ -83,7 +75,7 @@ async def test_every_tool_exposes_an_object_input_schema(tools) -> None:
 async def test_ctx_taking_tools_declare_it_as_an_optional_string(tools) -> None:
     """`ctx` selects the restricted-context boundary - its shape is load-bearing."""
     by_name = {t.name: t for t in tools}
-    for name in ("search_code", "ask"):
+    for name in ("get_adrs",):
         props = by_name[name].model_dump(by_alias=True)["inputSchema"]["properties"]
         assert "ctx" in props, f"{name} no longer accepts ctx"
         assert "ctx" not in by_name[name].model_dump(by_alias=True)["inputSchema"].get(

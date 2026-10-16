@@ -15,7 +15,6 @@ the installer's ``_BEGIN``/``_END`` markers, never re-spelled.
 
 from __future__ import annotations
 
-import os
 import shlex
 import subprocess
 import sys
@@ -27,7 +26,6 @@ import pytest
 from axon.doctor import CheckStatus, run_all_checks
 from axon.doctor.checks import capture_path
 from axon.doctor.checks.capture_path import (
-    check_capture_gap,
     check_hook_interpreters,
     check_install_freshness,
 )
@@ -345,176 +343,21 @@ class TestInstallFreshness:
         assert result.detail.startswith("skipped: ")
 
 
-class TestCaptureGap:
-    def test_recent_commit_hash_in_decisions_is_ok(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = tmp_path / "dev"
-        hashes = _make_capture_repo(dev_root, "freshrepo", commits=3)
-        oldest_of_last = hashes[0]
-        _install_fake_store(monkeypatch, {"freshrepo": [None, oldest_of_last]})
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.name == "capture.gap"
-        assert result.status is CheckStatus.OK
-        assert result.detail != _SKIP_NO_REPOS
-        assert "1" in result.detail
-
-    def test_no_recent_hash_fails_naming_repo(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = tmp_path / "dev"
-        _make_capture_repo(dev_root, "gappedrepo", commits=2)
-        _install_fake_store(monkeypatch, {"gappedrepo": ["deadbeef"]})
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is CheckStatus.FAIL
-        assert "gappedrepo" in result.detail
-        # The suggestion no longer says "reinstall": the hooks were present and
-        # working every time this check fired in production.
-        assert "post-commit" in result.suggestion
-
-    def test_repo_with_zero_decisions_is_gapped(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = tmp_path / "dev"
-        _make_capture_repo(dev_root, "silentrepo", commits=2)
-        _install_fake_store(monkeypatch)
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is CheckStatus.FAIL
-        assert "silentrepo" in result.detail
-
-    def test_healthy_repo_not_named_in_failure_detail(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = tmp_path / "dev"
-        healthy_hashes = _make_capture_repo(dev_root, "healthyone", commits=2)
-        _make_capture_repo(dev_root, "gappedone", commits=2)
-        _install_fake_store(
-            monkeypatch,
-            {"healthyone": [healthy_hashes[-1]], "gappedone": ["deadbeef"]},
-        )
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is CheckStatus.FAIL
-        assert "gappedone" in result.detail
-        assert "healthyone" not in result.detail
-
-    def test_store_failure_degrades_to_warn(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = tmp_path / "dev"
-        _make_capture_repo(dev_root, "anyrepo", commits=1)
-        _install_fake_store(monkeypatch, error=RuntimeError("pg down"))
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is CheckStatus.WARN
-        assert result.detail == "skipped: decision store unreachable"
-
-    def test_repo_without_commits_is_skipped_not_gapped(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = tmp_path / "dev"
-        healthy = _make_capture_repo(dev_root, "healthyrepo", commits=1)
-        _make_capture_repo(dev_root, "emptyrepo", commits=0)
-        _install_fake_store(monkeypatch, {"healthyrepo": [healthy[0]]})
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is CheckStatus.OK
-
-    def test_empty_dev_root_reports_ok_skip(self, tmp_path: Path) -> None:
-        dev_root = tmp_path / "dev"
-        dev_root.mkdir()
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is CheckStatus.OK
-        assert result.detail == _SKIP_NO_REPOS
-
-
 class TestRegistration:
-    def test_run_all_checks_registers_the_three_new_checks(self) -> None:
+    def test_run_all_checks_registers_the_capture_path_checks(self) -> None:
         results = run_all_checks()
         by_name = {r.name: r for r in results}
 
         assert "capture.hook_interpreter" in by_name
         assert "install.freshness" in by_name
-        assert "capture.gap" in by_name
+        # Only signal commits are captured now, so most commits leave no row and
+        # a commit-to-decision gap check would warn on every repo (dec-138).
+        assert "capture.gap" not in by_name
 
         assert by_name["capture.hook_interpreter"].status is CheckStatus.OK
         assert by_name["capture.hook_interpreter"].detail == _SKIP_NO_REPOS
-        assert by_name["capture.gap"].status is CheckStatus.OK
-        assert by_name["capture.gap"].detail == _SKIP_NO_REPOS
         assert by_name["install.freshness"].status is CheckStatus.WARN
         assert by_name["install.freshness"].detail.startswith("skipped: ")
-
-
-class TestCaptureGapDormantRepos:
-    """A repo whose last commit predates the current hook install cannot have
-    been captured by it. Reporting that as a capture failure is a false
-    positive that never clears: on 2026-08-22 every hook was reinstalled, and
-    four dormant repos have failed the check on every run since, while the
-    hooks were provably healthy.
-    """
-
-    def _age_hook(self, dev_root: Path, name: str, *, newer_than_commits: bool) -> None:
-        hook = dev_root / name / ".git" / "hooks" / "post-commit"
-        head = subprocess.run(  # noqa: S603
-            ["git", "-C", str(dev_root / name), "log", "-1", "--pretty=%ct"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        last_commit = int(head.stdout.strip())
-        offset = 3600 if newer_than_commits else -3600
-        os.utime(hook, (last_commit + offset, last_commit + offset))
-
-    def test_a_repo_with_no_commits_since_the_hook_was_installed_is_not_gapped(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = tmp_path / "dev"
-        _make_capture_repo(dev_root, "dormant", commits=2)
-        self._age_hook(dev_root, "dormant", newer_than_commits=True)
-        _install_fake_store(monkeypatch)
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is not CheckStatus.FAIL, result.detail
-        assert "dormant" in result.detail
-
-    def test_a_repo_that_committed_after_the_hook_and_captured_nothing_is_still_gapped(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        dev_root = tmp_path / "dev"
-        _make_capture_repo(dev_root, "reallybroken", commits=2)
-        self._age_hook(dev_root, "reallybroken", newer_than_commits=False)
-        _install_fake_store(monkeypatch)
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert result.status is CheckStatus.FAIL
-        assert "reallybroken" in result.detail
-
-    def test_the_suggestion_does_not_send_you_to_reinstall_healthy_hooks(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The old text said "re-run axon install-hooks" for every failure,
-        which is the wrong move when the hook is present and working."""
-        dev_root = tmp_path / "dev"
-        _make_capture_repo(dev_root, "reallybroken", commits=2)
-        self._age_hook(dev_root, "reallybroken", newer_than_commits=False)
-        _install_fake_store(monkeypatch)
-
-        result = check_capture_gap(dev_root=dev_root)
-
-        assert "post-commit" in result.suggestion
 
 
 def test_doctor_no_longer_reports_recall_coverage(tmp_path: Path) -> None:
@@ -530,4 +373,5 @@ def test_doctor_no_longer_reports_recall_coverage(tmp_path: Path) -> None:
     names = {result.name for result in run_all_checks(data_root=tmp_path)}
 
     assert "recall.coverage" not in names
-    assert "recall.savings" in names
+    # recall.savings went with code search itself (dec-138).
+    assert "recall.savings" not in names

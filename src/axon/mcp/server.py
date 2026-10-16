@@ -1,65 +1,32 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
-import hashlib
-import json
-import logging
 import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, overload
 
-import litellm
 from mcp.server.mcpserver import MCPServer
 
 from axon.config.runtime import load_runtime_config
-from axon.context.compression_quality import compression_quality_note
-from axon.context.contracts import ContextPack
-from axon.context.pack_dedup import dedup_hits
-from axon.context.registry import PROTECTED_CONTEXTS, normalize_context
 from axon.core.decision import SUMMARY_MAX_LEN, Decision
-from axon.core.file_identity import RepoRoots, display_path, load_repo_roots
 from axon.core.repo_identity import repo_identity
-from axon.embedder.engine import EmbedderEngine
 from axon.hooks.file_bridge import update_context_file
 from axon.models.lesson import LessonCreate, LessonRecord
-from axon.observability.compression_telemetry import (
-    CompressionRecord,
-    CompressionTelemetryStore,
-)
 from axon.observability.friction import aggregate_friction
-from axon.observability.recall_telemetry import ChunkEntry, ChunkRecord, RecallTelemetryStore
 from axon.observability.trace_store import TraceStore
 from axon.observability.traced_tool import current_trace_recorder, traced_tool
 from axon.obsidian.discovery import discover_vault
-from axon.obsidian.exporter import export_adr, export_architecture_doc
-from axon.policy.core import PolicyRegistry
 from axon.recall import recall_context
-from axon.retrieval.self_correct import correct_retrieval
-from axon.router.compressor import caveman_compress_guarded
-from axon.router.engine import _bottom_tier_model
-from axon.router.llm_backend import litellm_kwargs
-from axon.store.collections import get_search_collections
 from axon.store.lessons import LessonStore, resolve_lessons_dsn
 from axon.store.outcome_store import OutcomeRecord, OutcomeStore
-from axon.store.pg_symbol_deps import PostgresSymbolDeps
 from axon.store.session_store import (
     ADR,
     ADR_INFERRED_NOTICE,
     SessionNote,
     SessionStore,
 )
-from axon.store.vector_common import (
-    DELTA_RECALL_CUTOFF,
-    _trim_to_budget,
-    shingles_cover,
-    transcript_shingle_set,
-)
-from axon.store.vector_store_factory import make_vector_store
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuração
@@ -71,116 +38,16 @@ CONTEXT_BUDGETS: dict[str, int] = {
 }
 
 _RUNTIME = load_runtime_config()
-_POLICY = PolicyRegistry(_RUNTIME)
 _DB_PATH = _RUNTIME.db_path
-_RTK_MAX_TOKENS = _RUNTIME.rtk_max_tokens
-_COMPRESSION_TELEMETRY = CompressionTelemetryStore(_RUNTIME)
+# Read by traced_tool for every call's trace records.
 _TRACE_STORE = TraceStore(_RUNTIME)
-# Measured 2026-08-29 (n=40): 48 candidates x 400 chars scores 0.700 hit rate /
-# 0.438 coverage in 4.6s. 1200 chars buys +0.05 for +20s; 256 chars degrades to
-# 0.650. See docs/superpowers/specs/2026-08-29-retrieval-pack-quality-design.md.
-_RERANK_CANDIDATES = 48
-_RERANK_TEXT_CHARS = 400
-_RERANK_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
-#: Cold-cache load is ~35s on this machine. Past this we give up: a stalled
-#: HF download hangs forever and `except Exception` does not catch a hang.
-_RERANK_LOAD_TIMEOUT_S = 120.0
-#: issue #177: dedup drops slots and, without the reranker's 48-candidate
-#: pool, nothing refills them. Over-fetch so dedup has slack to spend.
-#: 2x covers the measured waste (10.0% identical content, 13.4% repeated
-#: file) with room to spare; the extra rows cost only a larger LIMIT.
-_DEDUP_OVERFETCH = 2
 
 mcp = MCPServer("axon-context-engine")
 
 # Stores são inicializados lazy no primeiro uso
-_vector_store: object | None = None
-_graph_store: PostgresSymbolDeps | None = None
 _outcome_store: OutcomeStore | None = None
 _session_store: SessionStore | None = None
-_embedder: EmbedderEngine | None = None
-_reranker: object | None = None
-# Restart is the only reset; if a transient failure ever needs recovery
-# in-process that is when a cooldown earns its keep.
-_reranker_load_failed: bool = False
 _lesson_store: LessonStore | None = None
-
-
-def _get_embedder() -> EmbedderEngine:
-    global _embedder
-    if _embedder is None:
-        _embedder = EmbedderEngine()
-    return _embedder
-
-
-def _text_cross_encoder_cls() -> type:
-    """Indirection so tests can substitute the encoder without touching fastembed."""
-    try:
-        from fastembed import TextCrossEncoder
-    except ImportError:
-        from fastembed.rerank.cross_encoder import TextCrossEncoder
-    return TextCrossEncoder
-
-
-def _get_reranker() -> object:
-    """Load the cross-encoder lazily and with a bound.
-
-    hf_xet's TLS handshake fails on some machines and the download then hangs
-    forever rather than raising, so the timeout is the only thing that keeps a
-    cold cache from pinning the server. XET is disabled here for the same reason.
-    """
-    global _reranker, _reranker_load_failed
-    if _reranker_load_failed:
-        raise RuntimeError("cross-encoder reranker previously failed to load in this process")
-    if _reranker is None:
-        import concurrent.futures
-
-        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
-        model_name = os.environ.get("AXON_RERANK_MODEL") or _RERANK_MODEL
-        encoder_cls = _text_cross_encoder_cls()
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        try:
-            future = pool.submit(encoder_cls, model_name)
-            try:
-                _reranker = future.result(timeout=_RERANK_LOAD_TIMEOUT_S)
-            except concurrent.futures.TimeoutError as exc:
-                _reranker_load_failed = True
-                # The worker thread is left running: fastembed offers no cancel,
-                # and abandoning it is better than blocking the caller.
-                raise TimeoutError(
-                    f"reranker load exceeded {_RERANK_LOAD_TIMEOUT_S}s"
-                ) from exc
-            except Exception:
-                _reranker_load_failed = True
-                raise
-        finally:
-            pool.shutdown(wait=False)
-    return _reranker
-
-
-def _get_graph_embedder() -> object:
-    """Embedder for GLYPH graph retrieval: AXON's engine behind the GLYPH port.
-
-    Imports GLYPH lazily (dec-116 #3) so a missing ``glyph-kg`` install can't
-    break module import for every other MCP tool.
-    """
-    from axon.context.graph_source import GlyphEmbedderAdapter
-
-    return GlyphEmbedderAdapter(_get_embedder())
-
-
-def _get_vector_store():
-    global _vector_store
-    if _vector_store is None:
-        _vector_store = make_vector_store(_RUNTIME)
-    return _vector_store
-
-
-def _get_graph_store() -> PostgresSymbolDeps:
-    global _graph_store
-    if _graph_store is None:
-        _graph_store = PostgresSymbolDeps(dsn=_RUNTIME.pg_url)
-    return _graph_store
 
 
 def _get_outcome_store() -> OutcomeStore:
@@ -218,482 +85,9 @@ def _truncate(text: str, budget: int) -> str:
     return text[:max_chars] + f"\n... [truncado para {budget} tokens]"
 
 
-def _estimate_tokens(text: str) -> int:
-    return max(1, len(text) // 4)
-
-
-def _sha256_16(text: str) -> str:
-    normalized = text.strip()
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-
-
-def _record_chunk_recall(
-    *,
-    query: str,
-    strategy_name: str,
-    requested_max_tokens: int,
-    hits: list[dict],
-    ctx: str | None = None,
-    rerank_note: str | None = None,
-) -> None:
-    try:
-        chunks: list[ChunkEntry] = []
-        for hit in hits:
-            payload = hit.get("payload") or {}
-            content = str(payload.get("content", ""))
-            chunk = {
-                "hash": _sha256_16(content),
-                "dedup": str(hit.get("dedup", "off")),
-                "score": float(hit.get("score", 0.0)),
-                "ranking_score": hit.get("ranking_score"),
-                "token_estimate": _estimate_tokens(content),
-                "file_path": str(payload.get("file_path", "")),
-            }
-            if "rerank_score" in hit:
-                chunk["rerank_score"] = hit.get("rerank_score")
-            chunks.append(chunk)
-
-        record = ChunkRecord(
-            ts=datetime.now(UTC).isoformat(),
-            query_hash=_sha256_16(query),
-            # Never persist the text of a protected-context query.
-            query=None if normalize_context(ctx) in PROTECTED_CONTEXTS else query,
-            strategy=strategy_name,
-            requested_max_tokens=requested_max_tokens,
-            rerank=rerank_note,
-            chunks=chunks,
-        )
-        RecallTelemetryStore().append_chunks(record)
-    # Broader than RecallRecord's OSError-only catch on purpose: record
-    # construction (float(), pydantic) can raise non-OSError, and telemetry
-    # must never break retrieval.
-    except Exception:
-        logger.warning("recall chunk telemetry append failed", exc_info=True)
-
-
-def _record_mcp_tool_call(
-    tool_name: str,
-    input_text: str,
-    output_text: str,
-    ctx: str | None = None,
-) -> None:
-    from datetime import UTC, datetime
-
-    before_tokens = _estimate_tokens(input_text)
-    after_tokens = _estimate_tokens(output_text)
-    reduction = max(0, before_tokens - after_tokens)
-    reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
-    _COMPRESSION_TELEMETRY.append(
-        CompressionRecord(
-            ts=datetime.now(UTC).isoformat(),
-            engine=tool_name,
-            caller="mcp",
-            ctx=ctx,
-            before_tokens=before_tokens,
-            after_tokens=after_tokens,
-            reduction_tokens=reduction,
-            reduction_pct=round(reduction_pct, 1),
-            kind="tool_io",
-        )
-    )
-
-
-def _build_planner_executor_prompts(
-    query: str, compressed_context: str, ctx_name: str | None
-) -> tuple[str, str, str]:
-    ctx_label = ctx_name or "auto"
-
-    planner = (
-        "Você é o planner. Gere um plano executável para agentes Codex em paralelo.\n"
-        "Retorne JSON válido com: goal, assumptions, tasks[].\n"
-        "Cada task deve conter: task_id, objective, files, dependencies, "
-        "acceptance_criteria, tests, risk, rollback.\n\n"
-        f"Contexto AXON (ctx={ctx_label}):\n{compressed_context}\n\n"
-        f"Solicitação: {query}"
-    )
-    executor = (
-        "Você é o executor Codex. Execute apenas a task recebida.\n"
-        "Saída obrigatória: mudanças, arquivos, comandos, testes, próximos passos.\n\n"
-        f"Contexto AXON comprimido:\n{compressed_context}\n\n"
-        "Task: <COLE_A_TASK_JSON_AQUI>"
-    )
-    local_knowledge = (
-        "Você é um assistente local para preencher arquivos de knowledge vazios "
-        "com rascunho útil.\n"
-        "Formato: resumo, passos, exemplos curtos, perguntas para aprofundamento.\n\n"
-        f"Contexto AXON (ctx={ctx_label}):\n{compressed_context}\n\n"
-        f"Tema: {query}"
-    )
-    return planner, executor, local_knowledge
-
-
-def _load_retrieval_profile() -> tuple[str | None, str, tuple[str, ...]]:
-    from axon.context.contracts import load_retrieval_profile
-
-    return load_retrieval_profile(runtime=_RUNTIME)
-
-
-def _select_retrieval_strategy(query: str, ctx: str | None) -> tuple[object, str, str | None, str]:
-    from axon.context.contracts import select_retrieval_strategy
-
-    return select_retrieval_strategy(query, ctx, loader=_load_retrieval_profile)
-
-
-def _build_context_pack(
-    *,
-    strategy,
-    task_type: str,
-    profile: str | None,
-    mode: str,
-    effective_ctx: str | None,
-    hits: list[dict],
-    roots: RepoRoots | None = None,
-) -> ContextPack:
-    contexts = (effective_ctx,) if effective_ctx else strategy.contexts
-    segments: list[str] = []
-    total_chars = 0
-
-    for hit in hits[: strategy.max_segments]:
-        payload = hit.get("payload") or {}
-        project = str(payload.get("project", ""))
-        file_path = display_path(str(payload.get("file_path", "?")), project, roots or {})
-        symbol = payload.get("symbol", "unknown")
-        language = payload.get("language", "?")
-        score = float(hit.get("score", 0.0))
-        content = str(payload.get("content", "")).strip().replace("\n", " ")
-        remaining = strategy.max_chars - total_chars
-        if remaining <= 0:
-            break
-        repo_line = f"\nRepo: {project}" if project else ""
-        segment = (
-            f"### {symbol} ({language})\n"
-            f"Arquivo: {file_path}"
-            f"{repo_line}\n"
-            f"Score: {score:.3f}\n"
-            f"Trecho: {content[:remaining]}"
-        ).strip()
-        if not segment:
-            continue
-        segments.append(segment)
-        total_chars += len(segment)
-
-    return ContextPack(
-        strategy=strategy,
-        task_type=task_type,
-        profile=profile,
-        mode=mode,
-        contexts=contexts,
-        segments=tuple(segments),
-        metadata=(
-            ("ctx", effective_ctx or "auto"),
-            ("hits", str(len(segments))),
-            ("profile", profile or ""),
-            ("mode", mode),
-        ),
-    )
-
-
-def _format_context_pack(pack: ContextPack) -> str:
-    contexts = ",".join(pack.contexts) if pack.contexts else "auto"
-    return (
-        "## Context pack\n"
-        f"strategy: {pack.strategy.name}\n"
-        f"task_type: {pack.task_type}\n"
-        f"contexts: {contexts}\n"
-        f"segments: {len(pack.segments)}"
-    )
-
-
-def _staleness_notes(hits: list[dict]) -> list[str]:
-    notes: list[str] = []
-    for hit in hits:
-        staleness = hit.get("staleness") or {}
-        if not isinstance(staleness, dict) or not staleness.get("is_stale"):
-            continue
-        payload = hit.get("payload") or {}
-        symbol = payload.get("symbol", "unknown")
-        replacement_id = staleness.get("replacement_id")
-        reasons = staleness.get("reasons") or []
-        reason = staleness.get("replacement_reason") or ",".join(reasons)
-        note = f"- {symbol} stale"
-        if replacement_id:
-            note += f" -> replacement={replacement_id}"
-        if reason:
-            note += f" ({reason})"
-        notes.append(note)
-    return notes
-
-
-def _rerank_enabled() -> bool:
-    """On by default since 2026-08-29; AXON_RERANK=0 opts out."""
-    return os.environ.get("AXON_RERANK", "1") != "0"
-
-
-def _rerank_hits(query: str, hits: list[dict]) -> tuple[list[dict], str | None]:
-    """Reorder hits by cross-encoder score.
-
-    Returns (hits, reason). reason is None when the rerank actually ran; when it
-    did not, the ORIGINAL order comes back with a reason, because a pack that
-    skipped the rerank must not be indistinguishable from one that passed it.
-    """
-    if not hits:
-        return hits, None
-    try:
-        docs = [
-            str((hit.get("payload") or {}).get("content", ""))[:_RERANK_TEXT_CHARS]
-            for hit in hits
-        ]
-        pairs = [(query, doc) for doc in docs]
-        reranker = _get_reranker()
-        # fastembed's TextCrossEncoder API: rerank_pairs(pairs). The pinned
-        # version (0.8.0) always exposes it; a broken fallback is worse than
-        # a clean AttributeError caught by the except below.
-        scores = list(reranker.rerank_pairs(pairs))
-        scored = [
-            (index, float(score), {**hit, "rerank_score": float(score)})
-            for index, (hit, score) in enumerate(zip(hits, scores, strict=True))
-        ]
-        scored.sort(key=lambda item: (-item[1], item[0]))
-        return [hit for _, _, hit in scored], None
-    except Exception as exc:  # noqa: BLE001 - never break retrieval
-        logger.warning("cross-encoder rerank failed; using original order", exc_info=True)
-        return hits, f"{type(exc).__name__}: {str(exc)[:120]}"
-
-
-async def _retrieve_context(
-    *,
-    query: str,
-    ctx: str | None,
-    language: str | None,
-    max_depth: int,
-    max_nodes: int,
-    max_tokens: int,
-    project: str | None = None,
-    dedup_against: list[str] | None = None,
-    include_tests: bool = False,
-) -> tuple[str, ContextPack, list[dict]]:
-    strategy, task_type, profile, mode = _select_retrieval_strategy(query, ctx)
-    collections = get_search_collections(ctx) if ctx else list(strategy.contexts)
-    store = _get_vector_store()
-    query_vector = _get_embedder().embed_one(query)
-    rerank = _rerank_enabled()
-    results = await store.search(
-        query_vector=query_vector,
-        query=query,
-        collections=collections,
-        language=language,
-        project=project,
-        prefer_ctx=ctx,
-        include_tests=include_tests,
-        top_k=(
-            _RERANK_CANDIDATES if rerank else strategy.max_segments * _DEDUP_OVERFETCH
-        ),
-        max_depth=max_depth,
-        max_nodes=_RERANK_CANDIDATES if rerank else max_nodes * _DEDUP_OVERFETCH,
-        max_tokens=(
-            max_tokens * 4
-            if rerank
-            # The token budget has to grow with the row count, or _rank_and_limit
-            # truncates the over-fetch away before dedup ever sees it.
-            else min(max_tokens, max(1, strategy.max_chars // 4)) * _DEDUP_OVERFETCH
-        ),
-    )
-    results = dedup_hits(results)
-    rerank_note: str | None = "disabled"
-    if rerank:
-        # Reorders whatever candidate list the store returns, hybrid search or not.
-        reranked, rerank_note = _rerank_hits(query, results)
-        results = _trim_to_budget(
-            reranked,
-            max_nodes=max_nodes,
-            max_tokens=max_tokens,
-        )
-    else:
-        # Give back the slack taken above: the caller asked for max_nodes.
-        results = _trim_to_budget(results, max_nodes=max_nodes, max_tokens=max_tokens)
-
-    telemetry_hits = results
-    pack_hits = results
-    if dedup_against:
-        telemetry_hits = []
-        pack_hits = []
-        known_shingles = transcript_shingle_set(dedup_against)
-        for hit in results:
-            payload = hit.get("payload") or {}
-            content = str(payload.get("content", ""))
-            dedup = (
-                "dropped"
-                if shingles_cover(content, known_shingles, cutoff=DELTA_RECALL_CUTOFF)
-                else "kept"
-            )
-            marked = {**hit, "dedup": dedup}
-            telemetry_hits.append(marked)
-            if dedup == "kept":
-                pack_hits.append(marked)
-
-    _record_chunk_recall(
-        query=query,
-        strategy_name=strategy.name,
-        requested_max_tokens=max_tokens,
-        hits=telemetry_hits,
-        ctx=ctx,
-        rerank_note=rerank_note,
-    )
-
-    pack = _build_context_pack(
-        strategy=strategy,
-        task_type=task_type,
-        profile=profile,
-        mode=mode,
-        effective_ctx=ctx,
-        hits=pack_hits,
-        roots=load_repo_roots(_RUNTIME),
-    )
-    if not pack_hits:
-        return "Nenhum resultado encontrado.", pack, results
-
-    lines: list[str] = list(pack.segments)
-    top_symbol = (pack_hits[0].get("payload") or {}).get("symbol") if pack_hits else None
-    if top_symbol:
-        # Structural "related deps" enrichment over the SQLite source-of-truth
-        # (dec-101), not the Redis traverse cache (dec-116 #4). Redis stays as the
-        # structural cache for other paths; this read just no longer depends on it.
-        store = _get_session_store()
-        await store.init()
-        subgraph = await store.query_subgraph(top_symbol, depth=max_depth)
-        related = [n for n in subgraph.get("nodes", []) if n != top_symbol]
-        if related:
-            lines.append(f"## Dependencias relacionadas ({max_depth}-step)")
-            lines.append(f"Root: {top_symbol}")
-            lines.append(f"Nodes: {', '.join(related[:10])}")
-
-    lines.append(_format_context_pack(pack))
-    stale_notes = _staleness_notes(pack_hits)
-    if stale_notes:
-        lines.append("## Staleness")
-        lines.extend(stale_notes)
-    return "\n\n".join(lines), pack, results
-
-
-def _self_correct_enabled() -> bool:
-    return os.getenv("AXON_SELF_CORRECT", "1").strip().lower() not in ("0", "false", "no", "off")
-
-
-def _self_correct_model() -> str:
-    """Model for the self-correction judge/reformulation. Defaults to the active
-    profile's trivial tier; override via AXON_SELF_CORRECT_MODEL — e.g. an
-    ``openrouter/...`` id for reliable, aggregated capacity off the free tier, or
-    an ``ollama/...`` id to point the offline calibration run at local hardware."""
-    return os.getenv("AXON_SELF_CORRECT_MODEL") or _bottom_tier_model()
-
-
-def _cheap_llm_json(system: str, user: str) -> dict:
-    """One cheap completion returning parsed JSON, or {} on failure.
-
-    Model is the trivial tier by default, overridable via AXON_SELF_CORRECT_MODEL."""
-    model = _self_correct_model()
-    kwargs = litellm_kwargs(model, ollama_host=_RUNTIME.ollama_local_host,
-                            num_ctx=_RUNTIME.scoring_num_ctx)
-    try:
-        response = litellm.completion(
-            **kwargs, temperature=0, response_format={"type": "json_object"},
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user}],
-        )
-        return json.loads(response.choices[0].message.content)
-    except Exception:
-        return {}
-
-
-def _judge_sufficiency(query: str, context: str) -> bool:
-    payload = _cheap_llm_json(
-        "Voce julga se o CONTEXTO responde a PERGUNTA. Responda JSON "
-        '{"sufficient": true|false}. true so se o contexto claramente basta.',
-        f"PERGUNTA:\n{query}\n\nCONTEXTO:\n{context}",
-    )
-    return bool(payload.get("sufficient", False))
-
-
-def _reformulate_query(query: str) -> str:
-    payload = _cheap_llm_json(
-        "Reescreva a busca para melhorar recuperacao (sinonimos, termos mais "
-        'especificos). Responda JSON {"query": "..."}.',
-        query,
-    )
-    rewritten = str(payload.get("query", "")).strip()
-    return rewritten or query
-
-
-async def _graph_fallback(hits: list[dict]) -> str:
-    if not hits:
-        return ""
-    symbol = (hits[0].get("payload") or {}).get("symbol")
-    if not symbol:
-        return ""
-    store = _get_session_store()
-    await store.init()
-    subgraph = await store.query_subgraph(symbol, depth=2)
-    edges = subgraph.get("edges") or []
-    if not edges:
-        return ""
-    lines = "\n".join(f"{e['source']} -> {e['target']}" for e in edges[:10])
-    return f"## Dependencias relacionadas (grafo)\nRoot: {symbol}\n{lines}"
-
-
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
-
-
-@mcp.tool()
-@traced_tool(risk="read")
-async def search_code(
-    query: str,
-    ctx: str | None = None,
-    language: str | None = None,
-    caller: str = "claude-code",
-    max_depth: int = 2,
-    max_nodes: int = 25,
-    max_tokens: int = 1200,
-    project: str | None = None,
-    repo: str | None = None,
-    include_tests: bool = False,
-) -> str:
-    """
-    Busca semântica no codebase indexado.
-
-    ctx: personal | career | knowledge | saas | work
-    Para acessar work, ctx='work' é obrigatório e explícito.
-    Sem ctx, busca em personal + career + knowledge + saas.
-    caller: claude-code | copilot (afeta budget de tokens retornados)
-    project: opcionalmente restringe a busca ao projeto/repositório indicado.
-    include_tests: arquivos de teste ficam de fora, salvo com include_tests=True.
-    """
-    target_project = _resolve_repo(project or repo, allow_none=True)
-    trace = current_trace_recorder()
-    response, pack, hits = await _retrieve_context(
-        query=query,
-        ctx=ctx,
-        language=language,
-        max_depth=max_depth,
-        max_nodes=max_nodes,
-        max_tokens=max_tokens,
-        project=target_project,
-        include_tests=include_tests,
-    )
-    if trace is not None:
-        trace.append_stage(
-            "retrieval",
-            payload={
-                "strategy": pack.strategy.name,
-                "task_type": pack.task_type,
-                "mode": pack.mode or "",
-                "hit_count": len(hits),
-            },
-        )
-    budget = CONTEXT_BUDGETS.get(caller, 4000)
-    trace_id = trace._trace_id if trace is not None else str(uuid.uuid4())
-    return _truncate(f"trace_id: {trace_id}\n{response}", budget)
 
 
 @mcp.tool()
@@ -732,31 +126,6 @@ async def get_session_memory(
         lines.append("## Decisões capturadas\n")
         for d in decisions:
             lines.append(f"- **{d.id}** ({d.status}) {d.summary}")
-
-    budget = CONTEXT_BUDGETS.get(caller, 4000)
-    return _truncate("\n".join(lines), budget)
-
-
-@mcp.tool()
-@traced_tool(risk="read")
-async def get_dependencies(
-    symbol: str,
-    caller: str = "claude-code",
-) -> str:
-    """
-    Retorna o grafo de dependências de uma classe ou função.
-    """
-    store = _get_graph_store()
-    await store.ensure_schema()
-    deps = await store.get_subgraph(symbol)
-    if not deps["exists"]:
-        return f"Sem dependências indexadas para '{symbol}'."
-
-    lines = [f"## Dependências de {symbol}\n"]
-    if deps["calls"]:
-        lines.append(f"**Chama:** {', '.join(deps['calls'])}")
-    if deps["called_by"]:
-        lines.append(f"**Chamado por:** {', '.join(deps['called_by'])}")
 
     budget = CONTEXT_BUDGETS.get(caller, 4000)
     return _truncate("\n".join(lines), budget)
@@ -828,223 +197,6 @@ async def save_adr(
     )
     await store.save_adr(adr)
     return f"ADR salvo: '{title}' em projeto '{project}'."
-
-
-@mcp.tool()
-@traced_tool(risk="read")
-async def ask(
-    query: str,
-    cwd: str | None = None,
-    ctx: str | None = None,
-    caller: str = "claude-code",
-    rtk_max_tokens: int | None = None,
-) -> str:
-    """
-    Ponto de entrada unificado. Detecta contexto, roteia modelo e busca contexto relevante.
-    ctx: força contexto; sem ctx usa ContextDetector automático.
-    """
-    from axon.context.detector import ContextDetector
-
-    session_store = _get_session_store()
-    await session_store.init()
-
-    detector = ContextDetector(session_store)
-    result = detector.detect(query, cwd=cwd)
-    effective_ctx = ctx or result.context
-    trace = current_trace_recorder()
-    trace_id = trace._trace_id if trace is not None else str(uuid.uuid4())
-    trace_store = _TRACE_STORE
-
-    gateway_decision = _POLICY.decide(
-        ctx=effective_ctx,
-        model="claude-haiku-4-5-20251001",
-        caller=caller,
-        force_cloud=(caller == "cloud"),
-        trace_store=trace_store,
-        trace_id=trace_id,
-        trace_payload={"stage": "gateway"},
-    )
-    if not gateway_decision.allowed and caller == "cloud":
-        return (
-            "Fallback cloud bloqueado por policy central. "
-            f"reason_code={gateway_decision.reason_code.value}; "
-            f"policy_version={gateway_decision.policy_version}."
-        )
-
-    code_context, pack, hits = await _retrieve_context(
-        query=query,
-        ctx=effective_ctx,
-        language=None,
-        max_depth=2,
-        max_nodes=25,
-        max_tokens=rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS,
-    )
-    if trace is not None:
-        trace.append_stage(
-            "retrieval",
-            payload={
-                "strategy": pack.strategy.name,
-                "task_type": pack.task_type,
-                "mode": pack.mode or "",
-                "hit_count": len(hits),
-            },
-        )
-
-    async def _retry(q: str):
-        return await _retrieve_context(
-            query=q,
-            ctx=effective_ctx,
-            language=None,
-            max_depth=2,
-            max_nodes=25,
-            max_tokens=rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS,
-        )
-
-    correction = await correct_retrieval(
-        query, effective_ctx, code_context, pack, hits,
-        retrieve_fn=_retry, judge_fn=_judge_sufficiency,
-        reformulate_fn=_reformulate_query, graph_fn=_graph_fallback,
-        augment_pack_fn=lambda pack, graph_text: dataclasses.replace(
-            pack, segments=pack.segments + (graph_text,)
-        ),
-        enabled=_self_correct_enabled(),
-    )
-    code_context, pack, hits = correction.code_context, correction.pack, correction.hits
-    if trace is not None:
-        trace.append_stage("self_correct", payload=correction.meta)
-
-    if pack.strategy.enable_compression:
-        max_tokens = rtk_max_tokens if rtk_max_tokens is not None else _RTK_MAX_TOKENS
-        before_tokens = _estimate_tokens(pack.text)
-
-        caveman_out, caveman_err = await caveman_compress_guarded(
-            pack.text, max_tokens=max_tokens, ctx=effective_ctx
-        )
-
-        compressed_context = caveman_out
-        quality_err = compression_quality_note(pack.text, compressed_context)
-        used_engine = "caveman/phi3" if caveman_err is None else "fallback"
-
-        after_tokens = _estimate_tokens(compressed_context)
-        # No max(0, ...): flooring at zero made a compressor that EXPANDS its
-        # input indistinguishable from one that did nothing. A negative value is
-        # the honest reading and the only one a reader can act on.
-        reduction = before_tokens - after_tokens
-        reduction_pct = (reduction / before_tokens * 100) if before_tokens else 0.0
-    else:
-        compressed_context = pack.text
-        caveman_err = f"strategy={pack.strategy.name}"
-        quality_err = None
-        used_engine = "disabled"
-        before_tokens = _estimate_tokens(pack.text)
-        after_tokens = before_tokens
-        reduction = 0
-        reduction_pct = 0.0
-    if trace is not None:
-        trace.append_stage(
-            "compression",
-            model=used_engine,
-            payload={
-                "strategy": pack.strategy.name,
-                "before_tokens": before_tokens,
-                "after_tokens": after_tokens,
-                "reduction_pct": round(reduction_pct, 1),
-                "compression_enabled": pack.strategy.enable_compression,
-                "caveman_note": caveman_err or "",
-                "quality_note": quality_err or "",
-            },
-        )
-
-    from datetime import UTC, datetime
-
-    _COMPRESSION_TELEMETRY.append(
-        CompressionRecord(
-            ts=datetime.now(UTC).isoformat(),
-            engine=used_engine,
-            caller=caller,
-            ctx=effective_ctx,
-            before_tokens=before_tokens,
-            after_tokens=after_tokens,
-            reduction_tokens=reduction,
-            reduction_pct=round(reduction_pct, 1),
-            kind="compression",
-            rejection_note=caveman_err or quality_err or None,
-        )
-    )
-
-    planner_prompt, executor_prompt, local_prompt = _build_planner_executor_prompts(
-        query=query,
-        compressed_context=compressed_context,
-        ctx_name=effective_ctx,
-    )
-
-    budget = CONTEXT_BUDGETS.get(caller, 4000)
-    response = f"trace_id: {trace_id}\n"
-    response += f"Contexto detectado: {result.display}\n\n"
-    response += f"## Contexto relevante\n{code_context}\n\n"
-    response += f"## compression\nengine: {used_engine}\n"
-    if caveman_err:
-        response += f"caveman_note: {caveman_err}\n"
-    if quality_err:
-        response += f"quality_note: {quality_err}\n"
-    response += f"tokens aprox: {before_tokens} -> {after_tokens} (-{reduction_pct:.1f}%)\n\n"
-    response += f"## Prompt pronto — Claude (Planner)\n{planner_prompt}\n\n"
-    response += f"## Prompt pronto — Codex (Executor)\n{executor_prompt}\n\n"
-    response += f"## Prompt pronto — Local (Knowledge Draft)\n{local_prompt}"
-
-    return _truncate(response, budget)
-
-
-@mcp.tool()
-@traced_tool(risk="read")
-async def get_graph_neighbors(node: str, depth: int = 1) -> str:
-    """Retorna vizinhos de um nó no grafo estrutural de código (SQLite)."""
-    store = _get_session_store()
-    await store.init()
-    subgraph = await store.query_subgraph(node, depth=depth)
-    edges = subgraph["edges"]
-    if not edges:
-        response = "Nenhum vizinho encontrado."
-    else:
-        response = "\n".join(f"{e['source']} -> {e['target']}" for e in edges)
-    _record_mcp_tool_call("get_graph_neighbors", node, response)
-    return response
-
-
-@mcp.tool()
-@traced_tool(risk="read")
-async def get_graph_path(from_node: str, to_node: str) -> str:
-    """Retorna o caminho mais curto entre dois nós no grafo de código (SQLite)."""
-    store = _get_session_store()
-    await store.init()
-    path = await store.shortest_path(from_node, to_node)
-    response = " -> ".join(path) if path else "Nenhum caminho encontrado."
-    _record_mcp_tool_call("get_graph_path", f"{from_node}\n{to_node}", response)
-    return response
-
-
-@mcp.tool()
-@traced_tool(risk="read")
-async def get_graph_context(query: str, token_budget: int = 1000) -> str:
-    """Contexto graph-aware do código, servido pela lib GLYPH (dec-116).
-
-    Ancora a query no grafo de código consolidado (SQLite) e expande a
-    vizinhança via GLYPH, retornando segmentos ordenados por relevância.
-    """
-    # Lazy GLYPH import (dec-116 #3): degrade only this tool when glyph-kg is
-    # absent, instead of failing the whole server at module-import time.
-    try:
-        from axon.context.graph_source import GraphContextSource
-    except ModuleNotFoundError:
-        return "GLYPH não instalado; rode `pip install glyph-kg[retrieval]`."
-    store = _get_session_store()
-    await store.init()
-    source = GraphContextSource(store, _get_graph_embedder())
-    pack = await source.context(query, token_budget=token_budget)
-    response = pack.text if pack.segments else "Nenhum contexto de grafo encontrado."
-    response = _truncate(response, token_budget)
-    _record_mcp_tool_call("get_graph_context", query, response)
-    return response
 
 
 # ---------------------------------------------------------------------------
@@ -1427,38 +579,6 @@ async def axon_handoff(
     return f"{brief}\n\n---\nwritten to: {target}"
 
 
-async def _export_repo_docs(store: SessionStore, repo: str) -> str:
-    """Export a repo's decisions as ADR + architecture docs to the vault."""
-    vault = discover_vault()
-    if vault is None:
-        return "no Obsidian vault discovered — export skipped."
-    decisions = await store.find_decisions_by_repo(repo, limit=200)
-    for decision in decisions:
-        export_adr(decision, vault=vault)
-    arch = export_architecture_doc(decisions, vault=vault, name=repo)
-    return f"exported {len(decisions)} decision(s) for {repo} to {arch}."
-
-
-@mcp.tool()
-@traced_tool(risk="destructive")
-async def axon_export_now(repo: str | None = None) -> str:
-    """Export architecture + ADR docs for a repo's decisions to the vault."""
-    store = _get_session_store()
-    await store.init()
-    return await _export_repo_docs(store, _resolve_repo(repo))
-
-
-@mcp.tool()
-@traced_tool(risk="destructive")
-async def axon_mark_done(repo: str | None = None) -> str:
-    """Mark the current work scope done, then export the repo's docs."""
-    store = _get_session_store()
-    await store.init()
-    repo = _resolve_repo(repo)
-    await store.save_note(SessionNote(project=repo, body="[scope] marked done"))
-    return await _export_repo_docs(store, repo)
-
-
 @mcp.tool()
 @traced_tool(risk="read")
 async def axon_validation_stats(
@@ -1493,12 +613,22 @@ async def axon_validation_stats(
     return _json.dumps(stats.model_dump(), sort_keys=True)
 
 
+async def _probe_postgres() -> None:
+    import asyncpg
+
+    con = await asyncpg.connect(_RUNTIME.pg_url)
+    try:
+        await con.fetchval("SELECT 1")
+    finally:
+        await con.close()
+
+
 @mcp.tool()
 @traced_tool(risk="read")
 async def axon_health() -> str:
     """Report the health of each AXON subsystem.
 
-    Covers pgvector, the Obsidian vault and git.
+    Covers Postgres, the Obsidian vault and git.
 
     Each external probe is time-bounded so an unreachable backend cannot hang
     the whole report — important when AXON is configured against a host that
@@ -1513,14 +643,12 @@ async def axon_health() -> str:
     lines = ["# AXON health"]
 
     try:
-        await asyncio.wait_for(
-            _get_vector_store().ensure_collections(), timeout=_PROBE_TIMEOUT
-        )
-        lines.append("- pgvector: ok")
+        await asyncio.wait_for(_probe_postgres(), timeout=_PROBE_TIMEOUT)
+        lines.append("- postgres: ok")
     except TimeoutError:
-        lines.append("- pgvector: down (timeout)")
+        lines.append("- postgres: down (timeout)")
     except Exception as exc:
-        lines.append(f"- pgvector: down ({exc})")
+        lines.append(f"- postgres: down ({exc})")
 
     vault = discover_vault()
     lines.append(f"- vault: {vault}" if vault else "- vault: not found")

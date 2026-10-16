@@ -87,19 +87,6 @@ def test_export_adr_uses_frontmatter_and_clean_heading(tmp_path: Path) -> None:
     assert "**Related:** [[dec-002]]" in text
 
 
-def test_export_adr_chunks_without_redundant_breadcrumb(tmp_path: Path) -> None:
-    from axon.embedder.chunker import chunk_source
-
-    path = export_adr(_decision(), vault=tmp_path)
-    chunks = chunk_source(path.read_text(encoding="utf-8"), "markdown", str(path))
-    symbols = [c.symbol for c in chunks]
-    contents = "\n".join(c.content for c in chunks)
-    assert "dec-001 > drop neo4j backend" in symbols
-    assert "dec-001 > dec-001" not in " ".join(symbols)  # no doubled id
-    assert "validation_score" not in contents  # facets not embedded
-    assert "---" not in contents
-
-
 def test_architecture_doc_groups_by_status(tmp_path: Path) -> None:
     decisions = [
         _decision(id="dec-001", status="active", summary="keep postgres"),

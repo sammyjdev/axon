@@ -25,11 +25,11 @@ def test_doctor_runs_and_reports_presence(monkeypatch, tmp_path):
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code in (0, 1, 2)
     assert "AXON doctor" in result.stdout
-    assert "capture & adr checks" in result.stdout
+    assert "capture checks" in result.stdout
     assert "## Presence" in result.stdout
     assert "## Liveness" in result.stdout
     assert "axon: ok" in result.stdout
-    assert "caveman engine: ok" in result.stdout
+    assert "caveman" not in result.stdout
 
 
 def test_doctor_supports_ci_mode(monkeypatch, tmp_path):
@@ -66,32 +66,16 @@ def test_install_hooks_uninstall(monkeypatch):
     assert "post-commit" in result.stdout
 
 
-def test_init_installs_hooks_and_indexes(monkeypatch, tmp_path):
+def test_init_installs_hooks_and_indexes_nothing(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "axon.hooks.git_installer.install_hooks",
         lambda repo_path=".": ["post-commit"],
     )
 
-    class FakeStore:
-        def __init__(self, db_path):
-            pass
-
-        async def init(self):
-            return None
-
-        async def close(self):
-            return None
-
-    async def fake_index_repo(repo_path, *, store):
-        return ["sym1", "sym2", "sym3"]
-
-    monkeypatch.setattr("axon.store.session_store.SessionStore", FakeStore)
-    monkeypatch.setattr("axon.code.indexer.index_repo", fake_index_repo)
-
     result = runner.invoke(app, ["init", str(tmp_path)])
     assert result.exit_code == 0
     assert "post-commit" in result.stdout
-    assert "3 symbols" in result.stdout
+    assert "indexed" not in result.stdout
 
 
 def test_serve_starts_mcp_server(monkeypatch):
@@ -215,13 +199,7 @@ def _registered_command_names():
 
 def test_survivor_subapps_registered():
     names = _registered_command_names()
-    for name in ("adr", "graph", "profile", "session"):
-        assert name in names
-
-
-def test_standalone_commands_registered():
-    names = _registered_command_names()
-    for name in ("scan", "search"):
+    for name in ("adr", "profile", "session"):
         assert name in names
 
 
@@ -243,8 +221,26 @@ def test_cut_commands_absent():
         "rtk-proxy",
         "run",
         "git",
+        # retired with code vectorization, 2026-10-15
+        "graph",
+        "index-compare",
+        "index-dev",
+        "index-prune-legacy",
+        "index-vault",
+        "ingest-vault",
+        "scan",
+        "search",
+        "sync",
     ):
         assert name not in names
+
+
+def test_retired_adr_subcommands_absent():
+    from typer.main import get_command
+
+    adr = get_command(app).commands["adr"]
+    for name in ("audit", "infer-commit", "review", "validate-drafts"):
+        assert name not in adr.commands
 
 
 def test_survivor_subapp_is_invocable():
@@ -301,9 +297,9 @@ def test_export_summary(monkeypatch, tmp_path):
     assert "exported summary" in result.stdout
 
 
-def test_setup_configure_index_dev_registered():
+def test_setup_and_configure_registered():
     names = _registered_command_names()
-    for name in ("setup", "configure", "index-dev"):
+    for name in ("setup", "configure"):
         assert name in names
 
 

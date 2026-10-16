@@ -187,48 +187,6 @@ async def test_wire_write_tool_axon_capture_normalises_path(
     assert decisions[0].repo == "capture_target"
 
 
-async def test_wire_destructive_tool_axon_export_now_normalises_path(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = tmp_path / "vault"
-    (vault / ".obsidian").mkdir(parents=True)
-    monkeypatch.setenv("AXON_VAULT", str(vault))
-    monkeypatch.setenv("AXON_ALLOW_DESTRUCTIVE", "1")
-
-    repo_dir = _init_repo(tmp_path / "export_target")
-    decision = Decision(
-        id=await store.next_decision_id(),
-        timestamp=datetime.now(UTC),
-        agent="manual",
-        repo="export_target",
-        summary="decision exported to architecture doc",
-        status="draft",
-    )
-    await store.save_decision(decision)
-
-    out = await server.axon_export_now(repo=str(repo_dir))
-    assert "exported 1 decision(s) for export_target" in out
-
-    arch_file = vault / "AXON" / "Architecture" / "export_target.md"
-    assert arch_file.is_file()
-
-
-async def test_wire_destructive_tool_axon_mark_done_normalises_path(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = tmp_path / "vault"
-    (vault / ".obsidian").mkdir(parents=True)
-    monkeypatch.setenv("AXON_VAULT", str(vault))
-    monkeypatch.setenv("AXON_ALLOW_DESTRUCTIVE", "1")
-
-    repo_dir = _init_repo(tmp_path / "done_target")
-    out = await server.axon_mark_done(repo=str(repo_dir))
-    assert str(repo_dir) not in out, "the raw path must not survive into the output"
-    assert "done_target" in out
-    notes = await store.get_notes("done_target")
-    assert any("[scope] marked done" in n.body for n in notes)
-
-
 async def test_axon_validation_stats_normalises_path(
     store: SessionStore, tmp_path: Path
 ) -> None:

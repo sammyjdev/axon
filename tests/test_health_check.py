@@ -10,7 +10,6 @@ sys.path.insert(0, str(scripts_dir))
 from checks.versioning import VersioningCheck
 from checks.coupling import CouplingCheck
 from checks.drift import DriftCheck
-from checks.performance import PerformanceCheck
 from checks.ci_status import CIStatusCheck
 
 
@@ -63,20 +62,6 @@ def test_drift_check_runs():
         assert "diff_percent" in forge_check or "error" in forge_check
 
 
-def test_performance_check_runs():
-    """Validate performance checks complete without crashing."""
-    check = PerformanceCheck()
-    result = check.run()
-
-    assert isinstance(result, dict)
-    assert "glyph_graph_build_latency_ms" in result
-    assert "glyph_cache_hit_rate" in result
-
-    for metric_value in result.values():
-        assert isinstance(metric_value, dict)
-        assert "status" in metric_value
-
-
 def test_ci_status_check_runs():
     """Validate CI status checks complete without crashing."""
     check = CIStatusCheck()
@@ -101,7 +86,6 @@ def test_all_status_values_valid():
         VersioningCheck(),
         CouplingCheck(),
         DriftCheck(),
-        PerformanceCheck(),
         CIStatusCheck(),
     ]
 
@@ -127,9 +111,6 @@ if __name__ == "__main__":
 
     test_drift_check_runs()
     print("✓ test_drift_check_runs")
-
-    test_performance_check_runs()
-    print("✓ test_performance_check_runs")
 
     test_ci_status_check_runs()
     print("✓ test_ci_status_check_runs")

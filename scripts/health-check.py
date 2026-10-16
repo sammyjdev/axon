@@ -13,7 +13,6 @@ sys.path.insert(0, str(checks_dir.parent))
 from checks.versioning import VersioningCheck
 from checks.coupling import CouplingCheck
 from checks.drift import DriftCheck
-from checks.performance import PerformanceCheck
 from checks.ci_status import CIStatusCheck
 
 
@@ -46,7 +45,6 @@ def main():
             "versioning": VersioningCheck().run(),
             "coupling": CouplingCheck().run(),
             "drift": DriftCheck().run(),
-            "performance": PerformanceCheck().run(),
             "ci_status": CIStatusCheck().run(),
         }
     except Exception as e:

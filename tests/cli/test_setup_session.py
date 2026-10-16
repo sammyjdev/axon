@@ -8,8 +8,8 @@ def test_defaults():
     assert s.transport == "stdio"
     assert s.http_host is None
     assert s.http_port is None
-    assert s.languages == ()
-    assert s.profile == "solo-dev"
+    assert not hasattr(s, "languages")
+    assert not hasattr(s, "profile")
     assert s.vault_contexts == ()
     assert s.include_work_context is False
 
@@ -21,12 +21,10 @@ def test_with_http_transport():
     assert s.http_host is None
 
 
-def test_with_languages_and_vault():
+def test_with_vault():
     s = SetupSession(
-        languages=("python", "typescript"),
         vault_contexts=("personal", "knowledge"),
         include_work_context=True,
     )
-    assert "python" in s.languages
     assert "personal" in s.vault_contexts
     assert s.include_work_context is True

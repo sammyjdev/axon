@@ -33,21 +33,16 @@ class CheckResult:
 
 def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
     """Run the dec-114 check pack. Stable function used by formatters and CI mode."""
-    from axon.doctor.checks.adr import check_stale_pending
     from axon.doctor.checks.capture import (
         check_pending_backlog,
         check_quarantine_size,
         check_warnings_log,
     )
     from axon.doctor.checks.capture_path import (
-        check_capture_gap,
         check_hook_interpreters,
         check_install_freshness,
     )
-    from axon.doctor.checks.embedder_live import check_embedder_live
-    from axon.doctor.checks.index_composition import check_index_composition
     from axon.doctor.checks.install_branch import check_install_branch
-    from axon.doctor.checks.recall_savings import check_recall_savings
     from axon.doctor.checks.telemetry_freshness import check_telemetry_freshness
     from axon.doctor.checks.toolchain import check_commitlint_compat
 
@@ -55,16 +50,11 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_pending_backlog(data_root=data_root),
         check_quarantine_size(data_root=data_root),
         check_warnings_log(data_root=data_root),
-        check_stale_pending(data_root=data_root),
-        check_index_composition(),
-        check_recall_savings(data_root=data_root),
         check_telemetry_freshness(data_root=data_root),
         check_install_branch(),
         check_commitlint_compat(),
         check_hook_interpreters(),
         check_install_freshness(),
-        check_capture_gap(),
-        check_embedder_live(),
     ]
 
 

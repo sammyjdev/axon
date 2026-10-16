@@ -70,55 +70,10 @@ async def test_axon_handoff_includes_context(store: SessionStore) -> None:
     assert "a decision" in brief
 
 
-async def test_axon_export_now_writes_docs(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("AXON_ALLOW_DESTRUCTIVE", "1")
-    await server.axon_capture(summary="a decision", repo="axon")
-    vault = tmp_path / "vault"
-    (vault / ".obsidian").mkdir(parents=True)
-    monkeypatch.setattr(server, "discover_vault", lambda: vault)
-
-    response = await server.axon_export_now(repo="axon")
-
-    assert "exported 1 decision" in response
-    assert (vault / "AXON" / "Architecture" / "axon.md").exists()
-
-
-async def test_axon_mark_done_notes_and_exports(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("AXON_ALLOW_DESTRUCTIVE", "1")
-    vault = tmp_path / "vault"
-    (vault / ".obsidian").mkdir(parents=True)
-    monkeypatch.setattr(server, "discover_vault", lambda: vault)
-
-    await server.axon_mark_done(repo="axon")
-
-    notes = await store.get_notes("axon")
-    assert any("marked done" in n.body for n in notes)
-
-
-async def test_axon_export_now_denied_without_consent_env(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from axon.policy.core import PolicyDenied
-
-    monkeypatch.delenv("AXON_ALLOW_DESTRUCTIVE", raising=False)
-    vault = tmp_path / "vault"
-    (vault / ".obsidian").mkdir(parents=True)
-    monkeypatch.setattr(server, "discover_vault", lambda: vault)
-
-    with pytest.raises(PolicyDenied) as excinfo:
-        await server.axon_export_now(repo="axon")
-
-    assert excinfo.value.decision.reason_code.value == "DENY_DESTRUCTIVE_NO_CONSENT"
-
-
 async def test_axon_health_reports_subsystems(store: SessionStore) -> None:
     report = await server.axon_health()
     assert report.startswith("# AXON health")
-    for subsystem in ("pgvector", "vault", "git"):
+    for subsystem in ("postgres", "vault", "git"):
         assert subsystem in report
 
 
@@ -151,25 +106,24 @@ async def test_axon_health_does_not_hang_when_backends_unreachable(
 ) -> None:
     """Regression: axon_health must time-bound each external probe.
 
-    When the vector store is unreachable (e.g. wrong host, offline VPN), the
+    When the database is unreachable (e.g. wrong host, offline VPN), the
     probe used to block indefinitely. Each probe must now fail fast with a
     timeout marker so `axon health` always returns within a few seconds.
     """
     import asyncio
     import time
 
-    class _Hanging:
-        async def ensure_collections(self) -> None:
-            await asyncio.sleep(60)
+    async def _hanging() -> None:
+        await asyncio.sleep(60)
 
-    monkeypatch.setattr(server, "_get_vector_store", lambda: _Hanging())
+    monkeypatch.setattr(server, "_probe_postgres", _hanging)
 
     started = time.monotonic()
     report = await server.axon_health()
     elapsed = time.monotonic() - started
 
     assert elapsed < 5.0, f"axon_health took {elapsed:.1f}s — must be time-bounded"
-    assert "pgvector: down (timeout)" in report
+    assert "postgres: down (timeout)" in report
 
 
 def test_detect_agent_prefers_explicit_then_env(

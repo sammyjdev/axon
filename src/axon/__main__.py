@@ -2,9 +2,8 @@
 
 Same context, any AI coding agent. This is the single `axon` entry point
 (T6.3, unified per dec-125). Commands are implemented in `axon.cli.pb` and
-re-registered here; the permanently-cut commands (ask/index/watch/til/deep/
-expand/career/cost) are deleted from `axon.cli.pb` itself, not merely
-unsurfaced.
+re-registered here; cut commands are deleted from `axon.cli.pb` itself, not
+merely unsurfaced.
 """
 
 from __future__ import annotations
@@ -87,12 +86,9 @@ def install_hooks_cmd(
 def init(
     repo: str = typer.Argument(".", help="Repo path to initialize AXON in"),
 ) -> None:
-    """Initialize AXON in a repo: install git hooks and index its code."""
-    from axon.cli.pb import _get_db_path
-    from axon.code.indexer import index_repo
+    """Initialize AXON in a repo: install its git hooks."""
     from axon.exceptions import GitAnchorError
     from axon.hooks.git_installer import install_hooks
-    from axon.store.session_store import SessionStore
 
     repo_path = Path(repo).expanduser().resolve()
     if not repo_path.exists():
@@ -105,50 +101,6 @@ def init(
         typer.echo(f"Not a git repository: {repo_path} ({exc})", err=True)
         raise typer.Exit(1) from exc
     typer.echo(f"hooks installed: {', '.join(installed) or 'none'}")
-
-    async def _index() -> int:
-        import uuid
-
-        from axon.observability.trace_store import TraceStore
-
-        store = SessionStore(_get_db_path())
-        await store.init()
-
-        # Emit index-start activity (best-effort; never breaks indexing)
-        _recorder = None
-        try:
-            _trace_store = TraceStore()
-            _recorder = _trace_store.recorder(
-                trace_id=uuid.uuid4().hex,
-                caller="cli",
-            )
-            _recorder.append_stage(
-                "index",
-                payload={"phase": "start", "target": str(repo_path)},
-            )
-        except Exception:  # noqa: S110
-            pass
-
-        try:
-            symbols = await index_repo(repo_path, store=store)
-            count_sym = len(symbols)
-        finally:
-            await store.close()
-
-        # Emit index-done stage (best-effort)
-        try:
-            if _recorder is not None:
-                _recorder.append_stage(
-                    "index",
-                    payload={"phase": "done", "symbols": count_sym},
-                )
-        except Exception:  # noqa: S110
-            pass
-
-        return count_sym
-
-    count = asyncio.run(_index())
-    typer.echo(f"indexed {count} symbols from {repo_path}")
 
 
 @app.command()
@@ -172,16 +124,11 @@ def serve_http(
         help="Permit a non-loopback bind with no AXON_HTTP_TOKEN set.",
     ),
 ) -> None:
-    """Start the AXON OpenAI-compatible HTTP server.
-
-    Exposes POST /v1/chat/completions so external evaluators (e.g. gnomon-eval)
-    can measure recall quality.  The MCP stdio path is unchanged.
+    """Start the AXON HTTP server: the dashboard and the activity API.
 
     Requires the 'http' optional extra::
 
         pip install axon-context-mcp[http]
-
-    Point gnomon at it with base_url = http://localhost:8765/v1
     """
     token = os.environ.get("AXON_HTTP_TOKEN", "")
     env_allow = os.environ.get("AXON_HTTP_ALLOW_UNAUTHENTICATED", "").strip().lower() in {
@@ -212,7 +159,7 @@ def serve_http(
         )
         raise typer.Exit(1)
 
-    typer.echo(f"Starting AXON HTTP server on http://{host}:{port}/v1")
+    typer.echo(f"Starting AXON HTTP server on http://{host}:{port}/dashboard")
     uvicorn.run(
         "axon.http.app:app",
         host=host,
@@ -223,7 +170,7 @@ def serve_http(
 
 @app.command()
 def health() -> None:
-    """Report the health of each AXON subsystem (pgvector, vault, git)."""
+    """Report the health of each AXON subsystem (postgres, vault, git)."""
     from axon.mcp.server import axon_health
 
     typer.echo(asyncio.run(axon_health()))
@@ -473,86 +420,10 @@ def rekey_repo(
         )
 
 
-@app.command("ingest-vault")
-def ingest_vault_cmd(
-    vault: str | None = typer.Option(
-        None, "--vault", help="Path to the Obsidian vault (overrides AXON_VAULT / auto-discovery)."
-    ),
-    provider: str = typer.Option(
-        "litellm", "--provider", help="LLM provider: 'litellm' or 'anthropic'."
-    ),
-    model: str = typer.Option(
-        "ollama/llama3", "--model", help="Model name passed to the provider."
-    ),
-    base_url: str | None = typer.Option(
-        "http://localhost:11434",
-        "--base-url",
-        help="Base URL for the LLM endpoint (Ollama default).",
-    ),
-    api_key: str | None = typer.Option(
-        None, "--api-key", help="API key for the LLM provider (omit for local Ollama)."
-    ),
-    ctx: str = typer.Option(
-        "personal", "--ctx", help="Context/collection for the note vectors (default: personal)."
-    ),
-    no_vectors: bool = typer.Option(
-        False, "--no-vectors", help="Skip vector indexing; write only the SQLite graph."
-    ),
-) -> None:
-    """Ingest an Obsidian vault into the AXON knowledge graph.
-
-    Walks every ``.md`` file in the vault, extracts entities and relations
-    with GLYPH's notes schema (via the configured LLM), and writes them into
-    BOTH the SQLite graph (entities/relations) AND the vector ``--ctx``
-    collection (note text) so ``ask`` / ``search_code`` / the HTTP endpoint
-    retrieve the notes via the primary vector path.
-
-    Defaults to a local Ollama endpoint — no API key required.
-    """
-    from axon.cli.pb import _get_db_path
-    from axon.obsidian.importer import ingest_vault
-    from axon.store.session_store import SessionStore
-
-    vault_path = Path(vault).expanduser().resolve() if vault else None
-
-    async def _run() -> tuple[Path | None, int, int, int]:
-        store = SessionStore(_get_db_path())
-        await store.init()
-        try:
-            n_nodes, n_edges, n_vectors = await ingest_vault(
-                store,
-                vault_path=vault_path,
-                provider=provider,
-                model=model,
-                base_url=base_url or None,
-                api_key=api_key,
-                index_vectors=not no_vectors,
-                ctx=ctx,
-            )
-            # discover_vault may have resolved the path; retrieve it for the summary
-            from axon.obsidian.discovery import discover_vault as _dv
-
-            resolved = vault_path or _dv()
-            return resolved, n_nodes, n_edges, n_vectors
-        finally:
-            await store.close()
-
-    try:
-        resolved_vault, n_nodes, n_edges, n_vectors = asyncio.run(_run())
-    except FileNotFoundError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(1) from exc
-
-    typer.echo(f"vault:    {resolved_vault}")
-    typer.echo(f"nodes:    {n_nodes}")
-    typer.echo(f"edges:    {n_edges}")
-    typer.echo(f"vectors:  {n_vectors} (ctx={ctx})")
-
-
 # ---------------------------------------------------------------------------
 # Surviving AXON-relevant commands, re-registered from the legacy pb.py CLI.
-# Cut commands (ask, index, watch, til, deep, expand, career, cost) are not
-# imported and therefore not surfaced.
+# The code-index commands (search, sync, index-*, graph, scan) were deleted with
+# code vectorization (dec-138).
 # ---------------------------------------------------------------------------
 from axon.cli.pb import (  # noqa: E402
     activity_app,
@@ -560,45 +431,29 @@ from axon.cli.pb import (  # noqa: E402
     compact_hook,
     configure,
     doctor,
-    graph_app,
     hooks_app,
-    index_compare,
-    index_dev,
-    index_prune_legacy,
-    index_vault,
     note,
     pending_app,
     profile_app,
-    scan,
-    search,
     seed_lessons,
     session_app,
     session_hook,
     session_save,
     setup,
-    sync,
 )
 from axon.cli.pb import init as pb_bootstrap  # noqa: E402
 
 app.add_typer(activity_app, name="activity")
 app.add_typer(adr_app, name="adr")
-app.add_typer(graph_app, name="graph")
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(pending_app, name="pending")
 app.add_typer(profile_app, name="profile")
 app.add_typer(session_app, name="session")
 
-app.command("scan")(scan)
-app.command("search")(search)
 app.command("doctor")(doctor)
 app.command("bootstrap")(pb_bootstrap)
 app.command("setup")(setup)
 app.command("configure")(configure)
-app.command("index-dev")(index_dev)
-app.command("index-vault")(index_vault)
-app.command("sync")(sync)
-app.command("index-compare")(index_compare)
-app.command("index-prune-legacy")(index_prune_legacy)
 app.command("note")(note)
 app.command("session-save")(session_save)
 app.command("seed-lessons")(seed_lessons)
