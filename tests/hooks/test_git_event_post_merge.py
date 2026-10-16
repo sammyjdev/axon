@@ -108,3 +108,27 @@ async def test_scan_no_orig_head_is_noop(tmp_path, store):
     assert (
         await store.find_decision_by_git_hash(signal_hash, repo=repo.name)
     ) is None, "no ORIG_HEAD means nothing was pulled - nothing may be captured"
+
+
+@pytest.mark.asyncio
+async def test_scan_queues_a_lesson_draft_for_a_pulled_lesson_trailer(
+    tmp_path, store, monkeypatch
+):
+    from axon.adr.lesson_pool import list_drafts
+
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))
+    origin = tmp_path / "origin"
+    _git_init(origin)
+    _commit(origin, "base.txt", "chore: base")
+    clone = tmp_path / "clone"
+    _run(tmp_path, "git", "clone", str(origin), str(clone))
+    (origin / "c.py").write_text("x")
+    _run(origin, "git", "add", ".")
+    _run(origin, "git", "commit", "-m", "fix: retry client", "-m", "Lesson: retries need jitter")
+    _run(clone, "git", "pull")
+
+    await _scan_pulled_range(store=store, cwd=clone)
+
+    drafts = list_drafts(draft_dir=tmp_path / ".axon" / "lesson-draft")
+    assert [d.title for d in drafts] == ["retries need jitter"]
+    assert await store.find_decisions_by_repo(clone.name) == []

@@ -83,11 +83,3 @@ class TestHooksInstall:
         result = runner.invoke(app, ["hooks", "status"])
         assert result.exit_code == 0
         assert "toolchain" in result.stdout
-
-
-class TestDeprecatedAdrHook:
-    def test_emits_deprecation_message(self, tmp_path: Path) -> None:
-        _init_git(tmp_path)
-        result = runner.invoke(app, ["adr", "hook", "--path", str(tmp_path)])
-        # The deprecation message goes to stdout (typer.echo)
-        assert "deprecated" in result.stdout.lower()

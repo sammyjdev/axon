@@ -239,7 +239,7 @@ def test_retired_adr_subcommands_absent():
     from typer.main import get_command
 
     adr = get_command(app).commands["adr"]
-    for name in ("audit", "infer-commit", "review", "validate-drafts"):
+    for name in ("audit", "hook", "infer-commit", "review", "validate-drafts"):
         assert name not in adr.commands
 
 

@@ -913,51 +913,6 @@ def adr_sync(
     asyncio.run(_sync())
 
 
-@adr_app.command("hook")
-def adr_hook_install(
-    path: Annotated[
-        str | None, typer.Option("--path", help="Path do repositório git (default: cwd)")
-    ] = None,
-) -> None:
-    """[deprecated] Use ``axon hooks install --apply`` (dec-113)."""
-    import warnings
-
-    warnings.warn(
-        "`axon adr hook` is deprecated. Use `axon hooks install --apply`. "
-        "See dec-113 for the new diagnostic-first flow.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    typer.echo("[axon] `axon adr hook` is deprecated — use `axon hooks install --apply`.")
-    # Backwards-compatible behaviour: keep installing the old single hook
-    # so existing users don't break mid-upgrade.
-    import stat
-
-    repo_path = Path(path or os.getcwd())
-    hooks_dir = repo_path / ".git" / "hooks"
-
-    if not hooks_dir.exists():
-        typer.echo(f"Erro: {repo_path} não é um repositório git.", err=True)
-        raise typer.Exit(1)
-
-    hook_script_path = Path(__file__).parent.parent / "templates" / "post_commit_hook.sh"
-    hook_content = hook_script_path.read_text(encoding="utf-8")
-
-    target = hooks_dir / "post-commit"
-    if target.exists():
-        existing = target.read_text(encoding="utf-8")
-        if "axon" in existing.lower():
-            typer.echo("Hook já instalado (axon detectado). Nada a fazer.")
-            return
-        target.write_text(existing.rstrip() + "\n\n" + hook_content, encoding="utf-8")
-        typer.echo(f"Hook anexado ao post-commit existente: {target}")
-    else:
-        target.write_text(hook_content, encoding="utf-8")
-        typer.echo(f"Hook instalado: {target}")
-
-    target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-
 def _save_compact_summary(*, project: str, summary: str) -> None:
     """Persist a harness-produced compact summary as SessionMemory."""
     from axon.store.session_store import SessionMemory

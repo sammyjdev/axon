@@ -137,11 +137,11 @@ _PULL_SCAN_CAP = 50  # ponytail: bounds pathological pulls; raise if a legit syn
 async def _scan_pulled_range(
     *, store: SessionStore | None = None, cwd: Path | None = None
 ) -> None:
-    """Capture dec-110 signal commits from the just-pulled range (cloud-arm bridge).
+    """Capture the signal commits of the just-pulled range (cloud-arm bridge).
 
-    Only commits carrying an explicit architectural signal are captured -
-    a pull may contain dozens of mechanical commits and capturing them all
-    would be noise. Local commits keep the richer on_commit path.
+    Only commits carrying a signal are captured, the same as on_commit - a
+    pull may contain dozens of mechanical commits and capturing them all
+    would be noise.
     """
     root = _repo_root(cwd)
     repo = repo_identity(root)
@@ -161,7 +161,16 @@ async def _scan_pulled_range(
         await store.init()
         for commit_hash in hashes:
             message = _git(["log", "-1", commit_hash, "--pretty=%B"], root)
-            if detect(message) is None:
+            signal = detect(message)
+            lesson = detect_lesson(message)
+            if signal is None and lesson is None:
+                continue
+            files = _git(
+                ["log", "-1", commit_hash, "--name-only", "--format="], root
+            ).splitlines()
+            if lesson is not None:
+                _write_lesson_draft(commit_hash, lesson.title, files)
+            if signal is None:
                 continue
             existing = await store.find_decision_by_git_hash(
                 commit_hash, repo=repo
@@ -169,9 +178,6 @@ async def _scan_pulled_range(
             if existing is not None:
                 continue
             subject = _git(["log", "-1", commit_hash, "--pretty=%s"], root)
-            files = _git(
-                ["log", "-1", commit_hash, "--name-only", "--format="], root
-            ).splitlines()
             decision = Decision(
                 id=await store.next_decision_id(),
                 timestamp=datetime.now(UTC),

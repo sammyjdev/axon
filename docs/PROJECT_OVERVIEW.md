@@ -50,7 +50,7 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 `doctor [--apply|--ci]`, `status`, `gain`, `export`, `bootstrap` (env/config
 scaffold, formerly `pb init`), `setup`, `configure`, `note`, `session-save`,
 `seed-lessons`, `rekey-repo`, `session-hook`, `compact-hook`. Sub-apps:
-`axon adr {list,add,sync,hook}`, `axon hooks {install,status}`,
+`axon adr {list,add,sync}`, `axon hooks {install,status}`,
 `axon pending {drain,recover}`, `axon session {note,save}`,
 `axon profile {list,use,show,create,export}`,
 `axon activity {run,import,collect,export,search,show}` (dec-136 operational
@@ -58,7 +58,7 @@ activity history).
 
 Removed by dec-138: `search`, `sync`, `index-dev`, `index-vault`,
 `index-compare`, `index-prune-legacy`, `scan`, `ingest-vault`,
-`graph {index,neighbors,path}` and `adr {infer-commit,review,audit,validate-drafts}`.
+`graph {index,neighbors,path}` and `adr {hook,infer-commit,review,audit,validate-drafts}`.
 
 ## MCP tools (`src/axon/mcp/server.py`)
 
