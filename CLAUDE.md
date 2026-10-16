@@ -5,8 +5,9 @@ repository. `AGENTS.md` points to this file.
 
 ## Project Overview
 
-AXON is a self-hosted context engine for local knowledge retrieval,
-context compression, and agent-facing workflows through a CLI (`axon`) and MCP.
+AXON is a self-hosted memory of the work done with AI coding agents:
+decisions, lessons, session digests and activity history, served through a CLI
+(`axon`) and MCP. It does not index or embed code (dec-138).
 
 The repository contains the engine and runtime code. User knowledge lives in an
 external Markdown vault, typically configured through:
@@ -30,60 +31,31 @@ external Markdown vault, typically configured through:
 - Runtime code and configuration live in this repository.
 - Do not mix vault content into the engine tree.
 
-### D2: Task-based cloud routing
+### D2, D3: retired
 
-D2 defines the **tiering shape** (trivial → mid → top). The concrete model per
-tier is selected by the active provider profile (see dec-106). The PAID profile
-preserves D2 verbatim via OpenRouter; the budget profile substitutes cheap live
-models on DeepInfra with an OpenRouter rung (see dec-128).
-
-| Task type | PAID profile (D2 verbatim) | BUDGET profile |
-| --- | --- | --- |
-| trivial/completion | `openrouter/anthropic/claude-haiku-4` | `deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` |
-| code analysis | `openrouter/anthropic/claude-sonnet-4` | `openrouter/meta-llama/llama-3.3-70b-instruct` |
-| architecture/deep reasoning | `openrouter/anthropic/claude-opus-4` | `deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo` |
-| fallback | trivial of the active profile | trivial of the active profile |
-
-Downgrade is task-type-driven (top→mid when Opus budget is exceeded; mid→bottom
-when daily budget is exceeded) and works identically under both profiles. See
-`docs/decisions/dec-106-routing-profiles.md`.
-
-### D3: Local Ollama defaults (opt-in)
-
-Ollama is **opt-in** as of dec-106 (`AXON_PROVIDER_OLLAMA=1`). When enabled,
-the supported models are:
-
-- `phi3:mini`: lightweight compression and local-first workflows
-- `gemma4:e4b`: local scoring and classification
-- `gemma4:26b`: heavier deep-suggestion workloads on larger hardware
-
-Default profiles (BUDGET/PAID) never route to Ollama; enable it explicitly for
-`ctx=work` or any other path that requires local-only execution.
+Task-based cloud routing (D2) and the local Ollama models (D3) went with the
+router in dec-138: no commit and no MCP tool calls an LLM. The only LLM call
+left is the vault hook (`vault/til_promoter`). See
+`docs/decisions/dec-138-stop-code-vectors.md`.
 
 ### D4: Single Postgres backend (dec-101 fully superseded by dec-121)
 
 dec-121 is **complete** (all three slices landed; ADR accepted 2026-06-29).
 Persistence is consolidated on a single PostgreSQL instance:
 
-- **Relational source-of-truth** (decisions/ADRs/sessions/graph nodes+edges/
-  file_index, plus FailureStore/OutcomeStore) lives in Postgres. SQLite is fully
-  retired — the SQLite repositories, `SessionStore`'s aiosqlite connection, the
-  SQL migrations, and the `aiosqlite` dependency are deleted.
-- **Vectors**: `pgvector` (Qdrant + mem0 dropped).
-- **Code-dependency call-graph**: the `dep:*` graph lives in the Postgres
-  `symbol_deps` table (Redis retired; rate limiter / circuit breaker are in-memory).
-- GLYPH keeps graph **retrieval** (dec-116/117 stand). Neo4j was evaluated and
-  dropped — see `docs/decisions/dec-101-revoke-d4-drop-neo4j.md`.
+- **Relational source-of-truth** (decisions/ADRs/sessions/activity history,
+  plus FailureStore/OutcomeStore) lives in Postgres. SQLite is fully retired —
+  the SQLite repositories, `SessionStore`'s aiosqlite connection, the SQL
+  migrations, and the `aiosqlite` dependency are deleted.
+- **No vectors** since dec-138: the code index, pgvector, the `symbol_deps` and
+  node/edge graphs and GLYPH are gone; lessons are searched with Postgres
+  full-text search. Neo4j was evaluated and dropped — see
+  `docs/decisions/dec-101-revoke-d4-drop-neo4j.md`.
 
-Guards `tests/test_no_{qdrant,redis,sqlite}.py` keep the retired backends out. See
+Guards `tests/test_no_{qdrant,redis,sqlite}.py` and
+`tests/test_code_vectors_retired.py` keep the retired backends out. See
 `docs/decisions/dec-121-postgres-unified-storage.md` and the phase plans under
 `docs/superpowers/plans/`.
-
-### D5: Chunker quality is a release gate
-
-- The Java chunker is a high-risk subsystem.
-- Structure-aware chunking and fixture coverage must remain intact.
-- Do not weaken chunker tests to make implementation changes pass.
 
 ## Recall ranking
 
@@ -94,25 +66,20 @@ the same scope revises it. Detection = shared scope **and** a confirmed revision
 (cosine ≥ `_NEAR_DUP_THRESHOLD` 0.93). Additive same-area work is intentionally
 *not* superseded (a flat cosine floor produced ~90% false positives on real
 data). Enable via `recall_context(..., enable_supersession=True,
-similarity=make_embedding_similarity(EmbedderEngine()))`; keep it off in
-production until reworded-revision recall is validated. See
+similarity=make_embedding_similarity(<embedder>))`; AXON ships no embedder since
+dec-138, so the caller brings one. Keep it off in production until
+reworded-revision recall is validated. See
 `docs/decisions/dec-115-supersession-ranking-penalty.md` and
 `docs/USAGE_GUIDE.md`.
 
-## Onboarding layers (do not conflate)
+## Onboarding layers
 
-Two separate, intentionally non-identical lists govern "which repos AXON knows
-about". Do **not** try to unify or sync them:
-
-- **Agent scope** — `~/.claude/axon/ROUTER.md` (global, synced dotfiles). The
-  **single source of truth** for which repos Claude should recall/capture in. Any
-  onboarded-repo list elsewhere (e.g. the integration plan/spec under
-  `docs/superpowers/`) only references this one.
-- **Index manifest** — `config/projects.json` (committed, read by
-  `src/axon/cli/pb.py` for batch indexing). Per-machine and **multi-machine by
-  design**: it carries absolute paths for the machine that authored it (e.g. macOS
-  `/Users/...`), so on another machine it is dormant and onboarding happens
-  per-repo via `axon init <path>`. Foreign paths here are expected, not stale.
+`~/.claude/axon/ROUTER.md` (global, synced dotfiles) is the **single source of
+truth** for which repos Claude should recall/capture in. Any onboarded-repo list
+elsewhere (e.g. the integration plan/spec under `docs/superpowers/`) only
+references this one. A repo is onboarded per machine with `axon init <path>`,
+which installs the git hooks. The old index manifest (`config/projects.json`)
+went with the code index (dec-138).
 
 ## Code Conventions
 

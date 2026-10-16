@@ -13,15 +13,9 @@ Install these first:
 - Python 3.11+
 - `pipx`
 - Docker Engine with Compose
-- Ollama (optional — opt-in via `AXON_PROVIDER_OLLAMA=1`)
 
-You also need API keys for the active provider profile (default is `budget`):
-
-- `DEEPINFRA_API_KEY` from <https://deepinfra.com> — primary generation
-- `GROQ_API_KEY` from <https://console.groq.com/keys> — the classifier step (both profiles)
-
-For paid Claude routing, set `AXON_PROVIDER_PROFILE=paid` and provide
-`OPENROUTER_API_KEY`. See `docs/decisions/dec-106-routing-profiles.md`.
+No provider key is needed: AXON calls no LLM and no embedding provider
+(dec-138).
 
 ## 1. Clone the engine
 
@@ -47,31 +41,9 @@ set -a
 source .env.local
 set +a
 
-export AXON_PROVIDER_PROFILE=budget
-export DEEPINFRA_API_KEY=<your-deepinfra-key>
-export GROQ_API_KEY=<your-groq-key>
 export AXON_ENGINE="$PWD"
 export AXON_VAULT="$HOME/vault"
 ```
-
-### Keeping the keys out of the shell
-
-An exported key lives in one shell: an MCP server or git hook started by
-another program never sees it. On a systemd host the keys can live in an
-encrypted store instead:
-
-```bash
-./scripts/axon-secrets.sh set DEEPINFRA_API_KEY   # prompts, hidden
-./scripts/axon-secrets.sh list                    # names only
-```
-
-The engine reads `~/.config/axon/credentials.cred` on the first embed that
-finds the key unset, once per process (a failed read included), and only for
-that one name - it is not copied into the environment, so a child process
-inherits nothing; exported variables and `.env` files win. The blob is bound to
-the machine and the user, so a copy does not open elsewhere. The ~1.2s decrypt
-cost is paid once, by the first embed. `AXON_CREDENTIALS_FILE` points the
-engine and the script at another store.
 
 ## 4. Create a small vault
 
@@ -88,17 +60,17 @@ AXON indexes Markdown notes from an external vault.
 EOF
 ```
 
-## 5. Index and search
+## 5. Initialize a repo and check
 
 ```bash
-axon index-vault
-axon search "What does this vault contain?" --ctx knowledge
+axon init /path/to/your-repo
+axon health
 ```
 
-If you get a hit back, the quickstart worked.
+`axon health` should report `postgres: ok`. A commit whose subject starts with
+`decision:` now shows up in `axon status`.
 
 ## Next
 
 - Run `docker compose ps` when you want to confirm the local stack
-- Index `personal` and `career` when you need them
 - See [Vault setup](VAULT_SETUP.md) for the fuller vault layout
