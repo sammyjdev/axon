@@ -22,7 +22,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from axon.adr.signal import detect, detect_lesson
+from axon.adr.signal import Signal, SignalKind, detect, detect_lesson
 from axon.core.decision import SUMMARY_MAX_LEN, Decision
 from axon.core.repo_identity import repo_identity
 from axon.hooks.file_bridge import update_context_file
@@ -99,7 +99,7 @@ async def on_commit(
                 agent=_detect_agent(),
                 repo=repo,
                 files=[Path(f) for f in files if f],
-                summary=_git(["log", "-1", "--pretty=%s"], root)[:SUMMARY_MAX_LEN],
+                summary=_summary(signal, _git(["log", "-1", "--pretty=%s"], root)),
                 git_hash=commit_hash,
                 status="draft",
             )
@@ -114,6 +114,12 @@ async def on_commit(
     finally:
         if owns_store:
             await store.close()
+
+
+def _summary(signal: Signal, subject: str) -> str:
+    """An ADR-Decision: trailer names the decision; a prefixed subject is the decision."""
+    text = signal.title if signal.kind is SignalKind.TRAILER else subject
+    return text[:SUMMARY_MAX_LEN]
 
 
 def _write_lesson_draft(commit_hash: str, title: str, files: list[str]) -> None:
@@ -184,7 +190,7 @@ async def _scan_pulled_range(
                 agent="remote",
                 repo=repo,
                 files=[Path(f) for f in files if f],
-                summary=subject[:SUMMARY_MAX_LEN],
+                summary=_summary(signal, subject),
                 git_hash=commit_hash,
                 status="draft",
             )

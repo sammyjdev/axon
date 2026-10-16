@@ -63,7 +63,8 @@ async def test_a_decision_trailer_commit_is_captured(
     )
     decision_id = await on_commit(store=store, cwd=git_repo)
     found = [d for d in await store.find_decisions_by_repo("myrepo") if d.id == decision_id]
-    assert found[0].summary == "refactor: split the store"
+    # The trailer names the decision; the subject only names the change.
+    assert found[0].summary == "one store per table"
 
 
 async def test_on_commit_captures_draft_decision(

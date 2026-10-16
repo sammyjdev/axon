@@ -132,3 +132,27 @@ async def test_scan_queues_a_lesson_draft_for_a_pulled_lesson_trailer(
     drafts = list_drafts(draft_dir=tmp_path / ".axon" / "lesson-draft")
     assert [d.title for d in drafts] == ["retries need jitter"]
     assert await store.find_decisions_by_repo(clone.name) == []
+
+
+@pytest.mark.asyncio
+async def test_a_pulled_decision_trailer_is_stored_under_its_title(
+    tmp_path, store, monkeypatch
+):
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))
+    origin = tmp_path / "origin"
+    _git_init(origin)
+    _commit(origin, "base.txt", "chore: base")
+    clone = tmp_path / "clone"
+    _run(tmp_path, "git", "clone", str(origin), str(clone))
+    (origin / "s.py").write_text("x")
+    _run(origin, "git", "add", ".")
+    _run(
+        origin, "git", "commit", "-m", "refactor: split the store",
+        "-m", "ADR-Decision: one store per table",
+    )
+    _run(clone, "git", "pull")
+
+    await _scan_pulled_range(store=store, cwd=clone)
+
+    (decision,) = await store.find_decisions_by_repo(clone.name)
+    assert decision.summary == "one store per table"
