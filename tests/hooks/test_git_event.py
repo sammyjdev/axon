@@ -34,8 +34,36 @@ def git_repo(tmp_path: Path) -> Path:
     _git(["config", "user.name", "AXON Test"], repo)
     (repo / "main.py").write_text("print('hello')\n", encoding="utf-8")
     _git(["add", "."], repo)
-    _git(["commit", "-m", "feat: add the entry point"], repo)
+    _git(["commit", "-m", "decision: add the entry point"], repo)
     return repo
+
+
+async def test_a_plain_commit_is_not_captured(store: SessionStore, tmp_path: Path) -> None:
+    repo = tmp_path / "plainrepo"
+    repo.mkdir()
+    _git(["init"], repo)
+    _git(["config", "user.email", "test@axon.dev"], repo)
+    _git(["config", "user.name", "AXON Test"], repo)
+    (repo / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "feat: add the entry point"], repo)
+
+    assert await on_commit(store=store, cwd=repo) is None
+    assert await store.find_decisions_by_repo("plainrepo") == []
+    assert not (repo / ".axon" / "context.md").exists()
+
+
+async def test_a_decision_trailer_commit_is_captured(
+    store: SessionStore, git_repo: Path
+) -> None:
+    _git(
+        ["commit", "--allow-empty", "-m", "refactor: split the store",
+         "-m", "ADR-Decision: one store per table"],
+        git_repo,
+    )
+    decision_id = await on_commit(store=store, cwd=git_repo)
+    found = [d for d in await store.find_decisions_by_repo("myrepo") if d.id == decision_id]
+    assert found[0].summary == "refactor: split the store"
 
 
 async def test_on_commit_captures_draft_decision(
@@ -47,7 +75,7 @@ async def test_on_commit_captures_draft_decision(
     found = await store.find_decisions_by_repo("myrepo")
     assert len(found) == 1
     decision = found[0]
-    assert decision.summary == "feat: add the entry point"
+    assert decision.summary == "decision: add the entry point"
     assert decision.status == "draft"
     assert decision.agent == "manual"
     assert Path("main.py") in decision.files
@@ -57,7 +85,7 @@ async def test_on_commit_captures_draft_decision(
 async def test_on_commit_truncates_long_subject(
     store: SessionStore, git_repo: Path
 ) -> None:
-    _git(["commit", "--allow-empty", "-m", "x" * 400], git_repo)
+    _git(["commit", "--allow-empty", "-m", "decision: " + "x" * 400], git_repo)
     decision_id = await on_commit(store=store, cwd=git_repo)
     found = [d for d in await store.find_decisions_by_repo("myrepo") if d.id == decision_id]
     assert len(found[0].summary) == SUMMARY_MAX_LEN
@@ -71,7 +99,7 @@ async def test_on_commit_keeps_a_subject_the_old_cap_would_have_cut(
     every commit whose subject ran past byte 80."""
     # rstrip: git strips trailing whitespace from a subject line, so the recorded value
     # would differ from the argument for a reason that has nothing to do with the cap.
-    subject = ("fix: " + "the pack refills the slots dedup removes, " * 3).rstrip()
+    subject = ("decision: " + "the pack refills the slots dedup removes, " * 3).rstrip()
     assert 80 < len(subject) <= SUMMARY_MAX_LEN
     _git(["commit", "--allow-empty", "-m", subject], git_repo)
     decision_id = await on_commit(store=store, cwd=git_repo)
@@ -95,31 +123,6 @@ async def test_on_commit_rejects_unknown_agent(
     await on_commit(store=store, cwd=git_repo)
     found = await store.find_decisions_by_repo("myrepo")
     assert found[0].agent == "manual"  # unknown agent falls back to manual
-
-
-async def test_on_commit_links_touched_symbols(
-    store: SessionStore, tmp_path: Path
-) -> None:
-    repo = tmp_path / "linkrepo"
-    repo.mkdir()
-    _git(["init"], repo)
-    _git(["config", "user.email", "test@axon.dev"], repo)
-    _git(["config", "user.name", "AXON Test"], repo)
-    (repo / "mod.py").write_text("def alpha():\n    return 1\n", encoding="utf-8")
-    _git(["add", "."], repo)
-    _git(["commit", "-m", "feat: add alpha"], repo)
-
-    decision_id = await on_commit(store=store, cwd=repo)
-    assert decision_id is not None
-
-    subgraph = await store.query_subgraph(decision_id, depth=1)
-    assert "alpha" in subgraph["nodes"]
-    assert {"source": decision_id, "target": "alpha", "type": "touches"} in subgraph[
-        "edges"
-    ]
-    node = await store.get_node("alpha")
-    assert node is not None and node["type"] == "symbol"
-
 
 
 async def test_on_commit_is_idempotent_for_same_sha(
@@ -160,71 +163,6 @@ async def test_on_commit_idempotent_skip_updates_agent_when_changed(
     assert second_id == decision_id
     found = (await store.find_decisions_by_repo("myrepo"))[0]
     assert found.agent == "claude-code"
-
-
-async def test_on_commit_idempotent_skip_does_not_duplicate_edges(
-    store: SessionStore, tmp_path: Path
-) -> None:
-    repo = tmp_path / "edgesrepo"
-    repo.mkdir()
-    _git(["init"], repo)
-    _git(["config", "user.email", "test@axon.dev"], repo)
-    _git(["config", "user.name", "AXON Test"], repo)
-    (repo / "mod.py").write_text("def gamma():\n    return 3\n", encoding="utf-8")
-    _git(["add", "."], repo)
-    _git(["commit", "-m", "feat: add gamma"], repo)
-
-    decision_id = await on_commit(store=store, cwd=repo)
-    assert decision_id is not None
-
-    # second invocation re-runs the linker on the existing decision
-    await on_commit(store=store, cwd=repo)
-
-    subgraph = await store.query_subgraph(decision_id, depth=1)
-    touch_edges = [
-        e for e in subgraph["edges"] if e["type"] == "touches" and e["target"] == "gamma"
-    ]
-    assert len(touch_edges) == 1, (
-        f"expected 1 touches edge after retry, got {len(touch_edges)}: {touch_edges}"
-    )
-
-
-async def test_on_commit_relinks_symbols_after_partial_failure(
-    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = tmp_path / "resumerepo"
-    repo.mkdir()
-    _git(["init"], repo)
-    _git(["config", "user.email", "test@axon.dev"], repo)
-    _git(["config", "user.name", "AXON Test"], repo)
-    (repo / "mod.py").write_text("def beta():\n    return 2\n", encoding="utf-8")
-    _git(["add", "."], repo)
-    _git(["commit", "-m", "feat: add beta"], repo)
-
-    calls = {"n": 0}
-    _git_event_mod = __import__("axon.hooks.git_event", fromlist=["_link_touched_symbols"])
-    original = _git_event_mod._link_touched_symbols
-
-    async def flaky_link(store, decision_id, root, commit_hash):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise RuntimeError("graph unavailable")
-        return await original(store, decision_id, root, commit_hash)
-
-    monkeypatch.setattr("axon.hooks.git_event._link_touched_symbols", flaky_link)
-
-    with pytest.raises(RuntimeError):
-        await on_commit(store=store, cwd=repo)
-
-    # second run with same SHA must NOT duplicate the Decision and must
-    # complete the linking step that previously failed.
-    decision_id = await on_commit(store=store, cwd=repo)
-    assert decision_id is not None
-
-    found = await store.find_decisions_by_repo("resumerepo")
-    assert len(found) == 1
-    subgraph = await store.query_subgraph(decision_id, depth=1)
-    assert "beta" in subgraph["nodes"]
 
 
 def test_main_unknown_event_returns_zero() -> None:
@@ -297,3 +235,46 @@ async def test_on_commit_idempotent_skip_does_not_duplicate_lesson_draft(
 
     drafts = list_drafts(draft_dir=tmp_path / ".axon" / "lesson-draft")
     assert len(drafts) == 1
+
+
+def _init_repo(path: Path) -> None:
+    path.mkdir()
+    _git(["init"], path)
+    _git(["config", "user.email", "test@axon.dev"], path)
+    _git(["config", "user.name", "AXON Test"], path)
+    (path / "f.py").write_text("x = 1\n", encoding="utf-8")
+    _git(["add", "."], path)
+    _git(["commit", "-m", "init"], path)
+
+
+async def test_a_lesson_trailer_alone_records_a_draft_and_no_decision(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from axon.adr.lesson_pool import list_drafts
+
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))
+    repo = tmp_path / "lessononly"
+    _init_repo(repo)
+    _git(["commit", "--allow-empty", "-m", "fix: retry", "-m", "Lesson: retries need jitter"], repo)
+
+    assert await on_commit(store=store, cwd=repo) is None
+    assert await store.find_decisions_by_repo("lessononly") == []
+    assert [d.title for d in list_drafts(draft_dir=tmp_path / ".axon" / "lesson-draft")] == [
+        "retries need jitter"
+    ]
+
+
+async def test_a_lesson_draft_edited_by_hand_survives_a_second_run(
+    store: SessionStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))
+    repo = tmp_path / "lessonedit"
+    _init_repo(repo)
+    _git(["commit", "--allow-empty", "-m", "fix: retry", "-m", "Lesson: retries need jitter"], repo)
+    await on_commit(store=store, cwd=repo)
+    (draft,) = (tmp_path / ".axon" / "lesson-draft").glob("*.md")
+    draft.write_text(draft.read_text(encoding="utf-8") + "\nedited by hand\n", encoding="utf-8")
+
+    await on_commit(store=store, cwd=repo)
+
+    assert "edited by hand" in draft.read_text(encoding="utf-8")

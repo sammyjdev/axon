@@ -39,7 +39,7 @@ def _repo_with_one_commit(root: Path, name: str) -> Path:
     _git(["config", "user.name", "AXON Test"], repo)
     (repo / "f.txt").write_text(name, encoding="utf-8")
     _git(["add", "."], repo)
-    _git(["commit", "-q", "-m", f"change in {name}"], repo)
+    _git(["commit", "-q", "-m", f"decision: change in {name}"], repo)
     return repo
 
 

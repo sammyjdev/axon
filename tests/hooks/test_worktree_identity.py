@@ -86,7 +86,7 @@ async def test_on_commit_from_a_worktree_files_under_the_parent_repo_key(
     monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))
     (worktree / "feature.py").write_text("feature = True\n", encoding="utf-8")
     _git(["add", "."], worktree)
-    _git(["commit", "-m", "feat: add feature"], worktree)
+    _git(["commit", "-m", "decision: add feature"], worktree)
     sha = subprocess.check_output(  # noqa: S603
         ["git", "-C", str(worktree), "log", "-1", "--pretty=%H"], text=True  # noqa: S603, S607
     ).strip()
