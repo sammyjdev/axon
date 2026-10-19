@@ -22,10 +22,16 @@ _DASH_C = re.compile(r"\bgit\s+(?:-\S+\s+)*?-C\s+(?P<dir>\"[^\"]+\"|'[^']+'|\S+)
 # `-m "subj"`, `-qam 'subj'`, `-m "$(cat <<'EOF'\nsubj`, `-F - <<'EOF'\nsubj`: first line
 _MESSAGE = re.compile(
     r"\bcommit\b[^&|;]*?\s-[a-zA-Z]*m\s*(?:\"\$\(cat <<-?'?\"?(?:\w+)'?\"?\n(?P<heredoc>[^\n]+)"
-    r"|\"(?P<dq>[^\"\n]+)|'(?P<sq>[^'\n]+))"
+    r"|\"(?P<dq>[^\"\n]+)|'(?P<sq>[^'\n]+)|(?P<bare>[^\s\"'&|;$]+))"
     r"|\bcommit\b[^&|;]*?\s-[a-zA-Z]*F\s*-\s*<<-?['\"]?\w+['\"]?\n(?P<stdin>[^\n]+)"
 )
-_FAILED = re.compile(r"nothing to commit|no changes added to commit|nothing added to commit")
+_QUIET = re.compile(r"\s(?:-[a-zA-Z]*q[a-zA-Z]*|--quiet)\b")
+# Codex output carries `"exit_code": N`, sometimes inside an escaped JSON string.
+_NONZERO_EXIT = re.compile(r'\\?"exit_code\\?"\s*:\s*[1-9]')
+_FAILED = re.compile(
+    r"nothing to commit|no changes added to commit|nothing added to commit|exit code:? [1-9]",
+    re.IGNORECASE,
+)
 # Codex's `exec` tool runs a JS script: tools.exec_command({cmd:"...", workdir:"..."})
 _JS_STRING = re.compile(r'\b(?P<key>cmd|workdir)\s*:\s*(?P<lit>"(?:[^"\\]|\\.)*")')
 # A quiet commit is looked up in the log this long before its result was recorded.
@@ -53,13 +59,18 @@ def _call_command(content: dict) -> tuple[str, str | None]:
     """Return (command text, workdir) for a Claude `tool_use` or Codex `function_call`."""
     args = content.get("input")
     if isinstance(args, str):
-        found: dict[str, list[str]] = {"cmd": [], "workdir": []}
-        for m in _JS_STRING.finditer(args):
-            try:
-                found[m.group("key")].append(json.loads(m.group("lit")))
-            except ValueError:
-                continue
-        return "\n".join(found["cmd"]), next(iter(found["workdir"]), None)
+        found: dict[str, list[str]] = {"cmd": []}
+        for call in args.split("exec_command(")[1:]:
+            fields: dict[str, str] = {}
+            for m in _JS_STRING.finditer(call.split("})", 1)[0]):
+                try:
+                    fields.setdefault(m.group("key"), json.loads(m.group("lit")))
+                except ValueError:
+                    continue
+            if "cmd" in fields:
+                wd, cmd = fields.get("workdir"), fields["cmd"]
+                found["cmd"].append(f"cd {shlex.quote(wd)} && {cmd}" if wd else cmd)
+        return "\n".join(found["cmd"]), None
     if args is None:
         raw = content.get("arguments")
         try:
@@ -102,20 +113,41 @@ def _join(base: str | None, d: str) -> str:
     return d if d.startswith("/") or not base else str(Path(base) / d)
 
 
-def _directory(command: str, workdir: str | None, workspace: str | None) -> str | None:
-    """Where the commit ran: its own `-C`, on top of the last `cd` before it."""
-    base = workdir or workspace
-    for segment in _SEGMENTS.split(command):
-        if _IS_COMMIT_CMD.search(segment):
-            m = _DASH_C.search(segment)
-            return _join(base, m.group("dir")) if m else base
+def _base_before(prefix: str, base: str | None) -> str | None:
+    for segment in _SEGMENTS.split(prefix):
         for m in _CD.finditer(segment):
             base = _join(base, m.group("dir"))
     return base
 
 
+@dataclass(frozen=True)
+class _CommitCmd:
+    directory: str | None
+    quiet: bool
+    subject: str | None
+
+
+def _commit_commands(command: str, workdir: str | None, workspace: str | None) -> list[_CommitCmd]:
+    """Each `git commit` in the command: its directory (`-C` on top of the last `cd`)."""
+    matches = list(_IS_COMMIT_CMD.finditer(command))
+    found = []
+    for i, m in enumerate(matches):
+        base = _base_before(command[: m.start()], workdir or workspace)
+        dash_c = _DASH_C.search(m.group(0))
+        directory = _join(base, dash_c.group("dir")) if dash_c else base
+        tail = command[m.start() : matches[i + 1].start() if i + 1 < len(matches) else None]
+        message = _MESSAGE.search(tail)
+        subject = next(g for g in message.groups() if g).strip() if message else None
+        found.append(_CommitCmd(directory, bool(_QUIET.search(tail.split("\n", 1)[0])), subject))
+    return found
+
+
 def extract_commits(events: list[dict], workspace: str | None) -> list[CommitRef]:
-    """Commits printed by `git commit` tool results, in event order."""
+    """Commits made by `git commit` tool calls, in event order.
+
+    A printed `[branch hash]` line is paired with the non-quiet commits in order; a commit
+    left without one is known by its subject, unless the result says the call failed.
+    """
     calls: dict[str, tuple[str, str | None]] = {}
     found: list[CommitRef] = []
     for ev in events:
@@ -123,20 +155,29 @@ def extract_commits(events: list[dict], workspace: str | None) -> list[CommitRef
         if ev["kind"] == "tool_call" and call_id:
             calls[call_id] = _call_command(content)
         elif ev["kind"] == "tool_result" and call_id in calls:
-            command, workdir = calls[call_id]
-            if not _IS_COMMIT_CMD.search(command):
+            commits = _commit_commands(*calls[call_id], workspace)
+            if not commits:
                 continue
-            directory = _directory(command, workdir, workspace)
             text = _result_text(content)
-            printed = list(_COMMIT_LINE.finditer(text))
-            for m in printed:
-                found.append(CommitRef(m.group("hash"), ev["event_id"], directory))
-            message = _MESSAGE.search(command)
-            rejected = content.get("is_error") is True or _FAILED.search(text)
-            if not printed and message and not rejected:
-                subject = next(g for g in message.groups() if g)
-                when = ev.get("occurred_at")
-                found.append(CommitRef(None, ev["event_id"], directory, subject.strip(), when))
+            printed = [m.group("hash") for m in _COMMIT_LINE.finditer(text)]
+            loud = [c for c in commits if not c.quiet] or commits
+            for i, short in enumerate(printed):
+                directory = loud[min(i, len(loud) - 1)].directory
+                found.append(CommitRef(short, ev["event_id"], directory))
+            rejected = (
+                content.get("is_error") is True
+                or _FAILED.search(text)
+                or _NONZERO_EXIT.search(json.dumps(content))
+            )
+            if rejected:
+                continue
+            unprinted = [c for c in commits if c.quiet] + [c for c in commits if not c.quiet][
+                len(printed) :
+            ]
+            for c in sorted(unprinted, key=commits.index):
+                if c.subject:
+                    when = ev.get("occurred_at")
+                    found.append(CommitRef(None, ev["event_id"], c.directory, c.subject, when))
     return found
 
 
@@ -144,7 +185,7 @@ def find_by_subject(subject: str, directory: str | None, before: datetime | None
     """Hash of the commit with `subject` made in the window before `before`, if exactly one."""
     if not directory or before is None or not Path(directory).is_dir():
         return None
-    since, until = before - _SUBJECT_WINDOW, before + timedelta(minutes=1)
+    since, until = before - _SUBJECT_WINDOW, before
     try:
         out = subprocess.run(  # noqa: S603
             ["git", "-C", directory, "log", "--all", "--format=%H%x00%s",  # noqa: S607

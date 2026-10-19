@@ -427,3 +427,79 @@ async def test_a_short_link_is_not_duplicated_once_the_full_hash_resolves(repo, 
 
     assert await link_commits(repo, "s1") == 0
     assert len(await _links(repo)) == 1
+
+
+# ---- review round 2 ----
+
+
+def _codex_exec(calls: list[tuple[str, str | None]], output_text: str) -> list[dict]:
+    script = "".join(
+        "text(await tools.exec_command({cmd:%s%s}));\n"
+        % (json.dumps(cmd), f",workdir:{json.dumps(wd)}" if wd else "")
+        for cmd, wd in calls
+    )
+    return [
+        {"event_id": "e1", "call_id": "k1", "kind": "tool_call",
+         "content": {"type": "custom_tool_call", "name": "exec", "call_id": "k1", "input": script}},
+        {"event_id": "e2", "call_id": "k1", "kind": "tool_result",
+         "content": {"type": "custom_tool_call_output", "call_id": "k1",
+                     "output": [{"type": "input_text", "text": output_text}]}},
+    ]
+
+
+def test_a_codex_commit_that_exited_non_zero_is_not_a_quiet_commit() -> None:
+    events = _codex_exec(
+        [('git commit -qm "first change"', "/cx")],
+        json.dumps({"exit_code": 1, "output": "ruff....Failed\n"}),
+    )
+
+    assert extract_commits(events, "/ws") == []
+
+
+def test_each_commit_in_a_chain_gets_its_own_directory() -> None:
+    out = "[main aaaaaaa] one\n[main bbbbbbb] two\n"
+    events = [_claude_call("c1", "git -C /a commit -m one && git -C /b commit -m two"),
+              _claude_result("c1", out)]
+
+    found = extract_commits(events, "/ws")
+
+    assert [(c.short_hash, c.directory) for c in found] == [("aaaaaaa", "/a"), ("bbbbbbb", "/b")]
+
+
+def test_each_codex_exec_command_keeps_its_own_workdir() -> None:
+    events = _codex_exec(
+        [('git commit -m "one"', "/a"), ('git commit -m "two"', "/b")],
+        "[main aaaaaaa] one\n[main bbbbbbb] two\n",
+    )
+
+    assert [c.directory for c in extract_commits(events, "/ws")] == ["/a", "/b"]
+
+
+def test_every_quiet_commit_in_a_chain_is_looked_up_by_its_own_subject() -> None:
+    events = [_claude_call("c1", 'git commit -qm "one" && git commit -qm "two"'),
+              _claude_result("c1", "")]
+
+    assert [c.subject for c in extract_commits(events, "/ws")] == ["one", "two"]
+
+
+def test_a_printed_commit_and_a_quiet_one_in_the_same_chain_are_both_found() -> None:
+    events = [_claude_call("c1", 'git commit -m "one" && git commit -qm "two"'),
+              _claude_result("c1", "[main aaaaaaa] one\n")]
+
+    found = extract_commits(events, "/ws")
+
+    assert [(c.short_hash, c.subject) for c in found] == [("aaaaaaa", None), (None, "two")]
+
+
+def test_an_unquoted_one_word_message_is_a_subject() -> None:
+    events = [_claude_call("c1", "git commit -qm init"), _claude_result("c1", "")]
+
+    assert [c.subject for c in extract_commits(events, "/ws")] == ["init"]
+
+
+async def test_a_commit_made_after_the_result_is_not_claimed(repo, git_repo) -> None:
+    # Given the result was recorded 30 seconds before the commit with that subject was made
+    made = datetime.fromisoformat(_git(git_repo, "log", "-1", "--format=%cI"))
+    await _seed_call(repo, str(git_repo), 'git commit -qm "first change"', "", made - timedelta(seconds=30))
+
+    assert await link_commits(repo, "q1") == 0
