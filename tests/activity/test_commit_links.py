@@ -599,3 +599,59 @@ async def test_a_quiet_commit_recorded_in_the_same_second_as_its_result_is_found
 
     assert await link_commits(repo, "q1") == 1
     assert await _links(repo) == [(full, "q1-1")]
+
+
+# ---- review round 5: commands are tokenized, not pattern-matched ----
+
+
+def _cmds(command: str, workspace: str = "/ws"):
+    events = [_claude_call("c1", command), _claude_result("c1", "")]
+    return [(c.subject, c.directory) for c in extract_commits(events, workspace)]
+
+
+def test_a_commit_written_into_a_heredoc_file_is_not_run() -> None:
+    assert _cmds("cat > commit.sh <<'EOF'\ngit commit -qm \"fix\"\nEOF") == []
+
+
+def test_a_stdin_heredoc_subject_may_contain_git_commit() -> None:
+    assert _cmds("git commit -q -F - <<'EOF'\nfix git commit detection\n\nbody\nEOF") == [
+        ("fix git commit detection", "/ws")
+    ]
+
+
+def test_a_dash_q_after_the_message_still_makes_the_commit_quiet() -> None:
+    events = [_claude_call("c1", "git -C /a commit -m one -q && git -C /b commit -m two"),
+              _claude_result("c1", "[main bbbbbbb] two\n")]
+
+    found = extract_commits(events, "/ws")
+
+    assert [(c.short_hash, c.subject, c.directory) for c in found] == [
+        (None, "one", "/a"), ("bbbbbbb", None, "/b")
+    ]
+
+
+def test_a_dry_run_of_another_command_does_not_drop_the_commit() -> None:
+    assert _cmds('git commit -qm "fix: x" && git push --dry-run') == [("fix: x", "/ws")]
+
+
+def test_a_codex_exec_call_with_single_quoted_strings_is_read() -> None:
+    script = "text(await tools.exec_command({cmd:'git commit -m x',workdir:'/repo'}));\n"
+    events = [
+        {"event_id": "e1", "call_id": "k1", "kind": "tool_call",
+         "content": {"type": "custom_tool_call", "name": "exec", "call_id": "k1", "input": script}},
+        {"event_id": "e2", "call_id": "k1", "kind": "tool_result",
+         "content": {"type": "custom_tool_call_output", "call_id": "k1",
+                     "output": [{"type": "input_text", "text": "[main abcdef0] x\n"}]}},
+    ]
+
+    assert [(c.short_hash, c.directory) for c in extract_commits(events, "/ws")] == [("abcdef0", "/repo")]
+
+
+def test_a_home_relative_directory_is_expanded() -> None:
+    assert _cmds('git -C ~/projects/axon commit -qm "x"', "/workspace") == [
+        ("x", str(Path.home() / "projects/axon"))
+    ]
+
+
+def test_every_dash_c_applies_in_turn() -> None:
+    assert _cmds('git -C /projects -C axon commit -qm "x"') == [("x", "/projects/axon")]

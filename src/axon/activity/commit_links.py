@@ -18,23 +18,14 @@ _COMMIT_LINE = re.compile(
     r"^\[[^\]\n]+? (?:\(root-commit\) )?(?P<hash>[0-9a-f]{7,40})\] (?P<subject>[^\n]*)",
     re.MULTILINE,
 )
-_ARG = r"(?:\"[^\"]+\"|'[^']+'|\S+)"
-# `git [-C dir] [-c k=v] [--flag] commit`: `commit` must be the subcommand.
-_IS_COMMIT_CMD = re.compile(
-    rf"\bgit(?P<opts>(?:\s+(?:-C|-c|--git-dir|--work-tree)\s+{_ARG}|\s+--?[\w-]+(?:=\S+)?)*)"
-    r"\s+commit\b"
-)
-_DASH_C = re.compile(rf"-C\s+(?P<dir>{_ARG})")
-_DRY_RUN = re.compile(r"\s--dry-run\b")
 # Separates the independent calls of one Codex exec script; no `cd` crosses it.
-_CALL_BREAK = "\n\0\n"
-# `-m "subj"`, `-qam 'subj'`, `-m "$(cat <<'EOF'\nsubj`, `-F - <<'EOF'\nsubj`: first line
-_MESSAGE = re.compile(
-    r"\bcommit\b[^&|;]*?\s-[a-zA-Z]*m\s*(?:\"\$\(cat <<-?'?\"?(?:\w+)'?\"?\n(?P<heredoc>[^\n]+)"
-    r"|\"(?P<dq>[^\"\n]+)|'(?P<sq>[^'\n]+)|(?P<bare>[^\s\"'&|;$]+))"
-    r"|\bcommit\b[^&|;]*?\s-[a-zA-Z]*F\s*-\s*<<-?['\"]?\w+['\"]?\n(?P<stdin>[^\n]+)"
-)
-_QUIET = re.compile(r"\s(?:-[a-zA-Z]*q[a-zA-Z]*|--quiet)\b")
+_CALL_BREAK = "__AXON_CALL_BREAK__"
+_HEREDOC = re.compile(r"(?<!<)<<-?\s*(['\"]?)(\w+)\1(?!<)")
+_HEREDOC_TOKEN = "__AXON_HEREDOC_{}__"  # noqa: S105
+_HEREDOC_REF = re.compile(r"__AXON_HEREDOC_(\d+)__")
+_OPERATORS = set(";&|\n")
+# git global options that take a value as the next word
+_GIT_VALUE_OPTS = {"-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 # Codex output carries `"exit_code": N`, sometimes inside an escaped JSON string.
 _NONZERO_EXIT = re.compile(r'\\?"exit_code\\?"\s*:\s*[1-9]')
 _FAILED = re.compile(
@@ -43,12 +34,11 @@ _FAILED = re.compile(
     re.IGNORECASE,
 )
 # Codex's `exec` tool runs a JS script: tools.exec_command({cmd:"...", workdir:"..."})
-_JS_STRING = re.compile(r'["\']?\b(?P<key>cmd|workdir)\b["\']?\s*:\s*(?P<lit>"(?:[^"\\]|\\.)*")')
-_QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
+_JS_STRING = re.compile(
+    r"""["']?\b(?P<key>cmd|workdir)\b["']?\s*:\s*(?P<lit>"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')"""
+)
 # A quiet commit is looked up in the log this long before its result was recorded.
 _SUBJECT_WINDOW = timedelta(minutes=15)
-_SEGMENTS = re.compile(r"&&|\|\||;|\n")
-_CD = re.compile(r"^\s*cd\s+(?P<dir>\"[^\"]+\"|'[^']+'|[^\s;&|]+)")
 
 
 @dataclass(frozen=True)
@@ -62,10 +52,6 @@ class CommitRef:
     occurred_at: datetime | None = None
 
 
-def _unquote(value: str) -> str:
-    return value[1:-1] if value[:1] in "\"'" and value[-1:] == value[:1] else value
-
-
 def _call_command(content: dict) -> tuple[str, str | None]:
     """Return (command text, workdir) for a Claude `tool_use` or Codex `function_call`."""
     args = content.get("input")
@@ -74,14 +60,17 @@ def _call_command(content: dict) -> tuple[str, str | None]:
         for call in args.split("exec_command(")[1:]:
             fields: dict[str, str] = {}
             for m in _JS_STRING.finditer(call.split("})", 1)[0]):
+                lit = m.group("lit")
+                if lit[0] == "'":
+                    lit = json.dumps(lit[1:-1].replace("\\'", "'"))
                 try:
-                    fields.setdefault(m.group("key"), json.loads(m.group("lit")))
+                    fields.setdefault(m.group("key"), json.loads(lit))
                 except ValueError:
                     continue
             if "cmd" in fields:
                 wd, cmd = fields.get("workdir"), fields["cmd"]
                 found["cmd"].append(f"cd {shlex.quote(wd)} && {cmd}" if wd else cmd)
-        return _CALL_BREAK.join(found["cmd"]), None
+        return f"\n{_CALL_BREAK}\n".join(found["cmd"]), None
     if args is None:
         raw = content.get("arguments")
         try:
@@ -120,15 +109,49 @@ def _inner_output(out: str) -> str:
 
 
 def _join(base: str | None, d: str) -> str:
-    d = _unquote(d)
+    d = str(Path(d).expanduser())
     return d if d.startswith("/") or not base else str(Path(base) / d)
 
 
-def _base_before(prefix: str, base: str | None) -> str | None:
-    for segment in _SEGMENTS.split(prefix.rsplit(_CALL_BREAK, 1)[-1]):
-        for m in _CD.finditer(segment):
-            base = _join(base, m.group("dir"))
-    return base
+def _split_heredocs(command: str) -> tuple[str, list[str]]:
+    """Cut heredoc bodies out of the command, leaving a token where each `<<EOF` was."""
+    lines, code, bodies = command.split("\n"), [], []
+    i = 0
+    while i < len(lines):
+        pending: list[tuple[int, str]] = []
+
+        def _token(m: re.Match) -> str:
+            bodies.append("")
+            pending.append((len(bodies) - 1, m.group(2)))
+            return " " + _HEREDOC_TOKEN.format(len(bodies) - 1) + " "
+
+        code.append(_HEREDOC.sub(_token, lines[i]))
+        i += 1
+        for index, delimiter in pending:
+            body = []
+            while i < len(lines) and lines[i].strip() != delimiter:
+                body.append(lines[i])
+                i += 1
+            i += 1
+            bodies[index] = "\n".join(body)
+    return "\n".join(code), bodies
+
+
+def _simple_commands(code: str) -> list[list[str]]:
+    """Words of each simple command, split on ; & | and unquoted newlines."""
+    lexer = shlex.shlex(code, posix=True, punctuation_chars=";&|\n")
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    commands: list[list[str]] = [[]]
+    try:
+        for word in lexer:
+            if word and set(word) <= _OPERATORS:
+                commands.append([])
+            else:
+                commands[-1].append(word)
+    except ValueError:  # unbalanced quotes: nothing can be trusted
+        return []
+    return [c for c in commands if c]
 
 
 @dataclass(frozen=True)
@@ -138,26 +161,78 @@ class _CommitCmd:
     subject: str | None
 
 
+def _first_line(text: str) -> str | None:
+    return next((ln.strip() for ln in text.splitlines() if ln.strip()), None)
+
+
+def _parse_commit(args: list[str], bodies: list[str]) -> tuple[bool, bool, str | None]:
+    """(quiet, dry_run, subject) from the words after `git commit`."""
+    def expand(value: str) -> str:
+        # `-m "$(cat <<'EOF' ... EOF)"`: the message is the heredoc body.
+        ref = _HEREDOC_REF.search(value)
+        return bodies[int(ref.group(1))] if ref else value
+
+    quiet = dry_run = False
+    subject = None
+    stdin = next((expand(a) for a in args if _HEREDOC_REF.fullmatch(a)), "")
+    i = 0
+    while i < len(args):
+        a = args[i]
+        i += 1
+        if a == "--":
+            break
+        if a in ("--quiet",):
+            quiet = True
+        elif a == "--dry-run":
+            dry_run = True
+        elif a.startswith(("--message=", "--file=")) or a in ("--message", "--file"):
+            value = a.split("=", 1)[1] if "=" in a else (args[i] if i < len(args) else "")
+            i += "=" not in a
+            if a.startswith("--message"):
+                subject = _first_line(expand(value))
+            elif value == "-":
+                subject = _first_line(stdin)
+        elif a.startswith("-") and not a.startswith("--") and len(a) > 1:
+            for k, flag in enumerate(a[1:], start=1):
+                if flag == "q":
+                    quiet = True
+                elif flag in "mFCct":
+                    value = a[k + 1 :] or (args[i] if i < len(args) else "")
+                    i += not a[k + 1 :]
+                    if flag == "m":
+                        subject = _first_line(expand(value))
+                    elif flag == "F" and value == "-":
+                        subject = _first_line(stdin)
+                    break
+    return quiet, dry_run, subject
+
+
 def _commit_commands(command: str, workdir: str | None, workspace: str | None) -> list[_CommitCmd]:
-    """Each `git commit` in the command: its directory (`-C` on top of the last `cd`)."""
-    # `git commit` inside a quoted message is text, not a second commit.
-    masked = _QUOTED.sub(lambda q: q[0][0] + "x" * (len(q[0]) - 2) + q[0][-1], command)
-    matches = list(_IS_COMMIT_CMD.finditer(masked))
-    found = []
-    for i, m in enumerate(matches):
-        base = _base_before(command[: m.start()], workdir or workspace)
-        dash_c = _DASH_C.search(command[m.start("opts") : m.end("opts")])
-        directory = _join(base, dash_c.group("dir")) if dash_c else base
-        tail = command[m.start() : matches[i + 1].start() if i + 1 < len(matches) else None]
-        message = _MESSAGE.search(tail)
-        subject = next(g for g in message.groups() if g).strip() if message else None
-        # Flags are read only before the message, so `-m 'run -q'` is not quiet.
-        flags = tail[: message.start(next(k for k, v in message.groupdict().items() if v))
-                     if message else None].split("\n", 1)[0]
-        # A heredoc body may mention --dry-run, so only the command's own line counts.
-        if _DRY_RUN.search(flags) or _DRY_RUN.search(_QUOTED.sub("", tail).split("\n", 1)[0]):
+    """Each `git commit` the command runs, with the directory it runs in."""
+    start = workdir or workspace
+    code, bodies = _split_heredocs(command)
+    base, found = start, []
+    for words in _simple_commands(code):
+        while words and (re.fullmatch(r"\w+=\S*", words[0]) or words[0] in ("env", "command")):
+            words = words[1:]
+        if words[:1] == ["timeout"] and len(words) > 2:
+            words = words[2:]
+        if not words:
             continue
-        found.append(_CommitCmd(directory, bool(_QUIET.search(flags)), subject))
+        if words[0] == _CALL_BREAK:
+            base = start
+        elif words[0] == "cd" and len(words) > 1:
+            base = _join(base, words[1])
+        elif words[0] == "git":
+            directory, i = base, 1
+            while i < len(words) and words[i].startswith("-"):
+                if words[i] == "-C" and i + 1 < len(words):
+                    directory = _join(directory, words[i + 1])
+                i += 2 if words[i] in _GIT_VALUE_OPTS or words[i] == "-C" else 1
+            if words[i : i + 1] == ["commit"]:
+                quiet, dry_run, subject = _parse_commit(words[i + 1 :], bodies)
+                if not dry_run:
+                    found.append(_CommitCmd(directory, quiet, subject))
     return found
 
 
@@ -181,24 +256,25 @@ def extract_commits(events: list[dict], workspace: str | None) -> list[CommitRef
             printed = [(m.group("hash"), m.group("subject")) for m in _COMMIT_LINE.finditer(text)]
             loud = [c for c in commits if not c.quiet] or commits
             used: set[int] = set()
+            refs: list[tuple[int, CommitRef]] = []
             for short, subject in printed:
                 # Pair by subject first; a failed earlier commit must not shift the rest.
                 free = [c for c in loud if id(c) not in used]
                 same = [c for c in free if c.subject == subject]
                 match = (same or free or loud[-1:])[0]
                 used.add(id(match))
-                found.append(CommitRef(short, ev["event_id"], match.directory))
+                position = next(n for n, c in enumerate(commits) if c is match)
+                refs.append((position, CommitRef(short, ev["event_id"], match.directory)))
             rejected = (
                 content.get("is_error") is True
                 or _FAILED.search(text)
                 or _NONZERO_EXIT.search(json.dumps(content))
             )
-            if rejected:
-                continue
-            for c in commits:
-                if c.subject and id(c) not in used:
+            for n, c in enumerate(commits):
+                if c.subject and id(c) not in used and not rejected:
                     when = ev.get("occurred_at")
-                    found.append(CommitRef(None, ev["event_id"], c.directory, c.subject, when))
+                    refs.append((n, CommitRef(None, ev["event_id"], c.directory, c.subject, when)))
+            found.extend(ref for _, ref in sorted(refs, key=lambda r: r[0]))
     return found
 
 
