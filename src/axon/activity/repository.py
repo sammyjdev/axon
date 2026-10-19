@@ -3,7 +3,7 @@ import json
 
 import asyncpg
 
-from axon.activity.models import ActivityEvent, ActivitySession, SourceCursor
+from axon.activity.models import ActivityEvent, ActivitySession, RecentSession, SourceCursor
 from axon.store.pg_migrations import PG_MIGRATIONS_DIR, apply_pg_migrations
 
 
@@ -14,6 +14,7 @@ async def _init_conn(conn: asyncpg.Connection) -> None:
 
 
 _RELATIONS = ("context-delivered", "record-supported", "produced")
+_EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 
 class PostgresActivityRepository:
@@ -478,3 +479,79 @@ class PostgresActivityRepository:
                 limit,
             )
         return [r["text"] for r in reversed(rows)]
+
+    async def recent_sessions(self, project: str, *, limit: int) -> list[RecentSession]:
+        """The last `limit` main sessions of `project`, newest activity first.
+
+        Subagent sessions (parent set) and sessions with no events are left out: they are
+        not something a person resumes. Prompts are clipped here so a pasted log never
+        crosses the wire whole.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            try:
+                rows = await con.fetch(
+                    """
+                    SELECT s.session_id, s.harness, s.workspace, l.last_at
+                    FROM activity_sessions s
+                    JOIN LATERAL (
+                        SELECT max(occurred_at) AS last_at FROM activity_events e
+                        WHERE e.session_id = s.session_id
+                    ) l ON l.last_at IS NOT NULL
+                    WHERE s.project = $1 AND s.parent_session_id IS NULL
+                    ORDER BY l.last_at DESC, s.session_id
+                    LIMIT $2
+                    """,
+                    project,
+                    limit,
+                )
+            except asyncpg.UndefinedTableError:
+                return []  # migration 0006 not applied here yet: nothing is recorded
+            sessions = {
+                r["session_id"]: RecentSession(
+                    session_id=r["session_id"], harness=r["harness"],
+                    workspace=r["workspace"], last_at=r["last_at"],
+                )
+                for r in rows
+            }
+            ids = list(sessions)
+            if not ids:
+                return []
+            for order, attr in (("ASC", "first_prompt"), ("DESC", "last_prompt")):
+                prompts = await con.fetch(
+                    f"""
+                    SELECT DISTINCT ON (session_id) session_id, left(content->>'text', 600) AS t
+                    FROM activity_events
+                    WHERE session_id = ANY($1) AND kind = 'message'
+                      AND content->>'role' = 'user'
+                      AND coalesce(content->>'injected', 'false') <> 'true'
+                      AND btrim(coalesce(content->>'text', '')) <> ''
+                    ORDER BY session_id, occurred_at {order}, event_id
+                    """,  # noqa: S608 - order is a literal from the tuple above
+                    ids,
+                )
+                for r in prompts:
+                    setattr(sessions[r["session_id"]], attr, r["t"])
+            edits = await con.fetch(
+                """
+                SELECT session_id, content FROM activity_events
+                WHERE session_id = ANY($1) AND kind = 'tool_call'
+                  AND (content->>'name' = ANY($2) OR content::text LIKE '%*** % File: %')
+                ORDER BY occurred_at, event_id
+                """,
+                ids,
+                list(_EDIT_TOOLS),
+            )
+            for r in edits:
+                sessions[r["session_id"]].edit_calls.append(r["content"])
+            links = await con.fetch(
+                """
+                SELECT session_id, target_id FROM activity_evidence_links
+                WHERE target_type = 'commit' AND session_id = ANY($1)
+                ORDER BY created_at, id
+                """,
+                ids,
+            )
+            for r in links:
+                sessions[r["session_id"]].commits.append(r["target_id"])
+        return list(sessions.values())
