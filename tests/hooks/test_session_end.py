@@ -146,3 +146,7 @@ def test_a_transcript_with_invalid_utf8_never_fails_the_hook(tmp_path, monkeypat
         input=json.dumps({"transcript_path": str(path), "cwd": str(tmp_path)}),
     )
     assert result.exit_code == 0
+
+
+def test_the_transcript_is_imported_after_the_digest_is_stored() -> None:
+    assert [name for name, _ in session_end.STEPS][:2] == ["digest", "import transcript"]

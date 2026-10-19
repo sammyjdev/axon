@@ -193,3 +193,10 @@ def test_slack_rotating_and_app_level_tokens_are_redacted() -> None:
 def test_an_ansi_c_quoted_shell_secret_is_redacted() -> None:
     raw = {"text": "PASSWORD=$'correct horse battery' ok"}
     assert sanitize_event(raw)[0]["text"] == "PASSWORD=[REDACTED:credential] ok"
+
+
+def test_a_bare_suffix_name_and_a_locale_quoted_secret_are_redacted() -> None:
+    raw = {"text": '_TOKEN=exampleSecret PASSWORD=$"correct horse battery" ok'}
+    assert sanitize_event(raw)[0]["text"] == (
+        "_TOKEN=[REDACTED:credential] PASSWORD=[REDACTED:credential] ok"
+    )
