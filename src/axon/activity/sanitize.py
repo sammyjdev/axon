@@ -33,8 +33,9 @@ _ASSIGNMENT_RE = re.compile(
     # \"...\" : a value quoted inside a JSON-encoded string (tool arguments),
     # where an escaped quote inside the value reads \\\".
     r'\\"(?:\\\\\\"|\\\\\\\\|\\[^"]|[^\\])*?\\"'
-    r'|\$?"(?:\\.|[^"\\])*"'
-    r"|\$'(?:\\.|[^'\\])*'|'[^']*'"
+    r'|\$?"(?:\\.|[^"\\])*"?'
+    # A closing quote may be missing (truncated text): redact to the end.
+    r"|\$'(?:\\.|[^'\\])*'?|'[^']*'?"
     r"|[^\s'\"]+)"
 )
 REDACTED = "[REDACTED:credential]"
