@@ -34,7 +34,7 @@ _ASSIGNMENT_RE = re.compile(
     # where an escaped quote inside the value reads \\\".
     r'\\"(?:\\\\\\"|\\\\\\\\|\\[^"]|[^\\])*?\\"'
     r'|\$?"(?:\\.|[^"\\])*"'
-    r"|\$?'[^']*'"
+    r"|\$'(?:\\.|[^'\\])*'|'[^']*'"
     r"|[^\s'\"]+)"
 )
 REDACTED = "[REDACTED:credential]"

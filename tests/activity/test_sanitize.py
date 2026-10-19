@@ -200,3 +200,8 @@ def test_a_bare_suffix_name_and_a_locale_quoted_secret_are_redacted() -> None:
     assert sanitize_event(raw)[0]["text"] == (
         "_TOKEN=[REDACTED:credential] PASSWORD=[REDACTED:credential] ok"
     )
+
+
+def test_an_escaped_apostrophe_inside_an_ansi_c_secret_does_not_end_it() -> None:
+    raw = {"text": r"PASSWORD=$'first\'second secret' ok"}
+    assert sanitize_event(raw)[0]["text"] == "PASSWORD=[REDACTED:credential] ok"
