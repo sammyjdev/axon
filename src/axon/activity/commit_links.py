@@ -15,10 +15,19 @@ from pathlib import Path
 
 # `[main abc1234] subj`, `[main (root-commit) abc1234] subj`, `[detached HEAD abc1234] subj`
 _COMMIT_LINE = re.compile(
-    r"^\[[^\]\n]+? (?:\(root-commit\) )?(?P<hash>[0-9a-f]{7,40})\] ", re.MULTILINE
+    r"^\[[^\]\n]+? (?:\(root-commit\) )?(?P<hash>[0-9a-f]{7,40})\] (?P<subject>[^\n]*)",
+    re.MULTILINE,
 )
-_IS_COMMIT_CMD = re.compile(r"\bgit\b[^&|;\n]*?\bcommit\b")
-_DASH_C = re.compile(r"\bgit\s+(?:-\S+\s+)*?-C\s+(?P<dir>\"[^\"]+\"|'[^']+'|\S+)")
+_ARG = r"(?:\"[^\"]+\"|'[^']+'|\S+)"
+# `git [-C dir] [-c k=v] [--flag] commit`: `commit` must be the subcommand.
+_IS_COMMIT_CMD = re.compile(
+    rf"\bgit(?P<opts>(?:\s+(?:-C|-c|--git-dir|--work-tree)\s+{_ARG}|\s+--?[\w-]+(?:=\S+)?)*)"
+    r"\s+commit\b"
+)
+_DASH_C = re.compile(rf"-C\s+(?P<dir>{_ARG})")
+_DRY_RUN = re.compile(r"\s--dry-run\b")
+# Separates the independent calls of one Codex exec script; no `cd` crosses it.
+_CALL_BREAK = "\n\0\n"
 # `-m "subj"`, `-qam 'subj'`, `-m "$(cat <<'EOF'\nsubj`, `-F - <<'EOF'\nsubj`: first line
 _MESSAGE = re.compile(
     r"\bcommit\b[^&|;]*?\s-[a-zA-Z]*m\s*(?:\"\$\(cat <<-?'?\"?(?:\w+)'?\"?\n(?P<heredoc>[^\n]+)"
@@ -29,7 +38,8 @@ _QUIET = re.compile(r"\s(?:-[a-zA-Z]*q[a-zA-Z]*|--quiet)\b")
 # Codex output carries `"exit_code": N`, sometimes inside an escaped JSON string.
 _NONZERO_EXIT = re.compile(r'\\?"exit_code\\?"\s*:\s*[1-9]')
 _FAILED = re.compile(
-    r"nothing to commit|no changes added to commit|nothing added to commit|exit code:? [1-9]",
+    r"nothing to commit|no changes added to commit|nothing added to commit"
+    r"|exit code:? [1-9]|exited with code [1-9]",
     re.IGNORECASE,
 )
 # Codex's `exec` tool runs a JS script: tools.exec_command({cmd:"...", workdir:"..."})
@@ -70,7 +80,7 @@ def _call_command(content: dict) -> tuple[str, str | None]:
             if "cmd" in fields:
                 wd, cmd = fields.get("workdir"), fields["cmd"]
                 found["cmd"].append(f"cd {shlex.quote(wd)} && {cmd}" if wd else cmd)
-        return "\n".join(found["cmd"]), None
+        return _CALL_BREAK.join(found["cmd"]), None
     if args is None:
         raw = content.get("arguments")
         try:
@@ -114,7 +124,7 @@ def _join(base: str | None, d: str) -> str:
 
 
 def _base_before(prefix: str, base: str | None) -> str | None:
-    for segment in _SEGMENTS.split(prefix):
+    for segment in _SEGMENTS.split(prefix.rsplit(_CALL_BREAK, 1)[-1]):
         for m in _CD.finditer(segment):
             base = _join(base, m.group("dir"))
     return base
@@ -133,12 +143,17 @@ def _commit_commands(command: str, workdir: str | None, workspace: str | None) -
     found = []
     for i, m in enumerate(matches):
         base = _base_before(command[: m.start()], workdir or workspace)
-        dash_c = _DASH_C.search(m.group(0))
+        dash_c = _DASH_C.search(m.group("opts"))
         directory = _join(base, dash_c.group("dir")) if dash_c else base
         tail = command[m.start() : matches[i + 1].start() if i + 1 < len(matches) else None]
         message = _MESSAGE.search(tail)
         subject = next(g for g in message.groups() if g).strip() if message else None
-        found.append(_CommitCmd(directory, bool(_QUIET.search(tail.split("\n", 1)[0])), subject))
+        # Flags are read only before the message, so `-m 'run -q'` is not quiet.
+        flags = tail[: message.start(next(k for k, v in message.groupdict().items() if v))
+                     if message else None].split("\n", 1)[0]
+        if _DRY_RUN.search(flags):
+            continue
+        found.append(_CommitCmd(directory, bool(_QUIET.search(flags)), subject))
     return found
 
 
@@ -159,11 +174,16 @@ def extract_commits(events: list[dict], workspace: str | None) -> list[CommitRef
             if not commits:
                 continue
             text = _result_text(content)
-            printed = [m.group("hash") for m in _COMMIT_LINE.finditer(text)]
+            printed = [(m.group("hash"), m.group("subject")) for m in _COMMIT_LINE.finditer(text)]
             loud = [c for c in commits if not c.quiet] or commits
-            for i, short in enumerate(printed):
-                directory = loud[min(i, len(loud) - 1)].directory
-                found.append(CommitRef(short, ev["event_id"], directory))
+            used: set[int] = set()
+            for short, subject in printed:
+                # Pair by subject first; a failed earlier commit must not shift the rest.
+                free = [c for c in loud if id(c) not in used]
+                same = [c for c in free if c.subject == subject]
+                match = (same or free or loud[-1:])[0]
+                used.add(id(match))
+                found.append(CommitRef(short, ev["event_id"], match.directory))
             rejected = (
                 content.get("is_error") is True
                 or _FAILED.search(text)
@@ -171,11 +191,8 @@ def extract_commits(events: list[dict], workspace: str | None) -> list[CommitRef
             )
             if rejected:
                 continue
-            unprinted = [c for c in commits if c.quiet] + [c for c in commits if not c.quiet][
-                len(printed) :
-            ]
-            for c in sorted(unprinted, key=commits.index):
-                if c.subject:
+            for c in commits:
+                if c.subject and id(c) not in used:
                     when = ev.get("occurred_at")
                     found.append(CommitRef(None, ev["event_id"], c.directory, c.subject, when))
     return found

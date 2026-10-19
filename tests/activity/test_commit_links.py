@@ -503,3 +503,56 @@ async def test_a_commit_made_after_the_result_is_not_claimed(repo, git_repo) -> 
     await _seed_call(repo, str(git_repo), 'git commit -qm "first change"', "", made - timedelta(seconds=30))
 
     assert await link_commits(repo, "q1") == 0
+
+
+# ---- review round 3 ----
+
+
+def test_a_git_log_that_prints_bracket_lines_is_not_a_commit() -> None:
+    assert _commits("git log --format='[main %h] %s' --grep=commit", "[main abc1234] x\n") == []
+
+
+def test_a_dry_run_commit_is_not_a_commit() -> None:
+    events = [_claude_call("c1", "git commit --dry-run -qm one"), _claude_result("c1", "")]
+
+    assert extract_commits(events, "/ws") == []
+
+
+def test_a_printed_line_is_paired_with_the_commit_of_the_same_subject() -> None:
+    # Given the first commit had nothing to commit and only the second printed its line
+    events = [_claude_call("c1", "git -C /a commit -m one; git -C /b commit -m two"),
+              _claude_result("c1", "nothing to commit\n[main bbbbbbb] two\n")]
+
+    found = extract_commits(events, "/ws")
+
+    assert [(c.short_hash, c.directory) for c in found] == [("bbbbbbb", "/b")]
+
+
+def test_a_codex_process_that_exited_non_zero_is_not_a_quiet_commit() -> None:
+    events = _codex_exec(
+        [('git commit -qm "first change"', None)], "Process exited with code 1\nOutput:\nruff....Failed"
+    )
+
+    assert extract_commits(events, "/ws") == []
+
+
+def test_a_codex_exec_call_without_workdir_does_not_inherit_the_previous_one() -> None:
+    events = _codex_exec([("git status", "/other"), ('git commit -m "x"', None)], "[main abcdef0] x\n")
+
+    assert [c.directory for c in extract_commits(events, "/workspace")] == ["/workspace"]
+
+
+def test_a_dash_q_inside_the_message_does_not_make_the_commit_quiet() -> None:
+    events = [_claude_call("c1", "git -C /a commit -m 'run -q option' && git -C /b commit -m two"),
+              _claude_result("c1", "[main aaaaaaa] run -q option\n[main bbbbbbb] two\n")]
+
+    found = extract_commits(events, "/ws")
+
+    assert [(c.short_hash, c.directory) for c in found] == [("aaaaaaa", "/a"), ("bbbbbbb", "/b")]
+
+
+def test_the_word_commit_inside_a_dash_c_path_keeps_the_whole_path() -> None:
+    events = [_claude_call("c1", "git -C /repo/commit/project commit -m one"),
+              _claude_result("c1", "[main aaaaaaa] one\n")]
+
+    assert [c.directory for c in extract_commits(events, "/ws")] == ["/repo/commit/project"]
