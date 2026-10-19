@@ -982,10 +982,9 @@ def session_hook() -> None:
     if not transcript_path or not os.path.exists(transcript_path):
         typer.echo(f"[axon] session-hook: sem transcript ({transcript_path!r}).", err=True)
         return
-    try:
-        session_save(cwd=cwd, transcript=transcript_path)
-    except Exception as exc:  # a hook must never interrupt the agent
-        typer.echo(f"[axon] session-hook: {exc}", err=True)
+    from axon.hooks.session_end import run_session_end
+
+    run_session_end(transcript_path, cwd)
 
 
 @hooks_app.command("install")
@@ -1354,58 +1353,93 @@ def activity_export(
 
 @activity_app.command("search")
 def activity_search(
-    query: Annotated[str, typer.Argument(help="Search query text")],
+    query: Annotated[str, typer.Argument(help="Text to find in past conversations")],
     project: Annotated[str | None, typer.Option("--project", help="Filter by project")] = None,
     harness: Annotated[str | None, typer.Option("--harness", help="Filter by harness")] = None,
-    date_from: Annotated[
-        str | None, typer.Option("--date-from", help="Filter by start date (ISO)")
-    ] = None,
-    date_to: Annotated[
-        str | None, typer.Option("--date-to", help="Filter by end date (ISO)")
-    ] = None,
-    outcome: Annotated[str | None, typer.Option("--outcome", help="Filter by outcome")] = None,
-    limit: Annotated[int, typer.Option("--limit", help="Max events to return")] = 20,
-    cursor: Annotated[str | None, typer.Option("--cursor", help="Pagination cursor")] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Max hits to return")] = 10,
 ) -> None:
-    """Search historical activity events."""
-    from datetime import datetime
-
-    from axon.activity.models import ActivityFilters
+    """Search past conversations: session, date, project, role and a snippet, newest first."""
+    # Resolved per call, not from the import-time _RUNTIME: that copy kept the
+    # live DSN under the suite's monkeypatched one and the tests wrote to it.
+    from axon.activity.conversations import search_conversations
     from axon.activity.repository import PostgresActivityRepository
-    from axon.activity.service import ActivityService
-
-    dt_from = datetime.fromisoformat(date_from) if date_from else None
-    dt_to = datetime.fromisoformat(date_to) if date_to else None
 
     if harness and harness not in ("claude-code", "codex", "agy"):
         raise typer.BadParameter("harness must be claude-code, codex, or agy")
 
-    filters = ActivityFilters(
-        project=project,
-        harness=harness,
-        date_from=dt_from,
-        date_to=dt_to,
-        outcome=outcome,
-    )
-
-    async def _run() -> None:
-        repo = PostgresActivityRepository(dsn=_RUNTIME.pg_url)
-        await repo.ensure_schema()
+    async def _run() -> list[str]:
+        repo = PostgresActivityRepository(dsn=load_runtime_config().pg_url)
         try:
-            service = ActivityService(repo)
-            page = await service.search_activity(query, filters=filters, limit=limit, cursor=cursor)
-            typer.echo(
-                json.dumps(
-                    {
-                        "events": [e.model_dump(mode="json") for e in page.events],
-                        "next_cursor": page.next_cursor,
-                    }
-                )
+            await repo.ensure_schema()
+            return await search_conversations(
+                repo, query, project=project, harness=harness, limit=limit
             )
         finally:
             await repo.close()
 
+    hits = asyncio.run(_run())
+    typer.echo("\n".join(hits) if hits else f"no conversation matching {query!r}.")
+
+
+@activity_app.command("backfill")
+def activity_backfill(
+    claude_dir: Annotated[
+        Path, typer.Option("--claude-dir", help="Claude Code transcripts root")
+    ] = Path.home() / ".claude" / "projects",
+    codex_dir: Annotated[
+        Path, typer.Option("--codex-dir", help="Codex rollouts root")
+    ] = Path.home() / ".codex" / "sessions",
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Count only, write nothing")] = False,
+) -> None:
+    """Import every transcript (subagents included); safe to run again."""
+    import asyncpg
+
+    from axon.activity.importer import ImportResult, import_transcript
+    from axon.activity.repository import PostgresActivityRepository
+
+    paths = sorted(
+        {p for root in (claude_dir, codex_dir) if root.is_dir() for p in root.rglob("*.jsonl")}
+    )
+    totals: dict[str, dict[str, int]] = {}
+
+    async def _run() -> None:
+        repo: PostgresActivityRepository | None = PostgresActivityRepository(
+            load_runtime_config().pg_url
+        )
+        try:
+            await repo.ensure_schema()
+        except (OSError, asyncpg.PostgresError) as exc:
+            if not dry_run:
+                raise
+            typer.echo(f"[axon] backfill: no database ({exc}); counting whole files", err=True)
+            await repo.close()
+            repo = None
+        try:
+            for path in paths:
+                try:
+                    res = await import_transcript(path, repo, dry_run=dry_run)
+                except (OSError, ValueError, asyncpg.PostgresError) as exc:
+                    # One unreadable file must not stop the rest; its cursor
+                    # did not move, so a later run retries it.
+                    typer.echo(f"[axon] backfill: {path}: {exc}", err=True)
+                    res = ImportResult(path=path, harness=None, skipped="error")
+                row = totals.setdefault(
+                    res.harness or "unknown",
+                    dict.fromkeys(("files", "sessions", "events", "redactions", "skipped"), 0),
+                )
+                row["files"] += 1
+                row["skipped"] += res.skipped is not None
+                row["sessions"] += res.sessions
+                row["events"] += res.events
+                row["redactions"] += res.redactions
+        finally:
+            if repo is not None:
+                await repo.close()
+
     asyncio.run(_run())
+    prefix = "[dry-run] " if dry_run else ""
+    for harness, row in sorted(totals.items()):
+        typer.echo(prefix + harness + ": " + ", ".join(f"{k}={v}" for k, v in row.items()))
 
 
 @activity_app.command("show")

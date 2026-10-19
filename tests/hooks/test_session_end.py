@@ -1,0 +1,84 @@
+"""Acceptance: the SessionEnd hook stores the digest, then imports the transcript."""
+
+import json
+import os
+from pathlib import Path
+
+import asyncpg
+import pytest
+from typer.testing import CliRunner
+
+from axon.cli.pb import app
+from axon.hooks import session_end
+
+runner = CliRunner()
+
+
+def _transcript(tmp_path: Path) -> Path:
+    path = tmp_path / "s.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "type": "user",
+                "uuid": "u1",
+                "sessionId": "hook-1",
+                "timestamp": "2026-10-01T10:00:00Z",
+                "cwd": str(tmp_path),
+                "message": {"role": "user", "content": "store this conversation"},
+            }
+        )
+        + "\n"
+    )
+    return path
+
+
+def test_session_end_runs_the_import_after_the_digest_and_a_failing_step_stops_nothing(
+    tmp_path, monkeypatch
+):
+    calls: list[str] = []
+
+    def boom(t, c):
+        calls.append("digest")
+        raise RuntimeError("store down")
+
+    monkeypatch.setattr(
+        session_end,
+        "STEPS",
+        [("digest", boom), ("import transcript", lambda t, c: calls.append("import"))],
+    )
+    path = _transcript(tmp_path)
+    result = runner.invoke(
+        app,
+        ["session-hook"],
+        input=json.dumps({"transcript_path": str(path), "cwd": str(tmp_path)}),
+    )
+    assert result.exit_code == 0
+    assert calls == ["digest", "import"]
+    assert "digest failed: store down" in result.output
+
+
+def test_the_session_hook_stores_the_transcript_events(tmp_path):
+    dsn = os.environ["AXON_PG_URL"]
+    if "axon_tests_have_no_database" in dsn:
+        pytest.skip("needs the test Postgres container")
+    path = _transcript(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["session-hook"],
+        input=json.dumps({"transcript_path": str(path), "cwd": str(tmp_path)}),
+    )
+    assert result.exit_code == 0
+
+    async def _texts():
+        con = await asyncpg.connect(dsn)
+        try:
+            return await con.fetch(
+                "SELECT content->>'text' AS t FROM activity_events WHERE session_id='hook-1'"
+            )
+        finally:
+            await con.close()
+
+    import asyncio
+
+    assert [r["t"] for r in asyncio.run(_texts())] == ["store this conversation"]
