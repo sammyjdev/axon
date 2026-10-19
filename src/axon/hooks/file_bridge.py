@@ -84,8 +84,10 @@ def _touched_files(session: RecentSession, root: Path) -> list[str]:
                 continue
             path = Path(r.strip())
             if not path.is_absolute():
-                seen.setdefault(path.as_posix())
-                continue
+                if not session.workspace:
+                    continue
+                path = Path(session.workspace) / path
+            path = Path(os.path.normpath(path))
             for base in bases:
                 if path.is_relative_to(base):
                     seen.setdefault(path.relative_to(base).as_posix())
@@ -150,7 +152,7 @@ def _render(
         "",
     ]
     if decisions:
-        lines += [f"- `{d.id}` ({d.status}) — {d.summary}" for d in decisions]
+        lines += [f"- `{d.id}` ({d.status}) — {' '.join(d.summary.split())}" for d in decisions]
     else:
         lines.append("_None captured yet._")
     if friction:
@@ -181,7 +183,7 @@ def _render(
             lines.append(f"- _...{more} more, all reachable through `axon_search_lessons`._")
     lines.append("")
     # Backstop only: the limits above keep a full file near 80 lines.
-    return "\n".join(lines[:_MAX_LINES])
+    return "\n".join("\n".join(lines).splitlines()[:_MAX_LINES]) + "\n"
 
 
 async def _lesson_catalog() -> list[LessonHandle]:

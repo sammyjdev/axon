@@ -227,3 +227,27 @@ async def test_regenerating_with_50_sessions_of_200_events_is_fast(activity, git
     print(f"context.md regeneration, 50 sessions x 200 events: {elapsed * 1000:.0f} ms")
     assert "`s49`" in path.read_text()
     assert elapsed < 1.0
+
+
+def test_multiline_decision_summaries_still_fit_in_100_lines():
+    decisions = [Decision(id=f"dec-{n:03d}", timestamp=T0, agent="manual", repo="axon",
+                          summary="line\n" * 10) for n in range(15)]
+
+    out = file_bridge._render("axon", decisions)
+
+    assert len(out.splitlines()) <= 100
+    assert "- `dec-000` (draft) — line line line" in out
+
+
+def test_relative_and_dotted_paths_resolve_against_the_session_workspace(tmp_path):
+    from axon.activity.models import RecentSession
+
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    s = RecentSession("s", "codex", str(root / "src"), T0, edit_calls=[
+        {"name": "exec", "input": "*** Update File: a.py\\n"},
+        _edit(f"{root}/src/a.py"),
+        _edit(f"{root}/src/../src/a.py"),
+    ])
+
+    assert file_bridge._touched_files(s, root) == ["src/a.py"]
