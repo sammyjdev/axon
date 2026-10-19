@@ -440,6 +440,7 @@ from axon.cli.pb import (  # noqa: E402
     session_hook,
     session_save,
     setup,
+    why,
 )
 from axon.cli.pb import init as pb_bootstrap  # noqa: E402
 
@@ -458,6 +459,7 @@ app.command("note")(note)
 app.command("session-save")(session_save)
 app.command("seed-lessons")(seed_lessons)
 app.command("session-hook")(session_hook)
+app.command("why")(why)
 app.command("compact-hook")(compact_hook)
 
 if __name__ == "__main__":

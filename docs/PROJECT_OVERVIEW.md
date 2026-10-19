@@ -49,12 +49,15 @@ Apache-2.0-licensed, installed from source (not on PyPI).
 `serve`, `serve-http`, `install-hooks`, `health`,
 `doctor [--apply|--ci]`, `status`, `gain`, `export`, `bootstrap` (env/config
 scaffold, formerly `pb init`), `setup`, `configure`, `note`, `session-save`,
-`seed-lessons`, `rekey-repo`, `session-hook`, `compact-hook`. Sub-apps:
+`seed-lessons`, `rekey-repo`, `session-hook`, `compact-hook`,
+`why <commit|file>` (the sessions, last typed prompts and decisions behind a
+commit, or behind a file's last five commits). Sub-apps:
 `axon adr {list,add,sync}`, `axon hooks {install,status}`,
 `axon pending {drain,recover}`, `axon session {note,save}`,
 `axon profile {list,use,show,create,export}`,
-`axon activity {run,import,collect,export,search,show,backfill}` (dec-136 operational
-activity history).
+`axon activity {run,import,collect,export,search,show,backfill,link-commits}` (dec-136
+operational activity history; `link-commits [--session ID | --all]` records which
+session produced each commit, read by `why`).
 
 Removed by dec-138: `search`, `sync`, `index-dev`, `index-vault`,
 `index-compare`, `index-prune-legacy`, `scan`, `ingest-vault`,

@@ -1467,6 +1467,57 @@ def activity_show(
     asyncio.run(_run())
 
 
+@activity_app.command("link-commits")
+def activity_link_commits(
+    session_id: Annotated[str | None, typer.Option("--session", help="One stored session")] = None,
+    all_sessions: Annotated[bool, typer.Option("--all", help="Every stored session")] = False,
+) -> None:
+    """Link the commits each stored session produced to that session (idempotent)."""
+    from axon.activity.commit_links import link_all_commits, link_commits
+    from axon.activity.repository import PostgresActivityRepository
+
+    if (session_id is None) == (not all_sessions):
+        raise typer.BadParameter("pass exactly one of --session ID or --all")
+
+    async def _run() -> tuple[int, int]:
+        repo = PostgresActivityRepository(dsn=_RUNTIME.pg_url)
+        await repo.ensure_schema()
+        try:
+            if all_sessions:
+                return await link_all_commits(repo)
+            return 1, await link_commits(repo, session_id)
+        finally:
+            await repo.close()
+
+    sessions, added = asyncio.run(_run())
+    typer.echo(f"sessions: {sessions}  links added: {added}")
+
+
+def why(
+    target: Annotated[str, typer.Argument(help="A commit (hash, HEAD~1, ...) or a file path")],
+) -> None:
+    """Show the sessions, typed prompts and decisions behind a commit or a file's last commits."""
+    from axon.activity.repository import PostgresActivityRepository
+    from axon.activity.why import WhyError, explain
+    from axon.store.session_store import SessionStore
+
+    async def _run() -> str:
+        repo = PostgresActivityRepository(dsn=_RUNTIME.pg_url)
+        store = SessionStore(_get_db_path())
+        await repo.ensure_schema()
+        try:
+            return await explain(repo, store, target, cwd=Path.cwd())
+        finally:
+            await repo.close()
+            await store.close()
+
+    try:
+        typer.echo(asyncio.run(_run()))
+    except WhyError as exc:
+        typer.echo(f"axon why: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
