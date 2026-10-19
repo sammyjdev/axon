@@ -29,12 +29,12 @@ _CREDENTIAL_RES = (
 # NAME=value with a secret-sounding NAME: only the value goes. A `$VAR`
 # reference is not a secret and stays readable.
 _ASSIGNMENT_RE = re.compile(
-    r"(?<![A-Za-z0-9])((?:[A-Z_][A-Z0-9_]*_(?:KEY|TOKEN|SECRET))|PASSWORD)=(?!\$)(?:"
+    r"(?<![A-Za-z0-9])((?:[A-Z_][A-Z0-9_]*_(?:KEY|TOKEN|SECRET))|PASSWORD)=(?!\$[A-Za-z_{])(?:"
     # \"...\" : a value quoted inside a JSON-encoded string (tool arguments),
     # where an escaped quote inside the value reads \\\".
     r'\\"(?:\\\\\\"|\\\\\\\\|\\[^"]|[^\\])*?\\"'
     r'|"(?:\\.|[^"\\])*"'
-    r"|'[^']*'"
+    r"|\$?'[^']*'"
     r"|[^\s'\"]+)"
 )
 REDACTED = "[REDACTED:credential]"

@@ -71,6 +71,26 @@ def parse_codex_session(
         if isinstance(meta, dict) and isinstance(meta.get("payload"), dict):
             sid = meta["payload"].get("id") or meta["payload"].get("session_id")
             current_session_id = str(sid) if sid else None
+        # And the open turn lives on the last turn line before the offset.
+        with open(path, "rb") as f:
+            for line in f:
+                if f.tell() > byte_offset:
+                    break
+                if b'"turn_id"' not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                payload_ = entry.get("payload")
+                if entry.get("type") in ("event_msg", "turn_context") and isinstance(
+                    payload_, dict
+                ):
+                    tid = payload_.get("turn_id")
+                    if isinstance(tid, str):
+                        turn_id = tid
 
     with open(path, "rb") as f:
         f.seek(byte_offset)

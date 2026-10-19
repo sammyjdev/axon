@@ -272,3 +272,25 @@ async def test_an_escaped_cwd_key_into_the_restricted_tree_is_still_skipped(
         + "}}\n"
     )
     assert (await import_transcript(path, repo)).skipped == "restricted cwd"
+
+
+async def test_a_tool_result_appended_later_keeps_the_turn_of_its_call(repo, tmp_path: Path):
+    head = [
+        {"type": "session_meta", "payload": {"id": "cx-t", "cwd": "/nonexistent/p"}},
+        {"type": "turn_context", "timestamp": "2026-10-01T10:00:00Z",
+         "payload": {"turn_id": "turn-1"}},
+        {"type": "response_item", "timestamp": "2026-10-01T10:00:01Z",
+         "payload": {"type": "function_call", "name": "shell", "arguments": "{}",
+                     "call_id": "c9"}},
+    ]
+    path = tmp_path / "r.jsonl"
+    path.write_text("".join(json.dumps(x) + "\n" for x in head))
+    await import_transcript(path, repo)
+    with path.open("a") as f:
+        f.write(json.dumps({"type": "response_item", "timestamp": "2026-10-01T10:00:02Z",
+                            "payload": {"type": "function_call_output", "call_id": "c9",
+                                        "output": "ok"}}) + "\n")
+    await import_transcript(path, repo)
+    async with (await repo._ensure_pool()).acquire() as con:
+        turn = await con.fetchval("SELECT turn_id FROM activity_events WHERE kind='tool_result'")
+    assert turn == "turn-1"
