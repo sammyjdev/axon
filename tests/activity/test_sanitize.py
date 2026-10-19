@@ -176,3 +176,10 @@ def test_an_escaped_quote_inside_a_quoted_secret_does_not_end_the_redaction() ->
     out = sanitize_event({"arguments": args})[0]["arguments"]
     assert "second" not in out
     assert json.loads(out) == {"cmd": "PASSWORD=[REDACTED:credential] ok"}
+
+
+def test_an_underscore_led_name_and_a_backslash_in_the_value_are_fully_redacted() -> None:
+    raw = {"text": r"_SERVICE_TOKEN=privatevalue PASSWORD=first\second"}
+    assert sanitize_event(raw)[0]["text"] == (
+        "_SERVICE_TOKEN=[REDACTED:credential] PASSWORD=[REDACTED:credential]"
+    )

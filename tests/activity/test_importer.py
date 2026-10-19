@@ -235,3 +235,19 @@ async def test_a_dotted_path_into_the_restricted_tree_is_still_skipped(
                       "payload": {"cwd": str(tmp_path / "other" / ".." / "afya")}}) + "\n"
     )
     assert (await import_transcript(path, repo)).skipped == "restricted cwd"
+
+
+async def test_a_unicode_escaped_or_symlinked_restricted_cwd_is_still_skipped(
+    repo, tmp_path: Path, monkeypatch
+):
+    restricted = tmp_path / "afya"
+    restricted.mkdir()
+    (tmp_path / "alias").symlink_to(restricted)
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
+    escaped = str(restricted).replace("afya", "\\u0061fya")
+    for cwd_json in (f'"{escaped}"', json.dumps(str(tmp_path / "alias"))):
+        path = tmp_path / "r.jsonl"
+        path.write_text(
+            _codex_lines() + '{"type": "turn_context", "payload": {"cwd": ' + cwd_json + "}}\n"
+        )
+        assert (await import_transcript(path, repo)).skipped == "restricted cwd", cwd_json
