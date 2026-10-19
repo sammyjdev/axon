@@ -137,6 +137,16 @@ class PostgresDecisionRepository:
             return None
         return Decision(**rows[0]["frontmatter"])
 
+    async def find_decisions_by_git_hash(self, git_hash: str) -> list[Decision]:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                "SELECT frontmatter FROM decisions WHERE frontmatter->>'git_hash' = $1"
+                " ORDER BY created_at",
+                git_hash,
+            )
+        return [Decision(**r["frontmatter"]) for r in rows]
+
     async def find_decisions_by_repo(self, repo: str, limit: int = 20) -> list[Decision]:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:

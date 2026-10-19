@@ -43,8 +43,8 @@ async def _explain_commit(repo, store, directory: Path, ref: str) -> str:
             lines.append(f"    prompt: {_oneline(p)}")
         if not prompts:
             lines.append("    no typed prompt stored before the commit")
-    decision = await store.find_decision_by_git_hash(full) if store is not None else None
-    if decision is not None:
+    decisions = await store.find_decisions_by_git_hash(full) if store is not None else []
+    for decision in decisions:
         lines.append(f"  decision {decision.id}: {_oneline(decision.summary)}")
     return "\n".join(lines)
 

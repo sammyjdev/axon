@@ -37,11 +37,11 @@ async def repo(pg_dsn):
 
 
 class _Store:
-    def __init__(self, decision=None) -> None:
-        self._decision = decision
+    def __init__(self, decisions=()) -> None:
+        self._decisions = list(decisions)
 
-    async def find_decision_by_git_hash(self, git_hash, repo=None):
-        return self._decision if self._decision and self._decision.git_hash == git_hash else None
+    async def find_decisions_by_git_hash(self, git_hash):
+        return [d for d in self._decisions if d.git_hash == git_hash]
 
 
 @pytest.fixture
@@ -126,20 +126,43 @@ async def test_why_commit_shows_subject_session_and_the_last_three_typed_prompts
     assert prompts == ["prompt: second typed", "prompt: third typed", "prompt: fourth typed"]
 
 
-async def test_why_prompts_tolerate_messages_without_role_or_injected_flag(repo, work) -> None:
+async def test_why_prompts_tolerate_a_missing_injected_flag(repo, work) -> None:
     await _session_with_commit(repo, work)
-    await _message(repo, 7, "legacy shape")
+    await _message(repo, 7, "typed without the flag", role="user")
 
     out = await explain(repo, _Store(), "HEAD", cwd=work)
 
-    assert "prompt: legacy shape" in out
+    assert "prompt: typed without the flag" in out
+
+
+async def test_why_never_shows_a_message_without_a_role_as_a_typed_prompt(repo, work) -> None:
+    # Given a pre-normalisation row with no role (it may be an assistant reply)
+    await _session_with_commit(repo, work)
+    await _message(repo, 7, "assistant text with no role")
+
+    out = await explain(repo, _Store(), "HEAD", cwd=work)
+
+    assert "assistant text with no role" not in out
+
+
+async def test_why_commit_lists_every_decision_recorded_for_that_hash(repo, work) -> None:
+    full = await _session_with_commit(repo, work)
+    decisions = [
+        SimpleNamespace(id="dec-7", summary="use X over Y", git_hash=full),
+        SimpleNamespace(id="dec-8", summary="drop Z", git_hash=full),
+    ]
+
+    out = await explain(repo, _Store(decisions), "HEAD", cwd=work)
+
+    assert "decision dec-7: use X over Y" in out
+    assert "decision dec-8: drop Z" in out
 
 
 async def test_why_commit_lists_the_decision_recorded_for_that_hash(repo, work) -> None:
     full = await _session_with_commit(repo, work)
     decision = SimpleNamespace(id="dec-7", summary="use X over Y", git_hash=full)
 
-    out = await explain(repo, _Store(decision), "HEAD", cwd=work)
+    out = await explain(repo, _Store([decision]), "HEAD", cwd=work)
 
     assert "decision dec-7: use X over Y" in out
 

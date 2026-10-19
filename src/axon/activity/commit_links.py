@@ -30,7 +30,8 @@ _FAILED = re.compile(r"nothing to commit|no changes added to commit|nothing adde
 _JS_STRING = re.compile(r'\b(?P<key>cmd|workdir)\s*:\s*(?P<lit>"(?:[^"\\]|\\.)*")')
 # A quiet commit is looked up in the log this long before its result was recorded.
 _SUBJECT_WINDOW = timedelta(minutes=15)
-_CD = re.compile(r"(?:^|[;&|]\s*)cd\s+(?P<dir>\"[^\"]+\"|'[^']+'|[^\s;&|]+)")
+_SEGMENTS = re.compile(r"&&|\|\||;|\n")
+_CD = re.compile(r"^\s*cd\s+(?P<dir>\"[^\"]+\"|'[^']+'|[^\s;&|]+)")
 
 
 @dataclass(frozen=True)
@@ -52,13 +53,13 @@ def _call_command(content: dict) -> tuple[str, str | None]:
     """Return (command text, workdir) for a Claude `tool_use` or Codex `function_call`."""
     args = content.get("input")
     if isinstance(args, str):
-        found: dict[str, str] = {}
+        found: dict[str, list[str]] = {"cmd": [], "workdir": []}
         for m in _JS_STRING.finditer(args):
             try:
-                found.setdefault(m.group("key"), json.loads(m.group("lit")))
+                found[m.group("key")].append(json.loads(m.group("lit")))
             except ValueError:
                 continue
-        return found.get("cmd", ""), found.get("workdir")
+        return "\n".join(found["cmd"]), next(iter(found["workdir"]), None)
     if args is None:
         raw = content.get("arguments")
         try:
@@ -96,13 +97,21 @@ def _inner_output(out: str) -> str:
     return out
 
 
-def _directory(command: str, workdir: str | None, workspace: str | None) -> str | None:
-    base = workdir or workspace
-    m = _DASH_C.search(command) or _CD.search(command)
-    if not m:
-        return base
-    d = _unquote(m.group("dir"))
+def _join(base: str | None, d: str) -> str:
+    d = _unquote(d)
     return d if d.startswith("/") or not base else str(Path(base) / d)
+
+
+def _directory(command: str, workdir: str | None, workspace: str | None) -> str | None:
+    """Where the commit ran: its own `-C`, on top of the last `cd` before it."""
+    base = workdir or workspace
+    for segment in _SEGMENTS.split(command):
+        if _IS_COMMIT_CMD.search(segment):
+            m = _DASH_C.search(segment)
+            return _join(base, m.group("dir")) if m else base
+        for m in _CD.finditer(segment):
+            base = _join(base, m.group("dir"))
+    return base
 
 
 def extract_commits(events: list[dict], workspace: str | None) -> list[CommitRef]:
@@ -123,7 +132,8 @@ def extract_commits(events: list[dict], workspace: str | None) -> list[CommitRef
             for m in printed:
                 found.append(CommitRef(m.group("hash"), ev["event_id"], directory))
             message = _MESSAGE.search(command)
-            if not printed and message and not _FAILED.search(text):
+            rejected = content.get("is_error") is True or _FAILED.search(text)
+            if not printed and message and not rejected:
                 subject = next(g for g in message.groups() if g)
                 when = ev.get("occurred_at")
                 found.append(CommitRef(None, ev["event_id"], directory, subject.strip(), when))

@@ -278,7 +278,9 @@ async def test_evidence_link_accepts_the_produced_relation_and_rejects_unknown_o
 # ---- quiet commits and Codex exec scripts (what real transcripts on this machine hold) ----
 
 
-async def _seed_call(repo, workspace: str, command: str, output, when: datetime) -> None:
+async def _seed_call(
+    repo, workspace: str, command: str, output, when: datetime, *, is_error: bool = False
+) -> None:
     await repo.upsert_session(
         ActivitySession(
             session_id="q1", harness="claude-code", source_id="s-q1",
@@ -288,7 +290,8 @@ async def _seed_call(repo, workspace: str, command: str, output, when: datetime)
     for i, (kind, content) in enumerate(
         [
             ("tool_call", {"type": "tool_use", "id": "c9", "name": "Bash", "input": {"command": command}}),
-            ("tool_result", {"type": "tool_result", "tool_use_id": "c9", "content": output}),
+            ("tool_result", {"type": "tool_result", "tool_use_id": "c9", "content": output,
+                             "is_error": is_error}),
         ]
     ):
         await repo.upsert_event(
@@ -373,3 +376,54 @@ async def test_a_message_read_from_a_stdin_heredoc_is_matched_by_its_first_line(
 
     assert await link_commits(repo, "q1") == 1
     assert await _links(repo) == [(full, "q1-1")]
+
+
+# ---- review round 1 ----
+
+
+async def test_a_rejected_quiet_commit_does_not_claim_an_earlier_commit_with_the_same_subject(
+    repo, git_repo
+) -> None:
+    # Given a pre-commit hook rejected `git commit -qm "first change"` and the tool result is an error
+    await _seed_call(
+        repo, str(git_repo), 'git commit -qm "first change"', "ruff....Failed",
+        datetime.now(UTC), is_error=True,
+    )
+
+    assert await link_commits(repo, "q1") == 0
+
+
+def test_the_directory_is_the_one_the_commit_itself_runs_in() -> None:
+    out = "[main abc1234] x\n"
+
+    def d(cmd):
+        return extract_commits([_claude_call("c1", cmd), _claude_result("c1", out)], "/ws")[0].directory
+
+    assert d("git -C /first status && git -C /second commit -m x") == "/second"
+    assert d("cd /elsewhere && git -C sub commit -m x") == "/elsewhere/sub"
+    assert d("cd /a && git status; cd /b && git commit -m x") == "/b"
+
+
+def test_a_codex_exec_script_with_several_commands_finds_the_commit_among_them() -> None:
+    script = (
+        'text(await tools.exec_command({cmd:"git status --short"}));\n'
+        'text(await tools.exec_command({cmd:"git commit -m \\"x\\""}));\n'
+    )
+    events = [
+        {"event_id": "e1", "call_id": "k1", "kind": "tool_call",
+         "content": {"type": "custom_tool_call", "name": "exec", "call_id": "k1", "input": script}},
+        {"event_id": "e2", "call_id": "k1", "kind": "tool_result",
+         "content": {"type": "custom_tool_call_output", "call_id": "k1",
+                     "output": [{"type": "input_text", "text": "[main abcdef0] x\n"}]}},
+    ]
+
+    assert [c.short_hash for c in extract_commits(events, "/ws")] == ["abcdef0"]
+
+
+async def test_a_short_link_is_not_duplicated_once_the_full_hash_resolves(repo, git_repo) -> None:
+    full = _git(git_repo, "rev-parse", "HEAD")
+    await _seed(repo, "s1", str(git_repo), full[:7])
+    await repo.add_commit_link(commit=full[:7], session_id="s1", event_id="s1-1")
+
+    assert await link_commits(repo, "s1") == 0
+    assert len(await _links(repo)) == 1

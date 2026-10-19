@@ -386,8 +386,8 @@ class PostgresActivityRepository:
                 SELECT 'commit', $1, $2, $3, 'produced', now()
                 WHERE NOT EXISTS (
                     SELECT 1 FROM activity_evidence_links
-                    WHERE target_type = 'commit' AND target_id = $1
-                      AND session_id = $2 AND relation = 'produced'
+                    WHERE target_type = 'commit' AND session_id = $2 AND relation = 'produced'
+                      AND (target_id LIKE $1 || '%' OR $1 LIKE target_id || '%')
                 )
                 RETURNING id
                 """,
@@ -456,7 +456,7 @@ class PostgresActivityRepository:
                 SELECT content->>'text' AS text
                 FROM activity_events
                 WHERE session_id = $1 AND kind = 'message' AND occurred_at <= $2
-                  AND COALESCE(content->>'role', 'user') = 'user'
+                  AND content->>'role' = 'user'
                   AND COALESCE(content->>'injected', 'false') <> 'true'
                   AND COALESCE(content->>'text', '') <> ''
                 ORDER BY occurred_at DESC, event_id DESC
