@@ -29,7 +29,8 @@ _CREDENTIAL_RES = (
 # reference is not a secret and stays readable.
 _ASSIGNMENT_RE = re.compile(
     r"\b((?:[A-Z][A-Z0-9_]*_(?:KEY|TOKEN|SECRET))|PASSWORD)="
-    r"(?!\$)(?:\"[^\"]*\"|'[^']*'|[^\s'\"]+)"
+    # \" first: a value quoted inside a JSON-encoded string (tool arguments).
+    r"(?!\$)(?:\\\"(?:(?!\\\").)*\\\"|\"[^\"]*\"|'[^']*'|[^\s'\"\\]+)"
 )
 REDACTED = "[REDACTED:credential]"
 

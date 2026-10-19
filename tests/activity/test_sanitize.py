@@ -160,3 +160,10 @@ def test_a_quoted_secret_assignment_with_spaces_loses_its_whole_value() -> None:
     assert sanitized["text"] == (
         "PASSWORD=[REDACTED:credential] and CLIENT_SECRET=[REDACTED:credential] end"
     )
+
+
+def test_a_quoted_secret_inside_json_encoded_tool_arguments_is_redacted() -> None:
+    args = json.dumps({"cmd": 'PASSWORD="correct horse battery" tool'})
+    sanitized, _, _ = sanitize_event({"arguments": args})
+    assert "correct horse" not in sanitized["arguments"]
+    assert json.loads(sanitized["arguments"]) == {"cmd": "PASSWORD=[REDACTED:credential] tool"}

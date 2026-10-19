@@ -60,6 +60,27 @@ def _sniff(path: Path) -> tuple[Harness | None, str | None]:
     return harness, None
 
 
+def _enters_restricted(path: Path) -> bool:
+    """True when any line's cwd (Claude `cwd`, Codex `payload.cwd`) is under the
+    restricted tree. Lines that do not mention the tree are never parsed."""
+    marker = str(RESTRICTED_ROOT).encode()
+    with open(path, "rb") as handle:
+        for line in handle:
+            if marker not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            payload = entry.get("payload")
+            cwds = [entry.get("cwd"), payload.get("cwd") if isinstance(payload, dict) else None]
+            if any(isinstance(c, str) and is_restricted(c) for c in cwds):
+                return True
+    return False
+
+
 def is_restricted(cwd: str | None) -> bool:
     if not cwd:
         return False
@@ -79,7 +100,7 @@ async def import_transcript(
     if harness is None:
         result.skipped = "not a transcript"
         return result
-    if is_restricted(cwd):
+    if is_restricted(cwd) or _enters_restricted(path):
         result.skipped = "restricted cwd"
         return result
 

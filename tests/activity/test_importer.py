@@ -203,3 +203,19 @@ async def test_a_claude_line_with_null_content_still_has_role_text_and_injected(
     async with (await repo._ensure_pool()).acquire() as con:
         content = await con.fetchval("SELECT content FROM activity_events")
     assert content == {"role": "user", "text": "", "injected": False}
+
+
+async def test_a_rollout_that_moves_into_the_restricted_tree_is_skipped(
+    repo, tmp_path: Path, monkeypatch
+):
+    restricted = tmp_path / "afya"
+    restricted.mkdir()
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
+    path = tmp_path / "r.jsonl"
+    path.write_text(
+        _codex_lines()
+        + json.dumps({"type": "turn_context", "payload": {"cwd": str(restricted)}}) + "\n"
+    )
+    res = await import_transcript(path, repo)
+    assert res.skipped == "restricted cwd"
+    assert await _count(repo, "SELECT count(*) FROM activity_events") == 0

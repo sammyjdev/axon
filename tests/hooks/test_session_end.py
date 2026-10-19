@@ -100,3 +100,18 @@ def test_a_session_under_the_restricted_tree_runs_no_step(tmp_path, monkeypatch)
     )
     assert result.exit_code == 0
     assert calls == []
+
+
+def test_an_unreadable_transcript_never_fails_the_hook(tmp_path, monkeypatch):
+    monkeypatch.setattr(session_end, "STEPS", [])
+    path = _transcript(tmp_path)
+    path.chmod(0)
+    try:
+        result = runner.invoke(
+            app,
+            ["session-hook"],
+            input=json.dumps({"transcript_path": str(path), "cwd": str(tmp_path)}),
+        )
+    finally:
+        path.chmod(0o600)
+    assert result.exit_code == 0
