@@ -86,3 +86,39 @@ def test_the_mcp_tool_returns_the_same_hits_as_the_cli(tmp_path):
     _backfill(claude, codex)
     out = asyncio.run(axon_search_conversations("vault", harness="codex"))
     assert out == "2026-10-02 10:00 c1 [-/codex] user: vault backup"
+
+
+
+def test_backfill_dry_run_against_an_empty_database_creates_no_table(tmp_path, monkeypatch):
+    import asyncio
+
+    import asyncpg
+
+    dsn = os.environ["AXON_PG_URL"]
+    empty = dsn.rsplit("/", 1)[0] + "/dryrun_empty"
+
+    async def _admin(sql: str):
+        con = await asyncpg.connect(dsn)
+        try:
+            await con.execute(sql)
+        finally:
+            await con.close()
+
+    async def _tables() -> int:
+        con = await asyncpg.connect(empty)
+        try:
+            return await con.fetchval(
+                "SELECT count(*) FROM pg_tables WHERE schemaname='public'"
+            )
+        finally:
+            await con.close()
+
+    asyncio.run(_admin("DROP DATABASE IF EXISTS dryrun_empty"))
+    asyncio.run(_admin("CREATE DATABASE dryrun_empty"))
+    try:
+        monkeypatch.setenv("AXON_PG_URL", empty)
+        claude, codex = _trees(tmp_path)
+        assert "[dry-run] claude-code: files=2" in _backfill(claude, codex, "--dry-run")
+        assert asyncio.run(_tables()) == 0
+    finally:
+        asyncio.run(_admin("DROP DATABASE IF EXISTS dryrun_empty"))

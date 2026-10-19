@@ -44,7 +44,7 @@ def parse_codex_session(
             head = f.readline()
             file_hash = hashlib.sha256(head).hexdigest()
     except OSError:
-        pass
+        head = b""
 
     if prior_cursor and prior_cursor.fingerprint:
         parts = prior_cursor.fingerprint.split(":")
@@ -62,6 +62,15 @@ def parse_codex_session(
 
     current_session_id = None
     turn_id = None
+    if byte_offset > 0:
+        # Resuming past session_meta: the session id lives only on line one.
+        try:
+            meta = json.loads(head)
+        except json.JSONDecodeError:
+            meta = None
+        if isinstance(meta, dict) and isinstance(meta.get("payload"), dict):
+            sid = meta["payload"].get("id") or meta["payload"].get("session_id")
+            current_session_id = str(sid) if sid else None
 
     with open(path, "rb") as f:
         f.seek(byte_offset)

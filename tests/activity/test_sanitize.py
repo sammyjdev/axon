@@ -152,3 +152,11 @@ def test_a_variable_reference_and_ordinary_words_are_not_redacted() -> None:
 def test_a_nul_character_is_dropped_because_postgres_cannot_store_it() -> None:
     sanitized, _, _ = sanitize_event({"output": "bin\x00ary"})
     assert sanitized["output"] == "binary"
+
+
+def test_a_quoted_secret_assignment_with_spaces_loses_its_whole_value() -> None:
+    raw = {"text": "PASSWORD=\"correct horse battery\" and CLIENT_SECRET='two words' end"}
+    sanitized, _, _ = sanitize_event(raw)
+    assert sanitized["text"] == (
+        "PASSWORD=[REDACTED:credential] and CLIENT_SECRET=[REDACTED:credential] end"
+    )

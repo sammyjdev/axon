@@ -173,3 +173,33 @@ async def test_search_returns_the_matching_message_newest_first_without_injected
         ("cc-1", "user", "how do we migrate the cursor table?")
     ]
     assert await repo.search_messages("100%") == []
+
+
+async def test_lines_appended_to_a_codex_rollout_are_imported_on_the_next_run(
+    repo, tmp_path: Path
+):
+    path = tmp_path / "r.jsonl"
+    path.write_text(_codex_lines())
+    await import_transcript(path, repo)
+    with path.open("a") as f:
+        f.write(json.dumps({"type": "response_item", "timestamp": "2026-10-01T11:00:00Z",
+                            "payload": {"type": "message", "role": "user",
+                                        "content": [{"type": "input_text", "text": "again"}]}})
+                + "\n")
+    assert (await import_transcript(path, repo)).events == 1
+    async with (await repo._ensure_pool()).acquire() as con:
+        sid = await con.fetchval(
+            "SELECT session_id FROM activity_events WHERE content->>'text'='again'"
+        )
+    assert sid == "cx-1"
+
+
+async def test_a_claude_line_with_null_content_still_has_role_text_and_injected(
+    repo, tmp_path: Path
+):
+    path = tmp_path / "cc.jsonl"
+    path.write_text(_claude_line("u1", "user", None))
+    await import_transcript(path, repo)
+    async with (await repo._ensure_pool()).acquire() as con:
+        content = await con.fetchval("SELECT content FROM activity_events")
+    assert content == {"role": "user", "text": "", "injected": False}

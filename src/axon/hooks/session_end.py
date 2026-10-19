@@ -43,6 +43,13 @@ STEPS: list[tuple[str, Callable[[str, str], None]]] = [
 
 
 def run_session_end(transcript_path: str, cwd: str) -> None:
+    from axon.activity import importer
+
+    # Off-limits tree: no step may read the transcript or key anything by it.
+    if importer.is_restricted(cwd) or importer.is_restricted(
+        importer._sniff(Path(transcript_path))[1]
+    ):
+        return
     for name, step in STEPS:
         try:
             step(transcript_path, cwd)

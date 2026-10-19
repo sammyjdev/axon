@@ -1407,7 +1407,11 @@ def activity_backfill(
             load_runtime_config().pg_url
         )
         try:
-            await repo.ensure_schema()
+            if dry_run:
+                # Read-only probe: a dry run must not apply migrations either.
+                await repo.get_cursor(harness="codex", source_id="")
+            else:
+                await repo.ensure_schema()
         except (OSError, asyncpg.PostgresError) as exc:
             if not dry_run:
                 raise

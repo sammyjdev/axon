@@ -164,7 +164,12 @@ def parse_claude_code_session(
                             occurred_at=occurred_at,
                             ingested_at=ingested_at,
                             kind="message",
-                            content={},
+                            content={
+                                "role": (message.get("role") if isinstance(message, dict)
+                                         else None) or line_type,
+                                "text": "",
+                                "injected": _harness_injected(raw),
+                            },
                             coverage="unsupported-format",
                             redactions=[],
                         )
@@ -195,7 +200,12 @@ def parse_claude_code_session(
                             occurred_at=occurred_at,
                             ingested_at=ingested_at,
                             kind="message",
-                            content={},
+                            content={
+                                "role": (message.get("role") if isinstance(message, dict)
+                                         else None) or line_type,
+                                "text": "",
+                                "injected": _harness_injected(raw),
+                            },
                             coverage="unsupported-format",
                             redactions=[],
                         )

@@ -82,3 +82,21 @@ def test_the_session_hook_stores_the_transcript_events(tmp_path):
     import asyncio
 
     assert [r["t"] for r in asyncio.run(_texts())] == ["store this conversation"]
+
+
+def test_a_session_under_the_restricted_tree_runs_no_step(tmp_path, monkeypatch):
+    from axon.activity import importer
+
+    restricted = tmp_path / "afya"
+    restricted.mkdir()
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
+    calls: list[str] = []
+    monkeypatch.setattr(session_end, "STEPS", [("digest", lambda t, c: calls.append("x"))])
+    path = _transcript(tmp_path)
+    result = runner.invoke(
+        app,
+        ["session-hook"],
+        input=json.dumps({"transcript_path": str(path), "cwd": str(restricted)}),
+    )
+    assert result.exit_code == 0
+    assert calls == []
