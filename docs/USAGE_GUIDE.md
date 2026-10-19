@@ -32,7 +32,8 @@ What AXON answers is what happened in earlier sessions:
 
 ```bash
 axon status                 # decisions captured for this repo
-axon activity search "..."  # operational activity history (dec-136)
+axon activity search "..."  # past conversations: session, date, role, snippet
+axon activity backfill      # import every Claude Code / Codex transcript (--dry-run counts)
 axon note "..."             # a free-form session note
 axon gain                   # historical compression telemetry
 ```

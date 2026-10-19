@@ -468,6 +468,35 @@ async def axon_search_lessons(
     )
 
 
+@mcp.tool()
+@traced_tool(risk="read")
+async def axon_search_conversations(
+    query: str,
+    project: str | None = None,
+    harness: str | None = None,
+    limit: int = 10,
+) -> str:
+    """Search past agent conversations (Claude Code, Codex) for a phrase.
+
+    Case-insensitive text match over what the person and the agents wrote;
+    harness-injected text is left out. Each hit gives the date, session id,
+    project/harness, role and a snippet around the match, newest first.
+    Filter by ``project`` (repo name) or ``harness`` (``claude-code``/``codex``).
+    """
+    from axon.activity.conversations import search_conversations
+    from axon.activity.repository import PostgresActivityRepository
+
+    repo = PostgresActivityRepository(load_runtime_config().pg_url)
+    try:
+        await repo.ensure_schema()
+        hits = await search_conversations(
+            repo, query, project=project, harness=harness, limit=limit
+        )
+    finally:
+        await repo.close()
+    return "\n".join(hits) if hits else f"no conversation matching {query!r}."
+
+
 # ---------------------------------------------------------------------------
 # Cross-agent tools (T6.1)
 # ---------------------------------------------------------------------------
