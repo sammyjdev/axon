@@ -45,7 +45,7 @@ def _sniff(path: Path) -> tuple[Harness | None, str | None]:
                 break
             try:
                 entry = json.loads(line)
-            except json.JSONDecodeError:
+            except ValueError:  # bad JSON or invalid UTF-8
                 continue
             if not isinstance(entry, dict):
                 continue
@@ -63,14 +63,16 @@ def _sniff(path: Path) -> tuple[Harness | None, str | None]:
 def _enters_restricted(path: Path) -> bool:
     """True when any line's cwd (Claude `cwd`, Codex `payload.cwd`) is under the
     restricted tree. Lines that do not mention the tree are never parsed."""
-    marker = str(RESTRICTED_ROOT).encode()
+    # The tree's own name, not its full path: a cwd spelled with `..` or a
+    # symlink still names it, and is_restricted() resolves the rest.
+    marker = RESTRICTED_ROOT.name.encode()
     with open(path, "rb") as handle:
         for line in handle:
             if marker not in line:
                 continue
             try:
                 entry = json.loads(line)
-            except json.JSONDecodeError:
+            except ValueError:  # bad JSON or invalid UTF-8
                 continue
             if not isinstance(entry, dict):
                 continue
@@ -79,6 +81,11 @@ def _enters_restricted(path: Path) -> bool:
             if any(isinstance(c, str) and is_restricted(c) for c in cwds):
                 return True
     return False
+
+
+def transcript_is_restricted(path: Path, cwd: str | None) -> bool:
+    """True when the session or any line of its transcript is under the tree."""
+    return is_restricted(cwd) or is_restricted(_sniff(path)[1]) or _enters_restricted(path)
 
 
 def is_restricted(cwd: str | None) -> bool:

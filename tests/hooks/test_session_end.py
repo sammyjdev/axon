@@ -115,3 +115,34 @@ def test_an_unreadable_transcript_never_fails_the_hook(tmp_path, monkeypatch):
     finally:
         path.chmod(0o600)
     assert result.exit_code == 0
+
+
+def test_a_transcript_that_later_enters_the_restricted_tree_runs_no_step(
+    tmp_path, monkeypatch
+):
+    from axon.activity import importer
+
+    restricted = tmp_path / "afya"
+    restricted.mkdir()
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
+    calls: list[str] = []
+    monkeypatch.setattr(session_end, "STEPS", [("digest", lambda t, c: calls.append("x"))])
+    path = _transcript(tmp_path)
+    with path.open("a") as f:
+        f.write(json.dumps({"type": "user", "sessionId": "hook-1", "cwd": str(restricted)}) + "\n")
+    runner.invoke(
+        app, ["session-hook"],
+        input=json.dumps({"transcript_path": str(path), "cwd": str(tmp_path)}),
+    )
+    assert calls == []
+
+
+def test_a_transcript_with_invalid_utf8_never_fails_the_hook(tmp_path, monkeypatch):
+    monkeypatch.setattr(session_end, "STEPS", [])
+    path = tmp_path / "bad.jsonl"
+    path.write_bytes(b'{"sessionId": "\xff\xfe"}\n')
+    result = runner.invoke(
+        app, ["session-hook"],
+        input=json.dumps({"transcript_path": str(path), "cwd": str(tmp_path)}),
+    )
+    assert result.exit_code == 0

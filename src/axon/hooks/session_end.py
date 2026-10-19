@@ -47,11 +47,9 @@ def run_session_end(transcript_path: str, cwd: str) -> None:
 
     # Off-limits tree: no step may read the transcript or key anything by it.
     try:
-        if importer.is_restricted(cwd) or importer.is_restricted(
-            importer._sniff(Path(transcript_path))[1]
-        ):
+        if importer.transcript_is_restricted(Path(transcript_path), cwd):
             return
-    except OSError as exc:  # a hook must never interrupt the agent
+    except Exception as exc:  # a hook must never interrupt the agent
         print(f"[axon] session-hook: unreadable transcript: {exc}", file=sys.stderr)
         return
     for name, step in STEPS:

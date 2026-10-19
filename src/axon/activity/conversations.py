@@ -10,7 +10,7 @@ SNIPPET_CHARS = 160
 def snippet(text: str, query: str, width: int = SNIPPET_CHARS) -> str:
     """The stretch of `text` around the first hit of `query`, on one line."""
     flat = " ".join(text.split())
-    at = max(flat.lower().find(query.lower()), 0)
+    at = max(flat.lower().find(" ".join(query.split()).lower()), 0)
     start = max(at - width // 2, 0)
     end = min(start + width, len(flat))
     return ("..." if start else "") + flat[start:end] + ("..." if end < len(flat) else "")

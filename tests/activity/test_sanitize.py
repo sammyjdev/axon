@@ -167,3 +167,12 @@ def test_a_quoted_secret_inside_json_encoded_tool_arguments_is_redacted() -> Non
     sanitized, _, _ = sanitize_event({"arguments": args})
     assert "correct horse" not in sanitized["arguments"]
     assert json.loads(sanitized["arguments"]) == {"cmd": "PASSWORD=[REDACTED:credential] tool"}
+
+
+def test_an_escaped_quote_inside_a_quoted_secret_does_not_end_the_redaction() -> None:
+    plain = {"text": r'PASSWORD="first\"second secret" ok'}
+    assert sanitize_event(plain)[0]["text"] == "PASSWORD=[REDACTED:credential] ok"
+    args = json.dumps({"cmd": 'PASSWORD="first\\"second secret" ok'})
+    out = sanitize_event({"arguments": args})[0]["arguments"]
+    assert "second" not in out
+    assert json.loads(out) == {"cmd": "PASSWORD=[REDACTED:credential] ok"}

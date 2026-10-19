@@ -219,3 +219,19 @@ async def test_a_rollout_that_moves_into_the_restricted_tree_is_skipped(
     res = await import_transcript(path, repo)
     assert res.skipped == "restricted cwd"
     assert await _count(repo, "SELECT count(*) FROM activity_events") == 0
+
+
+async def test_a_dotted_path_into_the_restricted_tree_is_still_skipped(
+    repo, tmp_path: Path, monkeypatch
+):
+    restricted = tmp_path / "afya"
+    (tmp_path / "other").mkdir()
+    restricted.mkdir()
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
+    path = tmp_path / "r.jsonl"
+    path.write_text(
+        _codex_lines()
+        + json.dumps({"type": "turn_context",
+                      "payload": {"cwd": str(tmp_path / "other" / ".." / "afya")}}) + "\n"
+    )
+    assert (await import_transcript(path, repo)).skipped == "restricted cwd"
