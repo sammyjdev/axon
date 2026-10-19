@@ -12,6 +12,8 @@ from axon.activity.models import (
     resolve_activity_project_from_cwd,
 )
 from axon.activity.sanitize import sanitize_event
+from axon.memory.digest import starts_injected
+from axon.memory.transcript import _harness_injected
 
 
 def _compute_fingerprint(path: Path, offset: int) -> str:
@@ -95,9 +97,15 @@ def parse_claude_code_session(
             session_id = raw.get("sessionId")
             if not session_id or not isinstance(session_id, str):
                 continue
+            parent_session_id = raw.get("parentSessionId")
+            agent_id = raw.get("agentId")
+            if raw.get("isSidechain") is True and isinstance(agent_id, str):
+                # A subagent transcript carries its parent's sessionId; keyed
+                # by it, the subagent's turns would merge into the parent's.
+                parent_session_id = session_id
+                session_id = f"{session_id}:{agent_id}"
 
             if session_id not in sessions_dict:
-                parent_session_id = raw.get("parentSessionId")
                 cwd = raw.get("cwd") if isinstance(raw.get("cwd"), str) else None
                 sessions_dict[session_id] = ActivitySession(
                     session_id=session_id,
@@ -200,7 +208,15 @@ def parse_claude_code_session(
                     b_type = block.get("type")
                     if b_type == "text":
                         event_source_id = f"{path}::{turn_id}::text::{idx}"
-                        sanitized, redactions, coverage = sanitize_event(block)
+                        text = block.get("text") if isinstance(block.get("text"), str) else ""
+                        sanitized, redactions, coverage = sanitize_event(
+                            {
+                                **block,
+                                "role": message.get("role") or line_type,
+                                "text": text,
+                                "injected": _harness_injected(raw) or starts_injected(text),
+                            }
+                        )
                         events.append(
                             ActivityEvent(
                                 event_id=compute_event_id("claude-code", event_source_id),
