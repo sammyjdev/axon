@@ -43,7 +43,8 @@ _FAILED = re.compile(
     re.IGNORECASE,
 )
 # Codex's `exec` tool runs a JS script: tools.exec_command({cmd:"...", workdir:"..."})
-_JS_STRING = re.compile(r'\b(?P<key>cmd|workdir)\s*:\s*(?P<lit>"(?:[^"\\]|\\.)*")')
+_JS_STRING = re.compile(r'["\']?\b(?P<key>cmd|workdir)\b["\']?\s*:\s*(?P<lit>"(?:[^"\\]|\\.)*")')
+_QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
 # A quiet commit is looked up in the log this long before its result was recorded.
 _SUBJECT_WINDOW = timedelta(minutes=15)
 _SEGMENTS = re.compile(r"&&|\|\||;|\n")
@@ -139,11 +140,13 @@ class _CommitCmd:
 
 def _commit_commands(command: str, workdir: str | None, workspace: str | None) -> list[_CommitCmd]:
     """Each `git commit` in the command: its directory (`-C` on top of the last `cd`)."""
-    matches = list(_IS_COMMIT_CMD.finditer(command))
+    # `git commit` inside a quoted message is text, not a second commit.
+    masked = _QUOTED.sub(lambda q: q[0][0] + "x" * (len(q[0]) - 2) + q[0][-1], command)
+    matches = list(_IS_COMMIT_CMD.finditer(masked))
     found = []
     for i, m in enumerate(matches):
         base = _base_before(command[: m.start()], workdir or workspace)
-        dash_c = _DASH_C.search(m.group("opts"))
+        dash_c = _DASH_C.search(command[m.start("opts") : m.end("opts")])
         directory = _join(base, dash_c.group("dir")) if dash_c else base
         tail = command[m.start() : matches[i + 1].start() if i + 1 < len(matches) else None]
         message = _MESSAGE.search(tail)
@@ -151,7 +154,8 @@ def _commit_commands(command: str, workdir: str | None, workspace: str | None) -
         # Flags are read only before the message, so `-m 'run -q'` is not quiet.
         flags = tail[: message.start(next(k for k, v in message.groupdict().items() if v))
                      if message else None].split("\n", 1)[0]
-        if _DRY_RUN.search(flags):
+        # A heredoc body may mention --dry-run, so only the command's own line counts.
+        if _DRY_RUN.search(flags) or _DRY_RUN.search(_QUOTED.sub("", tail).split("\n", 1)[0]):
             continue
         found.append(_CommitCmd(directory, bool(_QUIET.search(flags)), subject))
     return found
@@ -202,7 +206,8 @@ def find_by_subject(subject: str, directory: str | None, before: datetime | None
     """Hash of the commit with `subject` made in the window before `before`, if exactly one."""
     if not directory or before is None or not Path(directory).is_dir():
         return None
-    since, until = before - _SUBJECT_WINDOW, before
+    # git compares whole seconds; a commit and its result often share one.
+    since, until = before - _SUBJECT_WINDOW, before + timedelta(seconds=2)
     try:
         out = subprocess.run(  # noqa: S603
             ["git", "-C", directory, "log", "--all", "--format=%H%x00%s",  # noqa: S607

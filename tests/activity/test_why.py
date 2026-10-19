@@ -183,3 +183,13 @@ async def test_why_file_walks_its_last_commits(repo, work) -> None:
     assert out.index("change a") < out.index("add a")
     assert out.count("no session is linked to this commit") == 1
     assert "session s1" in out
+
+
+async def test_why_reads_a_prompt_kept_in_content_blocks(repo, work) -> None:
+    # Given a Codex-shaped message whose text sits in content blocks, not at the root
+    await _session_with_commit(repo, work)
+    await _message(repo, 7, None, role="user", content=[{"type": "input_text", "text": "codex typed"}])
+
+    out = await explain(repo, _Store(), "HEAD", cwd=work)
+
+    assert "prompt: codex typed" in out

@@ -453,12 +453,12 @@ class PostgresActivityRepository:
         async with pool.acquire() as con:
             rows = await con.fetch(
                 """
-                SELECT content->>'text' AS text
+                SELECT COALESCE(content->>'text', content->'content'->0->>'text') AS text
                 FROM activity_events
                 WHERE session_id = $1 AND kind = 'message' AND occurred_at <= $2
                   AND content->>'role' = 'user'
                   AND COALESCE(content->>'injected', 'false') <> 'true'
-                  AND COALESCE(content->>'text', '') <> ''
+                  AND COALESCE(content->>'text', content->'content'->0->>'text', '') <> ''
                 ORDER BY occurred_at DESC, event_id DESC
                 LIMIT $3
                 """,

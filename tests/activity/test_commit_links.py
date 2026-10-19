@@ -556,3 +556,46 @@ def test_the_word_commit_inside_a_dash_c_path_keeps_the_whole_path() -> None:
               _claude_result("c1", "[main aaaaaaa] one\n")]
 
     assert [c.directory for c in extract_commits(events, "/ws")] == ["/repo/commit/project"]
+
+
+# ---- review round 4 ----
+
+
+def test_a_dry_run_flag_after_the_message_is_still_a_dry_run() -> None:
+    events = [_claude_call("c1", 'git commit -qm "one" --dry-run'), _claude_result("c1", "")]
+
+    assert extract_commits(events, "/ws") == []
+
+
+def test_git_commit_inside_the_quoted_message_is_part_of_the_subject() -> None:
+    events = [_claude_call("c1", 'git commit -qm "fix git commit detection"'), _claude_result("c1", "")]
+
+    assert [c.subject for c in extract_commits(events, "/ws")] == ["fix git commit detection"]
+
+
+def test_a_codex_exec_call_with_quoted_keys_is_read() -> None:
+    script = 'text(await tools.exec_command({"cmd":"git commit -m x","workdir":"/cx"}));\n'
+    events = [
+        {"event_id": "e1", "call_id": "k1", "kind": "tool_call",
+         "content": {"type": "custom_tool_call", "name": "exec", "call_id": "k1", "input": script}},
+        {"event_id": "e2", "call_id": "k1", "kind": "tool_result",
+         "content": {"type": "custom_tool_call_output", "call_id": "k1",
+                     "output": [{"type": "input_text", "text": "[main abc1234] x\n"}]}},
+    ]
+
+    assert [(c.short_hash, c.directory) for c in extract_commits(events, "/ws")] == [("abc1234", "/cx")]
+
+
+def test_a_quoted_dash_c_directory_is_kept() -> None:
+    events = [_claude_call("c1", 'git -C "/my repo" commit -m one'), _claude_result("c1", "[main aaaaaaa] one\n")]
+
+    assert [c.directory for c in extract_commits(events, "/ws")] == ["/my repo"]
+
+
+async def test_a_quiet_commit_recorded_in_the_same_second_as_its_result_is_found(repo, git_repo) -> None:
+    full = _git(git_repo, "rev-parse", "HEAD")
+    made = datetime.fromisoformat(_git(git_repo, "log", "-1", "--format=%cI"))
+    await _seed_call(repo, str(git_repo), 'git commit -qm "first change"', "", made + timedelta(milliseconds=100))
+
+    assert await link_commits(repo, "q1") == 1
+    assert await _links(repo) == [(full, "q1-1")]
