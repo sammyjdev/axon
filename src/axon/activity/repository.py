@@ -260,3 +260,113 @@ class PostgresActivityRepository:
             next_cursor = str(offset + limit)
             
         return sessions, next_cursor
+
+    async def ingest_batch(
+        self,
+        sessions: list[ActivitySession],
+        events: list[ActivityEvent],
+        cursor: SourceCursor,
+        *,
+        byte_offset: int,
+    ) -> int:
+        """Store one source's new sessions and events and advance its cursor,
+        all or nothing, without a spool file per event. Returns how many events
+        were new."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            async with con.transaction():
+                await con.executemany(
+                    """
+                    INSERT INTO activity_sessions (
+                        session_id, harness, source_id, project, workspace,
+                        parent_session_id, status, coverage
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    ON CONFLICT (session_id) DO UPDATE SET
+                        coverage=EXCLUDED.coverage,
+                        updated_at=now()
+                    """,
+                    [
+                        (
+                            s.session_id, s.harness, s.source_id, s.project,
+                            s.workspace, s.parent_session_id, s.status, s.coverage,
+                        )
+                        for s in sessions
+                    ],
+                )
+                source_ids = list({e.source_id for e in events})
+                existing = await con.fetchval(
+                    "SELECT count(*) FROM activity_events "
+                    "WHERE harness=$1 AND source_id = ANY($2::text[])",
+                    cursor.harness,
+                    source_ids,
+                )
+                await con.executemany(
+                    """
+                    INSERT INTO activity_events (
+                        event_id, schema_version, harness, source_id, session_id,
+                        turn_id, call_id, parent_session_id, occurred_at, ingested_at,
+                        kind, content, outcome, coverage, redactions
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+                    )
+                    ON CONFLICT DO NOTHING
+                    """,
+                    [
+                        (
+                            e.event_id, e.schema_version, e.harness, e.source_id,
+                            e.session_id, e.turn_id, e.call_id, e.parent_session_id,
+                            e.occurred_at, e.ingested_at, e.kind, e.content,
+                            e.outcome, e.coverage, e.redactions,
+                        )
+                        for e in events
+                    ],
+                )
+                await con.execute(
+                    """
+                    INSERT INTO activity_cursors (harness, source_id, fingerprint, byte_offset)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (harness, source_id) DO UPDATE SET
+                        fingerprint=EXCLUDED.fingerprint,
+                        byte_offset=EXCLUDED.byte_offset,
+                        updated_at=now()
+                    """,
+                    cursor.harness,
+                    cursor.source_id,
+                    cursor.fingerprint,
+                    byte_offset,
+                )
+        return len(source_ids) - existing
+
+    async def search_messages(
+        self,
+        query: str,
+        *,
+        project: str | None = None,
+        harness: str | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Messages a person or an agent wrote whose text contains `query`,
+        newest first. Harness-injected text (skill bodies, reminders) is left
+        out: it repeats across every session and would bury the real hits."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                """
+                SELECT e.session_id, e.occurred_at, e.harness, s.project,
+                       e.content->>'role' AS role, e.content->>'text' AS text
+                FROM activity_events e
+                LEFT JOIN activity_sessions s ON s.session_id = e.session_id
+                WHERE e.kind = 'message'
+                  AND coalesce(e.content->>'injected', 'false') <> 'true'
+                  AND e.content->>'text' ILIKE '%' || $1 || '%'
+                  AND ($2::text IS NULL OR s.project = $2)
+                  AND ($3::text IS NULL OR e.harness = $3)
+                ORDER BY e.occurred_at DESC
+                LIMIT $4
+                """,
+                query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_"),
+                project,
+                harness,
+                limit,
+            )
+        return [dict(r) for r in rows]

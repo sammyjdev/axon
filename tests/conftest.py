@@ -27,6 +27,7 @@ _AXON_TABLES = (
     "nodes", "edges", "decisions", "adr", "sessions", "session_memory",
     "session_note", "code_change", "file_index", "symbol_deps",
     "failure_record", "outcome_record", "embeddings", "repo_state",
+    "activity_sessions", "activity_events", "activity_cursors", "activity_evidence_links",
 )
 
 

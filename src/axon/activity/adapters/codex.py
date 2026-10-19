@@ -12,6 +12,7 @@ from axon.activity.models import (
     resolve_activity_project_from_cwd,
 )
 from axon.activity.sanitize import sanitize_event
+from axon.memory.digest import starts_injected
 from axon.memory.transcript import _message_of, _text_of
 
 
@@ -43,7 +44,7 @@ def parse_codex_session(
             head = f.readline()
             file_hash = hashlib.sha256(head).hexdigest()
     except OSError:
-        pass
+        head = b""
 
     if prior_cursor and prior_cursor.fingerprint:
         parts = prior_cursor.fingerprint.split(":")
@@ -61,6 +62,35 @@ def parse_codex_session(
 
     current_session_id = None
     turn_id = None
+    if byte_offset > 0:
+        # Resuming past session_meta: the session id lives only on line one.
+        try:
+            meta = json.loads(head)
+        except json.JSONDecodeError:
+            meta = None
+        if isinstance(meta, dict) and isinstance(meta.get("payload"), dict):
+            sid = meta["payload"].get("id") or meta["payload"].get("session_id")
+            current_session_id = str(sid) if sid else None
+        # And the open turn lives on the last turn line before the offset.
+        with open(path, "rb") as f:
+            for line in f:
+                if f.tell() > byte_offset:
+                    break
+                if b'"turn_id"' not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                payload_ = entry.get("payload")
+                if entry.get("type") in ("event_msg", "turn_context") and isinstance(
+                    payload_, dict
+                ):
+                    tid = payload_.get("turn_id")
+                    if isinstance(tid, str):
+                        turn_id = tid
 
     with open(path, "rb") as f:
         f.seek(byte_offset)
@@ -106,7 +136,9 @@ def parse_codex_session(
                         session_coverages[fallback_id] = True
                     continue
 
-                sess_id = payload.get("session_id") or payload.get("id")
+                # `id` is this thread; `session_id` is the root thread, shared
+                # by every subagent rollout the root spawned.
+                sess_id = payload.get("id") or payload.get("session_id")
                 if not sess_id or not isinstance(sess_id, str):
                     warnings.append(
                         f"malformed session_meta at {line_start}: missing session_id/id"
@@ -130,6 +162,7 @@ def parse_codex_session(
                 current_session_id = str(sess_id)
                 current_cwd = payload.get("cwd")
                 cwd_str = str(current_cwd) if current_cwd else None
+                parent = payload.get("parent_thread_id")
                 if current_session_id not in sessions_dict:
                     sessions_dict[current_session_id] = ActivitySession(
                         session_id=current_session_id,
@@ -137,7 +170,7 @@ def parse_codex_session(
                         source_id=f"{path}::{current_session_id}",
                         project=resolve_activity_project_from_cwd(cwd_str),
                         workspace=cwd_str,
-                        parent_session_id=None,
+                        parent_session_id=parent if isinstance(parent, str) else None,
                         status="observed",
                         coverage="complete-observable",
                     )
@@ -176,13 +209,18 @@ def parse_codex_session(
                 msg = _message_of(raw)
                 if msg is not None:
                     role = msg.get("role")
-                    if role in ("user", "developer"):
-                        text = _text_of(msg.get("content", "")).strip()
-                        if text:
-                            has_user_prompt[current_session_id] = True
+                    text = _text_of(msg.get("content", "")).strip()
+                    if role in ("user", "developer") and text:
+                        has_user_prompt[current_session_id] = True
 
                     event_source_id = f"{path}::{current_session_id}::msg::{line_start}"
-                    sanitized, redactions, coverage = sanitize_event(msg)
+                    sanitized, redactions, coverage = sanitize_event(
+                        {
+                            "role": role,
+                            "text": text,
+                            "injected": role in ("developer", "system") or starts_injected(text),
+                        }
+                    )
 
                     events.append(
                         ActivityEvent(
@@ -202,7 +240,7 @@ def parse_codex_session(
                         )
                     )
 
-                elif payload_type == "function_call":
+                elif payload_type in ("function_call", "custom_tool_call"):
                     call_id = payload.get("call_id")
                     if isinstance(call_id, str):
                         event_source_id = (
@@ -227,7 +265,7 @@ def parse_codex_session(
                             )
                         )
 
-                elif payload_type == "function_call_output":
+                elif payload_type in ("function_call_output", "custom_tool_call_output"):
                     call_id = payload.get("call_id")
                     if isinstance(call_id, str):
                         event_source_id = (

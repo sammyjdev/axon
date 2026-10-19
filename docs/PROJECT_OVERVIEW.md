@@ -53,7 +53,7 @@ scaffold, formerly `pb init`), `setup`, `configure`, `note`, `session-save`,
 `axon adr {list,add,sync}`, `axon hooks {install,status}`,
 `axon pending {drain,recover}`, `axon session {note,save}`,
 `axon profile {list,use,show,create,export}`,
-`axon activity {run,import,collect,export,search,show}` (dec-136 operational
+`axon activity {run,import,collect,export,search,show,backfill}` (dec-136 operational
 activity history).
 
 Removed by dec-138: `search`, `sync`, `index-dev`, `index-vault`,
@@ -74,6 +74,7 @@ no tool is destructive since dec-138.
 | `axon_capture` / `axon_capture_event` | write | Capture in-session decision / universal event. |
 | `axon_record_outcome` | write | Record a shipped-work outcome. |
 | `axon_record_lesson` / `axon_search_lessons` | write / read | Record a lesson; full-text lesson search (triggers weigh most). |
+| `axon_search_conversations` | read | Text search over stored Claude Code / Codex conversations, newest first. |
 | `axon_get_context` | read | Ranked compact project context. |
 | `axon_search` | read | Text search over captured decisions. |
 | `axon_handoff` | write | Handoff brief for another agent. |
