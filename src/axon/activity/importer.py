@@ -63,11 +63,12 @@ def _sniff(path: Path) -> tuple[Harness | None, str | None]:
 def _enters_restricted(path: Path) -> bool:
     """True when any line's cwd (Claude `cwd`, Codex `payload.cwd`) is under the
     restricted tree."""
-    # Only lines with a cwd key are parsed. Matching the tree's name in the raw
-    # bytes would miss a \u-escaped or symlinked spelling of it.
+    # Only lines that can carry a cwd key are parsed: one spelling it plainly,
+    # or one with a \u escape that could spell it. Matching the tree's name in
+    # the raw bytes would miss an escaped or symlinked spelling of the path.
     with open(path, "rb") as handle:
         for line in handle:
-            if b'"cwd"' not in line:
+            if b"cwd" not in line and b"\\u" not in line:
                 continue
             try:
                 entry = json.loads(line)
@@ -91,7 +92,7 @@ def is_restricted(cwd: str | None) -> bool:
     if not cwd:
         return False
     try:
-        return Path(cwd).resolve().is_relative_to(RESTRICTED_ROOT.resolve())
+        return Path(cwd).expanduser().resolve().is_relative_to(RESTRICTED_ROOT.resolve())
     except OSError:
         return False
 

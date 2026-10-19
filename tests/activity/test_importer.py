@@ -251,3 +251,24 @@ async def test_a_unicode_escaped_or_symlinked_restricted_cwd_is_still_skipped(
             _codex_lines() + '{"type": "turn_context", "payload": {"cwd": ' + cwd_json + "}}\n"
         )
         assert (await import_transcript(path, repo)).skipped == "restricted cwd", cwd_json
+
+
+def test_a_tilde_cwd_under_the_restricted_tree_is_restricted(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", tmp_path / "dev" / "afya")
+    assert importer.is_restricted("~/dev/afya/repo") is True
+
+
+async def test_an_escaped_cwd_key_into_the_restricted_tree_is_still_skipped(
+    repo, tmp_path: Path, monkeypatch
+):
+    restricted = tmp_path / "afya"
+    restricted.mkdir()
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
+    path = tmp_path / "r.jsonl"
+    path.write_text(
+        _codex_lines()
+        + '{"type": "turn_context", "payload": {"c\\u0077d": ' + json.dumps(str(restricted))
+        + "}}\n"
+    )
+    assert (await import_transcript(path, repo)).skipped == "restricted cwd"

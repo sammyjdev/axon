@@ -183,3 +183,8 @@ def test_an_underscore_led_name_and_a_backslash_in_the_value_are_fully_redacted(
     assert sanitize_event(raw)[0]["text"] == (
         "_SERVICE_TOKEN=[REDACTED:credential] PASSWORD=[REDACTED:credential]"
     )
+
+
+def test_slack_rotating_and_app_level_tokens_are_redacted() -> None:
+    assert _redacted_text("xoxe.xapp-" + "1-" + _FAKE) == "use [REDACTED:credential] now"
+    assert _redacted_text("xapp-" + "1-" + _FAKE) == "use [REDACTED:credential] now"
