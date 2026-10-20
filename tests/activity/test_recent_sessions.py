@@ -84,6 +84,19 @@ async def test_sessions_come_back_newest_first_and_only_for_the_asked_repo(repo)
     assert got[0].last_at == T0 + timedelta(days=1)
 
 
+async def test_a_session_imported_late_is_not_newer_than_one_worked_on_later(repo):
+    # The importer stamps each session's usage snapshot with the import time.
+    await seed_session(repo, "old")
+    await seed_event(repo, "old", 1, "message", say("old ask"), T0)
+    await seed_event(repo, "old", 2, "usage", {"input_tokens": 1}, T0 + timedelta(days=9))
+    await seed_session(repo, "new")
+    await seed_event(repo, "new", 1, "message", say("new ask"), T0 + timedelta(days=1))
+
+    found = await repo.recent_sessions("axon", limit=3)
+
+    assert [s.session_id for s in found] == ["new", "old"]
+
+
 async def test_the_limit_keeps_only_the_newest_sessions(repo):
     for i in range(5):
         await seed_session(repo, f"s{i}")

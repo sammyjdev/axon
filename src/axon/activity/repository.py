@@ -524,7 +524,8 @@ class PostgresActivityRepository:
                     FROM activity_sessions s
                     JOIN LATERAL (
                         SELECT max(occurred_at) AS last_at FROM activity_events e
-                        WHERE e.session_id = s.session_id
+                        -- usage snapshots carry the import time, not the session's
+                        WHERE e.session_id = s.session_id AND e.kind <> 'usage'
                     ) l ON l.last_at IS NOT NULL
                     WHERE s.project = $1 AND s.parent_session_id IS NULL
                     ORDER BY l.last_at DESC, s.session_id
