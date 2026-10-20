@@ -154,3 +154,18 @@ async def test_subagent_sessions_and_empty_sessions_are_left_out(repo):
     got = await repo.recent_sessions("axon", limit=5)
 
     assert [s.session_id for s in got] == ["main"]
+
+
+async def test_a_codex_session_stored_by_the_importer_shows_its_typed_prompt(repo):
+    from pathlib import Path
+
+    from axon.activity.adapters.codex import parse_codex_session
+
+    parsed = parse_codex_session(Path("tests/fixtures/activity/codex/simple_session.jsonl"))
+    sessions = [s.model_copy(update={"project": "axon"}) for s in parsed.sessions]
+    offset = int(parsed.cursor.fingerprint.rsplit(":", 1)[1])
+    await repo.ingest_batch(sessions, parsed.events, parsed.cursor, byte_offset=offset)
+
+    [recent] = await repo.recent_sessions("axon", limit=3)
+
+    assert (recent.first_prompt, recent.last_prompt) == ("run tests", "run tests")
