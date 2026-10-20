@@ -50,10 +50,11 @@ async def seed_session(repo, sid, *, project="axon", at=T0, harness="claude-code
     )
 
 
-async def seed_event(repo, sid, n, kind, content, at, turn=None, source=None):
+async def seed_event(repo, sid, n, kind, content, at, turn=None, source=None,
+                     harness="claude-code"):
     await repo.upsert_event(
         ActivityEvent(
-            event_id=f"{sid}-{n}", harness="claude-code", source_id=source or f"{sid}-{n}",
+            event_id=f"{sid}-{n}", harness=harness, source_id=source or f"{sid}-{n}",
             session_id=sid,
             turn_id=turn,
             occurred_at=at, ingested_at=at, kind=kind, content=content, coverage="full",
@@ -82,6 +83,19 @@ async def test_sessions_come_back_newest_first_and_only_for_the_asked_repo(repo)
     assert [s.session_id for s in got] == ["new", "old"]
     assert got[0].harness == "claude-code"
     assert got[0].last_at == T0 + timedelta(days=1)
+
+
+async def test_a_session_imported_late_is_not_newer_than_one_worked_on_later(repo):
+    # The importer stamps each session's usage snapshot with the import time.
+    await seed_session(repo, "old")
+    await seed_event(repo, "old", 1, "message", say("old ask"), T0)
+    await seed_event(repo, "old", 2, "usage", {"input_tokens": 1}, T0 + timedelta(days=9))
+    await seed_session(repo, "new")
+    await seed_event(repo, "new", 1, "message", say("new ask"), T0 + timedelta(days=1))
+
+    found = await repo.recent_sessions("axon", limit=3)
+
+    assert [s.session_id for s in found] == ["new", "old"]
 
 
 async def test_the_limit_keeps_only_the_newest_sessions(repo):
@@ -184,6 +198,34 @@ async def test_two_codex_asks_with_one_timestamp_keep_transcript_order(repo):
     (s,) = await repo.recent_sessions("axon", limit=3)
 
     assert (s.first_prompt, s.last_prompt) == ("first typed ask", "last typed ask")
+
+
+async def test_a_compaction_summary_stored_before_the_fix_is_not_the_last_ask(repo):
+    await seed_session(repo, "s")
+    await seed_event(repo, "s", 1, "message", say("fix the login bug"), T0)
+    # Imported before the adapter marked it: stored as a typed, non-injected message.
+    summary = "This session is being continued from a previous conversation that ran out of context."
+    await seed_event(repo, "s", 2, "message", say(summary), T0 + timedelta(hours=1))
+
+    (s,) = await repo.recent_sessions("axon", limit=3)
+
+    assert s.last_prompt == "fix the login bug"
+
+
+async def test_a_typed_ask_that_opens_like_the_summary_is_still_an_ask(repo):
+    typed = "This session is being continued from a previous conversation about login. Add a test."
+    for harness in ("codex", "claude-code"):
+        sid = f"s-{harness}"
+        await seed_session(repo, sid, harness=harness)
+        await seed_event(repo, sid, 1, "message", say("fix login"), T0, harness=harness)
+        await seed_event(repo, sid, 2, "message", say(typed), T0 + timedelta(hours=1),
+                         harness=harness)
+
+    found = await repo.recent_sessions("axon", limit=3)
+
+    assert {s.session_id: s.last_prompt for s in found} == {
+        "s-codex": typed, "s-claude-code": typed,
+    }
 
 
 async def test_a_session_with_no_typed_prompt_has_none(repo):

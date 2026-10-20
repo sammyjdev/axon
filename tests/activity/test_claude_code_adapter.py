@@ -138,3 +138,22 @@ def test_unparseable_record_becomes_visible_warning():
     
     assert len(res.warnings) == 1
     assert "unsupported user" in res.warnings[0].lower()
+
+
+def test_the_compaction_summary_is_not_a_typed_ask(tmp_path):
+    import json
+
+    base = {"type": "user", "sessionId": "s", "cwd": str(tmp_path), "turnOrigin": "human"}
+    path = tmp_path / "t.jsonl"
+    path.write_text("\n".join(json.dumps({**base, **e}) for e in (
+        {"uuid": "u1", "timestamp": "2026-10-01T10:00:00Z",
+         "message": {"role": "user", "content": "fix the login bug"}},
+        {"uuid": "u2", "timestamp": "2026-10-01T11:00:00Z", "isCompactSummary": True,
+         "message": {"role": "user", "content": "This session is being continued from a previous"
+                     " conversation that ran out of context."}},
+    )) + "\n")
+
+    events = parse_claude_code_session(path).events
+
+    typed = [e.content["text"] for e in events if e.kind == "message" and not e.content["injected"]]
+    assert typed == ["fix the login bug"]

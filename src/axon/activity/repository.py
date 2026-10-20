@@ -22,6 +22,11 @@ _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 # message is one event. The source_id without that suffix names the typed message.
 _BLOCK = re.compile(r"::text::(\d+)$")
 _OFFSET = re.compile(r"::msg::(\d+)$")
+# Claude Code's whole opening sentence of the summary that continues a compacted session;
+# sessions imported before the adapter marked isCompactSummary stored it as typed.
+_COMPACT_SUMMARY = (
+    "This session is being continued from a previous conversation that ran out of context."
+)
 _ASK_CHARS = 600
 
 
@@ -37,7 +42,8 @@ def _typed_asks(rows) -> dict[str, list[str]]:
     for (sid, _), blocks in messages.items():
         blocks.sort(key=lambda b: b[0])
         text = " ".join(" ".join(b[1]["t"] or "" for b in blocks).split())[:_ASK_CHARS]
-        if text:
+        summary = blocks[0][1]["harness"] == "claude-code" and text.startswith(_COMPACT_SUMMARY)
+        if text and not summary:
             first = min(b[1]["occurred_at"] for b in blocks)
             offset = _OFFSET.search(blocks[0][1]["source_id"])
             tie = (int(offset.group(1)) if offset else 0, min(b[1]["event_id"] for b in blocks))
@@ -524,7 +530,8 @@ class PostgresActivityRepository:
                     FROM activity_sessions s
                     JOIN LATERAL (
                         SELECT max(occurred_at) AS last_at FROM activity_events e
-                        WHERE e.session_id = s.session_id
+                        -- usage snapshots carry the import time, not the session's
+                        WHERE e.session_id = s.session_id AND e.kind <> 'usage'
                     ) l ON l.last_at IS NOT NULL
                     WHERE s.project = $1 AND s.parent_session_id IS NULL
                     ORDER BY l.last_at DESC, s.session_id
@@ -547,7 +554,7 @@ class PostgresActivityRepository:
                 return []
             rows = await con.fetch(
                 """
-                SELECT session_id, source_id, occurred_at, event_id,
+                SELECT session_id, source_id, occurred_at, event_id, harness,
                        left(regexp_replace(content->>'text', '[[:space:]]+', ' ', 'g'), 4000) AS t
                 FROM activity_events
                 WHERE session_id = ANY($1) AND kind = 'message'
