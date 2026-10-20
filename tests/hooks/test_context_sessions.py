@@ -319,3 +319,18 @@ def test_a_codex_patch_path_resolves_against_the_call_workdir(tmp_path):
     s = RecentSession("s", "codex", str(root), T0, edit_calls=[call])
 
     assert file_bridge._touched_files(s, root) == ["src/a.py"]
+
+
+def test_a_patch_path_with_accents_in_json_arguments_is_shown_decoded(tmp_path):
+    import json
+
+    from axon.activity.models import RecentSession
+
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    call = {"type": "function_call", "name": "exec_command", "arguments": json.dumps({
+        "cmd": "apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: src/ação.py\n*** End Patch\nEOF",
+    })}
+    s = RecentSession("s", "codex", str(root), T0, edit_calls=[call])
+
+    assert file_bridge._touched_files(s, root) == ["src/ação.py"]

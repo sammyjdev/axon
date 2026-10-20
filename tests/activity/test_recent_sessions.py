@@ -163,6 +163,29 @@ async def test_an_ask_padded_with_whitespace_is_shown_without_it(repo):
     assert s.first_prompt == "fix login"
 
 
+async def test_an_ask_after_thousands_of_spaces_is_still_the_ask(repo):
+    await seed_session(repo, "s")
+    await seed_event(repo, "s", 1, "message", say(" " * 4001 + "fix login"), T0)
+    await seed_event(repo, "s", 2, "message", say("later ask"), T0 + timedelta(minutes=1))
+
+    (s,) = await repo.recent_sessions("axon", limit=3)
+
+    assert s.first_prompt == "fix login"
+
+
+async def test_two_codex_asks_with_one_timestamp_keep_transcript_order(repo):
+    await seed_session(repo, "s")
+    # event_id order ("s-1" < "s-2") is the reverse of the transcript order.
+    await seed_event(repo, "s", 2, "message", say("first typed ask"), T0,
+                     source="/c.jsonl::s::msg::600")
+    await seed_event(repo, "s", 1, "message", say("last typed ask"), T0,
+                     source="/c.jsonl::s::msg::800")
+
+    (s,) = await repo.recent_sessions("axon", limit=3)
+
+    assert (s.first_prompt, s.last_prompt) == ("first typed ask", "last typed ask")
+
+
 async def test_a_session_with_no_typed_prompt_has_none(repo):
     await seed_session(repo, "s")
     await seed_event(repo, "s", 1, "tool_call", {"type": "tool_use", "name": "Read"}, T0)

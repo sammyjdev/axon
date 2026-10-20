@@ -21,6 +21,7 @@ _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 # A Claude message arrives as one event per text block ('<source>::text::<n>'); a Codex
 # message is one event. The source_id without that suffix names the typed message.
 _BLOCK = re.compile(r"::text::(\d+)$")
+_OFFSET = re.compile(r"::msg::(\d+)$")
 _ASK_CHARS = 600
 
 
@@ -38,7 +39,8 @@ def _typed_asks(rows) -> dict[str, list[str]]:
         text = " ".join(" ".join(b[1]["t"] or "" for b in blocks).split())[:_ASK_CHARS]
         if text:
             first = min(b[1]["occurred_at"] for b in blocks)
-            tie = min(b[1]["event_id"] for b in blocks)
+            offset = _OFFSET.search(blocks[0][1]["source_id"])
+            tie = (int(offset.group(1)) if offset else 0, min(b[1]["event_id"] for b in blocks))
             asks.setdefault(sid, []).append((first, tie, text))
     return {sid: [t for *_, t in sorted(found)] for sid, found in asks.items()}
 
@@ -546,7 +548,7 @@ class PostgresActivityRepository:
             rows = await con.fetch(
                 """
                 SELECT session_id, source_id, occurred_at, event_id,
-                       left(content->>'text', 4000) AS t
+                       left(regexp_replace(content->>'text', '[[:space:]]+', ' ', 'g'), 4000) AS t
                 FROM activity_events
                 WHERE session_id = ANY($1) AND kind = 'message'
                   AND content->>'role' = 'user'

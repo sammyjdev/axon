@@ -68,15 +68,18 @@ def _git_top(path: Path) -> Path | None:
     return None
 
 
-def _call_workdir(call: dict) -> str | None:
-    """The directory a Codex call ran in: its arguments' (or input's) workdir."""
-    args = call.get("arguments")
+def _decoded(args: object) -> object:
     if isinstance(args, str):
         try:
-            args = json.loads(args)
+            return json.loads(args)
         except ValueError:
-            args = None
-    for src in (args, call.get("input")):
+            return args
+    return args
+
+
+def _call_workdir(call: dict) -> str | None:
+    """The directory a Codex call ran in: its arguments' (or input's) workdir."""
+    for src in (_decoded(call.get("arguments")), call.get("input")):
         if isinstance(src, dict) and isinstance(src.get("workdir"), str):
             return src["workdir"]
     return None
@@ -110,7 +113,9 @@ def _touched_files(session: RecentSession, root: Path) -> list[str]:
         if call.get("name") in _EDIT_TOOLS and isinstance(inp, dict):
             raw = [inp.get("file_path") or inp.get("notebook_path")]
         else:
-            raw = [m for s in _strings(call) for m in _PATCH_FILE.findall(s)]
+            # Codex arguments are a JSON string: decode it, or "ação" would read "a\u00e7\u00e3o".
+            args = _decoded(call.get("arguments"))
+            raw = [m for s in _strings({**call, "arguments": args}) for m in _PATCH_FILE.findall(s)]
         # A patch run from another directory names paths relative to that directory.
         here = Path(session.workspace or "") / (_call_workdir(call) or "")
         for r in raw:
