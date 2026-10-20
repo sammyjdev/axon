@@ -159,6 +159,10 @@ class SessionStore:
         decision_repo = await self._decisions()
         return await decision_repo.find_decision_by_git_hash(git_hash, repo=repo)
 
+    async def find_decisions_by_git_hash(self, git_hash: str) -> list[Decision]:
+        decision_repo = await self._decisions()
+        return await decision_repo.find_decisions_by_git_hash(git_hash)
+
     async def find_decisions_by_repo(self, repo: str, limit: int = 20) -> list[Decision]:
         decision_repo = await self._decisions()
         return await decision_repo.find_decisions_by_repo(repo, limit)

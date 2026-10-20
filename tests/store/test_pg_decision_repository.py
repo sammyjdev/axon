@@ -90,6 +90,25 @@ async def test_judged_roundtrip_and_git_hash(pg_dsn) -> None:
         await repo.close()
 
 
+async def test_every_decision_recorded_for_a_commit_is_returned(pg_dsn) -> None:
+    from axon.store.pg_decision_repository import PostgresDecisionRepository
+
+    repo = PostgresDecisionRepository(dsn=pg_dsn)
+    try:
+        await repo.ensure_schema()
+        async with (await repo._ensure_pool()).acquire() as con:
+            await con.execute("TRUNCATE decisions")
+        await repo.save_decision(_dec("dec-020", git_hash="cafe01"))
+        await repo.save_decision(_dec("dec-021", git_hash="cafe01"))
+        await repo.save_decision(_dec("dec-022", git_hash="other"))
+
+        found = await repo.find_decisions_by_git_hash("cafe01")
+
+        assert sorted(d.id for d in found) == ["dec-020", "dec-021"]
+    finally:
+        await repo.close()
+
+
 async def test_adr_insert_returns_id_and_get(pg_dsn) -> None:
     from axon.store.pg_decision_repository import PostgresDecisionRepository
 

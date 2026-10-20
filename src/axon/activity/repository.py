@@ -13,6 +13,9 @@ async def _init_conn(conn: asyncpg.Connection) -> None:
     )
 
 
+_RELATIONS = ("context-delivered", "record-supported", "produced")
+
+
 class PostgresActivityRepository:
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
@@ -169,11 +172,9 @@ class PostgresActivityRepository:
         event_id: str | None,
         relation: str,
     ) -> int:
-        if relation not in ("context-delivered", "record-supported"):
-            raise ValueError(
-                f"relation MUST be 'context-delivered' or 'record-supported', got: {relation}"
-            )
-            
+        if relation not in _RELATIONS:
+            raise ValueError(f"relation MUST be one of {_RELATIONS}, got: {relation}")
+
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
             row = await con.fetchrow(
@@ -370,3 +371,110 @@ class PostgresActivityRepository:
                 limit,
             )
         return [dict(r) for r in rows]
+
+    async def add_commit_link(
+        self, *, commit: str, session_id: str, event_id: str | None
+    ) -> bool:
+        """Link a commit to the session that produced it; False when already linked."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            row = await con.fetchrow(
+                """
+                INSERT INTO activity_evidence_links (
+                    target_type, target_id, session_id, event_id, relation, created_at
+                )
+                SELECT 'commit', $1, $2, $3, 'produced', now()
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM activity_evidence_links
+                    WHERE target_type = 'commit' AND session_id = $2 AND relation = 'produced'
+                      AND (target_id LIKE $1 || '%' OR $1 LIKE target_id || '%')
+                )
+                RETURNING id
+                """,
+                commit,
+                session_id,
+                event_id,
+            )
+        return row is not None
+
+    async def get_session(self, session_id: str) -> dict | None:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            row = await con.fetchrow(
+                "SELECT * FROM activity_sessions WHERE session_id = $1", session_id
+            )
+        return dict(row) if row else None
+
+    async def session_ids_for_transcript(self, path: str) -> list[str]:
+        """Sessions imported from the transcript at `path`; their source_id is '<path>::<id>'."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                "SELECT session_id FROM activity_sessions "
+                "WHERE source_id = $1 || '::' || session_id ORDER BY created_at",
+                path,
+            )
+        return [r["session_id"] for r in rows]
+
+    async def list_session_ids(self) -> list[str]:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch("SELECT session_id FROM activity_sessions ORDER BY created_at")
+        return [r["session_id"] for r in rows]
+
+    async def list_tool_events(self, session_id: str) -> list[dict]:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                """
+                SELECT event_id, call_id, kind, content, occurred_at
+                FROM activity_events
+                WHERE session_id = $1 AND kind IN ('tool_call', 'tool_result')
+                ORDER BY occurred_at, event_id
+                """,
+                session_id,
+            )
+        return [dict(r) for r in rows]
+
+    async def find_commit_origins(self, commit: str) -> list[dict]:
+        """Sessions that produced `commit` (full or short hash), with the link's event time."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                """
+                SELECT s.session_id, s.harness, s.project, s.workspace,
+                       l.event_id, COALESCE(e.occurred_at, s.created_at) AS occurred_at
+                FROM activity_evidence_links l
+                JOIN activity_sessions s ON s.session_id = l.session_id
+                LEFT JOIN activity_events e ON e.event_id = l.event_id
+                WHERE l.target_type = 'commit' AND l.relation = 'produced'
+                  AND (l.target_id = $1
+                       OR ($1 LIKE l.target_id || '%' AND length(l.target_id) >= 7))
+                ORDER BY occurred_at
+                """,
+                commit,
+            )
+        return [dict(r) for r in rows]
+
+    async def last_user_prompts(
+        self, session_id: str, *, before, limit: int = 3
+    ) -> list[str]:
+        """Last prompts the person typed (not harness-injected) up to `before`, oldest first."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                """
+                SELECT COALESCE(content->>'text', content->'content'->0->>'text') AS text
+                FROM activity_events
+                WHERE session_id = $1 AND kind = 'message' AND occurred_at <= $2
+                  AND content->>'role' = 'user'
+                  AND COALESCE(content->>'injected', 'false') <> 'true'
+                  AND COALESCE(content->>'text', content->'content'->0->>'text', '') <> ''
+                ORDER BY occurred_at DESC, event_id DESC
+                LIMIT $3
+                """,
+                session_id,
+                before,
+                limit,
+            )
+        return [r["text"] for r in reversed(rows)]
