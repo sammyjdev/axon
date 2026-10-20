@@ -518,16 +518,25 @@ class PostgresActivityRepository:
             if not ids:
                 return []
             for order, attr in (("ASC", "first_prompt"), ("DESC", "last_prompt")):
+                # One typed message may arrive as several text blocks of one turn: join them
+                # in order, collapse whitespace, then clip.
                 prompts = await con.fetch(
                     f"""
-                    SELECT DISTINCT ON (session_id) session_id, left(content->>'text', 600) AS t
-                    FROM activity_events
-                    WHERE session_id = ANY($1) AND kind = 'message'
-                      AND content->>'role' = 'user'
-                      AND coalesce(content->>'injected', 'false') <> 'true'
-                      -- tabs or newlines alone are no ask
-                      AND coalesce(content->>'text', '') ~ '[^[:space:]]'
-                    ORDER BY session_id, occurred_at {order}, event_id
+                    SELECT DISTINCT ON (session_id) session_id, left(t, 600) AS t
+                    FROM (
+                        SELECT session_id, min(occurred_at) AS at, min(event_id) AS first_id,
+                               btrim(regexp_replace(
+                                   string_agg(content->>'text', ' ' ORDER BY source_id),
+                                   '[[:space:]]+', ' ', 'g')) AS t
+                        FROM activity_events
+                        WHERE session_id = ANY($1) AND kind = 'message'
+                          AND content->>'role' = 'user'
+                          AND coalesce(content->>'injected', 'false') <> 'true'
+                          -- tabs or newlines alone are no ask
+                          AND coalesce(content->>'text', '') ~ '[^[:space:]]'
+                        GROUP BY session_id, coalesce(turn_id, event_id)
+                    ) turns
+                    ORDER BY session_id, at {order}, first_id
                     """,  # noqa: S608 - order is a literal from the tuple above
                     ids,
                 )

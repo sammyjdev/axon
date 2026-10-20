@@ -265,3 +265,41 @@ def test_a_codex_patch_lists_deleted_files_and_rename_targets(tmp_path):
     s = RecentSession("s", "codex", str(root), T0, edit_calls=[{"name": "exec", "input": patch}])
 
     assert file_bridge._touched_files(s, root) == ["retired.py", "old.py", "new.py"]
+
+
+def test_files_touched_in_a_removed_worktree_are_relative_to_that_worktree(tmp_path):
+    from axon.activity.models import RecentSession
+
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    gone = tmp_path / "worktrees" / "phase-x"  # removed after its branch merged
+    s = RecentSession("s", "codex", str(gone), T0, edit_calls=[
+        _edit(f"{gone}/src/a.py"),
+        {"name": "exec", "input": "*** Update File: src/b.py\\n"},
+    ])
+
+    assert file_bridge._touched_files(s, root) == ["src/a.py", "src/b.py"]
+
+
+def test_files_touched_in_a_worktree_inside_the_repo_drop_the_worktree_prefix(tmp_path):
+    from axon.activity.models import RecentSession
+
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    wt = root / ".claude" / "worktrees" / "phase-x"
+    wt.mkdir(parents=True)
+    (wt / ".git").write_text("gitdir: elsewhere\n")
+    s = RecentSession("s", "claude-code", str(wt), T0, edit_calls=[_edit(f"{wt}/src/a.py")])
+
+    assert file_bridge._touched_files(s, root) == ["src/a.py"]
+
+
+def test_files_touched_in_a_removed_worktree_inside_the_repo_drop_its_prefix(tmp_path):
+    from axon.activity.models import RecentSession
+
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    gone = root / ".claude" / "worktrees" / "phase-x"
+    s = RecentSession("s", "claude-code", str(gone), T0, edit_calls=[_edit(f"{gone}/src/a.py")])
+
+    assert file_bridge._touched_files(s, root) == ["src/a.py"]

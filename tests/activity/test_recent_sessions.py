@@ -50,10 +50,11 @@ async def seed_session(repo, sid, *, project="axon", at=T0, harness="claude-code
     )
 
 
-async def seed_event(repo, sid, n, kind, content, at):
+async def seed_event(repo, sid, n, kind, content, at, turn=None):
     await repo.upsert_event(
         ActivityEvent(
             event_id=f"{sid}-{n}", harness="claude-code", source_id=f"{sid}-{n}", session_id=sid,
+            turn_id=turn,
             occurred_at=at, ingested_at=at, kind=kind, content=content, coverage="full",
             redactions=[],
         )
@@ -115,6 +116,29 @@ async def test_a_message_of_only_tabs_and_newlines_is_not_an_ask(repo):
     (s,) = await repo.recent_sessions("axon", limit=3)
 
     assert (s.first_prompt, s.last_prompt) == ("fix login", "fix login")
+
+
+async def test_an_ask_typed_in_several_blocks_keeps_every_block_in_order(repo):
+    await seed_session(repo, "s")
+    # One typed message, two text blocks: same turn, same timestamp.
+    await seed_event(repo, "s", 2, "message", say("keep the public API"), T0, turn="t1")
+    await seed_event(repo, "s", 1, "message", say("fix login"), T0, turn="t1")
+
+    (s,) = await repo.recent_sessions("axon", limit=3)
+
+    assert (s.first_prompt, s.last_prompt) == (
+        "fix login keep the public API",
+        "fix login keep the public API",
+    )
+
+
+async def test_an_ask_padded_with_whitespace_is_shown_without_it(repo):
+    await seed_session(repo, "s")
+    await seed_event(repo, "s", 1, "message", say(" " * 601 + "fix login"), T0)
+
+    (s,) = await repo.recent_sessions("axon", limit=3)
+
+    assert s.first_prompt == "fix login"
 
 
 async def test_a_session_with_no_typed_prompt_has_none(repo):

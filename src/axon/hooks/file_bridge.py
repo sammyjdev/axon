@@ -67,11 +67,28 @@ def _git_top(path: Path) -> Path | None:
     return None
 
 
+def _removed_worktree(ws: Path, root: Path) -> Path | None:
+    """The worktree a missing workspace was, once removed after its merge left no .git.
+
+    Outside the repo it is the workspace itself; inside, only Claude Code's
+    .claude/worktrees/<name> is one (any other missing path is a subdirectory of the repo).
+    """
+    if not ws.is_relative_to(root):
+        return ws
+    parts = ws.relative_to(root).parts
+    if parts[:2] == (".claude", "worktrees") and len(parts) > 2:
+        return root.joinpath(*parts[:3])
+    return None
+
+
 def _touched_files(session: RecentSession, root: Path) -> list[str]:
     """Paths relative to the repo root (or the session's worktree), first touch first."""
     bases = [root]
-    if session.workspace and (top := _git_top(Path(session.workspace))) and top != root:
-        bases.append(top)
+    if session.workspace:
+        ws = Path(session.workspace)
+        top = _git_top(ws) if ws.exists() else _removed_worktree(ws, root)
+        if top and top != root:
+            bases.insert(0, top)  # the worktree first: it may sit inside the repo
     seen: dict[str, None] = {}
     for call in session.edit_calls:
         inp = call.get("input")
