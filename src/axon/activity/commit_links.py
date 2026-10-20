@@ -242,13 +242,16 @@ def extract_commits(events: list[dict], workspace: str | None) -> list[CommitRef
     A printed `[branch hash]` line is paired with the non-quiet commits in order; a commit
     left without one is known by its subject, unless the result says the call failed.
     """
-    calls: dict[str, tuple[str, str | None]] = {}
+    # Calls first: a result can be stored ahead of its call when both share a timestamp.
+    calls: dict[str, tuple[str, str | None]] = {
+        ev["call_id"]: _call_command(ev["content"])
+        for ev in events
+        if ev["kind"] == "tool_call" and ev.get("call_id")
+    }
     found: list[CommitRef] = []
     for ev in events:
         content, call_id = ev["content"], ev.get("call_id")
-        if ev["kind"] == "tool_call" and call_id:
-            calls[call_id] = _call_command(content)
-        elif ev["kind"] == "tool_result" and call_id in calls:
+        if ev["kind"] == "tool_result" and call_id in calls:
             commits = _commit_commands(*calls[call_id], workspace)
             if not commits:
                 continue

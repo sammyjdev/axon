@@ -46,6 +46,15 @@ def test_a_commit_result_yields_the_short_hash_and_the_result_event() -> None:
     assert _commits("git commit -m 'fix: x'", out) == [("3197c6d", "res-c1")]
 
 
+def test_a_result_stored_before_its_call_still_yields_the_commit() -> None:
+    # Events with the same timestamp come back ordered by event_id, a hash.
+    out = "[main 3197c6d] fix: x\n 1 file changed\n"
+    events = [_claude_result("c1", out), _claude_call("c1", "git commit -m 'fix: x'")]
+    assert [(c.short_hash, c.event_id) for c in extract_commits(events, "/ws")] == [
+        ("3197c6d", "res-c1")
+    ]
+
+
 def test_root_commit_output_is_recognised() -> None:
     out = "[main (root-commit) a1b2c3d] init\n 1 file changed\n"
     assert _commits("git commit -m init", out) == [("a1b2c3d", "res-c1")]
