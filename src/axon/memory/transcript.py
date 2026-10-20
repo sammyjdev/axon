@@ -86,12 +86,14 @@ def parse_transcript_turns(path: str | Path) -> list[dict[str, str]]:
 
 def _harness_injected(entry: dict) -> bool:
     """True for a user-role line Claude Code wrote itself rather than the
-    operator typed: skill bodies, subagent hand-backs, task notifications.
+    operator typed: skill bodies, subagent hand-backs, task notifications, and
+    the summary that continues a compacted session (marked turnOrigin "human").
     Lines without these fields (older transcripts, Codex rollouts) say nothing,
     and the digest falls back to known text prefixes for them."""
     origin = entry.get("turnOrigin")
     return (
         entry.get("isMeta") is True
+        or entry.get("isCompactSummary") is True
         or entry.get("promptSource") == "system"
         or (origin is not None and origin != "human")
     )
