@@ -1,7 +1,7 @@
 """The steps `axon session-hook` runs when a session ends, in order.
 
 Each step is guarded: one that fails is reported on stderr and the next still
-runs, and nothing reaches the agent. Phases C and D each add one step here.
+runs, and nothing reaches the agent.
 """
 
 from __future__ import annotations
@@ -54,10 +54,18 @@ def link_commits_step(transcript_path: str, cwd: str) -> None:
     asyncio.run(_run())
 
 
+def refresh_context_step(transcript_path: str, cwd: str) -> None:
+    """Last, so .axon/context.md shows the session that just ended and its commits."""
+    from axon.hooks.file_bridge import refresh_context_for_cwd
+
+    asyncio.run(refresh_context_for_cwd(cwd))
+
+
 STEPS: list[tuple[str, Callable[[str, str], None]]] = [
     ("digest", store_digest),
     ("import transcript", import_transcript_step),
     ("link commits", link_commits_step),
+    ("refresh context", refresh_context_step),
 ]
 
 

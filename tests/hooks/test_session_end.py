@@ -220,3 +220,51 @@ def test_the_session_hook_links_the_commit_the_session_made(tmp_path):
     import asyncio
 
     assert [r["target_id"] for r in asyncio.run(_links())] == [full]
+
+
+def test_the_context_file_is_refreshed_after_commits_are_linked() -> None:
+    assert [name for name, _ in session_end.STEPS][:4] == [
+        "digest",
+        "import transcript",
+        "link commits",
+        "refresh context",
+    ]
+
+
+def test_a_session_that_ends_shows_its_first_and_last_ask_in_the_repo_context(tmp_path):
+    """The adapters' message format, the import and the context query agree end to end."""
+    import subprocess
+
+    dsn = os.environ["AXON_PG_URL"]
+    if "axon_tests_have_no_database" in dsn:
+        pytest.skip("needs the test Postgres container")
+    repo = tmp_path / "ctxrepo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)  # noqa: S603, S607
+    base = {"sessionId": "hook-c", "cwd": str(repo)}
+    path = tmp_path / "c.jsonl"
+    path.write_text(
+        "\n".join(
+            json.dumps({**base, **entry})
+            for entry in (
+                {"type": "user", "uuid": "u1", "timestamp": "2026-10-01T10:00:00Z",
+                 "message": {"role": "user", "content": "add the csv export to the report"}},
+                {"type": "assistant", "uuid": "a1", "timestamp": "2026-10-01T10:01:00Z",
+                 "message": {"role": "assistant", "content": [{"type": "text", "text": "done"}]}},
+                {"type": "user", "uuid": "u2", "timestamp": "2026-10-01T10:02:00Z",
+                 "message": {"role": "user", "content": "now cover it with a test"}},
+            )
+        )
+        + "\n"
+    )
+
+    result = runner.invoke(
+        app,
+        ["session-hook"],
+        input=json.dumps({"transcript_path": str(path), "cwd": str(repo)}),
+    )
+
+    assert result.exit_code == 0
+    context = (repo / ".axon" / "context.md").read_text()
+    assert "add the csv export to the report" in context
+    assert "now cover it with a test" in context

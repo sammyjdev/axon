@@ -50,7 +50,7 @@ async def test_writes_context_file_with_decisions(
     text = target.read_text(encoding="utf-8")
     assert "# AXON context — myrepo" in text
     assert "dec-001" in text and "rename to axon" in text
-    assert "pkg.Mod.Cls" in text
+    assert "Active symbols" not in text and "pkg.Mod.Cls" not in text
 
 
 async def test_empty_repo_renders_placeholders(
