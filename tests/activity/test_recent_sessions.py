@@ -199,6 +199,18 @@ async def test_two_codex_asks_with_one_timestamp_keep_transcript_order(repo):
     assert (s.first_prompt, s.last_prompt) == ("first typed ask", "last typed ask")
 
 
+async def test_a_compaction_summary_stored_before_the_fix_is_not_the_last_ask(repo):
+    await seed_session(repo, "s")
+    await seed_event(repo, "s", 1, "message", say("fix the login bug"), T0)
+    # Imported before the adapter marked it: stored as a typed, non-injected message.
+    summary = "This session is being continued from a previous conversation that ran out of context."
+    await seed_event(repo, "s", 2, "message", say(summary), T0 + timedelta(hours=1))
+
+    (s,) = await repo.recent_sessions("axon", limit=3)
+
+    assert s.last_prompt == "fix the login bug"
+
+
 async def test_a_session_with_no_typed_prompt_has_none(repo):
     await seed_session(repo, "s")
     await seed_event(repo, "s", 1, "tool_call", {"type": "tool_use", "name": "Read"}, T0)
