@@ -161,3 +161,18 @@ async def test_100_fixture_events_replayed_twice_leave_100_rows(repo, pg_pool):
     async with pg_pool.acquire() as con:
         count = await con.fetchval("SELECT count(*) FROM activity_events")
         assert count == 100
+
+
+async def test_sessions_of_a_transcript_exclude_a_file_whose_name_extends_its_path(repo):
+    from axon.activity.models import ActivitySession
+
+    def session(source_id: str, session_id: str) -> ActivitySession:
+        return ActivitySession(
+            session_id=session_id, harness="claude-code", source_id=source_id,
+            project=None, workspace=None, status="closed", coverage="full",
+        )
+
+    await repo.upsert_session(session("/tmp/a.jsonl::s1", "s1"))
+    await repo.upsert_session(session("/tmp/a.jsonl::copy.jsonl::s2", "s2"))
+
+    assert await repo.session_ids_for_transcript("/tmp/a.jsonl") == ["s1"]

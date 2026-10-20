@@ -411,7 +411,7 @@ class PostgresActivityRepository:
         async with pool.acquire() as con:
             rows = await con.fetch(
                 "SELECT session_id FROM activity_sessions "
-                "WHERE left(source_id, length($1) + 2) = $1 || '::' ORDER BY created_at",
+                "WHERE source_id = $1 || '::' || session_id ORDER BY created_at",
                 path,
             )
         return [r["session_id"] for r in rows]
