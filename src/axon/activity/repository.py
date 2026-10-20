@@ -405,6 +405,17 @@ class PostgresActivityRepository:
             )
         return dict(row) if row else None
 
+    async def session_ids_for_transcript(self, path: str) -> list[str]:
+        """Sessions imported from the transcript at `path`; their source_id is '<path>::<id>'."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                "SELECT session_id FROM activity_sessions "
+                "WHERE left(source_id, length($1) + 2) = $1 || '::' ORDER BY created_at",
+                path,
+            )
+        return [r["session_id"] for r in rows]
+
     async def list_session_ids(self) -> list[str]:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:

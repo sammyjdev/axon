@@ -150,3 +150,73 @@ def test_a_transcript_with_invalid_utf8_never_fails_the_hook(tmp_path, monkeypat
 
 def test_the_transcript_is_imported_after_the_digest_is_stored() -> None:
     assert [name for name, _ in session_end.STEPS][:2] == ["digest", "import transcript"]
+
+
+def test_commits_are_linked_after_the_transcript_is_imported() -> None:
+    assert [name for name, _ in session_end.STEPS][:3] == [
+        "digest",
+        "import transcript",
+        "link commits",
+    ]
+
+
+def test_the_session_hook_links_the_commit_the_session_made(tmp_path):
+    import subprocess
+
+    dsn = os.environ["AXON_PG_URL"]
+    if "axon_tests_have_no_database" in dsn:
+        pytest.skip("needs the test Postgres container")
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (repo / "a.txt").write_text("a")
+    git("add", "-A")
+    git("commit", "-q", "-m", "second change")
+    full = git("rev-parse", "HEAD")
+    line = {"sessionId": "hook-d", "cwd": str(repo), "timestamp": "2026-10-01T10:00:00Z"}
+    path = tmp_path / "d.jsonl"
+    path.write_text(
+        "\n".join(
+            json.dumps({**line, **entry})
+            for entry in (
+                {"type": "user", "uuid": "u1",
+                 "message": {"role": "user", "content": "commit it"}},
+                {"type": "assistant", "uuid": "a1", "message": {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "c1", "name": "Bash",
+                     "input": {"command": "git commit -m 'second change'"}}]}},
+                {"type": "user", "uuid": "u2", "message": {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "c1",
+                     "content": f"[main {full[:7]}] second change\n 1 file changed\n"}]}},
+            )
+        )
+        + "\n"
+    )
+
+    result = runner.invoke(
+        app,
+        ["session-hook"],
+        input=json.dumps({"transcript_path": str(path), "cwd": str(repo)}),
+    )
+    assert result.exit_code == 0
+
+    async def _links():
+        con = await asyncpg.connect(dsn)
+        try:
+            return await con.fetch(
+                "SELECT target_id FROM activity_evidence_links "
+                "WHERE session_id='hook-d' AND target_type='commit'"
+            )
+        finally:
+            await con.close()
+
+    import asyncio
+
+    assert [r["target_id"] for r in asyncio.run(_links())] == [full]

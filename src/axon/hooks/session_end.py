@@ -36,9 +36,28 @@ def import_transcript_step(transcript_path: str, cwd: str) -> None:
     asyncio.run(_run())
 
 
+def link_commits_step(transcript_path: str, cwd: str) -> None:
+    """A commit the lookup misses now is linked later by `axon activity link-commits --all`."""
+    from axon.activity.commit_links import link_commits
+    from axon.activity.repository import PostgresActivityRepository
+    from axon.config.runtime import load_runtime_config
+
+    async def _run() -> None:
+        repo = PostgresActivityRepository(load_runtime_config().pg_url)
+        try:
+            await repo.ensure_schema()
+            for session_id in await repo.session_ids_for_transcript(str(Path(transcript_path))):
+                await link_commits(repo, session_id)
+        finally:
+            await repo.close()
+
+    asyncio.run(_run())
+
+
 STEPS: list[tuple[str, Callable[[str, str], None]]] = [
     ("digest", store_digest),
     ("import transcript", import_transcript_step),
+    ("link commits", link_commits_step),
 ]
 
 
