@@ -106,6 +106,17 @@ async def test_first_and_last_prompt_skip_injected_and_assistant_text(repo):
     assert s.last_prompt == "now add a test"
 
 
+async def test_a_message_of_only_tabs_and_newlines_is_not_an_ask(repo):
+    await seed_session(repo, "s")
+    await seed_event(repo, "s", 1, "message", say("\n\t"), T0)
+    await seed_event(repo, "s", 2, "message", say("fix login"), T0 + timedelta(minutes=1))
+    await seed_event(repo, "s", 3, "message", say("\t\n"), T0 + timedelta(minutes=2))
+
+    (s,) = await repo.recent_sessions("axon", limit=3)
+
+    assert (s.first_prompt, s.last_prompt) == ("fix login", "fix login")
+
+
 async def test_a_session_with_no_typed_prompt_has_none(repo):
     await seed_session(repo, "s")
     await seed_event(repo, "s", 1, "tool_call", {"type": "tool_use", "name": "Read"}, T0)

@@ -251,3 +251,17 @@ def test_relative_and_dotted_paths_resolve_against_the_session_workspace(tmp_pat
     ])
 
     assert file_bridge._touched_files(s, root) == ["src/a.py"]
+
+
+def test_a_codex_patch_lists_deleted_files_and_rename_targets(tmp_path):
+    from axon.activity.models import RecentSession
+
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    patch = (
+        "*** Begin Patch\\n*** Delete File: retired.py\\n"
+        "*** Update File: old.py\\n*** Move to: new.py\\n@@\\n*** End Patch"
+    )
+    s = RecentSession("s", "codex", str(root), T0, edit_calls=[{"name": "exec", "input": patch}])
+
+    assert file_bridge._touched_files(s, root) == ["retired.py", "old.py", "new.py"]

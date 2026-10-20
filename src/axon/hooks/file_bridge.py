@@ -41,7 +41,7 @@ _PROMPT_CHARS = 160
 _MAX_LINES = 100
 _EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 # Codex patches arrive as text, sometimes inside JS source, so `\n` may be escaped.
-_PATCH_FILE = re.compile(r"\*\*\* (?:Update|Add) File: (.+?)(?=\\n|\n|\"|$)")
+_PATCH_FILE = re.compile(r"\*\*\* (?:(?:Update|Add|Delete) File|Move to): (.+?)(?=\\n|\n|\"|$)")
 
 
 def _one_line(text: str | None) -> str:

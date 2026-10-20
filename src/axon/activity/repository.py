@@ -525,7 +525,8 @@ class PostgresActivityRepository:
                     WHERE session_id = ANY($1) AND kind = 'message'
                       AND content->>'role' = 'user'
                       AND coalesce(content->>'injected', 'false') <> 'true'
-                      AND btrim(coalesce(content->>'text', '')) <> ''
+                      -- tabs or newlines alone are no ask
+                      AND coalesce(content->>'text', '') ~ '[^[:space:]]'
                     ORDER BY session_id, occurred_at {order}, event_id
                     """,  # noqa: S608 - order is a literal from the tuple above
                     ids,
