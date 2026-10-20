@@ -6,6 +6,7 @@ git events and on session end. Writes are atomic (temp file + rename).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -67,6 +68,20 @@ def _git_top(path: Path) -> Path | None:
     return None
 
 
+def _call_workdir(call: dict) -> str | None:
+    """The directory a Codex call ran in: its arguments' (or input's) workdir."""
+    args = call.get("arguments")
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except ValueError:
+            args = None
+    for src in (args, call.get("input")):
+        if isinstance(src, dict) and isinstance(src.get("workdir"), str):
+            return src["workdir"]
+    return None
+
+
 def _removed_worktree(ws: Path, root: Path) -> Path | None:
     """The worktree a missing workspace was, once removed after its merge left no .git.
 
@@ -96,14 +111,16 @@ def _touched_files(session: RecentSession, root: Path) -> list[str]:
             raw = [inp.get("file_path") or inp.get("notebook_path")]
         else:
             raw = [m for s in _strings(call) for m in _PATCH_FILE.findall(s)]
+        # A patch run from another directory names paths relative to that directory.
+        here = Path(session.workspace or "") / (_call_workdir(call) or "")
         for r in raw:
             if not isinstance(r, str) or not r.strip():
                 continue
             path = Path(r.strip())
             if not path.is_absolute():
-                if not session.workspace:
+                if not here.is_absolute():
                     continue
-                path = Path(session.workspace) / path
+                path = here / path
             path = Path(os.path.normpath(path))
             for base in bases:
                 if path.is_relative_to(base):

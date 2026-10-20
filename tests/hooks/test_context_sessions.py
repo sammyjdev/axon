@@ -303,3 +303,19 @@ def test_files_touched_in_a_removed_worktree_inside_the_repo_drop_its_prefix(tmp
     s = RecentSession("s", "claude-code", str(gone), T0, edit_calls=[_edit(f"{gone}/src/a.py")])
 
     assert file_bridge._touched_files(s, root) == ["src/a.py"]
+
+
+def test_a_codex_patch_path_resolves_against_the_call_workdir(tmp_path):
+    import json
+
+    from axon.activity.models import RecentSession
+
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    call = {"type": "function_call", "name": "exec_command", "arguments": json.dumps({
+        "cmd": "apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: a.py\n*** End Patch\nEOF",
+        "workdir": str(root / "src"),
+    })}
+    s = RecentSession("s", "codex", str(root), T0, edit_calls=[call])
+
+    assert file_bridge._touched_files(s, root) == ["src/a.py"]

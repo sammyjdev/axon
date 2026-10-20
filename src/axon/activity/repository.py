@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 
 import asyncpg
 
@@ -15,6 +16,31 @@ async def _init_conn(conn: asyncpg.Connection) -> None:
 
 _RELATIONS = ("context-delivered", "record-supported", "produced")
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+
+
+# A Claude message arrives as one event per text block ('<source>::text::<n>'); a Codex
+# message is one event. The source_id without that suffix names the typed message.
+_BLOCK = re.compile(r"::text::(\d+)$")
+_ASK_CHARS = 600
+
+
+def _typed_asks(rows) -> dict[str, list[str]]:
+    """Each session's typed asks in order, blocks of a message joined in block order,
+    whitespace (any Unicode space) collapsed; an ask left empty is not one."""
+    messages: dict[tuple[str, str], list] = {}
+    for r in rows:
+        m = _BLOCK.search(r["source_id"])
+        key = (r["session_id"], r["source_id"][: m.start()] if m else r["source_id"])
+        messages.setdefault(key, []).append((int(m.group(1)) if m else 0, r))
+    asks: dict[str, list[tuple]] = {}
+    for (sid, _), blocks in messages.items():
+        blocks.sort(key=lambda b: b[0])
+        text = " ".join(" ".join(b[1]["t"] or "" for b in blocks).split())[:_ASK_CHARS]
+        if text:
+            first = min(b[1]["occurred_at"] for b in blocks)
+            tie = min(b[1]["event_id"] for b in blocks)
+            asks.setdefault(sid, []).append((first, tie, text))
+    return {sid: [t for *_, t in sorted(found)] for sid, found in asks.items()}
 
 
 class PostgresActivityRepository:
@@ -517,31 +543,19 @@ class PostgresActivityRepository:
             ids = list(sessions)
             if not ids:
                 return []
-            for order, attr in (("ASC", "first_prompt"), ("DESC", "last_prompt")):
-                # One typed message may arrive as several text blocks of one turn: join them
-                # in order, collapse whitespace, then clip.
-                prompts = await con.fetch(
-                    f"""
-                    SELECT DISTINCT ON (session_id) session_id, left(t, 600) AS t
-                    FROM (
-                        SELECT session_id, min(occurred_at) AS at, min(event_id) AS first_id,
-                               btrim(regexp_replace(
-                                   string_agg(content->>'text', ' ' ORDER BY source_id),
-                                   '[[:space:]]+', ' ', 'g')) AS t
-                        FROM activity_events
-                        WHERE session_id = ANY($1) AND kind = 'message'
-                          AND content->>'role' = 'user'
-                          AND coalesce(content->>'injected', 'false') <> 'true'
-                          -- tabs or newlines alone are no ask
-                          AND coalesce(content->>'text', '') ~ '[^[:space:]]'
-                        GROUP BY session_id, coalesce(turn_id, event_id)
-                    ) turns
-                    ORDER BY session_id, at {order}, first_id
-                    """,  # noqa: S608 - order is a literal from the tuple above
-                    ids,
-                )
-                for r in prompts:
-                    setattr(sessions[r["session_id"]], attr, r["t"])
+            rows = await con.fetch(
+                """
+                SELECT session_id, source_id, occurred_at, event_id,
+                       left(content->>'text', 4000) AS t
+                FROM activity_events
+                WHERE session_id = ANY($1) AND kind = 'message'
+                  AND content->>'role' = 'user'
+                  AND coalesce(content->>'injected', 'false') <> 'true'
+                """,
+                ids,
+            )
+            for sid, asks in _typed_asks(rows).items():
+                sessions[sid].first_prompt, sessions[sid].last_prompt = asks[0], asks[-1]
             edits = await con.fetch(
                 """
                 SELECT session_id, content FROM activity_events
