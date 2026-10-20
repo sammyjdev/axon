@@ -22,8 +22,11 @@ _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 # message is one event. The source_id without that suffix names the typed message.
 _BLOCK = re.compile(r"::text::(\d+)$")
 _OFFSET = re.compile(r"::msg::(\d+)$")
-# Sessions imported before the adapter marked isCompactSummary stored this as typed.
-_COMPACT_SUMMARY = "This session is being continued from a previous conversation"
+# Claude Code's whole opening sentence of the summary that continues a compacted session;
+# sessions imported before the adapter marked isCompactSummary stored it as typed.
+_COMPACT_SUMMARY = (
+    "This session is being continued from a previous conversation that ran out of context."
+)
 _ASK_CHARS = 600
 
 
@@ -39,7 +42,8 @@ def _typed_asks(rows) -> dict[str, list[str]]:
     for (sid, _), blocks in messages.items():
         blocks.sort(key=lambda b: b[0])
         text = " ".join(" ".join(b[1]["t"] or "" for b in blocks).split())[:_ASK_CHARS]
-        if text and not text.startswith(_COMPACT_SUMMARY):
+        summary = blocks[0][1]["harness"] == "claude-code" and text.startswith(_COMPACT_SUMMARY)
+        if text and not summary:
             first = min(b[1]["occurred_at"] for b in blocks)
             offset = _OFFSET.search(blocks[0][1]["source_id"])
             tie = (int(offset.group(1)) if offset else 0, min(b[1]["event_id"] for b in blocks))
@@ -550,7 +554,7 @@ class PostgresActivityRepository:
                 return []
             rows = await con.fetch(
                 """
-                SELECT session_id, source_id, occurred_at, event_id,
+                SELECT session_id, source_id, occurred_at, event_id, harness,
                        left(regexp_replace(content->>'text', '[[:space:]]+', ' ', 'g'), 4000) AS t
                 FROM activity_events
                 WHERE session_id = ANY($1) AND kind = 'message'

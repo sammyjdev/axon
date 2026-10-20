@@ -50,10 +50,11 @@ async def seed_session(repo, sid, *, project="axon", at=T0, harness="claude-code
     )
 
 
-async def seed_event(repo, sid, n, kind, content, at, turn=None, source=None):
+async def seed_event(repo, sid, n, kind, content, at, turn=None, source=None,
+                     harness="claude-code"):
     await repo.upsert_event(
         ActivityEvent(
-            event_id=f"{sid}-{n}", harness="claude-code", source_id=source or f"{sid}-{n}",
+            event_id=f"{sid}-{n}", harness=harness, source_id=source or f"{sid}-{n}",
             session_id=sid,
             turn_id=turn,
             occurred_at=at, ingested_at=at, kind=kind, content=content, coverage="full",
@@ -209,6 +210,22 @@ async def test_a_compaction_summary_stored_before_the_fix_is_not_the_last_ask(re
     (s,) = await repo.recent_sessions("axon", limit=3)
 
     assert s.last_prompt == "fix the login bug"
+
+
+async def test_a_typed_ask_that_opens_like_the_summary_is_still_an_ask(repo):
+    typed = "This session is being continued from a previous conversation about login. Add a test."
+    for harness in ("codex", "claude-code"):
+        sid = f"s-{harness}"
+        await seed_session(repo, sid, harness=harness)
+        await seed_event(repo, sid, 1, "message", say("fix login"), T0, harness=harness)
+        await seed_event(repo, sid, 2, "message", say(typed), T0 + timedelta(hours=1),
+                         harness=harness)
+
+    found = await repo.recent_sessions("axon", limit=3)
+
+    assert {s.session_id: s.last_prompt for s in found} == {
+        "s-codex": typed, "s-claude-code": typed,
+    }
 
 
 async def test_a_session_with_no_typed_prompt_has_none(repo):
