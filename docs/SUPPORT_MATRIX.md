@@ -9,8 +9,8 @@ equally mature on every host.
 
 ## Support Principles
 
-- Prefer the smallest operating mode that reliably reaches first indexing and
-  first query.
+- Prefer the smallest operating mode that reliably reaches a healthy Postgres
+  and a first captured decision.
 - Treat GPU acceleration as optional optimization, not as a requirement for
   basic AXON use.
 - When a machine is undersized or driver setup is unstable, move down to
@@ -33,8 +33,7 @@ Use one of these acceptance paths when validating an environment.
 
 ```bash
 axon --help
-axon index-vault
-axon search "health check" --ctx knowledge --top 1
+axon health
 ```
 
 ### Infra path
@@ -82,20 +81,9 @@ axon health
 - Use `remote-infra` as the pressure-release valve whenever local hardware,
   drivers, or laptop thermals turn `full-local` into operational overhead.
 
-## Provider Profiles (dec-106)
+## Provider keys
 
-Cloud routing is selected by the provider profile, orthogonal to the
-operating mode above.
-
-| Profile | Status | Required keys | Best fit |
-| --- | --- | --- | --- |
-| `budget` (default) | recommended | `DEEPINFRA_API_KEY`, `GROQ_API_KEY` (classifier) | onboarding without API spend; 16 GB laptops |
-| `paid` | supported | `OPENROUTER_API_KEY`, `GROQ_API_KEY` (classifier) | higher quality and quotas via Claude (D2 verbatim) |
-
-- Both profiles route exclusively to cloud — `ctx=work` (restricted) needs
-  Ollama enabled (`AXON_PROVIDER_OLLAMA=1`) and an `AXON_CLASSIFIER_CLOUD_MODEL`
-  pointing at a local Ollama model. Work-ctx support is currently out of scope.
-- Per-provider rate caps are opt-in and unlimited unless set: no default RPM/RPD
-  applies until you export `AXON_<PROVIDER>_MAX_RPM` / `AXON_<PROVIDER>_MAX_RPD`
-  (e.g. `AXON_GROQ_MAX_RPM`). Exceeding a cap you set fails the call with
-  `DENY_RATE_LIMIT` without tripping the circuit breaker.
+None. Since dec-138 no commit and no MCP tool calls an LLM or an embedding
+provider, so the provider profiles of dec-106 and their keys (`GROQ_API_KEY`,
+`NVIDIA_NIM_API_KEY`, `DEEPINFRA_API_KEY`, `OPENROUTER_API_KEY`) are not read.
+The only LLM call left is the optional vault hook (`vault/til_promoter`).
