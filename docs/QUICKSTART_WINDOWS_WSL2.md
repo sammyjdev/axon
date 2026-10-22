@@ -3,7 +3,7 @@
 Recommended mode: `remote-infra`
 
 Windows support goes through WSL2. Run the CLI inside a WSL2 Linux shell and
-keep the heavy services on another machine.
+keep Postgres on another machine.
 
 ## Before you start
 
@@ -14,18 +14,9 @@ Inside WSL2, install these first:
 - `pipx`
 - `curl`
 
-You also need:
-
-- a reachable remote AXON infra host running the `axon-postgres` service
-  (Postgres + pgvector) and, optionally, Ollama (needed only for `ctx=work` or
-  another local-only path)
-- API keys for the active provider profile (default is `budget`):
-  - `GROQ_API_KEY` from <https://console.groq.com/keys>
-  - `NVIDIA_NIM_API_KEY` from <https://build.nvidia.com>
-
-For paid Claude routing, set `AXON_PROVIDER_PROFILE=paid` and provide
-`OPENROUTER_API_KEY` instead of NIM. See
-`docs/decisions/dec-106-routing-profiles.md`.
+You also need a reachable host running the `axon-postgres` service (Postgres
+on port 5433). No provider key is needed: no commit and no MCP tool calls an LLM or an
+embedding provider (dec-138).
 
 ## 1. Open WSL2 and clone the engine
 
@@ -34,7 +25,7 @@ git clone <your-repo-url> ~/dev/axon
 cd ~/dev/axon
 ```
 
-## 2. Point setup to the remote infra host
+## 2. Point setup to the remote host
 
 ```bash
 export AXON_INFRA_HOST=<remote-host-or-ip>
@@ -42,8 +33,9 @@ export AXON_INFRA_HOST=<remote-host-or-ip>
 pipx install --editable .
 ```
 
-In this mode, `setup.sh` writes remote service URLs into `.env.local` and skips
-local Docker startup and local Ollama model pulls.
+In this mode `setup.sh` checks Postgres on `$AXON_INFRA_HOST:5433`, writes
+`.env.local` and skips the local Docker stack. It also probes Ollama on port
+11434 of that host; AXON no longer uses it, so a warning there is harmless.
 
 ## 3. Load the environment
 
@@ -52,12 +44,13 @@ set -a
 source .env.local
 set +a
 
-export AXON_PROVIDER_PROFILE=budget
-export GROQ_API_KEY=<your-groq-key>
-export NVIDIA_NIM_API_KEY=<your-nim-key>
 export AXON_ENGINE="$PWD"
 export AXON_VAULT="$HOME/vault"
 ```
+
+`.env.local` starts from `.env.example`, whose `AXON_PG_URL` points at
+`localhost`. Edit it to the remote host, and set `AXON_LESSONS_PG_URL` the same
+way: lessons live in their own database.
 
 ## 4. Create a small vault
 
@@ -67,26 +60,26 @@ mkdir -p \
   "$AXON_VAULT/personal" \
   "$AXON_VAULT/career"
 
-cat > "$AXON_VAULT/knowledge/first-note.md" <<'EOF'
+cat > "$AXON_VAULT/knowledge/first-note.md" <<'NOTE'
 # AXON
 
-AXON can run locally in WSL2 while retrieval infra lives on another host.
-EOF
+AXON keeps its vault outside the engine repository.
+NOTE
 ```
 
-## 5. Index and ask
+## 5. Initialize a repo and check
 
 ```bash
-pb index "$AXON_VAULT/knowledge" --ctx knowledge
-pb ask "What does this vault contain?"
+axon init /path/to/your-repo
+axon health
 ```
 
-If you get an answer back, the quickstart worked.
+`axon health` should report `postgres: ok`. A commit whose subject starts with
+`decision:` now shows up in `axon status`.
 
 ## Next
 
-- Keep your repo, shell, and vault paths inside WSL2 instead of splitting them
+- Keep your repo, shell and vault paths inside WSL2 instead of splitting them
   across Windows and Linux paths
-- If you do not have a remote host yet, use the `minimal` validation path from
-  [Support matrix](SUPPORT_MATRIX.md) while infra is being prepared
+- Register the MCP server for your agent: see [SETUP](../SETUP.md)
 - See [Vault setup](VAULT_SETUP.md) for the fuller vault layout

@@ -3,8 +3,7 @@
 > Single-page map of what AXON is, what it can do today, the state of every
 > branch, and the development/validation flow. Kept current as a reference for
 > coding agents. Subsystems, CLI, MCP and storage refreshed 2026-10-15 for
-> dec-138 (code vectorization stopped); the Branch state section is stale (see
-> its own note) and needs a fresh curation pass.
+> dec-138 (code vectorization stopped); Branch state curated 2026-10-21.
 
 ## What AXON is
 
@@ -102,18 +101,13 @@ nothing locally.
 
 ## Branch state
 
-**Stale — the 2026-06-26 curation below no longer matches reality.** Every
-branch it tracked (the `feat/axon-local-roles-wiring` and `chore/oss-housekeeping`
-work, the full `agent/issue-27..35` batch) has landed on `master` and no
-longer exists, local or remote. `master` now also carries a fresh, unrelated
-set of branches (`agent/issue-60`, `agent/issue-63`, plus ~10 remote-only
-branches: `chore/retrieval-telemetry-analysis`, `docs/benchmarks-readme-retired`,
-`docs/issue-45-embedder-plan`, `docs/stale-launch-posts`,
-`feat/continuous-accounting`, `feat/honest-usage-wave1`,
-`feat/issue-45-embedder-bge-m3`, `feat/measured-claims-propagation`,
-`feat/session-savings-wave2`, and others) that have not been curated. This
-section needs a fresh `git cherry` pass before it can be trusted again — treat
-it as a to-do, not a status report, until that happens.
+Curated 2026-10-21. `master` is the only branch, local and remote, and has no
+open pull request. The last merges were #226 (dec-138), #228, #229 (`axon why`),
+#227 and #230 (`context.md` built from the repo's recent sessions). Two branches
+that never merged were deleted and kept as tags: `archive/agent/plan-axon-isolation-and-keying`
+(pre-dec-138 keying work; `session_note` is keyed by repo identity on master by
+another route) and `archive/fix/pack-eval-ruler-precision` (a benchmark ruler for
+the retired context pack).
 
 ## Development & validation flow
 

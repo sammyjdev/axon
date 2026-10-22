@@ -22,6 +22,8 @@ OpenRouter fallback, Groq only runs the classifier step, per `src/axon/router/pr
 and fabricated default rate-limit numbers (there are no defaults — `AXON_<PROVIDER>_MAX_RPM/
 RPD` are opt-in and unlimited unless set, per `src/axon/resilience/rate_limiter.py`). Verified
 replacements throughout, or "removed with no replacement" where none exists.
+dec-138 later removed the router, the provider profiles and their keys, so none of
+those docs asks for a provider key any more.
 
 Two one-line source fixes in passing: `src/axon/__main__.py`'s `health` command docstring and
 `scripts/axon-bootstrap.sh`'s comments both still said "Redis" / "2 hooks" — `axon health`
@@ -88,11 +90,11 @@ promises the rollback; the dead flags themselves are still #217.
 | `METRICS.md` | Metrics manifest with source/command | current, actively maintained (through 2026-08-07) — golden-corpus file, do not move without re-measuring |
 | `MIGRATION_LOGGING.md` | stdlib→structlog logging plan | stale — target module exists but plan detail unverified; needs a read, not a move |
 | `P3_EXTENSION_DOCS.md` | Docs for the P3 extension surfaces | current — all cited modules confirmed present |
-| `PROFILES.md` | Operation profiles vs. provider profiles | current — matches dec-106/dec-128 |
-| `PROJECT_OVERVIEW.md` | Single-page map of the engine | current, global entry point (see intro above), but its own "Branch state" section is self-flagged stale (last touched 2026-07-09, ~2.5 months and PRs #206-#215 behind) |
+| `PROFILES.md` | Operating-mode profiles in `axon.toml` | current - provider profiles removed with dec-138 (2026-10-21) |
+| `PROJECT_OVERVIEW.md` | Single-page map of the engine | current, global entry point (see intro above), Branch state curated 2026-10-21 |
 | `QUICKSTART_LINUX.md` | Linux setup | current — rewritten in this pass (dead `pb` commands, wrong provider-profile keys) |
 | `QUICKSTART_MACOS.md` | macOS setup | current — rewritten in this pass (same defects as Linux) |
-| `QUICKSTART_WINDOWS_WSL2.md` | Windows/WSL2 setup | current - the remote infra host now needs only `axon-postgres` (+ optional Ollama) |
+| `QUICKSTART_WINDOWS_WSL2.md` | Windows/WSL2 setup | current - rewritten 2026-10-21 for dec-138: the remote host needs only `axon-postgres` |
 | `ROADMAP.md` | Product roadmap (state as of 2026-06-20) | stale — self-declared active but 3+ months behind, not clearly finished so not archived |
 | `SUPPORT_MATRIX.md` | Support matrix by mode/platform | current — rewritten in this pass (dead `pb` commands, wrong provider-profile keys, fabricated rate-limit defaults) |
 | `TIL_AUTOMATION.md` | TIL automation | current (one incidental "qdrant" tag example, not an architecture claim) |
