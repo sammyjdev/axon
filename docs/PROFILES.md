@@ -2,11 +2,9 @@
 
 > **Disambiguation.** This document describes **operating-mode profiles**
 > (`solo-dev`, `team-dev`, `privacy-first`) stored in `axon.toml`.
-> These are different from **provider profiles** (`budget` and `paid`) selected
-> via `AXON_PROVIDER_PROFILE`, which choose the LLM provider mapping
-> (DeepInfra + OpenRouter Llama vs. OpenRouter Claude).
-> See [`dec-106`](decisions/dec-106-routing-profiles.md) for provider profiles, superseded in
-> part by [`dec-128`](decisions/dec-128-budget-profile-model-substitution.md).
+> The **provider profiles** (`budget`, `paid`, `AXON_PROVIDER_PROFILE`) of
+> [`dec-106`](decisions/dec-106-routing-profiles.md) went with the router in dec-138: AXON
+> calls no LLM, so no provider is chosen.
 
 Profiles are named setup presets stored in `axon.toml`.
 
@@ -54,11 +52,11 @@ Supported profile keys today:
 | Key | Meaning | Current behavior |
 | --- | --- | --- |
 | `description` | short human label | shown in profile listings and export |
-| `mode` | operating shape: `full-local`, `hybrid-local`, `remote-infra`, `minimal` | applied by `pb profile use` and `pb configure` |
-| `cloud_policy` | whether cloud assistance is acceptable | stored, exported, shown in `pb profile show`, and used by capability selection |
-| `infra_strategy` | whether heavier services should be local or remote | stored, exported, shown in `pb profile show`, and used by capability selection |
-| `memory_tier` | lighter vs fuller memory footprint | stored, exported, shown in `pb profile show`, and used by capability selection |
-| `enabled_features` | named capabilities you intend to keep visible | stored, exported, shown in `pb profile show`, and folded into capability selection |
+| `mode` | operating shape: `full-local`, `hybrid-local`, `remote-infra`, `minimal` | applied by `axon profile use` and `axon configure` |
+| `cloud_policy` | whether cloud assistance is acceptable | stored, exported, shown in `axon profile show`, and used by capability selection |
+| `infra_strategy` | whether heavier services should be local or remote | stored, exported, shown in `axon profile show`, and used by capability selection |
+| `memory_tier` | lighter vs fuller memory footprint | stored, exported, shown in `axon profile show`, and used by capability selection |
+| `enabled_features` | named capabilities you intend to keep visible | stored, exported, shown in `axon profile show`, and folded into capability selection |
 
 Example:
 
@@ -97,13 +95,13 @@ stop services, rewrite compose files, or toggle retrieval subsystems directly.
 
 ## How Profiles Fit The CLI
 
-### `pb configure`
+### `axon configure`
 
-`pb configure` recommends and applies a profile based on a few product-facing
+`axon configure` recommends and applies a profile based on a few product-facing
 inputs:
 
 ```bash
-pb configure \
+axon configure \
   --use-case solo|team|corporate \
   --privacy public|internal|confidential|restricted \
   --hardware cpu-only|mac-laptop|nvidia|linux-workstation
@@ -122,7 +120,7 @@ What it does today:
 2. Applies that profile immediately.
 3. Writes the chosen profile back into `axon.toml`.
 
-When any of the core fields are omitted, `pb configure` falls back to a concise
+When any of the core fields are omitted, `axon configure` falls back to a concise
 interactive flow using the same logic in question form:
 
 1. Ask what kind of work you are doing: solo, team, or more restricted/corporate.
@@ -143,7 +141,7 @@ inputs.
 
 The practical mapping today is:
 
-| If the user signals... | `pb configure` tends to recommend... | Why |
+| If the user signals... | `axon configure` tends to recommend... | Why |
 | --- | --- | --- |
 | restricted or confidential data | `privacy-first` + `minimal` | smallest supported shape, least operational sprawl |
 | a shared or corporate setup | `team-dev` + `remote-infra` | move heavier infra off the laptop |
@@ -157,12 +155,12 @@ What is not implemented yet:
 - service provisioning changes driven directly from profile metadata
 - a richer custom profile wizard beyond the current prompt-and-flags flow
 
-### `pb profile list`
+### `axon profile list`
 
 Shows the profiles defined in `axon.toml` and marks the active one.
 
 ```bash
-pb profile list
+axon profile list
 ```
 
 Expected shape:
@@ -173,33 +171,33 @@ Expected shape:
 - privacy-first | mode=minimal | Prefer local or remote self-hosted paths
 ```
 
-### `pb profile show`
+### `axon profile show`
 
 Shows the active profile in detail.
 
 ```bash
-pb profile show
+axon profile show
 ```
 
 Today this prints the core fields, optional structured metadata, and the
 selected/overkill capabilities inferred from that profile.
 
-### `pb profile use`
+### `axon profile use`
 
 Switches to an existing profile and syncs runtime mode.
 
 ```bash
-pb profile use team-dev
+axon profile use team-dev
 ```
 
 Use this when you already know which mode you want.
 
-### `pb profile create`
+### `axon profile create`
 
 Creates a new profile entry in `axon.toml`.
 
 ```bash
-pb profile create support-lite \
+axon profile create support-lite \
   --description "Support workflow on lighter hardware" \
   --mode minimal \
   --cloud-policy deny \
@@ -216,18 +214,18 @@ Supported modes are:
 - `minimal`
 
 This command only writes a profile entry. It does not activate it unless you
-follow with `pb profile use`.
+follow with `axon profile use`.
 
 The CLI variant of `create` can now write all supported structured fields. You
 can still edit `axon.toml` directly when you want more control, then use
-`pb profile export` to verify the resulting shape.
+`axon profile export` to verify the resulting shape.
 
-### `pb profile export`
+### `axon profile export`
 
 Prints a profile as a TOML snippet.
 
 ```bash
-pb profile export team-dev
+axon profile export team-dev
 ```
 
 Use it when you want to:
@@ -243,10 +241,10 @@ Use this when AXON is already installed and you want to confirm the
 active operating shape.
 
 ```bash
-pb profile list
-pb profile show
-pb profile use privacy-first
-pb profile show
+axon profile list
+axon profile show
+axon profile use privacy-first
+axon profile show
 ```
 
 Result: the active profile becomes `privacy-first`, the runtime mode becomes
@@ -255,7 +253,7 @@ Result: the active profile becomes `privacy-first`, the runtime mode becomes
 ### 2. Let AXON recommend a profile for a shared team setup
 
 ```bash
-pb configure \
+axon configure \
   --use-case team \
   --privacy internal \
   --hardware nvidia
@@ -271,7 +269,7 @@ better hosted on a shared machine.
 
 ### 2b. The same setup through the interactive flow
 
-This is the decision sequence the guided `pb configure` flow now represents:
+This is the decision sequence the guided `axon configure` flow now represents:
 
 1. "Is this mainly solo or team work?" -> team
 2. "How sensitive is the data?" -> internal
@@ -285,12 +283,12 @@ fit, not just what the CLI selected.
 ### 3. Create a custom full-local profile for a stronger Linux box
 
 ```bash
-pb profile create workstation \
+axon profile create workstation \
   --description "Single-machine workstation setup" \
   --mode full-local
 
-pb profile use workstation
-pb profile export workstation
+axon profile use workstation
+axon profile export workstation
 ```
 
 Use this when the built-in profiles are close but not exact and you want a
@@ -300,41 +298,17 @@ named preset for a machine that can comfortably run the full stack locally.
 
 For most users, the shortest path is:
 
-1. Run `pb configure` to get an initial recommendation.
-2. Verify with `pb profile show`.
-3. Switch later with `pb profile use` if your setup changes.
-4. Add a custom profile with `pb profile create` when the built-ins are not enough.
-5. Add optional profile metadata through `pb profile create` or directly in `axon.toml` when you need a custom setup shape.
+1. Run `axon configure` to get an initial recommendation.
+2. Verify with `axon profile show`.
+3. Switch later with `axon profile use` if your setup changes.
+4. Add a custom profile with `axon profile create` when the built-ins are not enough.
+5. Add optional profile metadata through `axon profile create` or directly in `axon.toml` when you need a custom setup shape.
 
 For broader environment guidance, see [Support matrix](SUPPORT_MATRIX.md).
 
-## ADR Inference Model (dec-110/111)
+## ADR capture (dec-110, dec-138)
 
-`pb adr infer-commit` and the post-commit hook resolve the classifier
-model dynamically:
-
-1. `AXON_ADR_MODEL` env var (explicit override) — highest precedence
-2. Active provider profile's `classifier_model` — Groq by default in
-   both BUDGET and PAID (classification is cheap)
-
-### Avoiding paid APIs entirely
-
-The default classifier needs `GROQ_API_KEY`. If you prefer to run ADR inference on the
-same DeepInfra 70B the budget profile uses for architecture tasks:
-
-```bash
-export DEEPINFRA_API_KEY=...
-export AXON_ADR_MODEL=deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo
-```
-
-For a local-only path (no cloud at all), enable Ollama (dec-106 opt-in)
-and point the model at a local one:
-
-```bash
-export AXON_PROVIDER_OLLAMA=1
-export AXON_ADR_MODEL=ollama/gemma4:e4b   # or phi3:mini
-```
-
-The dec-110 signal gate still applies — only commits with `arch:` /
-`decision:` / `ADR-Decision:` trigger a model call regardless of which
-backend you choose.
+A commit whose subject starts with `arch:` or `decision:`, or that carries an
+`ADR-Decision:` trailer, becomes a draft decision through the post-commit hook.
+No model runs: dec-138 removed `pb adr infer-commit` and the classifier, so
+`AXON_ADR_MODEL` and the provider keys it used are not read.
