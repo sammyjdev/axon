@@ -22,7 +22,9 @@ make, the lessons from mistakes, a digest of each session and the activity
 history of Claude Code, Codex and agy. It does not index or embed code - agents
 read code with their own tools, and AXON holds what the code cannot say
 ([dec-138](docs/decisions/dec-138-stop-code-vectors.md)). No commit and no MCP
-tool calls an LLM, so AXON needs no provider key.
+tool calls an LLM. The one LLM call left is the optional vault hook
+(`vault/til_promoter`), which sends TILs through `litellm` to a local Ollama
+model, so `litellm` stays a dependency and that hook needs Ollama running.
 
 ---
 

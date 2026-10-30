@@ -58,6 +58,14 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
     ]
 
 
+def run_privacy_checks() -> list[CheckResult]:
+    """Warn when a privacy gate's variable is unset. Advisory: kept out of
+    ``run_all_checks`` so an unset variable never changes the exit code."""
+    from axon.doctor.checks.privacy_gates import check_restricted_root, check_work_projects
+
+    return [check_restricted_root(), check_work_projects()]
+
+
 def max_severity(results: list[CheckResult]) -> CheckStatus:
     """Return the worst status across results, ordered OK < WARN < FAIL."""
     order = {CheckStatus.OK: 0, CheckStatus.WARN: 1, CheckStatus.FAIL: 2}
@@ -66,4 +74,10 @@ def max_severity(results: list[CheckResult]) -> CheckStatus:
     return max(results, key=lambda r: order[r.status]).status
 
 
-__all__ = ["CheckResult", "CheckStatus", "max_severity", "run_all_checks"]
+__all__ = [
+    "CheckResult",
+    "CheckStatus",
+    "max_severity",
+    "run_all_checks",
+    "run_privacy_checks",
+]

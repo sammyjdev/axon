@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 import typer
 
-from axon.config.runtime import load_runtime_config
+from axon.config.runtime import load_runtime_config, work_projects
 from axon.context.registry import VALID_CONTEXTS
 
 app = typer.Typer(
@@ -167,10 +167,10 @@ def doctor(
             raise typer.Exit(1)
 
     if ci:
-        from axon.doctor import run_all_checks
+        from axon.doctor import run_all_checks, run_privacy_checks
         from axon.doctor.formatters.json import format_results as json_format
 
-        results = run_all_checks()
+        results = run_all_checks() + run_privacy_checks()
         typer.echo(json_format(results))
         raise typer.Exit(0)
 
@@ -227,12 +227,15 @@ def doctor(
         typer.echo(f"- overkill: {', '.join(capability_selection.overkill_features) or '(none)'}")
 
     # dec-114 capture/toolchain checks
-    from axon.doctor import CheckStatus, max_severity, run_all_checks
+    from axon.doctor import CheckStatus, max_severity, run_all_checks, run_privacy_checks
     from axon.doctor.formatters.human import format_results as human_format
 
     results = run_all_checks()
     typer.echo("\ncapture checks (dec-114):")
     typer.echo(human_format(results))
+    # Advisory: shown, but left out of the exit code below.
+    typer.echo("\nprivacy gates:")
+    typer.echo(human_format(run_privacy_checks()))
 
     # presence + liveness (merged from the former axon.__main__ doctor)
     from datetime import UTC, datetime, timedelta
@@ -852,8 +855,9 @@ def adr_sync(
     # A pasta do vault decide o ctx: `infer_ctx_from_path` classifica pelo primeiro
     # componente do path relativo ao vault. Cravar "personal" mandava o ADR de um
     # projeto `work` para vault/personal/adrs/, onde a indexação o trata como
-    # pessoal e ele passa a aparecer em busca sem ctx. Fora do manifesto, mantém o
-    # destino anterior.
+    # pessoal e ele passa a aparecer em busca sem ctx. AXON_WORK_PROJECTS manda
+    # para work/ com ou sem manifesto (o manifesto saiu com o índice, dec-138).
+    # Fora dos dois, mantém o destino anterior.
     #
     # Lê o JSON direto, e não `load_project_manifest`: o loader exige que TODO path
     # do manifesto exista no disco e falha inteiro quando um projeto foi movido —
@@ -872,6 +876,8 @@ def adr_sync(
         except Exception:  # noqa: S110
             pass
 
+    work = work_projects()
+
     async def _sync() -> None:
         db = _get_db_path()
         store = SessionStore(db)
@@ -888,7 +894,8 @@ def adr_sync(
 
         synced = 0
         for proj in projects_to_sync:
-            adrs_dir = vault_root / ctx_by_project.get(proj, "personal") / "adrs"
+            ctx = "work" if proj.lower() in work else ctx_by_project.get(proj, "personal")
+            adrs_dir = vault_root / ctx / "adrs"
             adrs_dir.mkdir(parents=True, exist_ok=True)
             adrs = await store.get_adrs(proj, limit=100)
             lines = [f"# ADRs — {proj}\n\n_Last synced: {datetime.date.today().isoformat()}_\n"]
@@ -1226,6 +1233,13 @@ def activity_run(
 
     prompt_str = " ".join(prompt)
 
+    from axon.activity.importer import is_restricted
+
+    # Same gate as the Claude Code and Codex importers: nothing from the
+    # restricted tree is run or stored.
+    if is_restricted(str(workspace)):
+        typer.echo(json.dumps({"skipped": "restricted cwd"}))
+        return
 
     from axon.activity.adapters.agy import build_agy_session
     from axon.activity.agy_runner import run_agy
