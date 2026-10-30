@@ -297,18 +297,41 @@ async def test_a_tool_result_appended_later_keeps_the_turn_of_its_call(repo, tmp
     assert turn == "turn-1"
 
 
-def test_the_restricted_tree_comes_from_the_environment(monkeypatch, tmp_path):
+@pytest.fixture
+def _reload_importer_afterwards():
+    # Requested before monkeypatch, so this runs once the environment is restored.
+    yield
+    importlib.reload(importer)
+
+
+def test_the_restricted_tree_comes_from_the_environment(
+    _reload_importer_afterwards, monkeypatch, tmp_path
+):
     monkeypatch.setenv("AXON_RESTRICTED_ROOT", str(tmp_path / "employer"))
-    try:
-        importlib.reload(importer)
-        assert importer.is_restricted(str(tmp_path / "employer" / "repo")) is True
-        assert importer.is_restricted(str(tmp_path / "other" / "repo")) is False
-    finally:
-        monkeypatch.delenv("AXON_RESTRICTED_ROOT")
-        importlib.reload(importer)
+    importlib.reload(importer)
+    assert importer.is_restricted(str(tmp_path / "employer" / "repo")) is True
+    assert importer.is_restricted(str(tmp_path / "other" / "repo")) is False
 
 
-def test_without_the_variable_the_default_tree_is_restricted(monkeypatch):
+def test_a_tilde_in_the_variable_means_the_home_directory(
+    _reload_importer_afterwards, monkeypatch
+):
+    monkeypatch.setenv("AXON_RESTRICTED_ROOT", "~/employer")
+    importlib.reload(importer)
+    assert importer.is_restricted(str(Path.home() / "employer" / "repo")) is True
+
+
+def test_without_the_variable_the_default_tree_is_restricted(
+    _reload_importer_afterwards, monkeypatch
+):
     monkeypatch.delenv("AXON_RESTRICTED_ROOT", raising=False)
+    importlib.reload(importer)
+    assert importer.is_restricted("~/dev/client-a/repo") is True
+
+
+def test_an_empty_variable_keeps_the_default_tree_restricted(
+    _reload_importer_afterwards, monkeypatch
+):
+    monkeypatch.setenv("AXON_RESTRICTED_ROOT", "")
     importlib.reload(importer)
     assert importer.is_restricted("~/dev/client-a/repo") is True
