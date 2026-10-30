@@ -202,7 +202,7 @@ Postgres full-text search. Measured on 2026-10-15 over the 41 real lessons:
 The `embeddings` table held 578 MB of a 610 MB database. dec-138 removes it, and
 with it the need for a provider key and a pgvector image.
 
-Test suite: 1,500 passed, 3 skipped (CI, 2026-10-30).
+Test suite: 1,517 passed, 3 skipped (CI, 2026-10-30).
 
 ### Historical: token savings from code search
 
