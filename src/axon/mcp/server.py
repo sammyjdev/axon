@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -131,6 +132,23 @@ async def get_session_memory(
     return _truncate("\n".join(lines), budget)
 
 
+def _work_projects() -> set[str]:
+    """Projects the local, gitignored manifest marks ctx='work'. Their names stay
+    out of this public repo. Reads the JSON directly for the reason given in
+    `axon adr sync`: one moved project must not empty the map."""
+    try:
+        raw = json.loads(
+            (_RUNTIME.engine_root / "config" / "projects.json").read_text(encoding="utf-8")
+        )
+        return {
+            str(p["name"]).lower()
+            for p in raw.get("projects", [])
+            if p.get("name") and p.get("ctx") == "work"
+        }
+    except (OSError, ValueError, AttributeError, TypeError):
+        return set()
+
+
 @mcp.tool()
 @traced_tool(risk="read")
 async def get_adrs(
@@ -142,8 +160,7 @@ async def get_adrs(
     Retorna ADRs de um projeto.
     Projetos de work só acessíveis com ctx='work'.
     """
-    _WORK_PROJECTS = {"avangrid"}
-    if project.lower() in _WORK_PROJECTS and ctx != "work":
+    if project.lower() in _work_projects() and ctx != "work":
         return "Contexto de trabalho requer ctx='work' explícito."
 
     store = _get_session_store()

@@ -412,7 +412,7 @@ def test_query_is_never_recorded_for_work(data_root: Path) -> None:
     from axon.mcp import server
 
     server._record_chunk_recall(
-        query="segredo do cliente avangrid",
+        query="segredo do cliente client-a",
         strategy_name="balanced",
         requested_max_tokens=4000,
         hits=[{"payload": {"content": "x", "file_path": "a.py"}, "score": 0.5}],
@@ -421,7 +421,7 @@ def test_query_is_never_recorded_for_work(data_root: Path) -> None:
     rows = _chunks_written(data_root)
     assert rows, "the record must still be written - only the query is withheld"
     assert rows[0]["query"] is None
-    assert "avangrid" not in json.dumps(rows[0]).lower()
+    assert "client-a" not in json.dumps(rows[0]).lower()
 
 
 def test_query_hash_is_still_recorded_for_work(data_root: Path) -> None:
@@ -429,7 +429,7 @@ def test_query_hash_is_still_recorded_for_work(data_root: Path) -> None:
     from axon.mcp import server
 
     server._record_chunk_recall(
-        query="segredo do cliente avangrid",
+        query="segredo do cliente client-a",
         strategy_name="balanced",
         requested_max_tokens=4000,
         hits=[{"payload": {"content": "x", "file_path": "a.py"}, "score": 0.5}],

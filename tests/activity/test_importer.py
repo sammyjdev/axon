@@ -1,5 +1,6 @@
 """Acceptance: transcripts become stored sessions and events (phase B)."""
 
+import importlib
 import json
 import os
 from pathlib import Path
@@ -133,7 +134,7 @@ async def test_a_claude_subagent_transcript_is_its_own_session_under_its_parent(
 async def test_a_transcript_under_the_restricted_tree_is_skipped_unread(
     repo, tmp_path: Path, monkeypatch
 ):
-    restricted = tmp_path / "afya"
+    restricted = tmp_path / "client-a"
     (restricted / "x").mkdir(parents=True)
     monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
     path = tmp_path / "s.jsonl"
@@ -208,7 +209,7 @@ async def test_a_claude_line_with_null_content_still_has_role_text_and_injected(
 async def test_a_rollout_that_moves_into_the_restricted_tree_is_skipped(
     repo, tmp_path: Path, monkeypatch
 ):
-    restricted = tmp_path / "afya"
+    restricted = tmp_path / "client-a"
     restricted.mkdir()
     monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
     path = tmp_path / "r.jsonl"
@@ -224,7 +225,7 @@ async def test_a_rollout_that_moves_into_the_restricted_tree_is_skipped(
 async def test_a_dotted_path_into_the_restricted_tree_is_still_skipped(
     repo, tmp_path: Path, monkeypatch
 ):
-    restricted = tmp_path / "afya"
+    restricted = tmp_path / "client-a"
     (tmp_path / "other").mkdir()
     restricted.mkdir()
     monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
@@ -232,7 +233,7 @@ async def test_a_dotted_path_into_the_restricted_tree_is_still_skipped(
     path.write_text(
         _codex_lines()
         + json.dumps({"type": "turn_context",
-                      "payload": {"cwd": str(tmp_path / "other" / ".." / "afya")}}) + "\n"
+                      "payload": {"cwd": str(tmp_path / "other" / ".." / "client-a")}}) + "\n"
     )
     assert (await import_transcript(path, repo)).skipped == "restricted cwd"
 
@@ -240,11 +241,11 @@ async def test_a_dotted_path_into_the_restricted_tree_is_still_skipped(
 async def test_a_unicode_escaped_or_symlinked_restricted_cwd_is_still_skipped(
     repo, tmp_path: Path, monkeypatch
 ):
-    restricted = tmp_path / "afya"
+    restricted = tmp_path / "client-a"
     restricted.mkdir()
     (tmp_path / "alias").symlink_to(restricted)
     monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
-    escaped = str(restricted).replace("afya", "\\u0061fya")
+    escaped = str(restricted).replace("client-a", "\\u0063lient-a")
     for cwd_json in (f'"{escaped}"', json.dumps(str(tmp_path / "alias"))):
         path = tmp_path / "r.jsonl"
         path.write_text(
@@ -255,14 +256,14 @@ async def test_a_unicode_escaped_or_symlinked_restricted_cwd_is_still_skipped(
 
 def test_a_tilde_cwd_under_the_restricted_tree_is_restricted(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(importer, "RESTRICTED_ROOT", tmp_path / "dev" / "afya")
-    assert importer.is_restricted("~/dev/afya/repo") is True
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", tmp_path / "dev" / "client-a")
+    assert importer.is_restricted("~/dev/client-a/repo") is True
 
 
 async def test_an_escaped_cwd_key_into_the_restricted_tree_is_still_skipped(
     repo, tmp_path: Path, monkeypatch
 ):
-    restricted = tmp_path / "afya"
+    restricted = tmp_path / "client-a"
     restricted.mkdir()
     monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
     path = tmp_path / "r.jsonl"
@@ -294,3 +295,20 @@ async def test_a_tool_result_appended_later_keeps_the_turn_of_its_call(repo, tmp
     async with (await repo._ensure_pool()).acquire() as con:
         turn = await con.fetchval("SELECT turn_id FROM activity_events WHERE kind='tool_result'")
     assert turn == "turn-1"
+
+
+def test_the_restricted_tree_comes_from_the_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("AXON_RESTRICTED_ROOT", str(tmp_path / "employer"))
+    try:
+        importlib.reload(importer)
+        assert importer.is_restricted(str(tmp_path / "employer" / "repo")) is True
+        assert importer.is_restricted(str(tmp_path / "other" / "repo")) is False
+    finally:
+        monkeypatch.delenv("AXON_RESTRICTED_ROOT")
+        importlib.reload(importer)
+
+
+def test_without_the_variable_the_default_tree_is_restricted(monkeypatch):
+    monkeypatch.delenv("AXON_RESTRICTED_ROOT", raising=False)
+    importlib.reload(importer)
+    assert importer.is_restricted("~/dev/client-a/repo") is True

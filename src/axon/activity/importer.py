@@ -10,6 +10,7 @@ import reads from the same offset - the transcript itself is the spool.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -21,7 +22,9 @@ from axon.activity.repository import PostgresActivityRepository
 Harness = Literal["claude-code", "codex"]
 
 # Off-limits tree (employer work): a session there is skipped on its cwd alone.
-RESTRICTED_ROOT = Path.home() / "dev" / "afya"
+RESTRICTED_ROOT = Path(
+    os.environ.get("AXON_RESTRICTED_ROOT") or Path.home() / "dev" / "client-a"
+).expanduser()
 _SNIFF_LINES = 200
 
 
