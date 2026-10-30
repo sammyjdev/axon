@@ -1,10 +1,8 @@
-"""get_adrs keeps work projects behind ctx='work', named only by the local manifest."""
+"""get_adrs keeps work projects behind ctx='work', named only by the environment."""
 
 from __future__ import annotations
 
-import types
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
@@ -30,19 +28,15 @@ class _FakeStore:
         ]
 
 
-def _engine_with_manifest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, text: str) -> None:
-    (tmp_path / "config").mkdir()
-    (tmp_path / "config" / "projects.json").write_text(text, encoding="utf-8")
-    monkeypatch.setattr(server, "_RUNTIME", types.SimpleNamespace(engine_root=tmp_path))
+@pytest.fixture(autouse=True)
+def _fake_store(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(server, "_get_session_store", lambda: _FakeStore())
 
 
 async def test_a_work_project_is_refused_without_the_work_ctx(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _engine_with_manifest(
-        monkeypatch, tmp_path, '{"projects": [{"name": "Client-A", "ctx": "work"}]}'
-    )
+    monkeypatch.setenv("AXON_WORK_PROJECTS", "other, Client-A")
 
     result = await server.get_adrs(project="client-a")
 
@@ -50,33 +44,27 @@ async def test_a_work_project_is_refused_without_the_work_ctx(
 
 
 async def test_a_work_project_is_readable_with_the_work_ctx(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _engine_with_manifest(
-        monkeypatch, tmp_path, '{"projects": [{"name": "Client-A", "ctx": "work"}]}'
-    )
+    monkeypatch.setenv("AXON_WORK_PROJECTS", "client-a")
 
     result = await server.get_adrs(project="client-a", ctx="work")
 
     assert "### Private ADR" in result
 
 
-async def test_a_personal_project_needs_no_ctx(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _engine_with_manifest(
-        monkeypatch, tmp_path, '{"projects": [{"name": "axon", "ctx": "personal"}]}'
-    )
+async def test_a_project_not_listed_needs_no_ctx(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AXON_WORK_PROJECTS", "client-a")
 
     result = await server.get_adrs(project="axon")
 
     assert "### Private ADR" in result
 
 
-async def test_an_unreadable_manifest_does_not_break_the_tool(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+async def test_without_the_variable_no_project_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _engine_with_manifest(monkeypatch, tmp_path, "{ not json")
+    monkeypatch.delenv("AXON_WORK_PROJECTS", raising=False)
 
     result = await server.get_adrs(project="axon")
 
