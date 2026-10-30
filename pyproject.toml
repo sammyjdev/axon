@@ -38,8 +38,6 @@ classifiers = [
 # Raising a ceiling is a normal change - bump it, let the full-suite CI job run,
 # and keep it if green.
 dependencies = [
-    # Only the vault hook (vault/til_promoter) still calls an LLM.
-    "litellm>=1.40.0,<2",
     # Migrated to 2.x on 2026-08-07 (DEBT-2). 2.0 dropped `mcp.server.fastmcp`
     # for `mcp.server.mcpserver.MCPServer`; the decorator API is unchanged, so
     # the move was one import. Validated before committing, A/B against 1.29.0
