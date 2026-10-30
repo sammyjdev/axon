@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -133,20 +132,10 @@ async def get_session_memory(
 
 
 def _work_projects() -> set[str]:
-    """Projects the local, gitignored manifest marks ctx='work'. Their names stay
-    out of this public repo. Reads the JSON directly for the reason given in
-    `axon adr sync`: one moved project must not empty the map."""
-    try:
-        raw = json.loads(
-            (_RUNTIME.engine_root / "config" / "projects.json").read_text(encoding="utf-8")
-        )
-        return {
-            str(p["name"]).lower()
-            for p in raw.get("projects", [])
-            if p.get("name") and p.get("ctx") == "work"
-        }
-    except (OSError, ValueError, AttributeError, TypeError):
-        return set()
+    """Projects in AXON_WORK_PROJECTS (comma-separated). Their names stay out of
+    this public repo."""
+    names = os.environ.get("AXON_WORK_PROJECTS", "").split(",")
+    return {name.strip().lower() for name in names if name.strip()}
 
 
 @mcp.tool()
