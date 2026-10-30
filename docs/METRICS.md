@@ -4,10 +4,11 @@ Date computed: 2026-06-08 (storage rows recomputed 2026-07-09 after dec-121
 retired SQLite/Qdrant/Redis/mem0 in favor of Postgres+pgvector; test suite and
 decision-record count recomputed 2026-10-30)
 
-Source of truth: code and committed data files. Every figure below was recomputed
-from the live repo and traces to a command output or a committed file. No figure
-is invented, estimated, or marketing rounded. Benchmark (deterministic model) and
-telemetry (measured over representative context windows) are reported separately and never blended.
+Source of truth: code and committed data files. Each figure was recomputed on its
+listed date and traces to a command output or a committed file; for retired
+subsystems the code that produced it is in the git history. No figure is invented,
+estimated, or marketing rounded. Benchmark (deterministic model) and measured
+figures are reported separately and never blended.
 Savings claims name their counterfactual per gnomon-eval ADR-0011.
 
 ## Status after dec-138
@@ -26,9 +27,9 @@ this manifest used to report was removed; it stays in the git history.
 | Token reduction (deterministic benchmark) | 52.3% (RETIRED: deterministic projection; superseded by the measured session harness, gnomon-eval ADR-0010) | benchmarks/model.py | deterministic cost model: baseline 87000 vs AXON 41500 input tokens | 20 turns | 2026-06-08 |
 | Faithfulness uplift (recall A/B) | 0.40-0.52 -> 0.72-0.76 (95% CI per run) | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | GNOMON A/B, judge llama3.1:8b x8, seed 42, 3x on + 2x off replicates | 17 cases | 2026-07-02 |
 | Recall input cost | +2,151 prompt tokens/turn | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | paired on/off telemetry, usage_source=provider | 17 cases | 2026-07-02 |
-| Faithfulness, current stack (on-arm) | 0.775 [0.735, 0.814] | gnomon-eval results/wave3/rung3c-hybrid.json | post retrieval ladder: index hygiene + skeleton suppression + hybrid lexical (AXON_HYBRID_SEARCH=1); single run | 17 cases | 2026-07-04 |
+| Faithfulness, last code-search stack (on-arm) | 0.775 [0.735, 0.814] | gnomon-eval results/wave3/rung3c-hybrid.json | post retrieval ladder: index hygiene + skeleton suppression + hybrid lexical (AXON_HYBRID_SEARCH=1); single run | 17 cases | 2026-07-04 |
 | Session cost vs transcript (10 turns) | parity: pooled +4.0% savings, crossover turn 6-9 | gnomon-eval results/wave3/t12-session-3c-budget500.json + t12-b500-replicate{1,2}.json | dual-arm session harness, recall budget 500, 3 runs mutually within CIs, quality gate pass, 1200/1200 provider records | 10 sessions x 10 turns | 2026-07-04 |
-| Real-usage savings vs full-file reads | HISTORICAL: 90.7% (SUPERSEDED by the committed snapshot below; validated in hindsight - the recoverable subset of its window reproduces at 90.5% under the declared remaps) | axon scripts/recall_savings_report.py | per-chunk telemetry counterfactual: unique source files read in full | 100 requests | 2026-07-04 |
+| Real-usage savings vs full-file reads | HISTORICAL: 90.7% (SUPERSEDED by the committed snapshot below; validated in hindsight - the recoverable subset of its window reproduces at 90.5% under the declared remaps) | axon scripts/recall_savings_report.py (removed by dec-138) | per-chunk telemetry counterfactual: unique source files read in full | 100 requests | 2026-07-04 |
 | Real-usage savings vs full-file reads (committed snapshot) | HISTORICAL, code search retired in dec-138: 90.7% exact-count (330,590 vs 3,537,838 tokens, n=333); 88.6% conservative floor over all n=448 | benchmarks/recall_savings_snapshot.jsonl (the report script was removed by dec-138; sum the rows with missing_files=0) | whitelisted per-request snapshot (opaque ids, integer counts); directory moves declared in benchmarks/recall_savings_remap.json; exact = requests whose files all resolve; floor includes undercounted counterfactuals. Supersedes the 2026-07-28 cut (89.5% exact / n=271): five further declared moves resolved 62 more requests, each remap validated at 100% file-resolution before inclusion | 333 exact / 448 total | 2026-08-07 |
 | Baseline input tokens (benchmark) | 87000 | benchmarks/model.py | session_total mode=baseline | 20 turns | 2026-06-08 |
 | AXON input tokens (benchmark) | 41500 | benchmarks/model.py | session_total mode=axon | 20 turns | 2026-06-08 |
@@ -37,7 +38,7 @@ this manifest used to report was removed; it stays in the git history.
 | Decision records | 37 | docs/decisions/ | count of dec-*.md, dec-100 to dec-138 | 37 | 2026-10-30 |
 | Chunks ingested (storage) | RETIRED metric | n/a | Qdrant was the source for this metric; retired by dec-121 (Postgres+pgvector). No replacement metric computed yet | n/a | 2026-07-09 |
 | Collections (storage) | RETIRED metric | n/a | same as above — Qdrant collections no longer exist in the runtime | n/a | 2026-07-09 |
-| Retrieval or end-to-end latency | NOT AVAILABLE | data/trace/records.jsonl | no duration field; ts deltas across stages yield p50 0.001s, which is logging time, not measured latency | n/a | 2026-06-08 |
+| Retrieval or end-to-end latency | NOT AVAILABLE | data/trace/records.jsonl (local, not committed) | no duration field; ts deltas across stages yield p50 0.001s, which is logging time, not measured latency | n/a | 2026-06-08 |
 
 ## Benchmark assumptions (deterministic model)
 
@@ -53,8 +54,8 @@ or measure real token consumption (see benchmarks/README.md caveats).
 
 ## Storage note
 
-Qdrant was retired by dec-121 (2026-06-29): storage is now a single Postgres
-instance with pgvector for embeddings. The "chunks ingested" / "collections"
+Qdrant was retired by dec-121 (2026-06-29): storage is a single Postgres
+instance, without pgvector since dec-138. The "chunks ingested" / "collections"
 runtime metrics this section used to report against live Qdrant no longer
 apply and have not been replaced with a Postgres-native equivalent yet.
 
