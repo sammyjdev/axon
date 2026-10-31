@@ -564,3 +564,10 @@ def is_corporate_context(ctx: str | None) -> bool:
     if not ctx:
         return False
     return ctx.strip().lower() in _WORK_CONTEXTS
+
+
+def work_projects() -> set[str]:
+    """Projects in AXON_WORK_PROJECTS (comma-separated), lowercased. Their names
+    stay out of this public repo."""
+    names = os.environ.get("AXON_WORK_PROJECTS", "").split(",")
+    return {name.strip().lower() for name in names if name.strip()}

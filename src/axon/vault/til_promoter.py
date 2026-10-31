@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import json
 import re
+import urllib.request
 from datetime import date
 from pathlib import Path
-
-import litellm
 
 from axon.config.runtime import load_runtime_config
 
 _RUNTIME = load_runtime_config()
 KNOWLEDGE_PATH = _RUNTIME.vault_context_root("knowledge")
 TODAY = date.today().isoformat()
+
+# Straight to the local Ollama server: litellm was only a wrapper around this
+# call, and its filelock<4.0 pin kept 13 filelock CVEs open.
+_OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
+_MODEL = "gemma4:e4b"
+_TIMEOUT_S = 120
 
 _PROMOTION_CRITERIA = """
 Analise este TIL e decida se deve ser promovido para HOW-TO.
@@ -62,16 +68,32 @@ def _is_promoted(path: Path) -> bool:
     return "promoted: true" in path.read_text()
 
 
+def _chat(messages: list[dict[str, str]], *, max_tokens: int) -> str:
+    payload = {
+        "model": _MODEL,
+        "messages": messages,
+        "stream": False,
+        "options": {"num_predict": max_tokens},
+    }
+    request = urllib.request.Request(  # noqa: S310 - fixed local Ollama endpoint
+        _OLLAMA_CHAT_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:  # noqa: S310
+        return json.loads(response.read())["message"]["content"]
+
+
 def should_promote(til_content: str) -> bool:
-    response = litellm.completion(
-        model="ollama/gemma4:e4b",
-        messages=[
+    content = _chat(
+        [
             {"role": "system", "content": _PROMOTION_CRITERIA},
             {"role": "user", "content": til_content},
         ],
         max_tokens=10,
     )
-    return "PROMOTE" in response.choices[0].message.content
+    return "PROMOTE" in content
 
 
 def promote_to_howto(til_path: Path) -> Path:
@@ -81,12 +103,7 @@ def promote_to_howto(til_path: Path) -> Path:
         til_name=til_path.name,
         til_content=til_content,
     )
-    response = litellm.completion(
-        model="ollama/gemma4:e4b",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=800,
-    )
-    howto_content = response.choices[0].message.content
+    howto_content = _chat([{"role": "user", "content": prompt}], max_tokens=800)
     howto_path = til_path.parent / til_path.name.replace("til-", "howto-")
     howto_path.write_text(howto_content)
     # Marca TIL como promovido

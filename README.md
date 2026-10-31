@@ -22,7 +22,9 @@ make, the lessons from mistakes, a digest of each session and the activity
 history of Claude Code, Codex and agy. It does not index or embed code - agents
 read code with their own tools, and AXON holds what the code cannot say
 ([dec-138](docs/decisions/dec-138-stop-code-vectors.md)). No commit and no MCP
-tool calls an LLM, so AXON needs no provider key.
+tool calls an LLM. The one LLM call left is the optional vault hook
+(`vault/til_promoter`), which sends TILs straight to a local Ollama model, so
+that hook needs Ollama running.
 
 ---
 
@@ -200,7 +202,7 @@ Postgres full-text search. Measured on 2026-10-15 over the 41 real lessons:
 The `embeddings` table held 578 MB of a 610 MB database. dec-138 removes it, and
 with it the need for a provider key and a pgvector image.
 
-Test suite: 1,500 passed, 3 skipped (CI, 2026-10-30).
+Test suite: 1,529 passed, 3 skipped (CI, 2026-10-30).
 
 ### Historical: token savings from code search
 

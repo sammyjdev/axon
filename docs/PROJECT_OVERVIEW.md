@@ -95,7 +95,8 @@ dec-138) pgvector, GLYPH and the code index are retired. Guarded by
 `tests/test_no_{sqlite,qdrant,redis}.py` and `tests/test_code_vectors_retired.py`.
 
 No commit and no MCP tool calls an LLM (dec-138). The only LLM call left is the
-vault hook (`vault/til_promoter`), through `litellm`. Per machine policy:
+vault hook (`vault/til_promoter`), which calls the local Ollama server directly
+(`litellm` was dropped to clear the filelock CVEs it pinned). Per machine policy:
 Postgres runs on the Linux workstation; the Mac is a thin client and runs
 nothing locally.
 

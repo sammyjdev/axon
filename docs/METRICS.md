@@ -33,7 +33,7 @@ this manifest used to report was removed; it stays in the git history.
 | Real-usage savings vs full-file reads (committed snapshot) | HISTORICAL, code search retired in dec-138: 90.7% exact-count (330,590 vs 3,537,838 tokens, n=333); 88.6% conservative floor over all n=448 | benchmarks/recall_savings_snapshot.jsonl (the report script was removed by dec-138; sum the rows with missing_files=0) | whitelisted per-request snapshot (opaque ids, integer counts); directory moves declared in benchmarks/recall_savings_remap.json; exact = requests whose files all resolve; floor includes undercounted counterfactuals. Supersedes the 2026-07-28 cut (89.5% exact / n=271): five further declared moves resolved 62 more requests, each remap validated at 100% file-resolution before inclusion | 333 exact / 448 total | 2026-08-07 |
 | Baseline input tokens (benchmark) | 87000 | benchmarks/model.py | session_total mode=baseline | 20 turns | 2026-06-08 |
 | AXON input tokens (benchmark) | 41500 | benchmarks/model.py | session_total mode=axon | 20 turns | 2026-06-08 |
-| Test suite | 1500 passed, 0 failed, 3 skipped | pytest tests/ -q | CI full-suite job | 1503 total | 2026-10-30 |
+| Test suite | 1529 passed, 0 failed, 3 skipped | pytest tests/ -q | CI full-suite job | 1532 total | 2026-10-30 |
 | ADRs | 13 | docs/ADR.md | count of ADR-NNN headers, ADR-001 to ADR-013 | 13 | 2026-06-08 |
 | Decision records | 37 | docs/decisions/ | count of dec-*.md, dec-100 to dec-138 | 37 | 2026-10-30 |
 | Chunks ingested (storage) | RETIRED metric | n/a | Qdrant was the source for this metric; retired by dec-121 (Postgres+pgvector). No replacement metric computed yet | n/a | 2026-07-09 |
@@ -70,7 +70,7 @@ session_total(DEFAULT_SESSION, mode='axon'), round(savings(DEFAULT_SESSION)*100,
 
 # Test suite (after: pip install -e .)
 pytest tests/ -q
-# -> 1500 passed, 0 failed, 3 skipped
+# -> 1529 passed, 0 failed, 3 skipped
 
 # ADR count
 grep -c "^#\+ ADR-" docs/ADR.md            # 13

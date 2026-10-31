@@ -9,7 +9,7 @@ from typing import Literal, overload
 
 from mcp.server.mcpserver import MCPServer
 
-from axon.config.runtime import load_runtime_config
+from axon.config.runtime import load_runtime_config, work_projects
 from axon.core.decision import SUMMARY_MAX_LEN, Decision
 from axon.core.repo_identity import repo_identity
 from axon.hooks.file_bridge import update_context_file
@@ -131,13 +131,6 @@ async def get_session_memory(
     return _truncate("\n".join(lines), budget)
 
 
-def _work_projects() -> set[str]:
-    """Projects in AXON_WORK_PROJECTS (comma-separated). Their names stay out of
-    this public repo."""
-    names = os.environ.get("AXON_WORK_PROJECTS", "").split(",")
-    return {name.strip().lower() for name in names if name.strip()}
-
-
 @mcp.tool()
 @traced_tool(risk="read")
 async def get_adrs(
@@ -149,7 +142,7 @@ async def get_adrs(
     Retorna ADRs de um projeto.
     Projetos de work só acessíveis com ctx='work'.
     """
-    if project.lower() in _work_projects() and ctx != "work":
+    if project.lower() in work_projects() and ctx != "work":
         return "Contexto de trabalho requer ctx='work' explícito."
 
     store = _get_session_store()

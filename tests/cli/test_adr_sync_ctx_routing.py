@@ -113,3 +113,43 @@ def test_unreadable_manifest_does_not_abort_the_sync(monkeypatch, tmp_path: Path
 
     assert result.exit_code == 0, result.output
     assert (vault / "personal" / "adrs" / "client-a-poc.md").exists()
+
+
+def _setup_without_manifest(monkeypatch, tmp_path: Path) -> Path:
+    vault = tmp_path / "vault"
+    engine = tmp_path / "engine"
+    engine.mkdir()
+    monkeypatch.setattr(
+        pb, "_RUNTIME", types.SimpleNamespace(vault_root=vault, engine_root=engine)
+    )
+    monkeypatch.setattr("axon.cli.pb._get_db_path", lambda: tmp_path / "axon.db")
+    monkeypatch.setattr("axon.store.session_store.SessionStore", _FakeStore)
+    return vault
+
+
+def test_a_work_project_goes_to_the_work_folder_without_a_manifest(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The manifest went with the code index (dec-138); AXON_WORK_PROJECTS is
+    what names work projects now."""
+    vault = _setup_without_manifest(monkeypatch, tmp_path)
+    monkeypatch.setenv("AXON_WORK_PROJECTS", "other, Client-A-POC")
+
+    result = runner.invoke(app, ["adr", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert (vault / "work" / "adrs" / "client-a-poc.md").exists()
+    assert not (vault / "personal" / "adrs" / "client-a-poc.md").exists()
+    assert (vault / "personal" / "adrs" / "axon.md").exists()
+
+
+def test_a_work_project_goes_to_the_work_folder_even_if_the_manifest_says_personal(
+    monkeypatch, tmp_path: Path
+) -> None:
+    vault = _setup(monkeypatch, tmp_path)
+    monkeypatch.setenv("AXON_WORK_PROJECTS", "axon")
+
+    runner.invoke(app, ["adr", "sync"])
+
+    assert (vault / "work" / "adrs" / "axon.md").exists()
+    assert not (vault / "personal" / "adrs" / "axon.md").exists()

@@ -297,3 +297,39 @@ async def test_spool_contamination_across_harnesses_is_prevented(service, pg_poo
         )
     assert offset_a == 111
     assert offset_b == 222
+
+
+async def test_an_export_records_the_session_workspace_so_the_import_gate_can_check_it(
+    service,
+):
+    import json
+
+    session = ActivitySession(
+        session_id="ses-ws",
+        harness="claude-code",
+        source_id="src-ws",
+        project="p",
+        workspace="/home/me/personal/repo",
+        status="complete",
+        coverage="full",
+    )
+    event = ActivityEvent(
+        event_id="evt-ws",
+        harness="claude-code",
+        source_id="src-ws",
+        session_id="ses-ws",
+        occurred_at=datetime.now(UTC),
+        ingested_at=datetime.now(UTC),
+        kind="test",
+        content={"msg": "hi"},
+        coverage="full",
+        redactions=[],
+    )
+    cursor = SourceCursor(
+        session_id="ses-ws", harness="claude-code", source_id="src-ws", fingerprint="F"
+    )
+    await service.ingest_events([event], cursor=cursor, sessions=[session])
+
+    [line] = [line async for line in service.export_activity("ses-ws")]
+
+    assert json.loads(line)["workspace"] == "/home/me/personal/repo"

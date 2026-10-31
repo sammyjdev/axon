@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+import urllib.request
 from pathlib import Path
 
-import litellm
 import pytest
 
 from axon.memory.digest import digest_turns
@@ -42,11 +42,12 @@ def test_a_session_is_stored_as_its_digest_without_calling_an_llm(
     transcript = _transcript(tmp_path / "session.jsonl")
     llm_calls: list[dict] = []
 
-    async def recording_completion(**kwargs: object) -> None:
-        llm_calls.append(kwargs)
+    def recording_urlopen(*args: object, **kwargs: object) -> None:
+        llm_calls.append({"args": args, **kwargs})
         raise AssertionError("the session hook called an LLM")
 
-    monkeypatch.setattr(litellm, "acompletion", recording_completion)
+    # The vault hook's local Ollama call is the only LLM client left, over urllib.
+    monkeypatch.setattr(urllib.request, "urlopen", recording_urlopen)
     saved = []
 
     class _Store:

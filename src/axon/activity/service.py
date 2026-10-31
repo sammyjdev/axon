@@ -180,6 +180,8 @@ class ActivityService:
         return ActivityPage(events=events, next_cursor=next_cursor)
 
     async def export_activity(self, session_id: str) -> AsyncIterator[str]:
+        session = await self.repo.get_session(session_id)
+        workspace = session.get("workspace") if session else None
         pool = await self.repo._ensure_pool()
         async with pool.acquire() as con:
             rows = await con.fetch(
@@ -188,7 +190,7 @@ class ActivityService:
             )
             for row in rows:
                 event = ActivityEvent(**dict(row))
-                yield event_to_jsonl_line(event)
+                yield event_to_jsonl_line(event, workspace=workspace)
 
     async def import_events(self, lines: Iterable[str]) -> IngestResult:
         stored = 0
