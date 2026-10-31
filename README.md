@@ -182,14 +182,34 @@ survive across agents and months, auditably, that is AXON.
 
 ---
 
-## Token savings (historical)
+## Measured results
+
+### Current: lesson search after dec-138
+
+[dec-138](docs/decisions/dec-138-stop-code-vectors.md) replaced pgvector with
+Postgres full-text search. Measured on 2026-10-15 over the 41 real lessons:
+
+| | Full-text search | pgvector |
+|---|---|---|
+| Trigger queries with the expected lesson first | 41 of 41 | 33 of 41 |
+| Time per search | about 5 ms | about 600 ms |
+| English task queries, expected lesson in the top 5 | 20 of 20 | 20 of 20 |
+| English task queries, expected lesson first | 15 of 20 | 19 of 20 |
+| Portuguese queries, expected lesson in the top 5 | 3 of 5 | 5 of 5 |
+
+The `embeddings` table held 578 MB of a 610 MB database. dec-138 removes it, and
+with it the need for a provider key and a pgvector image.
+
+Test suite: 1,500 passed, 3 skipped (CI, 2026-10-30).
+
+### Historical: token savings from code search
 
 Until 2026-10-15 AXON served code search (`search_code`) and compressed the
-results, and GNOMON measured both. Those numbers described a subsystem that no
-longer exists: code search was retired because agents rarely used it and went
-back to grep when they did
-([dec-138](docs/decisions/dec-138-stop-code-vectors.md)). The measurements
-stay in [`docs/METRICS.md`](docs/METRICS.md) and the git history for provenance.
+results, and GNOMON measured both. The best-known figure, a 90.7% token reduction
+against reading the same files in full (330,590 vs 3,537,838 tokens, n=333),
+describes that retired subsystem, not AXON today. Code search was retired because
+agents rarely used it and went back to grep when they did. The measurements stay
+in [`docs/METRICS.md`](docs/METRICS.md) and the git history for provenance.
 
 ---
 
@@ -219,6 +239,12 @@ pytest tests/ -q
 ```
 
 See [`CLAUDE.md`](CLAUDE.md) for code conventions and agent rules.
+
+---
+
+## Author
+
+Built by [sammyjdev](https://github.com/sammyjdev), Senior AI Engineer (Forward Deployed).
 
 ---
 

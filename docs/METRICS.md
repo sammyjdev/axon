@@ -1,14 +1,24 @@
 # AXON Metrics Manifest
 
-Date computed: 2026-06-08 (compression telemetry recomputed 2026-06-16; test
-suite, decision-record count, and storage rows recomputed 2026-07-09 after
-dec-121 retired SQLite/Qdrant/Redis/mem0 in favor of Postgres+pgvector)
+Date computed: 2026-06-08 (storage rows recomputed 2026-07-09 after dec-121
+retired SQLite/Qdrant/Redis/mem0 in favor of Postgres+pgvector; test suite and
+decision-record count recomputed 2026-10-30)
 
-Source of truth: code and committed data files. Every figure below was recomputed
-from the live repo and traces to a command output or a committed file. No figure
-is invented, estimated, or marketing rounded. Benchmark (deterministic model) and
-telemetry (measured over representative context windows) are reported separately and never blended.
+Source of truth: code and committed data files. Each figure was recomputed on its
+listed date and traces to a command output or a committed file; for retired
+subsystems the code that produced it is in the git history. No figure is invented,
+estimated, or marketing rounded. Benchmark (deterministic model) and measured
+figures are reported separately and never blended.
 Savings claims name their counterfactual per gnomon-eval ADR-0011.
+
+## Status after dec-138
+
+Code search, compression and the retrieval ladder were retired on 2026-10-15
+([dec-138](decisions/dec-138-stop-code-vectors.md)). Every recall, faithfulness,
+session-cost and savings row below is **historical**: it describes a subsystem
+that no longer exists. The current measured results are the dec-138 lesson-search
+figures in the [README](../README.md#measured-results). The compression telemetry
+this manifest used to report was removed; it stays in the git history.
 
 ## Manifest
 
@@ -17,22 +27,18 @@ Savings claims name their counterfactual per gnomon-eval ADR-0011.
 | Token reduction (deterministic benchmark) | 52.3% (RETIRED: deterministic projection; superseded by the measured session harness, gnomon-eval ADR-0010) | benchmarks/model.py | deterministic cost model: baseline 87000 vs AXON 41500 input tokens | 20 turns | 2026-06-08 |
 | Faithfulness uplift (recall A/B) | 0.40-0.52 -> 0.72-0.76 (95% CI per run) | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | GNOMON A/B, judge llama3.1:8b x8, seed 42, 3x on + 2x off replicates | 17 cases | 2026-07-02 |
 | Recall input cost | +2,151 prompt tokens/turn | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | paired on/off telemetry, usage_source=provider | 17 cases | 2026-07-02 |
-| Faithfulness, current stack (on-arm) | 0.775 [0.735, 0.814] | gnomon-eval results/wave3/rung3c-hybrid.json | post retrieval ladder: index hygiene + skeleton suppression + hybrid lexical (AXON_HYBRID_SEARCH=1); single run | 17 cases | 2026-07-04 |
+| Faithfulness, last code-search stack (on-arm) | 0.775 [0.735, 0.814] | gnomon-eval results/wave3/rung3c-hybrid.json | post retrieval ladder: index hygiene + skeleton suppression + hybrid lexical (AXON_HYBRID_SEARCH=1); single run | 17 cases | 2026-07-04 |
 | Session cost vs transcript (10 turns) | parity: pooled +4.0% savings, crossover turn 6-9 | gnomon-eval results/wave3/t12-session-3c-budget500.json + t12-b500-replicate{1,2}.json | dual-arm session harness, recall budget 500, 3 runs mutually within CIs, quality gate pass, 1200/1200 provider records | 10 sessions x 10 turns | 2026-07-04 |
-| Real-usage savings vs full-file reads | 90.7% (SUPERSEDED by the committed snapshot below; validated in hindsight - the recoverable subset of its window reproduces at 90.5% under the declared remaps) | axon scripts/recall_savings_report.py | per-chunk telemetry counterfactual: unique source files read in full | 100 requests | 2026-07-04 |
-| Real-usage savings vs full-file reads (committed snapshot) | 90.7% exact-count (330,590 vs 3,537,838 tokens, n=333); 88.6% conservative floor over all n=448 | benchmarks/recall_savings_snapshot.jsonl via scripts/recall_savings_report.py --snapshot | whitelisted per-request snapshot (opaque ids, integer counts); directory moves declared in benchmarks/recall_savings_remap.json; exact = requests whose files all resolve; floor includes undercounted counterfactuals. Supersedes the 2026-07-28 cut (89.5% exact / n=271): five further declared moves resolved 62 more requests, each remap validated at 100% file-resolution before inclusion | 333 exact / 448 total | 2026-08-07 |
+| Real-usage savings vs full-file reads | HISTORICAL: 90.7% (SUPERSEDED by the committed snapshot below; validated in hindsight - the recoverable subset of its window reproduces at 90.5% under the declared remaps) | axon scripts/recall_savings_report.py (removed by dec-138) | per-chunk telemetry counterfactual: unique source files read in full | 100 requests | 2026-07-04 |
+| Real-usage savings vs full-file reads (committed snapshot) | HISTORICAL, code search retired in dec-138: 90.7% exact-count (330,590 vs 3,537,838 tokens, n=333); 88.6% conservative floor over all n=448 | benchmarks/recall_savings_snapshot.jsonl (the report script was removed by dec-138; sum the rows with missing_files=0) | whitelisted per-request snapshot (opaque ids, integer counts); directory moves declared in benchmarks/recall_savings_remap.json; exact = requests whose files all resolve; floor includes undercounted counterfactuals. Supersedes the 2026-07-28 cut (89.5% exact / n=271): five further declared moves resolved 62 more requests, each remap validated at 100% file-resolution before inclusion | 333 exact / 448 total | 2026-08-07 |
 | Baseline input tokens (benchmark) | 87000 | benchmarks/model.py | session_total mode=baseline | 20 turns | 2026-06-08 |
 | AXON input tokens (benchmark) | 41500 | benchmarks/model.py | session_total mode=axon | 20 turns | 2026-06-08 |
-| Compression p50 (measured telemetry) (June window, do not cite as current) | 85.5% | data/compression/stats.jsonl | reduction_pct > 0 (compression fired) | 69 of 69 | 2026-06-16 |
-| Compression mean (measured telemetry) (June window, do not cite as current) | 78.8% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
-| Compression p95 (measured telemetry) (June window, do not cite as current) | 95.5% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
-| Compression max (measured telemetry) (June window, do not cite as current) | 97.0% | data/compression/stats.jsonl | reduction_pct > 0 | 69 of 69 | 2026-06-16 |
-| Test suite | 1355 passed, 0 failed, 5 skipped, 7 xfailed | pytest tests/ -q | full suite green; the 4 CLI/TTY-detection failures present through 2026-06-16 were fixed 2026-07-09 | 1367 total | 2026-07-09 |
+| Test suite | 1500 passed, 0 failed, 3 skipped | pytest tests/ -q | CI full-suite job | 1503 total | 2026-10-30 |
 | ADRs | 13 | docs/ADR.md | count of ADR-NNN headers, ADR-001 to ADR-013 | 13 | 2026-06-08 |
-| Decision records | 24 | docs/decisions/ | count of dec-*.md, dec-100 to dec-125 | 24 | 2026-07-09 |
+| Decision records | 37 | docs/decisions/ | count of dec-*.md, dec-100 to dec-138 | 37 | 2026-10-30 |
 | Chunks ingested (storage) | RETIRED metric | n/a | Qdrant was the source for this metric; retired by dec-121 (Postgres+pgvector). No replacement metric computed yet | n/a | 2026-07-09 |
 | Collections (storage) | RETIRED metric | n/a | same as above — Qdrant collections no longer exist in the runtime | n/a | 2026-07-09 |
-| Retrieval or end-to-end latency | NOT AVAILABLE | data/trace/records.jsonl | no duration field; ts deltas across stages yield p50 0.001s, which is logging time, not measured latency | n/a | 2026-06-08 |
+| Retrieval or end-to-end latency | NOT AVAILABLE | data/trace/records.jsonl (local, not committed) | no duration field; ts deltas across stages yield p50 0.001s, which is logging time, not measured latency | n/a | 2026-06-08 |
 
 ## Benchmark assumptions (deterministic model)
 
@@ -46,40 +52,10 @@ From `benchmarks/model.py` `DEFAULT_SESSION`:
 This is an explicit cost model, not a live measurement. It does not run inference
 or measure real token consumption (see benchmarks/README.md caveats).
 
-## Telemetry filter (June 2026 window - see the caveat below)
-
-- Source: `data/compression/stats.jsonl`, N=110 total records as of the 2026-06
-  snapshot (69 of which have `reduction_pct > 0`). The file has since grown to
-  862 records; the figures here were never recomputed over the newer ones.
-- Filter: `reduction_pct > 0` (the compression pipeline actually fired). When
-  this was written that filter excluded only no-ops: disabled engine, graph
-  tools (get_graph_path, get_graph_neighbors), and rtk-only paths all record
-  reduction_pct=0.
-- **That premise no longer holds, and these figures describe a closed window.**
-  From 2026-07 onward a `reduction_pct` of 0 stopped meaning "no-op": 46 events
-  ran on a live engine (`caveman/phi3+rtkx`) and every one recorded 0, because
-  `caveman_compress_guarded` was rejecting its own output and returning the
-  original text. The filter counts those as no-ops and drops them, so the
-  numbers above cannot fall no matter how badly the compressor performs - a
-  selection effect, not a measurement. August adds 117 identical 26-token
-  probe events, all with the engine disabled.
-- Do not cite the four figures above as current. They are a valid June
-  measurement and nothing more, until the guard failure (#168) is resolved and
-  the series is recomputed over a window that includes its zeros.
-- `CompressionRecord.rejection_note` now records why a compression returned
-  unchanged text, so a rejection is distinguishable from a genuine no-op. Any
-  recomputation should split the three cases rather than filtering on the
-  outcome.
-- Filtered set: n=69, engines caveman/phi3+rtk (60) and caveman/phi3 (9);
-  75,258 before tokens → 15,778 after (59,480 saved).
-- Generated by running the real pipeline (`phi3:mini` via Ollama) over source
-  and doc files from this repo sliced into 69 context windows of ~150–500 words
-  each. Local snapshot, not production usage.
-
 ## Storage note
 
-Qdrant was retired by dec-121 (2026-06-29): storage is now a single Postgres
-instance with pgvector for embeddings. The "chunks ingested" / "collections"
+Qdrant was retired by dec-121 (2026-06-29): storage is a single Postgres
+instance, without pgvector since dec-138. The "chunks ingested" / "collections"
 runtime metrics this section used to report against live Qdrant no longer
 apply and have not been replaced with a Postgres-native equivalent yet.
 
@@ -92,15 +68,11 @@ print(session_total(DEFAULT_SESSION, mode='baseline'), \
 session_total(DEFAULT_SESSION, mode='axon'), round(savings(DEFAULT_SESSION)*100,1))"
 # -> 87000 41500 52.3
 
-# Compression telemetry (measured; reproduces from the committed snapshot)
-python -m axon.observability.compression_telemetry
-# -> count_total 110, count_compressed 69, p50 85.5, avg 78.8, p95 95.5, max 97.0
-
 # Test suite (after: pip install -e .)
 pytest tests/ -q
-# -> 1355 passed, 0 failed, 5 skipped, 7 xfailed
+# -> 1500 passed, 0 failed, 3 skipped
 
 # ADR count
 grep -c "^#\+ ADR-" docs/ADR.md            # 13
-ls docs/decisions/dec-*.md | wc -l         # 24
+ls docs/decisions/dec-*.md | wc -l         # 37
 ```
