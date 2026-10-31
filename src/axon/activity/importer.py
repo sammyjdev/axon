@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -98,6 +99,28 @@ def is_restricted(cwd: str | None) -> bool:
         return Path(cwd).expanduser().resolve().is_relative_to(RESTRICTED_ROOT.resolve())
     except OSError:
         return False
+
+
+def import_skip_reason(
+    *, path: Path, workspaces: Iterable[str | None], declared: str | None
+) -> str | None:
+    """Why `activity import` skips a session, or None to import it.
+
+    `workspaces` are what the file and the database record for the session; a
+    `declared` workspace only stands in when neither knows one. With
+    AXON_RESTRICTED_ROOT set, a session nobody can place is skipped: an event
+    file carries no cwd, so assuming it safe would reopen the gate.
+    """
+    known = [w for w in workspaces if w]
+    if is_restricted(str(path)) or any(is_restricted(w) for w in known):
+        return "restricted cwd"
+    if known:
+        return None
+    if declared:
+        return "restricted cwd" if is_restricted(declared) else None
+    if (os.environ.get("AXON_RESTRICTED_ROOT") or "").strip():
+        return "unknown workspace"
+    return None
 
 
 async def import_transcript(

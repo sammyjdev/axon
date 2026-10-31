@@ -4,12 +4,18 @@ from typing import Any
 from axon.activity.models import ActivityEvent
 
 
-def event_to_jsonl_line(event: ActivityEvent) -> str:
-    """Serialize an ActivityEvent to a JSONL string envelope."""
-    payload = {
+def event_to_jsonl_line(event: ActivityEvent, *, workspace: str | None = None) -> str:
+    """Serialize an ActivityEvent to a JSONL string envelope.
+
+    `workspace` is the session's cwd: events carry none, and `activity import`
+    needs it to apply the restricted-tree gate.
+    """
+    payload: dict[str, Any] = {
         "schema_version": 1,
         "event": event.model_dump(mode="json")
     }
+    if workspace:
+        payload["workspace"] = workspace
     return json.dumps(payload)
 
 def jsonl_line_to_event(line: str) -> ActivityEvent:

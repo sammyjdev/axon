@@ -1278,14 +1278,29 @@ def activity_run(
 def activity_import(
     harness: Annotated[str, typer.Option("--harness", help="Source harness")],
     path: Annotated[Path, typer.Option("--path", help="Path to JSONL file")],
+    workspace: Annotated[
+        str | None,
+        typer.Option(
+            "--workspace",
+            help="Where sessions with no recorded workspace ran; checked against "
+            "AXON_RESTRICTED_ROOT",
+        ),
+    ] = None,
 ) -> None:
-    """Import historical activity from a JSONL file."""
+    """Import historical activity from a JSONL file.
+
+    Takes bare events or `activity export` envelopes. A session under the
+    restricted tree is skipped whole; see `import_skip_reason`.
+    """
     if harness not in ("claude-code", "codex", "agy"):
         raise typer.BadParameter("harness must be claude-code, codex, or agy")
     if not path.is_file():
         raise typer.BadParameter(f"path not found: {path}")
 
+    from collections import Counter, defaultdict
+
     from axon.activity.export import event_to_jsonl_line
+    from axon.activity.importer import import_skip_reason
     from axon.activity.models import ActivityEvent
     from axon.activity.repository import PostgresActivityRepository
     from axon.activity.service import ActivityService
@@ -1295,19 +1310,40 @@ def activity_import(
         await repo.ensure_schema()
         try:
             service = ActivityService(repo)
-            lines_to_import = []
+            events_by_session: dict[str, list[ActivityEvent]] = defaultdict(list)
+            recorded: dict[str, set[str | None]] = defaultdict(set)
             with path.open("r", encoding="utf-8") as f:
                 for text_line in f:
                     text_line = text_line.strip()
                     if not text_line:
                         continue
-                    event_dict = json.loads(text_line)
+                    line_dict = json.loads(text_line)
+                    event_dict = line_dict.get("event", line_dict)
                     event = ActivityEvent.model_validate(event_dict)
-                    lines_to_import.append(event_to_jsonl_line(event))
+                    events_by_session[event.session_id].append(event)
+                    recorded[event.session_id].add(line_dict.get("workspace"))
+
+            lines_to_import = []
+            skipped: Counter[str] = Counter()
+            for session_id, events in events_by_session.items():
+                stored = await repo.get_session(session_id)
+                stored_workspace = stored.get("workspace") if stored else None
+                workspaces = {*recorded[session_id], stored_workspace}
+                reason = import_skip_reason(path=path, workspaces=workspaces, declared=workspace)
+                if reason:
+                    skipped[reason] += len(events)
+                    continue
+                lines_to_import.extend(event_to_jsonl_line(event) for event in events)
 
             result = await service.import_events(lines_to_import)
             typer.echo(
-                json.dumps({"imported": result.stored, "coverage_warnings": result.warnings})
+                json.dumps(
+                    {
+                        "imported": result.stored,
+                        "coverage_warnings": result.warnings,
+                        "skipped": dict(skipped),
+                    }
+                )
             )
         finally:
             await repo.close()

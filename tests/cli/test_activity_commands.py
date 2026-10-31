@@ -130,3 +130,73 @@ def test_activity_import_unknown_harness_fails_loudly(tmp_path: Path) -> None:
     show_result = runner.invoke(cli_app, ["activity", "show", "--session", "ses-3"])
     events = json.loads(show_result.output)
     assert events == []
+
+
+def _event(event_id: str, session_id: str) -> dict:
+    return {
+        "event_id": event_id,
+        "schema_version": 1,
+        "harness": "claude-code",
+        "source_id": f"src-{event_id}",
+        "session_id": session_id,
+        "occurred_at": "2026-09-15T00:00:00+00:00",
+        "ingested_at": "2026-09-15T00:00:01+00:00",
+        "kind": "message",
+        "content": {"text": "hello"},
+        "coverage": "complete-observable",
+        "redactions": [],
+    }
+
+
+def test_activity_import_skips_a_restricted_session_and_keeps_the_rest(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from axon.activity import importer
+
+    restricted = tmp_path / "employer"
+    restricted.mkdir()
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
+    monkeypatch.setenv("AXON_RESTRICTED_ROOT", str(restricted))
+    lines = [
+        {"schema_version": 1, "event": _event("evt-w", "ses-w"),
+         "workspace": str(restricted / "repo")},
+        {"schema_version": 1, "event": _event("evt-p", "ses-p"),
+         "workspace": str(tmp_path / "personal")},
+        _event("evt-u", "ses-u"),
+    ]
+    fixture = tmp_path / "events.jsonl"
+    fixture.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+
+    result = runner.invoke(
+        cli_app, ["activity", "import", "--harness", "claude-code", "--path", str(fixture)]
+    )
+
+    assert result.exit_code == 0, result.output
+    summary = json.loads(result.output)
+    assert summary["imported"] == 1
+    assert summary["skipped"] == {"restricted cwd": 1, "unknown workspace": 1}
+    for session, expected in (("ses-p", 1), ("ses-w", 0), ("ses-u", 0)):
+        shown = runner.invoke(cli_app, ["activity", "show", "--session", session])
+        assert len(json.loads(shown.output)) == expected, session
+
+
+def test_activity_import_takes_a_declared_workspace_for_sessions_without_one(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from axon.activity import importer
+
+    restricted = tmp_path / "employer"
+    restricted.mkdir()
+    monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
+    monkeypatch.setenv("AXON_RESTRICTED_ROOT", str(restricted))
+    fixture = tmp_path / "events.jsonl"
+    _write_fixture_event(fixture, event_id="evt-d", session_id="ses-d")
+
+    result = runner.invoke(
+        cli_app,
+        ["activity", "import", "--harness", "claude-code", "--path", str(fixture),
+         "--workspace", str(tmp_path / "personal")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["imported"] == 1
