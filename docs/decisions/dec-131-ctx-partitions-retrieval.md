@@ -41,8 +41,8 @@ registered context, so **a call with `ctx=knowledge` can never see code, and a
 call with `ctx=personal` can never see a decision.**
 
 That is not what the barrier was built for. `collections.py` says so in its own
-docstring - "work só é acessível com ctx='work' explícito — protege IP da
-Avangrid" - and only `work` is in `PROTECTED_CONTEXTS`; the other four are
+docstring - "work só é acessível com ctx='work' explícito — protege IP de
+cliente" - and only `work` is in `PROTECTED_CONTEXTS`; the other four are
 `restricted: False`. `DEFAULT_SEARCH_CONTEXTS` is `(personal, career, knowledge,
 saas)`, which is the intended behaviour and is used only when no ctx is given.
 Supplying a non-protected ctx restricts exactly as hard as supplying `work`.

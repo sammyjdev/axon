@@ -40,7 +40,7 @@ class _FakeStore:
         return None
 
     async def all_projects(self) -> list[str]:
-        return ["afya-poc", "axon", "unlisted-project"]
+        return ["client-a-poc", "axon", "unlisted-project"]
 
     async def get_adrs(self, project: str, limit: int = 100) -> list[_FakeAdr]:
         return [_FakeAdr(title=f"adr for {project}")]
@@ -55,7 +55,7 @@ def _setup(monkeypatch, tmp_path: Path) -> Path:
         json.dumps(
             {
                 "projects": [
-                    {"name": "afya-poc", "path": "/x", "ctx": "work"},
+                    {"name": "client-a-poc", "path": "/x", "ctx": "work"},
                     {"name": "axon", "path": "/y", "ctx": "personal"},
                 ]
             }
@@ -78,8 +78,8 @@ def test_work_project_adrs_land_in_the_work_ctx(monkeypatch, tmp_path: Path) -> 
     result = runner.invoke(app, ["adr", "sync"])
 
     assert result.exit_code == 0, result.output
-    assert (vault / "work" / "adrs" / "afya-poc.md").exists()
-    assert not (vault / "personal" / "adrs" / "afya-poc.md").exists(), (
+    assert (vault / "work" / "adrs" / "client-a-poc.md").exists()
+    assert not (vault / "personal" / "adrs" / "client-a-poc.md").exists(), (
         "work project's ADRs written under personal/ - unscoped search would reach them"
     )
 
@@ -112,4 +112,4 @@ def test_unreadable_manifest_does_not_abort_the_sync(monkeypatch, tmp_path: Path
     result = runner.invoke(app, ["adr", "sync"])
 
     assert result.exit_code == 0, result.output
-    assert (vault / "personal" / "adrs" / "afya-poc.md").exists()
+    assert (vault / "personal" / "adrs" / "client-a-poc.md").exists()

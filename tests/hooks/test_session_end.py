@@ -87,7 +87,7 @@ def test_the_session_hook_stores_the_transcript_events(tmp_path):
 def test_a_session_under_the_restricted_tree_runs_no_step(tmp_path, monkeypatch):
     from axon.activity import importer
 
-    restricted = tmp_path / "afya"
+    restricted = tmp_path / "client-a"
     restricted.mkdir()
     monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
     calls: list[str] = []
@@ -122,7 +122,7 @@ def test_a_transcript_that_later_enters_the_restricted_tree_runs_no_step(
 ):
     from axon.activity import importer
 
-    restricted = tmp_path / "afya"
+    restricted = tmp_path / "client-a"
     restricted.mkdir()
     monkeypatch.setattr(importer, "RESTRICTED_ROOT", restricted)
     calls: list[str] = []

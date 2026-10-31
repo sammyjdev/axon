@@ -131,6 +131,13 @@ async def get_session_memory(
     return _truncate("\n".join(lines), budget)
 
 
+def _work_projects() -> set[str]:
+    """Projects in AXON_WORK_PROJECTS (comma-separated). Their names stay out of
+    this public repo."""
+    names = os.environ.get("AXON_WORK_PROJECTS", "").split(",")
+    return {name.strip().lower() for name in names if name.strip()}
+
+
 @mcp.tool()
 @traced_tool(risk="read")
 async def get_adrs(
@@ -142,8 +149,7 @@ async def get_adrs(
     Retorna ADRs de um projeto.
     Projetos de work só acessíveis com ctx='work'.
     """
-    _WORK_PROJECTS = {"avangrid"}
-    if project.lower() in _WORK_PROJECTS and ctx != "work":
+    if project.lower() in _work_projects() and ctx != "work":
         return "Contexto de trabalho requer ctx='work' explícito."
 
     store = _get_session_store()
