@@ -55,7 +55,7 @@ def link_commits_step(transcript_path: str, cwd: str) -> None:
 
 
 def refresh_context_step(transcript_path: str, cwd: str) -> None:
-    """Last, so .axon/context.md shows the session that just ended and its commits."""
+    """Last, so .axon/context.md points at the session that just ended."""
     from axon.hooks.file_bridge import refresh_context_for_cwd
 
     asyncio.run(refresh_context_for_cwd(cwd))

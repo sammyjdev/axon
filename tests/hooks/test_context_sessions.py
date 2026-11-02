@@ -96,7 +96,7 @@ def _edit(path, name="Edit"):
     return {"type": "tool_use", "name": name, "input": {"file_path": path}}
 
 
-async def test_the_last_sessions_show_asks_files_and_commits_newest_first(activity, git_repo):
+async def test_the_brief_keeps_one_session_pointer_and_drops_raw_sections(activity, git_repo):
     root = git_repo
     sha = _git(root, "rev-parse", "HEAD")
     await _session(activity, "older-session", workspace=str(root))
@@ -119,14 +119,17 @@ async def test_the_last_sessions_show_asks_files_and_commits_newest_first(activi
     path = await update_context_file(root, store=_Store(), activity=activity)
 
     text = path.read_text()
-    newer = text.index("2026-10-02 09:06 UTC · codex · `newer-se`")
-    older = text.index("2026-10-01 09:00 UTC · claude-code · `older-se`")
-    assert newer < older < text.index("## Recent decisions")
-    assert "- first ask: fix the login bug\n- last ask: now add a test\n" in text
-    assert "- files: `src/a.py`, `docs/b.md`\n" in text
-    assert f"- commit {sha[:7]} feat: render recent sessions\n" in text
-    assert "- commit fffffff\n" in text
+    assert text.count("Last session:") == 1
+    assert "Last session: 2026-10-02 09:06 UTC · codex · `newer-se`" in text
+    assert "older-se" not in text
+    assert "fix the login bug" not in text
+    assert "now add a test" not in text
+    assert "src/a.py" not in text
+    assert "docs/b.md" not in text
+    assert "feat: render recent sessions" not in text
+    assert "fffffff" not in text
     assert "boot" not in text and "r.py" not in text
+    assert sha[:7] not in text
 
 
 async def test_the_file_never_passes_100_lines(activity, git_repo):
@@ -156,10 +159,12 @@ async def test_the_file_never_passes_100_lines(activity, git_repo):
 
     lines = path.read_text().splitlines()
     assert len(lines) <= 100
-    asks = [line for line in lines if line.startswith("- first ask:")]
-    assert len(asks) == 3 and len(asks[0]) <= len("- first ask: ") + 160
-    assert any(line.endswith("+32 more") for line in lines)
-    assert "+7 more commit(s)" in "\n".join(lines)
+    assert sum(line.startswith("Last session:") for line in lines) == 1
+    joined = "\n".join(lines)
+    assert "very long ask" not in joined
+    assert "first ask:" not in joined
+    assert "- files:" not in joined
+    assert "more commit" not in joined
 
 
 async def test_a_repo_with_no_activity_still_gets_decisions(activity, git_repo):

@@ -266,5 +266,7 @@ def test_a_session_that_ends_shows_its_first_and_last_ask_in_the_repo_context(tm
 
     assert result.exit_code == 0
     context = (repo / ".axon" / "context.md").read_text()
-    assert "add the csv export to the report" in context
-    assert "now cover it with a test" in context
+    # CTX-05: the brief points at the session and does not copy its prompts.
+    assert "Last session:" in context
+    assert "add the csv export to the report" not in context
+    assert "now cover it with a test" not in context

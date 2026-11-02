@@ -31,10 +31,9 @@ _RECENT_LIMIT = 15
 # Newest first, because the lesson written today is the one most likely to be about a
 # mistake still being made.
 _LESSON_LIMIT = 24
-# Three sessions: the one just closed plus the two before it covers "where was I" and a
-# parallel lane, at ~6 lines each, and keeps the file well inside _MAX_LINES with 15
-# decisions and the lesson catalogue beside it.
-_SESSION_LIMIT = 3
+# One line, the session that just closed. Prompts, touched files and commit subjects
+# are derivable from the transcript and from git, so they are not copied in (CTX-05).
+_SESSION_LIMIT = 1
 _FILE_LIMIT = 8
 _COMMIT_LIMIT = 3
 _PROMPT_CHARS = 160
@@ -147,26 +146,24 @@ def _commit_line(root: Path, sha: str) -> str:
     return sha[:7]
 
 
-def _render_sessions(sessions: Sequence[RecentSession], root: Path) -> list[str]:
-    lines = ["", "## Recent sessions", ""]
-    for s in sessions:
-        lines.append(f"### {s.last_at:%Y-%m-%d %H:%M} UTC · {s.harness} · `{s.session_id[:8]}`")
-        if s.first_prompt:
-            lines.append(f"- first ask: {_one_line(s.first_prompt)}")
-        if s.last_prompt and s.last_prompt != s.first_prompt:
-            lines.append(f"- last ask: {_one_line(s.last_prompt)}")
-        files = _touched_files(s, root)
-        if files:
-            shown = ", ".join(f"`{f}`" for f in files[:_FILE_LIMIT])
-            more = f" +{len(files) - _FILE_LIMIT} more" if len(files) > _FILE_LIMIT else ""
-            lines.append(f"- files: {shown}{more}")
-        commits = list(dict.fromkeys(s.commits))
-        for sha in commits[:_COMMIT_LIMIT]:
-            lines.append(f"- commit {_commit_line(root, sha)}")
-        if len(commits) > _COMMIT_LIMIT:
-            lines.append(f"- _+{len(commits) - _COMMIT_LIMIT} more commit(s)_")
-        lines.append("")
-    return lines[:-1]
+def _session_pointer(session: RecentSession) -> str:
+    """One stable line for the newest session. No prompt, path, or commit text."""
+    last = session.last_at
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+    else:
+        last = last.astimezone(UTC)
+    return (
+        f"Last session: {last:%Y-%m-%d %H:%M} UTC · {session.harness} · "
+        f"`{session.session_id[:8]}`"
+    )
+
+
+def _render_sessions(sessions: Sequence[RecentSession], _root: Path) -> list[str]:
+    """The last-session pointer only. File lists are not rendered (CTX-05)."""
+    if not sessions:
+        return []
+    return ["", _session_pointer(sessions[0]), ""]
 
 
 def _render(
