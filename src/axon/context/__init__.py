@@ -1,1 +1,1 @@
-"""Context buckets (personal, career, knowledge, saas, work) and their rules."""
+"""Session-brief primitives: the untrusted fence and the byte packer."""
