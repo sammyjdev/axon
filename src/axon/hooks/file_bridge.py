@@ -6,10 +6,8 @@ git events and on session end. Writes are atomic (temp file + rename).
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 import subprocess
 from collections.abc import Sequence
 from datetime import UTC
@@ -21,9 +19,7 @@ from axon.context.brief_budget import BRIEF_BUDGET, pack_items
 from axon.context.fence import escape_untrusted, fence
 from axon.core.decision import Decision
 from axon.core.repo_identity import repo_identity
-from axon.observability.friction import FrictionPattern
 from axon.store.lessons import LessonHandle, LessonStore, resolve_lessons_dsn
-from axon.store.pg_decision_repository import InjectableDecisions
 from axon.store.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -31,93 +27,6 @@ logger = logging.getLogger(__name__)
 # One line, the session that just closed. Prompts, touched files and commit subjects
 # are derivable from the transcript and from git, so they are not copied in (CTX-05).
 _SESSION_LIMIT = 1
-_EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
-# Codex patches arrive as text, sometimes inside JS source, so `\n` may be escaped.
-_PATCH_FILE = re.compile(r"\*\*\* (?:(?:Update|Add|Delete) File|Move to): (.+?)(?=\\n|\n|\"|$)")
-
-
-def _strings(value: object):
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for v in value.values():
-            yield from _strings(v)
-    elif isinstance(value, list):
-        for v in value:
-            yield from _strings(v)
-
-
-def _git_top(path: Path) -> Path | None:
-    for p in (path, *path.parents):
-        if (p / ".git").exists():
-            return p
-    return None
-
-
-def _decoded(args: object) -> object:
-    if isinstance(args, str):
-        try:
-            return json.loads(args)
-        except ValueError:
-            return args
-    return args
-
-
-def _call_workdir(call: dict) -> str | None:
-    """The directory a Codex call ran in: its arguments' (or input's) workdir."""
-    for src in (_decoded(call.get("arguments")), call.get("input")):
-        if isinstance(src, dict) and isinstance(src.get("workdir"), str):
-            return src["workdir"]
-    return None
-
-
-def _removed_worktree(ws: Path, root: Path) -> Path | None:
-    """The worktree a missing workspace was, once removed after its merge left no .git.
-
-    Outside the repo it is the workspace itself; inside, only Claude Code's
-    .claude/worktrees/<name> is one (any other missing path is a subdirectory of the repo).
-    """
-    if not ws.is_relative_to(root):
-        return ws
-    parts = ws.relative_to(root).parts
-    if parts[:2] == (".claude", "worktrees") and len(parts) > 2:
-        return root.joinpath(*parts[:3])
-    return None
-
-
-def _touched_files(session: RecentSession, root: Path) -> list[str]:
-    """Paths relative to the repo root (or the session's worktree), first touch first."""
-    bases = [root]
-    if session.workspace:
-        ws = Path(session.workspace)
-        top = _git_top(ws) if ws.exists() else _removed_worktree(ws, root)
-        if top and top != root:
-            bases.insert(0, top)  # the worktree first: it may sit inside the repo
-    seen: dict[str, None] = {}
-    for call in session.edit_calls:
-        inp = call.get("input")
-        if call.get("name") in _EDIT_TOOLS and isinstance(inp, dict):
-            raw = [inp.get("file_path") or inp.get("notebook_path")]
-        else:
-            # Codex arguments are a JSON string: decode it, or "ação" would read "a\u00e7\u00e3o".
-            args = _decoded(call.get("arguments"))
-            raw = [m for s in _strings({**call, "arguments": args}) for m in _PATCH_FILE.findall(s)]
-        # A patch run from another directory names paths relative to that directory.
-        here = Path(session.workspace or "") / (_call_workdir(call) or "")
-        for r in raw:
-            if not isinstance(r, str) or not r.strip():
-                continue
-            path = Path(r.strip())
-            if not path.is_absolute():
-                if not here.is_absolute():
-                    continue
-                path = here / path
-            path = Path(os.path.normpath(path))
-            for base in bases:
-                if path.is_relative_to(base):
-                    seen.setdefault(path.relative_to(base).as_posix())
-                    break
-    return list(seen)
 
 
 def _session_pointer(session: RecentSession) -> str:
@@ -177,20 +86,12 @@ def _brief_items(
 def _render(
     repo: str,
     decisions: list[Decision],
-    friction: Sequence[FrictionPattern] = (),
     lessons: Sequence[LessonHandle] = (),
     sessions: Sequence[RecentSession] = (),
-    root: Path | None = None,
     *,
     draft_count: int = 0,
 ) -> str:
-    """Render the fenced brief. Only ``active`` decisions are admitted (CTX-01).
-
-    ``friction`` and ``root`` are accepted so existing callers keep working.
-    Friction is not a brief item (AD-3). ``root`` used to resolve touched-file
-    lists; those lists are not rendered (CTX-05).
-    """
-    del friction, root
+    """Render the fenced brief. Only ``active`` decisions are admitted (CTX-01)."""
     active = [decision for decision in decisions if decision.status == "active"]
     fixed = escape_untrusted(_header(repo, active, draft_count, sessions))
     items = [escape_untrusted(item) for item in _brief_items(active, lessons)]
@@ -221,16 +122,10 @@ async def _lesson_catalog() -> list[LessonHandle]:
         return []
 
 
-async def _load_injectable(store: SessionStore, repo: str) -> InjectableDecisions:
-    """Admission query shared by the brief."""
-    return await store.find_injectable(repo)
-
-
 async def update_context_file(
     repo_root: Path | str,
     *,
     store: SessionStore,
-    friction: Sequence[FrictionPattern] = (),
     activity: PostgresActivityRepository | None = None,
 ) -> Path:
     """Write ``<repo_root>/.axon/context.md`` from the repo's recent sessions and decisions.
@@ -240,7 +135,7 @@ async def update_context_file(
     """
     root = Path(repo_root)
     repo = repo_identity(root)
-    injectable = await _load_injectable(store, repo)
+    injectable = await store.find_injectable(repo)
     owns_activity = activity is None
     if activity is None:
         from axon.config.runtime import load_runtime_config
@@ -254,10 +149,8 @@ async def update_context_file(
     content = _render(
         repo,
         injectable.active,
-        friction,
         await _lesson_catalog(),
         sessions,
-        root,
         draft_count=injectable.draft_count,
     )
 

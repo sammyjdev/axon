@@ -10,8 +10,7 @@ from typing import Any
 import pytest
 
 from axon.core.decision import Decision
-from axon.hooks.file_bridge import _render, update_context_file
-from axon.observability.friction import FrictionPattern
+from axon.hooks.file_bridge import update_context_file
 from axon.store.session_store import SessionStore
 
 
@@ -105,28 +104,3 @@ async def test_rewrite_is_byte_identical_when_the_store_is_unchanged(
 
     assert second.read_bytes() == first_bytes
     assert b"_Updated" not in first_bytes
-
-
-def test_render_omits_friction_from_the_brief() -> None:
-    """AD-3 packs decisions, lesson triggers and the session pointer. Friction is not one of them."""
-    content = _render(
-        "myrepo",
-        [],
-        friction=[
-            FrictionPattern(
-                caller="mcp.axon_capture",
-                reason_code="DENY_RESTRICTED_TOOL_WRITE",
-                ctx="work",
-                count=3,
-                distinct_days=2,
-                last_ts="2026-07-02T10:00:00+00:00",
-            )
-        ],
-    )
-
-    assert "DENY_RESTRICTED_TOOL_WRITE" not in content
-    assert "## Recurring friction" not in content
-
-
-def test_render_omits_recurring_friction_when_empty() -> None:
-    assert "## Recurring friction" not in _render("myrepo", [])

@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 
 import asyncpg
 
@@ -15,40 +14,6 @@ async def _init_conn(conn: asyncpg.Connection) -> None:
 
 
 _RELATIONS = ("context-delivered", "record-supported", "produced")
-_EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
-
-
-# A Claude message arrives as one event per text block ('<source>::text::<n>'); a Codex
-# message is one event. The source_id without that suffix names the typed message.
-_BLOCK = re.compile(r"::text::(\d+)$")
-_OFFSET = re.compile(r"::msg::(\d+)$")
-# Claude Code's whole opening sentence of the summary that continues a compacted session;
-# sessions imported before the adapter marked isCompactSummary stored it as typed.
-_COMPACT_SUMMARY = (
-    "This session is being continued from a previous conversation that ran out of context."
-)
-_ASK_CHARS = 600
-
-
-def _typed_asks(rows) -> dict[str, list[str]]:
-    """Each session's typed asks in order, blocks of a message joined in block order,
-    whitespace (any Unicode space) collapsed; an ask left empty is not one."""
-    messages: dict[tuple[str, str], list] = {}
-    for r in rows:
-        m = _BLOCK.search(r["source_id"])
-        key = (r["session_id"], r["source_id"][: m.start()] if m else r["source_id"])
-        messages.setdefault(key, []).append((int(m.group(1)) if m else 0, r))
-    asks: dict[str, list[tuple]] = {}
-    for (sid, _), blocks in messages.items():
-        blocks.sort(key=lambda b: b[0])
-        text = " ".join(" ".join(b[1]["t"] or "" for b in blocks).split())[:_ASK_CHARS]
-        summary = blocks[0][1]["harness"] == "claude-code" and text.startswith(_COMPACT_SUMMARY)
-        if text and not summary:
-            first = min(b[1]["occurred_at"] for b in blocks)
-            offset = _OFFSET.search(blocks[0][1]["source_id"])
-            tie = (int(offset.group(1)) if offset else 0, min(b[1]["event_id"] for b in blocks))
-            asks.setdefault(sid, []).append((first, tie, text))
-    return {sid: [t for *_, t in sorted(found)] for sid, found in asks.items()}
 
 
 class PostgresActivityRepository:
@@ -518,8 +483,7 @@ class PostgresActivityRepository:
         """The last `limit` main sessions of `project`, newest activity first.
 
         Subagent sessions (parent set) and sessions with no events are left out: they are
-        not something a person resumes. Prompts are clipped here so a pasted log never
-        crosses the wire whole.
+        not something a person resumes.
         """
         pool = await self._ensure_pool()
         async with pool.acquire() as con:
@@ -542,49 +506,10 @@ class PostgresActivityRepository:
                 )
             except asyncpg.UndefinedTableError:
                 return []  # migration 0006 not applied here yet: nothing is recorded
-            sessions = {
-                r["session_id"]: RecentSession(
-                    session_id=r["session_id"], harness=r["harness"],
-                    workspace=r["workspace"], last_at=r["last_at"],
-                )
-                for r in rows
-            }
-            ids = list(sessions)
-            if not ids:
-                return []
-            rows = await con.fetch(
-                """
-                SELECT session_id, source_id, occurred_at, event_id, harness,
-                       left(regexp_replace(content->>'text', '[[:space:]]+', ' ', 'g'), 4000) AS t
-                FROM activity_events
-                WHERE session_id = ANY($1) AND kind = 'message'
-                  AND content->>'role' = 'user'
-                  AND coalesce(content->>'injected', 'false') <> 'true'
-                """,
-                ids,
+        return [
+            RecentSession(
+                session_id=r["session_id"], harness=r["harness"],
+                workspace=r["workspace"], last_at=r["last_at"],
             )
-            for sid, asks in _typed_asks(rows).items():
-                sessions[sid].first_prompt, sessions[sid].last_prompt = asks[0], asks[-1]
-            edits = await con.fetch(
-                """
-                SELECT session_id, content FROM activity_events
-                WHERE session_id = ANY($1) AND kind = 'tool_call'
-                  AND (content->>'name' = ANY($2) OR content::text LIKE '%*** % File: %')
-                ORDER BY occurred_at, event_id
-                """,
-                ids,
-                list(_EDIT_TOOLS),
-            )
-            for r in edits:
-                sessions[r["session_id"]].edit_calls.append(r["content"])
-            links = await con.fetch(
-                """
-                SELECT session_id, target_id FROM activity_evidence_links
-                WHERE target_type = 'commit' AND session_id = ANY($1)
-                ORDER BY created_at, id
-                """,
-                ids,
-            )
-            for r in links:
-                sessions[r["session_id"]].commits.append(r["target_id"])
-        return list(sessions.values())
+            for r in rows
+        ]

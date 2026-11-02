@@ -68,23 +68,18 @@ def test_a_closing_tag_in_a_summary_cannot_end_the_fence():
     assert rendered.count(CLOSE_TAG) == 1
 
 
-def test_prompts_files_and_commits_are_not_copied():
+def test_the_session_pointer_names_only_time_harness_and_short_id(tmp_path):
     session = RecentSession(
         session_id="newer-session",
         harness="codex",
-        workspace="/tmp/axon",
+        workspace=str(tmp_path / "axon"),
         last_at=T0,
-        first_prompt="UNIQUE_PROMPT_do_not_copy",
-        last_prompt="UNIQUE_LAST_do_not_copy",
-        commits=["abc1234 feat: UNIQUE_COMMIT_SUBJECT"],
     )
 
     rendered = _render("axon", [_decision("dec-004", "kept")], sessions=[session])
 
     assert "Last session: 2026-05-01 12:00 UTC · codex · `newer-se`" in rendered
-    assert "UNIQUE_PROMPT_do_not_copy" not in rendered
-    assert "UNIQUE_LAST_do_not_copy" not in rendered
-    assert "UNIQUE_COMMIT_SUBJECT" not in rendered
+    assert str(tmp_path) not in rendered
 
 
 def test_two_renders_of_an_unchanged_store_are_byte_identical():
@@ -110,7 +105,10 @@ def test_overflow_keeps_whole_items_and_one_count_line():
 
     assert len(rendered.encode("utf-8")) <= 1536
     lines = rendered.splitlines()
-    overflow = [line for line in lines if line.startswith("+") and line.endswith("more via axon_get_context")]
+    overflow = [
+        line for line in lines
+        if line.startswith("+") and line.endswith("more via axon_get_context")
+    ]
     assert len(overflow) == 1
     flat = " ".join(("word " * 40).split())
     kept = [line for line in lines if line.startswith("- `dec-")]

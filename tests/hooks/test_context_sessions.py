@@ -168,7 +168,9 @@ async def test_the_file_never_passes_100_lines(activity, git_repo):
     lines = text.splitlines()
     joined = "\n".join(lines)
     flat = " ".join(("d " * 100).split())
-    assert any(line.startswith("+") and line.endswith("more via axon_get_context") for line in lines)
+    assert any(
+        line.startswith("+") and line.endswith("more via axon_get_context") for line in lines
+    )
     for line in lines:
         if line.startswith("- `dec-"):
             assert flat in line
@@ -257,99 +259,3 @@ def test_multiline_decision_summaries_stay_whole_inside_the_byte_budget():
     assert len(out.encode("utf-8")) <= 1536
     assert "- `dec-000` (active) — line line line" in out
 
-
-def test_relative_and_dotted_paths_resolve_against_the_session_workspace(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    s = RecentSession("s", "codex", str(root / "src"), T0, edit_calls=[
-        {"name": "exec", "input": "*** Update File: a.py\\n"},
-        _edit(f"{root}/src/a.py"),
-        _edit(f"{root}/src/../src/a.py"),
-    ])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py"]
-
-
-def test_a_codex_patch_lists_deleted_files_and_rename_targets(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    patch = (
-        "*** Begin Patch\\n*** Delete File: retired.py\\n"
-        "*** Update File: old.py\\n*** Move to: new.py\\n@@\\n*** End Patch"
-    )
-    s = RecentSession("s", "codex", str(root), T0, edit_calls=[{"name": "exec", "input": patch}])
-
-    assert file_bridge._touched_files(s, root) == ["retired.py", "old.py", "new.py"]
-
-
-def test_files_touched_in_a_removed_worktree_are_relative_to_that_worktree(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    gone = tmp_path / "worktrees" / "phase-x"  # removed after its branch merged
-    s = RecentSession("s", "codex", str(gone), T0, edit_calls=[
-        _edit(f"{gone}/src/a.py"),
-        {"name": "exec", "input": "*** Update File: src/b.py\\n"},
-    ])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py", "src/b.py"]
-
-
-def test_files_touched_in_a_worktree_inside_the_repo_drop_the_worktree_prefix(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    wt = root / ".claude" / "worktrees" / "phase-x"
-    wt.mkdir(parents=True)
-    (wt / ".git").write_text("gitdir: elsewhere\n")
-    s = RecentSession("s", "claude-code", str(wt), T0, edit_calls=[_edit(f"{wt}/src/a.py")])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py"]
-
-
-def test_files_touched_in_a_removed_worktree_inside_the_repo_drop_its_prefix(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    gone = root / ".claude" / "worktrees" / "phase-x"
-    s = RecentSession("s", "claude-code", str(gone), T0, edit_calls=[_edit(f"{gone}/src/a.py")])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py"]
-
-
-def test_a_codex_patch_path_resolves_against_the_call_workdir(tmp_path):
-    import json
-
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    call = {"type": "function_call", "name": "exec_command", "arguments": json.dumps({
-        "cmd": "apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: a.py\n*** End Patch\nEOF",
-        "workdir": str(root / "src"),
-    })}
-    s = RecentSession("s", "codex", str(root), T0, edit_calls=[call])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py"]
-
-
-def test_a_patch_path_with_accents_in_json_arguments_is_shown_decoded(tmp_path):
-    import json
-
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    call = {"type": "function_call", "name": "exec_command", "arguments": json.dumps({
-        "cmd": "apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: src/ação.py\n*** End Patch\nEOF",
-    })}
-    s = RecentSession("s", "codex", str(root), T0, edit_calls=[call])
-
-    assert file_bridge._touched_files(s, root) == ["src/ação.py"]
