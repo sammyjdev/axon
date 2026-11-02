@@ -125,12 +125,14 @@ async def test_scan_pulled_range_from_a_worktree_files_under_the_parent_repo_key
 async def test_context_file_in_a_worktree_lists_the_parent_repos_decisions(
     store: SessionStore, worktree: Path
 ) -> None:
-    await store.save_decision(_decision(id="dec-001", repo="myrepo", summary="rename to axon"))
+    await store.save_decision(
+        _decision(id="dec-001", repo="myrepo", summary="rename to axon", status="active")
+    )
 
     target = await update_context_file(worktree, store=store)
 
     text = target.read_text(encoding="utf-8")
     assert target == worktree / ".axon" / "context.md"
-    assert text.splitlines()[0].endswith("myrepo")
+    assert "# AXON context — myrepo" in text
     assert "dec-001" in text
-    assert "None captured yet" not in text
+    assert "No active decisions." not in text

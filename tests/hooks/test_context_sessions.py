@@ -144,7 +144,7 @@ async def test_the_file_never_passes_100_lines(activity, git_repo):
         for k in range(10):
             await _commit_link(activity, sid, f"{k:040d}")
     decisions = [Decision(id=f"dec-{n:03d}", timestamp=T0, agent="manual", repo="axon",
-                          summary="d " * 100) for n in range(30)]
+                          status="active", summary="d " * 100) for n in range(30)]
     lessons = [LessonHandle(id=uuid4(), kind="agent-error", triggers=["x"]) for _ in range(200)]
 
     async def catalog():
@@ -157,10 +157,15 @@ async def test_the_file_never_passes_100_lines(activity, git_repo):
     finally:
         file_bridge._lesson_catalog = file_bridge_catalog
 
-    lines = path.read_text().splitlines()
-    assert len(lines) <= 100
-    assert sum(line.startswith("Last session:") for line in lines) == 1
+    text = path.read_text()
+    assert len(text.encode("utf-8")) <= 1536
+    lines = text.splitlines()
     joined = "\n".join(lines)
+    flat = " ".join(("d " * 100).split())
+    assert any(line.startswith("+") and line.endswith("more via axon_get_context") for line in lines)
+    for line in lines:
+        if line.startswith("- `dec-"):
+            assert flat in line
     assert "very long ask" not in joined
     assert "first ask:" not in joined
     assert "- files:" not in joined
@@ -169,13 +174,14 @@ async def test_the_file_never_passes_100_lines(activity, git_repo):
 
 async def test_a_repo_with_no_activity_still_gets_decisions(activity, git_repo):
     store = _Store([Decision(id="dec-007", timestamp=T0, agent="manual", repo="axon",
-                             summary="keep it small")])
+                             status="active", summary="keep it small")])
 
     path = await update_context_file(git_repo, store=store, activity=activity)
 
     text = path.read_text()
-    assert "- `dec-007` (draft) — keep it small" in text
+    assert "- `dec-007` (active) — keep it small" in text
     assert "Recent sessions" not in text
+    assert "first ask:" not in text
 
 
 async def test_a_database_that_is_down_leaves_the_previous_file(git_repo):
@@ -201,7 +207,9 @@ async def test_refresh_from_a_subdirectory_writes_the_repo_root_file(activity, g
     path = await refresh_context_for_cwd(sub)
 
     assert path == git_repo / ".axon" / "context.md"
-    assert path.read_text().startswith("# AXON context — axon")
+    text = path.read_text()
+    assert text.startswith("Precedence: user > CLAUDE.md/AGENTS.md > AXON memory.\n")
+    assert "# AXON context — axon" in text
 
 
 async def test_regenerating_with_50_sessions_of_200_events_is_fast(activity, git_repo):
@@ -234,14 +242,14 @@ async def test_regenerating_with_50_sessions_of_200_events_is_fast(activity, git
     assert elapsed < 1.0
 
 
-def test_multiline_decision_summaries_still_fit_in_100_lines():
+def test_multiline_decision_summaries_stay_whole_inside_the_byte_budget():
     decisions = [Decision(id=f"dec-{n:03d}", timestamp=T0, agent="manual", repo="axon",
-                          summary="line\n" * 10) for n in range(15)]
+                          status="active", summary="line\n" * 10) for n in range(15)]
 
     out = file_bridge._render("axon", decisions)
 
-    assert len(out.splitlines()) <= 100
-    assert "- `dec-000` (draft) — line line line" in out
+    assert len(out.encode("utf-8")) <= 1536
+    assert "- `dec-000` (active) — line line line" in out
 
 
 def test_relative_and_dotted_paths_resolve_against_the_session_workspace(tmp_path):
