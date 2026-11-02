@@ -16,7 +16,9 @@ Savings claims name their counterfactual per gnomon-eval ADR-0011.
 Code search, compression and the retrieval ladder were retired on 2026-10-15
 ([dec-138](decisions/dec-138-stop-code-vectors.md)). Every recall, faithfulness,
 session-cost and savings row below is **historical**: it describes a subsystem
-that no longer exists. The current measured results are the dec-138 lesson-search
+that no longer exists. Each GNOMON-derived row, and each retired code-search
+savings row (including the 90.7% recall-savings figures), is marked
+`historical (dec-138)`. The current measured results are the dec-138 lesson-search
 figures in the [README](../README.md#measured-results). The compression telemetry
 this manifest used to report was removed; it stays in the git history.
 
@@ -25,12 +27,12 @@ this manifest used to report was removed; it stays in the git history.
 | metric | value | source_file | method/filter | n | date_computed |
 |---|---|---|---|---|---|
 | Token reduction (deterministic benchmark) | 52.3% (RETIRED: deterministic projection; superseded by the measured session harness, gnomon-eval ADR-0010) | benchmarks/model.py | deterministic cost model: baseline 87000 vs AXON 41500 input tokens | 20 turns | 2026-06-08 |
-| Faithfulness uplift (recall A/B) | 0.40-0.52 -> 0.72-0.76 (95% CI per run) | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | GNOMON A/B, judge llama3.1:8b x8, seed 42, 3x on + 2x off replicates | 17 cases | 2026-07-02 |
-| Recall input cost | +2,151 prompt tokens/turn | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | paired on/off telemetry, usage_source=provider | 17 cases | 2026-07-02 |
-| Faithfulness, last code-search stack (on-arm) | 0.775 [0.735, 0.814] | gnomon-eval results/wave3/rung3c-hybrid.json | post retrieval ladder: index hygiene + skeleton suppression + hybrid lexical (AXON_HYBRID_SEARCH=1); single run | 17 cases | 2026-07-04 |
-| Session cost vs transcript (10 turns) | parity: pooled +4.0% savings, crossover turn 6-9 | gnomon-eval results/wave3/t12-session-3c-budget500.json + t12-b500-replicate{1,2}.json | dual-arm session harness, recall budget 500, 3 runs mutually within CIs, quality gate pass, 1200/1200 provider records | 10 sessions x 10 turns | 2026-07-04 |
-| Real-usage savings vs full-file reads | HISTORICAL: 90.7% (SUPERSEDED by the committed snapshot below; validated in hindsight - the recoverable subset of its window reproduces at 90.5% under the declared remaps) | axon scripts/recall_savings_report.py (removed by dec-138) | per-chunk telemetry counterfactual: unique source files read in full | 100 requests | 2026-07-04 |
-| Real-usage savings vs full-file reads (committed snapshot) | HISTORICAL, code search retired in dec-138: 90.7% exact-count (330,590 vs 3,537,838 tokens, n=333); 88.6% conservative floor over all n=448 | benchmarks/recall_savings_snapshot.jsonl (the report script was removed by dec-138; sum the rows with missing_files=0) | whitelisted per-request snapshot (opaque ids, integer counts); directory moves declared in benchmarks/recall_savings_remap.json; exact = requests whose files all resolve; floor includes undercounted counterfactuals. Supersedes the 2026-07-28 cut (89.5% exact / n=271): five further declared moves resolved 62 more requests, each remap validated at 100% file-resolution before inclusion | 333 exact / 448 total | 2026-08-07 |
+| Faithfulness uplift (recall A/B) | historical (dec-138): 0.40-0.52 -> 0.72-0.76 (95% CI per run) | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | GNOMON A/B, judge llama3.1:8b x8, seed 42, 3x on + 2x off replicates | 17 cases | 2026-07-02 |
+| Recall input cost | historical (dec-138): +2,151 prompt tokens/turn | gnomon-eval results/2026-07-02-ab-recall/RESULTS.md | paired on/off telemetry, usage_source=provider | 17 cases | 2026-07-02 |
+| Faithfulness, last code-search stack (on-arm) | historical (dec-138): 0.775 [0.735, 0.814] | gnomon-eval results/wave3/rung3c-hybrid.json | post retrieval ladder: index hygiene + skeleton suppression + hybrid lexical (AXON_HYBRID_SEARCH=1); single run | 17 cases | 2026-07-04 |
+| Session cost vs transcript (10 turns) | historical (dec-138): parity: pooled +4.0% savings, crossover turn 6-9 | gnomon-eval results/wave3/t12-session-3c-budget500.json + t12-b500-replicate{1,2}.json | dual-arm session harness, recall budget 500, 3 runs mutually within CIs, quality gate pass, 1200/1200 provider records | 10 sessions x 10 turns | 2026-07-04 |
+| Real-usage savings vs full-file reads | historical (dec-138): 90.7% (SUPERSEDED by the committed snapshot below; validated in hindsight - the recoverable subset of its window reproduces at 90.5% under the declared remaps) | axon scripts/recall_savings_report.py (removed by dec-138) | per-chunk telemetry counterfactual: unique source files read in full | 100 requests | 2026-07-04 |
+| Real-usage savings vs full-file reads (committed snapshot) | historical (dec-138): 90.7% exact-count (330,590 vs 3,537,838 tokens, n=333); 88.6% conservative floor over all n=448 | benchmarks/recall_savings_snapshot.jsonl (the report script was removed by dec-138; sum the rows with missing_files=0) | whitelisted per-request snapshot (opaque ids, integer counts); directory moves declared in benchmarks/recall_savings_remap.json; exact = requests whose files all resolve; floor includes undercounted counterfactuals. Supersedes the 2026-07-28 cut (89.5% exact / n=271): five further declared moves resolved 62 more requests, each remap validated at 100% file-resolution before inclusion | 333 exact / 448 total | 2026-08-07 |
 | Baseline input tokens (benchmark) | 87000 | benchmarks/model.py | session_total mode=baseline | 20 turns | 2026-06-08 |
 | AXON input tokens (benchmark) | 41500 | benchmarks/model.py | session_total mode=axon | 20 turns | 2026-06-08 |
 | Test suite | 1529 passed, 0 failed, 3 skipped | pytest tests/ -q | CI full-suite job | 1532 total | 2026-10-30 |
