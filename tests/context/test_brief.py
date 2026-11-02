@@ -119,6 +119,22 @@ def test_overflow_keeps_whole_items_and_one_count_line():
         assert flat in line
 
 
+def test_the_session_pointer_stays_when_the_catalogue_fills_the_budget():
+    """The pointer is header chrome. A full decision and lesson list must not drop it."""
+    decisions = [
+        _decision(f"dec-{n:03d}", "d " * 100) for n in range(30)
+    ]
+    lessons = [
+        LessonHandle(id=uuid4(), kind="agent-error", triggers=["x"]) for _ in range(200)
+    ]
+    session = RecentSession("sess-overflow", "claude-code", "/w/axon", T0)
+
+    rendered = _render("axon", decisions, lessons=lessons, sessions=[session])
+
+    assert "Last session:" in rendered
+    assert len(rendered.encode("utf-8")) <= 1536
+
+
 def test_an_item_larger_than_the_budget_is_not_cut():
     huge = "z" * 2000
     rendered = _render(

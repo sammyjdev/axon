@@ -31,17 +31,9 @@ logger = logging.getLogger(__name__)
 # One line, the session that just closed. Prompts, touched files and commit subjects
 # are derivable from the transcript and from git, so they are not copied in (CTX-05).
 _SESSION_LIMIT = 1
-_FILE_LIMIT = 8
-_COMMIT_LIMIT = 3
-_PROMPT_CHARS = 160
 _EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 # Codex patches arrive as text, sometimes inside JS source, so `\n` may be escaped.
 _PATCH_FILE = re.compile(r"\*\*\* (?:(?:Update|Add|Delete) File|Move to): (.+?)(?=\\n|\n|\"|$)")
-
-
-def _one_line(text: str | None) -> str:
-    flat = " ".join((text or "").split())
-    return flat if len(flat) <= _PROMPT_CHARS else flat[: _PROMPT_CHARS - 1] + "…"
 
 
 def _strings(value: object):
@@ -128,19 +120,6 @@ def _touched_files(session: RecentSession, root: Path) -> list[str]:
     return list(seen)
 
 
-def _commit_line(root: Path, sha: str) -> str:
-    try:
-        out = subprocess.run(  # noqa: S603
-            ["git", "show", "-s", "--format=%h %s", sha, "--"],  # noqa: S607
-            cwd=root, capture_output=True, text=True, timeout=5, check=True,
-        ).stdout.strip()
-        if out:
-            return _one_line(out)
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return sha[:7]
-
-
 def _session_pointer(session: RecentSession) -> str:
     """One stable line for the newest session. No prompt, path, or commit text."""
     last = session.last_at
@@ -154,13 +133,6 @@ def _session_pointer(session: RecentSession) -> str:
     )
 
 
-def _render_sessions(sessions: Sequence[RecentSession], _root: Path) -> list[str]:
-    """The last-session pointer only. File lists are not rendered (CTX-05)."""
-    if not sessions:
-        return []
-    return ["", _session_pointer(sessions[0]), ""]
-
-
 def _decision_line(decision: Decision) -> str:
     summary = " ".join(decision.summary.split())
     return f"- `{decision.id}` ({decision.status}) — {summary}"
@@ -170,7 +142,13 @@ def _lesson_line(handle: LessonHandle) -> str:
     return f"- {handle.kind}: {', '.join(handle.triggers)}"
 
 
-def _header(repo: str, active: list[Decision], draft_count: int) -> str:
+def _header(
+    repo: str,
+    active: list[Decision],
+    draft_count: int,
+    sessions: Sequence[RecentSession] = (),
+) -> str:
+    """Fixed lines. The session pointer lives here so the packer cannot drop it."""
     lines = [f"# AXON context — {repo}"]
     if active:
         # The id is stable store state. A wall clock would break prompt caching (CTX-07).
@@ -179,21 +157,20 @@ def _header(repo: str, active: list[Decision], draft_count: int) -> str:
         lines.append("No active decisions.")
     if draft_count > 0:
         lines.append(f"{draft_count} drafts - axon adr list")
+    if sessions:
+        lines.append(_session_pointer(sessions[0]))
     return "\n".join(lines) + "\n"
 
 
 def _brief_items(
     active: Sequence[Decision],
     lessons: Sequence[LessonHandle],
-    sessions: Sequence[RecentSession],
 ) -> list[str]:
     items = [_decision_line(decision) for decision in active]
     if lessons:
         # Handles only. The call is named because a list with no way to read one is inert.
         items.append("Triggers only. Call axon_search_lessons.")
         items.extend(_lesson_line(handle) for handle in lessons)
-    if sessions:
-        items.append(_session_pointer(sessions[0]))
     return items
 
 
@@ -215,10 +192,8 @@ def _render(
     """
     del friction, root
     active = [decision for decision in decisions if decision.status == "active"]
-    fixed = escape_untrusted(_header(repo, active, draft_count))
-    items = [
-        escape_untrusted(item) for item in _brief_items(active, lessons, sessions)
-    ]
+    fixed = escape_untrusted(_header(repo, active, draft_count, sessions))
+    items = [escape_untrusted(item) for item in _brief_items(active, lessons)]
     room = BRIEF_BUDGET - len(fence(fixed).encode("utf-8"))
     packed = pack_items(items, room) if room > 0 else ""
     return fence(fixed + packed)
@@ -246,19 +221,9 @@ async def _lesson_catalog() -> list[LessonHandle]:
         return []
 
 
-async def _load_injectable(store: object, repo: str) -> InjectableDecisions:
-    """Admission query. A test double that only lists decisions is filtered here."""
-    finder = getattr(store, "find_injectable", None)
-    if finder is None and hasattr(store, "_decisions"):
-        finder = getattr(await store._decisions(), "find_injectable", None)
-    if finder is not None:
-        found = await finder(repo)
-        return found
-    rows = await store.find_decisions_by_repo(repo, limit=10_000)  # type: ignore[attr-defined]
-    return InjectableDecisions(
-        active=[row for row in rows if row.status == "active"],
-        draft_count=sum(1 for row in rows if row.status == "draft"),
-    )
+async def _load_injectable(store: SessionStore, repo: str) -> InjectableDecisions:
+    """Admission query shared by the brief."""
+    return await store.find_injectable(repo)
 
 
 async def update_context_file(

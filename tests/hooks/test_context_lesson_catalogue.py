@@ -20,8 +20,10 @@ from axon.store.lessons import LessonHandle
 
 
 class _StoreWithNoDecisions:
-    async def find_decisions_by_repo(self, repo, limit=None):
-        return []
+    async def find_injectable(self, repo, file=None):
+        from axon.store.pg_decision_repository import InjectableDecisions
+
+        return InjectableDecisions(active=[], draft_count=0)
 
 
 def _handle(kind="agent-error", triggers=("shell-script",)):

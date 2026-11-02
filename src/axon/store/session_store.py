@@ -167,6 +167,16 @@ class SessionStore:
         decision_repo = await self._decisions()
         return await decision_repo.find_decisions_by_repo(repo, limit)
 
+    async def find_injectable(self, repo: str, file: str | Path | None = None):
+        """Active decisions for ``repo``, plus the repo-wide draft count.
+
+        ``file`` selects decisions whose stored path matches exactly. The
+        decision repository owns the query; this is the store facade the brief
+        calls.
+        """
+        decision_repo = await self._decisions()
+        return await decision_repo.find_injectable(repo, file)
+
     async def all_decisions(self) -> list[Decision]:
         decision_repo = await self._decisions()
         return await decision_repo.all_decisions()

@@ -30,8 +30,13 @@ class _Store:
     def __init__(self, decisions=()):
         self.decisions = list(decisions)
 
-    async def find_decisions_by_repo(self, repo, limit=None):
-        return self.decisions[:limit]
+    async def find_injectable(self, repo, file=None):
+        from axon.store.pg_decision_repository import InjectableDecisions
+
+        return InjectableDecisions(
+            active=[d for d in self.decisions if d.status == "active"],
+            draft_count=sum(1 for d in self.decisions if d.status == "draft"),
+        )
 
 
 def _git(root: Path, *args: str) -> str:
@@ -158,6 +163,7 @@ async def test_the_file_never_passes_100_lines(activity, git_repo):
         file_bridge._lesson_catalog = file_bridge_catalog
 
     text = path.read_text()
+    assert "Last session:" in text
     assert len(text.encode("utf-8")) <= 1536
     lines = text.splitlines()
     joined = "\n".join(lines)
