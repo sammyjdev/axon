@@ -78,6 +78,67 @@ def test_init_installs_hooks_and_indexes_nothing(monkeypatch, tmp_path):
     assert "indexed" not in result.stdout
 
 
+def test_init_writes_axon_gitignore_once(monkeypatch, tmp_path):
+    """CTX-09: `axon init` leaves `.axon/` in .gitignore exactly once."""
+    monkeypatch.setattr(
+        "axon.hooks.git_installer.install_hooks",
+        lambda repo_path=".": ["post-commit"],
+    )
+
+    result = runner.invoke(app, ["init", str(tmp_path)])
+    assert result.exit_code == 0
+    ignore = tmp_path / ".gitignore"
+    assert ignore.read_text(encoding="utf-8").splitlines() == [".axon/"]
+
+    again = runner.invoke(app, ["init", str(tmp_path)])
+    assert again.exit_code == 0
+    assert ignore.read_text(encoding="utf-8").splitlines().count(".axon/") == 1
+
+
+def test_init_collapses_duplicate_axon_gitignore_lines(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "axon.hooks.git_installer.install_hooks",
+        lambda repo_path=".": [],
+    )
+    ignore = tmp_path / ".gitignore"
+    ignore.write_text("# keep\nvenv/\n.axon/\n.axon/\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(tmp_path)])
+
+    assert result.exit_code == 0
+    lines = ignore.read_text(encoding="utf-8").splitlines()
+    assert lines.count(".axon/") == 1
+    assert lines[:2] == ["# keep", "venv/"]
+
+
+def test_init_does_not_treat_a_comment_as_the_axon_ignore(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "axon.hooks.git_installer.install_hooks",
+        lambda repo_path=".": [],
+    )
+    ignore = tmp_path / ".gitignore"
+    ignore.write_text("# .axon/\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert ignore.read_text(encoding="utf-8").splitlines() == ["# .axon/", ".axon/"]
+
+
+def test_init_keeps_crlf_line_endings_in_gitignore(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "axon.hooks.git_installer.install_hooks",
+        lambda repo_path=".": [],
+    )
+    ignore = tmp_path / ".gitignore"
+    ignore.write_bytes(b"node_modules/\r\n*.log\r\n")
+
+    result = runner.invoke(app, ["init", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert ignore.read_bytes() == b"node_modules/\r\n*.log\r\n.axon/\r\n"
+
+
 def test_serve_starts_mcp_server(monkeypatch):
     called = {"ran": False}
 
@@ -271,6 +332,7 @@ def test_init_aborts_on_non_git_path(monkeypatch, tmp_path):
     result = runner.invoke(app, ["init", str(tmp_path)])
     assert result.exit_code == 1
     assert "Not a git repository" in result.output
+    assert not (tmp_path / ".gitignore").exists()
 
 
 def test_export_adr(monkeypatch, tmp_path):

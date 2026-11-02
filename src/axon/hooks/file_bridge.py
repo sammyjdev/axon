@@ -6,223 +6,98 @@ git events and on session end. Writes are atomic (temp file + rename).
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 import subprocess
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC
 from pathlib import Path
 
 from axon.activity.models import RecentSession
 from axon.activity.repository import PostgresActivityRepository
+from axon.context.brief_budget import BRIEF_BUDGET, pack_items
+from axon.context.fence import escape_untrusted, fence
 from axon.core.decision import Decision
 from axon.core.repo_identity import repo_identity
-from axon.observability.friction import FrictionPattern
 from axon.store.lessons import LessonHandle, LessonStore, resolve_lessons_dsn
 from axon.store.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
 
-_RECENT_LIMIT = 15
-# The catalogue is prepended to every session, and the corpus only grows - lessons are added
-# and never retired - so an uncapped list is a slow leak into every session's token budget.
-# Newest first, because the lesson written today is the one most likely to be about a
-# mistake still being made.
-_LESSON_LIMIT = 24
-# Three sessions: the one just closed plus the two before it covers "where was I" and a
-# parallel lane, at ~6 lines each, and keeps the file well inside _MAX_LINES with 15
-# decisions and the lesson catalogue beside it.
-_SESSION_LIMIT = 3
-_FILE_LIMIT = 8
-_COMMIT_LIMIT = 3
-_PROMPT_CHARS = 160
-# Every line here is prepended to every session in the repo.
-_MAX_LINES = 100
-_EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
-# Codex patches arrive as text, sometimes inside JS source, so `\n` may be escaped.
-_PATCH_FILE = re.compile(r"\*\*\* (?:(?:Update|Add|Delete) File|Move to): (.+?)(?=\\n|\n|\"|$)")
+# One line, the session that just closed. Prompts, touched files and commit subjects
+# are derivable from the transcript and from git, so they are not copied in (CTX-05).
+_SESSION_LIMIT = 1
 
 
-def _one_line(text: str | None) -> str:
-    flat = " ".join((text or "").split())
-    return flat if len(flat) <= _PROMPT_CHARS else flat[: _PROMPT_CHARS - 1] + "…"
+def _session_pointer(session: RecentSession) -> str:
+    """One stable line for the newest session. No prompt, path, or commit text."""
+    last = session.last_at
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+    else:
+        last = last.astimezone(UTC)
+    return (
+        f"Last session: {last:%Y-%m-%d %H:%M} UTC · {session.harness} · "
+        f"`{session.session_id[:8]}`"
+    )
 
 
-def _strings(value: object):
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for v in value.values():
-            yield from _strings(v)
-    elif isinstance(value, list):
-        for v in value:
-            yield from _strings(v)
+def _decision_line(decision: Decision) -> str:
+    summary = " ".join(decision.summary.split())
+    return f"- `{decision.id}` ({decision.status}) — {summary}"
 
 
-def _git_top(path: Path) -> Path | None:
-    for p in (path, *path.parents):
-        if (p / ".git").exists():
-            return p
-    return None
+def _lesson_line(handle: LessonHandle) -> str:
+    return f"- {handle.kind}: {', '.join(handle.triggers)}"
 
 
-def _decoded(args: object) -> object:
-    if isinstance(args, str):
-        try:
-            return json.loads(args)
-        except ValueError:
-            return args
-    return args
+def _header(
+    repo: str,
+    active: list[Decision],
+    draft_count: int,
+    sessions: Sequence[RecentSession] = (),
+) -> str:
+    """Fixed lines. The session pointer lives here so the packer cannot drop it."""
+    lines = [f"# AXON context — {repo}"]
+    if active:
+        # The id is stable store state. A wall clock would break prompt caching (CTX-07).
+        lines.append(f"Newest decision: {active[0].id}")
+    else:
+        lines.append("No active decisions.")
+    if draft_count > 0:
+        lines.append(f"{draft_count} drafts - axon adr list")
+    if sessions:
+        lines.append(_session_pointer(sessions[0]))
+    return "\n".join(lines) + "\n"
 
 
-def _call_workdir(call: dict) -> str | None:
-    """The directory a Codex call ran in: its arguments' (or input's) workdir."""
-    for src in (_decoded(call.get("arguments")), call.get("input")):
-        if isinstance(src, dict) and isinstance(src.get("workdir"), str):
-            return src["workdir"]
-    return None
-
-
-def _removed_worktree(ws: Path, root: Path) -> Path | None:
-    """The worktree a missing workspace was, once removed after its merge left no .git.
-
-    Outside the repo it is the workspace itself; inside, only Claude Code's
-    .claude/worktrees/<name> is one (any other missing path is a subdirectory of the repo).
-    """
-    if not ws.is_relative_to(root):
-        return ws
-    parts = ws.relative_to(root).parts
-    if parts[:2] == (".claude", "worktrees") and len(parts) > 2:
-        return root.joinpath(*parts[:3])
-    return None
-
-
-def _touched_files(session: RecentSession, root: Path) -> list[str]:
-    """Paths relative to the repo root (or the session's worktree), first touch first."""
-    bases = [root]
-    if session.workspace:
-        ws = Path(session.workspace)
-        top = _git_top(ws) if ws.exists() else _removed_worktree(ws, root)
-        if top and top != root:
-            bases.insert(0, top)  # the worktree first: it may sit inside the repo
-    seen: dict[str, None] = {}
-    for call in session.edit_calls:
-        inp = call.get("input")
-        if call.get("name") in _EDIT_TOOLS and isinstance(inp, dict):
-            raw = [inp.get("file_path") or inp.get("notebook_path")]
-        else:
-            # Codex arguments are a JSON string: decode it, or "ação" would read "a\u00e7\u00e3o".
-            args = _decoded(call.get("arguments"))
-            raw = [m for s in _strings({**call, "arguments": args}) for m in _PATCH_FILE.findall(s)]
-        # A patch run from another directory names paths relative to that directory.
-        here = Path(session.workspace or "") / (_call_workdir(call) or "")
-        for r in raw:
-            if not isinstance(r, str) or not r.strip():
-                continue
-            path = Path(r.strip())
-            if not path.is_absolute():
-                if not here.is_absolute():
-                    continue
-                path = here / path
-            path = Path(os.path.normpath(path))
-            for base in bases:
-                if path.is_relative_to(base):
-                    seen.setdefault(path.relative_to(base).as_posix())
-                    break
-    return list(seen)
-
-
-def _commit_line(root: Path, sha: str) -> str:
-    try:
-        out = subprocess.run(  # noqa: S603
-            ["git", "show", "-s", "--format=%h %s", sha, "--"],  # noqa: S607
-            cwd=root, capture_output=True, text=True, timeout=5, check=True,
-        ).stdout.strip()
-        if out:
-            return _one_line(out)
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return sha[:7]
-
-
-def _render_sessions(sessions: Sequence[RecentSession], root: Path) -> list[str]:
-    lines = ["", "## Recent sessions", ""]
-    for s in sessions:
-        lines.append(f"### {s.last_at:%Y-%m-%d %H:%M} UTC · {s.harness} · `{s.session_id[:8]}`")
-        if s.first_prompt:
-            lines.append(f"- first ask: {_one_line(s.first_prompt)}")
-        if s.last_prompt and s.last_prompt != s.first_prompt:
-            lines.append(f"- last ask: {_one_line(s.last_prompt)}")
-        files = _touched_files(s, root)
-        if files:
-            shown = ", ".join(f"`{f}`" for f in files[:_FILE_LIMIT])
-            more = f" +{len(files) - _FILE_LIMIT} more" if len(files) > _FILE_LIMIT else ""
-            lines.append(f"- files: {shown}{more}")
-        commits = list(dict.fromkeys(s.commits))
-        for sha in commits[:_COMMIT_LIMIT]:
-            lines.append(f"- commit {_commit_line(root, sha)}")
-        if len(commits) > _COMMIT_LIMIT:
-            lines.append(f"- _+{len(commits) - _COMMIT_LIMIT} more commit(s)_")
-        lines.append("")
-    return lines[:-1]
+def _brief_items(
+    active: Sequence[Decision],
+    lessons: Sequence[LessonHandle],
+) -> list[str]:
+    items = [_decision_line(decision) for decision in active]
+    if lessons:
+        # Handles only. The call is named because a list with no way to read one is inert.
+        items.append("Triggers only. Call axon_search_lessons.")
+        items.extend(_lesson_line(handle) for handle in lessons)
+    return items
 
 
 def _render(
     repo: str,
     decisions: list[Decision],
-    friction: Sequence[FrictionPattern] = (),
     lessons: Sequence[LessonHandle] = (),
     sessions: Sequence[RecentSession] = (),
-    root: Path | None = None,
+    *,
+    draft_count: int = 0,
 ) -> str:
-    now = datetime.now(UTC).isoformat(timespec="seconds")
-    lines = [
-        f"# AXON context — {repo}",
-        "",
-        f"_Updated {now} · {len(decisions)} recent decision(s)._",
-        "",
-    ]
-    if sessions:
-        lines += _render_sessions(sessions, root or Path.cwd())[1:] + [""]
-    lines += [
-        "## Recent decisions",
-        "",
-    ]
-    if decisions:
-        lines += [f"- `{d.id}` ({d.status}) — {' '.join(d.summary.split())}" for d in decisions]
-    else:
-        lines.append("_None captured yet._")
-    if friction:
-        lines += ["", "## Recurring friction", ""]
-        lines += [
-            f"- `{pattern.reason_code}` via {pattern.caller} (ctx={pattern.ctx}) - "
-            f"{pattern.count}x across {pattern.distinct_days} days"
-            for pattern in friction[:5]
-        ]
-    if lessons:
-        # Handles, not content: the mistake/tell/fix stay behind the call. And the call is
-        # named on the section, because a list nobody can act on is a phone book with no
-        # telephone - the measured problem is not that lessons are hard to fetch, it is
-        # that nothing says they exist (4.1% of sessions asked, in the 30 days to
-        # 2026-09-01). No empty heading when there are none: it would spend the tokens and
-        # teach the reader that the section is usually empty.
-        shown = list(lessons[:_LESSON_LIMIT])
-        more = len(lessons) - len(shown)
-        lines += [
-            "",
-            f"## Lessons ({len(lessons)} recorded)",
-            "",
-            "Triggers only. Call `axon_search_lessons` with the situation you are in to read one.",
-            "",
-        ]
-        lines += [f"- {h.kind}: {', '.join(h.triggers)}" for h in shown]
-        if more:
-            lines.append(f"- _...{more} more, all reachable through `axon_search_lessons`._")
-    lines.append("")
-    # Backstop only: the limits above keep a full file near 80 lines.
-    return "\n".join("\n".join(lines).splitlines()[:_MAX_LINES]) + "\n"
+    """Render the fenced brief. Only ``active`` decisions are admitted (CTX-01)."""
+    active = [decision for decision in decisions if decision.status == "active"]
+    fixed = escape_untrusted(_header(repo, active, draft_count, sessions))
+    items = [escape_untrusted(item) for item in _brief_items(active, lessons)]
+    room = BRIEF_BUDGET - len(fence(fixed).encode("utf-8"))
+    packed = pack_items(items, room) if room > 0 else ""
+    return fence(fixed + packed)
 
 
 async def _lesson_catalog() -> list[LessonHandle]:
@@ -251,7 +126,6 @@ async def update_context_file(
     repo_root: Path | str,
     *,
     store: SessionStore,
-    friction: Sequence[FrictionPattern] = (),
     activity: PostgresActivityRepository | None = None,
 ) -> Path:
     """Write ``<repo_root>/.axon/context.md`` from the repo's recent sessions and decisions.
@@ -261,7 +135,7 @@ async def update_context_file(
     """
     root = Path(repo_root)
     repo = repo_identity(root)
-    decisions = await store.find_decisions_by_repo(repo, limit=_RECENT_LIMIT)
+    injectable = await store.find_injectable(repo)
     owns_activity = activity is None
     if activity is None:
         from axon.config.runtime import load_runtime_config
@@ -272,7 +146,13 @@ async def update_context_file(
     finally:
         if owns_activity:
             await activity.close()
-    content = _render(repo, decisions, friction, await _lesson_catalog(), sessions, root)
+    content = _render(
+        repo,
+        injectable.active,
+        await _lesson_catalog(),
+        sessions,
+        draft_count=injectable.draft_count,
+    )
 
     axon_dir = root / ".axon"
     axon_dir.mkdir(parents=True, exist_ok=True)

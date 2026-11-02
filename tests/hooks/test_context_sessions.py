@@ -30,8 +30,13 @@ class _Store:
     def __init__(self, decisions=()):
         self.decisions = list(decisions)
 
-    async def find_decisions_by_repo(self, repo, limit=None):
-        return self.decisions[:limit]
+    async def find_injectable(self, repo, file=None):
+        from axon.store.pg_decision_repository import InjectableDecisions
+
+        return InjectableDecisions(
+            active=[d for d in self.decisions if d.status == "active"],
+            draft_count=sum(1 for d in self.decisions if d.status == "draft"),
+        )
 
 
 def _git(root: Path, *args: str) -> str:
@@ -96,7 +101,7 @@ def _edit(path, name="Edit"):
     return {"type": "tool_use", "name": name, "input": {"file_path": path}}
 
 
-async def test_the_last_sessions_show_asks_files_and_commits_newest_first(activity, git_repo):
+async def test_the_brief_keeps_one_session_pointer_and_drops_raw_sections(activity, git_repo):
     root = git_repo
     sha = _git(root, "rev-parse", "HEAD")
     await _session(activity, "older-session", workspace=str(root))
@@ -119,14 +124,17 @@ async def test_the_last_sessions_show_asks_files_and_commits_newest_first(activi
     path = await update_context_file(root, store=_Store(), activity=activity)
 
     text = path.read_text()
-    newer = text.index("2026-10-02 09:06 UTC · codex · `newer-se`")
-    older = text.index("2026-10-01 09:00 UTC · claude-code · `older-se`")
-    assert newer < older < text.index("## Recent decisions")
-    assert "- first ask: fix the login bug\n- last ask: now add a test\n" in text
-    assert "- files: `src/a.py`, `docs/b.md`\n" in text
-    assert f"- commit {sha[:7]} feat: render recent sessions\n" in text
-    assert "- commit fffffff\n" in text
+    assert text.count("Last session:") == 1
+    assert "Last session: 2026-10-02 09:06 UTC · codex · `newer-se`" in text
+    assert "older-se" not in text
+    assert "fix the login bug" not in text
+    assert "now add a test" not in text
+    assert "src/a.py" not in text
+    assert "docs/b.md" not in text
+    assert "feat: render recent sessions" not in text
+    assert "fffffff" not in text
     assert "boot" not in text and "r.py" not in text
+    assert sha[:7] not in text
 
 
 async def test_the_file_never_passes_100_lines(activity, git_repo):
@@ -141,7 +149,7 @@ async def test_the_file_never_passes_100_lines(activity, git_repo):
         for k in range(10):
             await _commit_link(activity, sid, f"{k:040d}")
     decisions = [Decision(id=f"dec-{n:03d}", timestamp=T0, agent="manual", repo="axon",
-                          summary="d " * 100) for n in range(30)]
+                          status="active", summary="d " * 100) for n in range(30)]
     lessons = [LessonHandle(id=uuid4(), kind="agent-error", triggers=["x"]) for _ in range(200)]
 
     async def catalog():
@@ -154,23 +162,34 @@ async def test_the_file_never_passes_100_lines(activity, git_repo):
     finally:
         file_bridge._lesson_catalog = file_bridge_catalog
 
-    lines = path.read_text().splitlines()
-    assert len(lines) <= 100
-    asks = [line for line in lines if line.startswith("- first ask:")]
-    assert len(asks) == 3 and len(asks[0]) <= len("- first ask: ") + 160
-    assert any(line.endswith("+32 more") for line in lines)
-    assert "+7 more commit(s)" in "\n".join(lines)
+    text = path.read_text()
+    assert "Last session:" in text
+    assert len(text.encode("utf-8")) <= 1536
+    lines = text.splitlines()
+    joined = "\n".join(lines)
+    flat = " ".join(("d " * 100).split())
+    assert any(
+        line.startswith("+") and line.endswith("more via axon_get_context") for line in lines
+    )
+    for line in lines:
+        if line.startswith("- `dec-"):
+            assert flat in line
+    assert "very long ask" not in joined
+    assert "first ask:" not in joined
+    assert "- files:" not in joined
+    assert "more commit" not in joined
 
 
 async def test_a_repo_with_no_activity_still_gets_decisions(activity, git_repo):
     store = _Store([Decision(id="dec-007", timestamp=T0, agent="manual", repo="axon",
-                             summary="keep it small")])
+                             status="active", summary="keep it small")])
 
     path = await update_context_file(git_repo, store=store, activity=activity)
 
     text = path.read_text()
-    assert "- `dec-007` (draft) — keep it small" in text
+    assert "- `dec-007` (active) — keep it small" in text
     assert "Recent sessions" not in text
+    assert "first ask:" not in text
 
 
 async def test_a_database_that_is_down_leaves_the_previous_file(git_repo):
@@ -196,7 +215,9 @@ async def test_refresh_from_a_subdirectory_writes_the_repo_root_file(activity, g
     path = await refresh_context_for_cwd(sub)
 
     assert path == git_repo / ".axon" / "context.md"
-    assert path.read_text().startswith("# AXON context — axon")
+    text = path.read_text()
+    assert text.startswith("Precedence: user > CLAUDE.md/AGENTS.md > AXON memory.\n")
+    assert "# AXON context — axon" in text
 
 
 async def test_regenerating_with_50_sessions_of_200_events_is_fast(activity, git_repo):
@@ -229,108 +250,12 @@ async def test_regenerating_with_50_sessions_of_200_events_is_fast(activity, git
     assert elapsed < 1.0
 
 
-def test_multiline_decision_summaries_still_fit_in_100_lines():
+def test_multiline_decision_summaries_stay_whole_inside_the_byte_budget():
     decisions = [Decision(id=f"dec-{n:03d}", timestamp=T0, agent="manual", repo="axon",
-                          summary="line\n" * 10) for n in range(15)]
+                          status="active", summary="line\n" * 10) for n in range(15)]
 
     out = file_bridge._render("axon", decisions)
 
-    assert len(out.splitlines()) <= 100
-    assert "- `dec-000` (draft) — line line line" in out
+    assert len(out.encode("utf-8")) <= 1536
+    assert "- `dec-000` (active) — line line line" in out
 
-
-def test_relative_and_dotted_paths_resolve_against_the_session_workspace(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    s = RecentSession("s", "codex", str(root / "src"), T0, edit_calls=[
-        {"name": "exec", "input": "*** Update File: a.py\\n"},
-        _edit(f"{root}/src/a.py"),
-        _edit(f"{root}/src/../src/a.py"),
-    ])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py"]
-
-
-def test_a_codex_patch_lists_deleted_files_and_rename_targets(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    patch = (
-        "*** Begin Patch\\n*** Delete File: retired.py\\n"
-        "*** Update File: old.py\\n*** Move to: new.py\\n@@\\n*** End Patch"
-    )
-    s = RecentSession("s", "codex", str(root), T0, edit_calls=[{"name": "exec", "input": patch}])
-
-    assert file_bridge._touched_files(s, root) == ["retired.py", "old.py", "new.py"]
-
-
-def test_files_touched_in_a_removed_worktree_are_relative_to_that_worktree(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    gone = tmp_path / "worktrees" / "phase-x"  # removed after its branch merged
-    s = RecentSession("s", "codex", str(gone), T0, edit_calls=[
-        _edit(f"{gone}/src/a.py"),
-        {"name": "exec", "input": "*** Update File: src/b.py\\n"},
-    ])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py", "src/b.py"]
-
-
-def test_files_touched_in_a_worktree_inside_the_repo_drop_the_worktree_prefix(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    wt = root / ".claude" / "worktrees" / "phase-x"
-    wt.mkdir(parents=True)
-    (wt / ".git").write_text("gitdir: elsewhere\n")
-    s = RecentSession("s", "claude-code", str(wt), T0, edit_calls=[_edit(f"{wt}/src/a.py")])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py"]
-
-
-def test_files_touched_in_a_removed_worktree_inside_the_repo_drop_its_prefix(tmp_path):
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    gone = root / ".claude" / "worktrees" / "phase-x"
-    s = RecentSession("s", "claude-code", str(gone), T0, edit_calls=[_edit(f"{gone}/src/a.py")])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py"]
-
-
-def test_a_codex_patch_path_resolves_against_the_call_workdir(tmp_path):
-    import json
-
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    call = {"type": "function_call", "name": "exec_command", "arguments": json.dumps({
-        "cmd": "apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: a.py\n*** End Patch\nEOF",
-        "workdir": str(root / "src"),
-    })}
-    s = RecentSession("s", "codex", str(root), T0, edit_calls=[call])
-
-    assert file_bridge._touched_files(s, root) == ["src/a.py"]
-
-
-def test_a_patch_path_with_accents_in_json_arguments_is_shown_decoded(tmp_path):
-    import json
-
-    from axon.activity.models import RecentSession
-
-    root = tmp_path / "repo"
-    (root / ".git").mkdir(parents=True)
-    call = {"type": "function_call", "name": "exec_command", "arguments": json.dumps({
-        "cmd": "apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: src/ação.py\n*** End Patch\nEOF",
-    })}
-    s = RecentSession("s", "codex", str(root), T0, edit_calls=[call])
-
-    assert file_bridge._touched_files(s, root) == ["src/ação.py"]

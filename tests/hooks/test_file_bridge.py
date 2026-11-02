@@ -10,8 +10,7 @@ from typing import Any
 import pytest
 
 from axon.core.decision import Decision
-from axon.hooks.file_bridge import _render, update_context_file
-from axon.observability.friction import FrictionPattern
+from axon.hooks.file_bridge import update_context_file
 from axon.store.session_store import SessionStore
 
 
@@ -41,7 +40,12 @@ async def test_writes_context_file_with_decisions(
     repo_root = tmp_path / "myrepo"
     repo_root.mkdir()
     await store.save_decision(
-        _decision(id="dec-001", summary="rename to axon", symbols=["pkg.Mod.Cls"])
+        _decision(
+            id="dec-001",
+            summary="rename to axon",
+            symbols=["pkg.Mod.Cls"],
+            status="active",
+        )
     )
 
     target = await update_context_file(repo_root, store=store)
@@ -60,7 +64,8 @@ async def test_empty_repo_renders_placeholders(
     repo_root.mkdir()
     target = await update_context_file(repo_root, store=store)
     text = target.read_text(encoding="utf-8")
-    assert "None captured yet" in text
+    assert "No active decisions." in text
+    assert "axon adr list" not in text
 
 
 async def test_write_is_atomic_no_tmp_left(
@@ -79,33 +84,23 @@ async def test_rewrite_refreshes_content(
     repo_root = tmp_path / "myrepo"
     repo_root.mkdir()
     await update_context_file(repo_root, store=store)
-    await store.save_decision(_decision(id="dec-001", summary="now there is one"))
+    await store.save_decision(
+        _decision(id="dec-001", summary="now there is one", status="active")
+    )
     target = await update_context_file(repo_root, store=store)
     assert "now there is one" in target.read_text(encoding="utf-8")
 
 
-def test_render_includes_recurring_friction() -> None:
-    content = _render(
-        "myrepo",
-        [],
-        friction=[
-            FrictionPattern(
-                caller="mcp.axon_capture",
-                reason_code="DENY_RESTRICTED_TOOL_WRITE",
-                ctx="work",
-                count=3,
-                distinct_days=2,
-                last_ts="2026-07-02T10:00:00+00:00",
-            )
-        ],
-    )
+async def test_rewrite_is_byte_identical_when_the_store_is_unchanged(
+    store: SessionStore, tmp_path: Path
+) -> None:
+    repo_root = tmp_path / "myrepo"
+    repo_root.mkdir()
+    await store.save_decision(_decision(id="dec-001", summary="stable", status="active"))
 
-    assert "## Recurring friction" in content
-    assert (
-        "- `DENY_RESTRICTED_TOOL_WRITE` via mcp.axon_capture (ctx=work) - 3x across 2 days"
-        in content
-    )
+    first = await update_context_file(repo_root, store=store)
+    first_bytes = first.read_bytes()
+    second = await update_context_file(repo_root, store=store)
 
-
-def test_render_omits_recurring_friction_when_empty() -> None:
-    assert "## Recurring friction" not in _render("myrepo", [])
+    assert second.read_bytes() == first_bytes
+    assert b"_Updated" not in first_bytes

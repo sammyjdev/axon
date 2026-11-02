@@ -14,7 +14,6 @@ from axon.core.decision import SUMMARY_MAX_LEN, Decision
 from axon.core.repo_identity import repo_identity
 from axon.hooks.file_bridge import update_context_file
 from axon.models.lesson import LessonCreate, LessonRecord
-from axon.observability.friction import aggregate_friction
 from axon.observability.trace_store import TraceStore
 from axon.observability.traced_tool import current_trace_recorder, traced_tool
 from axon.obsidian.discovery import discover_vault
@@ -323,12 +322,7 @@ async def axon_session_end(session_id: str, summary: str | None = None) -> str:
         await store.save_note(SessionNote(project=repo, body=summary))
     root = _detect_repo_root()
     if root is not None and repo_identity(root) == repo:
-        try:
-            # ponytail: full-file JSONL scan (~5k lines today), partition by month if it grows.
-            patterns = aggregate_friction(TraceStore().query(stage="policy"))
-        except Exception:
-            patterns = ()
-        await update_context_file(root, store=store, friction=patterns)
+        await update_context_file(root, store=store)
     return f"session {session_id} ended ({repo})."
 
 

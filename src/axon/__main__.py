@@ -82,6 +82,41 @@ def install_hooks_cmd(
         raise typer.Exit(1) from exc
 
 
+_AXON_GITIGNORE_LINE = ".axon/"
+
+
+def ensure_axon_gitignored(repo: Path) -> None:
+    """Make `.axon/` appear in ``repo/.gitignore`` exactly once (CTX-09).
+
+    A comment or a different pattern (``.axon`` without the slash) does not
+    count. Repeated calls, and a file that already lists the line more than
+    once, both leave a single entry. Other lines are preserved.
+    """
+    ignore = repo / ".gitignore"
+    existing = ""
+    if ignore.is_file():
+        with ignore.open(encoding="utf-8", newline="") as fh:
+            existing = fh.read()
+    newline = "\r\n" if "\r\n" in existing else "\n"
+    kept: list[str] = []
+    seen = False
+    for line in existing.splitlines():
+        if line.strip() == _AXON_GITIGNORE_LINE:
+            if seen:
+                continue
+            seen = True
+        kept.append(line)
+    if not seen:
+        kept.append(_AXON_GITIGNORE_LINE)
+    text = newline.join(kept)
+    if text:
+        text += newline
+    if text == existing:
+        return
+    with ignore.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
 @app.command()
 def init(
     repo: str = typer.Argument(".", help="Repo path to initialize AXON in"),
@@ -100,6 +135,7 @@ def init(
     except GitAnchorError as exc:
         typer.echo(f"Not a git repository: {repo_path} ({exc})", err=True)
         raise typer.Exit(1) from exc
+    ensure_axon_gitignored(repo_path)
     typer.echo(f"hooks installed: {', '.join(installed) or 'none'}")
 
 

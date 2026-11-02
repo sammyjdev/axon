@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 import asyncpg
 
@@ -17,6 +19,18 @@ from axon.store.session_store import ADR
 
 #: Advisory lock key that serialises new-decision inserts ("axondec1").
 _DECISION_ID_LOCK = 0x61786F6E64656331
+
+
+@dataclass(frozen=True)
+class InjectableDecisions:
+    """Active decisions a brief or edit hook may inject, plus the draft count.
+
+    ``draft_count`` is repo-wide. ``file`` filters only ``active``: a draft is
+    counted, never returned, and a path matches a stored ``files`` entry exactly.
+    """
+
+    active: list[Decision]
+    draft_count: int
 
 
 async def _next_id(con: asyncpg.Connection) -> str:
@@ -156,6 +170,53 @@ class PostgresDecisionRepository:
                 repo, limit,
             )
         return [Decision(**r["frontmatter"]) for r in rows]
+
+    async def find_injectable(
+        self, repo: str, file: str | Path | None = None
+    ) -> InjectableDecisions:
+        """Active decisions for ``repo``, newest first, and the draft count.
+
+        ``file`` is a repo-relative path. When it is set, a decision is included
+        only when one stored ``files`` entry equals ``Path(file).as_posix()``
+        exactly (CTX-01, CTX-02). Drafts, superseded and deprecated rows stay
+        out of ``active``. The draft count ignores ``file``.
+        """
+        pool = await self._ensure_pool()
+        file_key = None if file is None else Path(file).as_posix()
+        async with pool.acquire() as con:
+            if file_key is None:
+                rows = await con.fetch(
+                    "SELECT frontmatter FROM decisions"
+                    " WHERE frontmatter->>'repo' = $1"
+                    " AND frontmatter->>'status' = 'active'"
+                    " ORDER BY created_at DESC, id DESC",
+                    repo,
+                )
+            else:
+                rows = await con.fetch(
+                    "SELECT frontmatter FROM decisions"
+                    " WHERE frontmatter->>'repo' = $1"
+                    " AND frontmatter->>'status' = 'active'"
+                    " AND EXISTS ("
+                    "   SELECT 1 FROM jsonb_array_elements_text("
+                    "     CASE WHEN jsonb_typeof(frontmatter->'files') = 'array'"
+                    "          THEN frontmatter->'files' ELSE '[]'::jsonb END"
+                    "   ) AS entry(path) WHERE entry.path = $2"
+                    " )"
+                    " ORDER BY created_at DESC, id DESC",
+                    repo,
+                    file_key,
+                )
+            draft_count = await con.fetchval(
+                "SELECT COUNT(*)::int FROM decisions"
+                " WHERE frontmatter->>'repo' = $1"
+                " AND frontmatter->>'status' = 'draft'",
+                repo,
+            )
+        return InjectableDecisions(
+            active=[Decision(**row["frontmatter"]) for row in rows],
+            draft_count=int(draft_count or 0),
+        )
 
     async def all_decisions(self) -> list[Decision]:
         pool = await self._ensure_pool()

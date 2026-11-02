@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -123,13 +123,9 @@ class ActivityPage(BaseModel):
 
 @dataclass
 class RecentSession:
-    """One session as `.axon/context.md` shows it; raw tool calls, parsed by the renderer."""
+    """One session as the `.axon/context.md` pointer line shows it."""
 
     session_id: str
     harness: str
     workspace: str | None
     last_at: datetime
-    first_prompt: str | None = None
-    last_prompt: str | None = None
-    edit_calls: list[dict] = field(default_factory=list)
-    commits: list[str] = field(default_factory=list)

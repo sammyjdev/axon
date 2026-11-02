@@ -108,164 +108,6 @@ async def test_the_limit_keeps_only_the_newest_sessions(repo):
     assert [s.session_id for s in got] == ["s4", "s3", "s2"]
 
 
-async def test_first_and_last_prompt_skip_injected_and_assistant_text(repo):
-    await seed_session(repo, "s")
-    await seed_event(repo, "s", 1, "message", say("<system-reminder>boot", injected=True), T0)
-    await seed_event(repo, "s", 2, "message", say("fix the login bug"), T0 + timedelta(minutes=1))
-    await seed_event(repo, "s", 3, "message", say("done", role="assistant"), T0 + timedelta(minutes=2))
-    await seed_event(repo, "s", 4, "message", say("now add a test"), T0 + timedelta(minutes=3))
-    await seed_event(repo, "s", 5, "message", say("auto note", injected=True), T0 + timedelta(minutes=4))
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert s.first_prompt == "fix the login bug"
-    assert s.last_prompt == "now add a test"
-
-
-async def test_a_message_of_only_tabs_and_newlines_is_not_an_ask(repo):
-    await seed_session(repo, "s")
-    await seed_event(repo, "s", 1, "message", say("\n\t"), T0)
-    await seed_event(repo, "s", 2, "message", say("fix login"), T0 + timedelta(minutes=1))
-    await seed_event(repo, "s", 3, "message", say("\t\n"), T0 + timedelta(minutes=2))
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert (s.first_prompt, s.last_prompt) == ("fix login", "fix login")
-
-
-async def test_an_ask_typed_in_several_blocks_keeps_every_block_in_order(repo):
-    await seed_session(repo, "s")
-    # One typed Claude message, twelve text blocks: one event per block, '::text::<n>'.
-    for n in range(12):
-        await seed_event(repo, "s", n, "message", say(f"block{n}"), T0, turn="t1",
-                         source=f"/t.jsonl::t1::text::{n}")
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    expected = " ".join(f"block{n}" for n in range(12))
-    assert (s.first_prompt, s.last_prompt) == (expected, expected)
-
-
-async def test_two_codex_messages_in_one_turn_stay_two_asks(repo):
-    await seed_session(repo, "s")
-    await seed_event(repo, "s", 1, "message", say("fix login"), T0, turn="t1",
-                     source="/c.jsonl::s::msg::10")
-    await seed_event(repo, "s", 2, "message", say("also fix logout"),
-                     T0 + timedelta(minutes=1), turn="t1", source="/c.jsonl::s::msg::20")
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert (s.first_prompt, s.last_prompt) == ("fix login", "also fix logout")
-
-
-async def test_a_message_of_only_non_breaking_spaces_is_not_an_ask(repo):
-    await seed_session(repo, "s")
-    await seed_event(repo, "s", 1, "message", say("\u00a0\u00a0"), T0)
-    await seed_event(repo, "s", 2, "message", say("fix login"), T0 + timedelta(minutes=1))
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert (s.first_prompt, s.last_prompt) == ("fix login", "fix login")
-
-
-async def test_an_ask_padded_with_whitespace_is_shown_without_it(repo):
-    await seed_session(repo, "s")
-    await seed_event(repo, "s", 1, "message", say(" " * 601 + "fix login"), T0)
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert s.first_prompt == "fix login"
-
-
-async def test_an_ask_after_thousands_of_spaces_is_still_the_ask(repo):
-    await seed_session(repo, "s")
-    await seed_event(repo, "s", 1, "message", say(" " * 4001 + "fix login"), T0)
-    await seed_event(repo, "s", 2, "message", say("later ask"), T0 + timedelta(minutes=1))
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert s.first_prompt == "fix login"
-
-
-async def test_two_codex_asks_with_one_timestamp_keep_transcript_order(repo):
-    await seed_session(repo, "s")
-    # event_id order ("s-1" < "s-2") is the reverse of the transcript order.
-    await seed_event(repo, "s", 2, "message", say("first typed ask"), T0,
-                     source="/c.jsonl::s::msg::600")
-    await seed_event(repo, "s", 1, "message", say("last typed ask"), T0,
-                     source="/c.jsonl::s::msg::800")
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert (s.first_prompt, s.last_prompt) == ("first typed ask", "last typed ask")
-
-
-async def test_a_compaction_summary_stored_before_the_fix_is_not_the_last_ask(repo):
-    await seed_session(repo, "s")
-    await seed_event(repo, "s", 1, "message", say("fix the login bug"), T0)
-    # Imported before the adapter marked it: stored as a typed, non-injected message.
-    summary = "This session is being continued from a previous conversation that ran out of context."
-    await seed_event(repo, "s", 2, "message", say(summary), T0 + timedelta(hours=1))
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert s.last_prompt == "fix the login bug"
-
-
-async def test_a_typed_ask_that_opens_like_the_summary_is_still_an_ask(repo):
-    typed = "This session is being continued from a previous conversation about login. Add a test."
-    for harness in ("codex", "claude-code"):
-        sid = f"s-{harness}"
-        await seed_session(repo, sid, harness=harness)
-        await seed_event(repo, sid, 1, "message", say("fix login"), T0, harness=harness)
-        await seed_event(repo, sid, 2, "message", say(typed), T0 + timedelta(hours=1),
-                         harness=harness)
-
-    found = await repo.recent_sessions("axon", limit=3)
-
-    assert {s.session_id: s.last_prompt for s in found} == {
-        "s-codex": typed, "s-claude-code": typed,
-    }
-
-
-async def test_a_session_with_no_typed_prompt_has_none(repo):
-    await seed_session(repo, "s")
-    await seed_event(repo, "s", 1, "tool_call", {"type": "tool_use", "name": "Read"}, T0)
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert s.first_prompt is None and s.last_prompt is None
-
-
-async def test_edit_calls_include_claude_edits_and_codex_patches_but_not_reads(repo):
-    await seed_session(repo, "s")
-    edit = {"type": "tool_use", "name": "Edit", "input": {"file_path": "/w/axon/a.py"}}
-    read = {"type": "tool_use", "name": "Read", "input": {"file_path": "/w/axon/r.py"}}
-    patch = {"type": "function_call", "name": "shell",
-             "arguments": '{"cmd":"apply_patch <<EOF\\n*** Begin Patch\\n*** Add File: /w/axon/b.py\\n+x\\n*** End Patch\\nEOF"}'}
-    await seed_event(repo, "s", 1, "tool_call", edit, T0)
-    await seed_event(repo, "s", 2, "tool_call", read, T0 + timedelta(seconds=1))
-    await seed_event(repo, "s", 3, "tool_call", patch, T0 + timedelta(seconds=2))
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert s.edit_calls == [edit, patch]
-
-
-async def test_commits_come_from_the_commit_links_of_the_session(repo, pg_pool):
-    await seed_session(repo, "s")
-    await seed_event(repo, "s", 1, "message", say("go"), T0)
-    async with pg_pool.acquire() as con:
-        for target_type, target in [("commit", "a" * 40), ("context_delivery", "zzz"), ("commit", "b" * 40)]:
-            await con.execute(
-                "INSERT INTO activity_evidence_links (target_type, target_id, session_id, relation) "
-                "VALUES ($1, $2, 's', 'record-supported')", target_type, target)
-
-    (s,) = await repo.recent_sessions("axon", limit=3)
-
-    assert s.commits == ["a" * 40, "b" * 40]
-
-
 async def test_subagent_sessions_and_empty_sessions_are_left_out(repo):
     await seed_session(repo, "main")
     await seed_event(repo, "main", 1, "message", say("hi"), T0)
@@ -278,7 +120,7 @@ async def test_subagent_sessions_and_empty_sessions_are_left_out(repo):
     assert [s.session_id for s in got] == ["main"]
 
 
-async def test_a_codex_session_stored_by_the_importer_shows_its_typed_prompt(repo):
+async def test_a_codex_session_stored_by_the_importer_is_listed(repo):
     from pathlib import Path
 
     from axon.activity.adapters.codex import parse_codex_session
@@ -290,4 +132,4 @@ async def test_a_codex_session_stored_by_the_importer_shows_its_typed_prompt(rep
 
     [recent] = await repo.recent_sessions("axon", limit=3)
 
-    assert (recent.first_prompt, recent.last_prompt) == ("run tests", "run tests")
+    assert recent.harness == "codex"
