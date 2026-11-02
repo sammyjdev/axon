@@ -1,12 +1,16 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
 from axon.core.decision import Decision
 from axon.store.pending import DrainResult, _pending_paths
+
+if TYPE_CHECKING:
+    # pg_decision_repository imports ADR from this module.
+    from axon.store.pg_decision_repository import InjectableDecisions
 
 
 class ADR(BaseModel):
@@ -167,7 +171,9 @@ class SessionStore:
         decision_repo = await self._decisions()
         return await decision_repo.find_decisions_by_repo(repo, limit)
 
-    async def find_injectable(self, repo: str, file: str | Path | None = None):
+    async def find_injectable(
+        self, repo: str, file: str | Path | None = None
+    ) -> "InjectableDecisions":
         """Active decisions for ``repo``, plus the repo-wide draft count.
 
         ``file`` selects decisions whose stored path matches exactly. The
