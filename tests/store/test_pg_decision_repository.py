@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -143,5 +144,108 @@ async def test_adr_save_inner_is_idempotent(pg_dsn) -> None:
         assert id1 == id2, "re-insert must return the same id, not a new row"
         rows = await repo.get_adrs("proj", limit=100)
         assert len(rows) == 1, f"expected 1 ADR row, got {len(rows)}"
+    finally:
+        await repo.close()
+
+
+def _injectable(
+    did,
+    *,
+    repo="axon",
+    status="active",
+    files=(),
+    summary="s",
+    when=None,
+):
+    return Decision(
+        id=did,
+        timestamp=when or datetime(2026, 3, 1, tzinfo=UTC),
+        agent="manual",
+        repo=repo,
+        files=[Path(path) for path in files],
+        summary=summary,
+        status=status,
+    )
+
+
+async def test_find_injectable_keeps_active_and_counts_drafts(pg_dsn) -> None:
+    """CTX-01, CTX-02: only active rows are returned; drafts are a count."""
+    from axon.store.pg_decision_repository import PostgresDecisionRepository
+
+    repo = PostgresDecisionRepository(dsn=pg_dsn)
+    try:
+        await repo.ensure_schema()
+        async with (await repo._ensure_pool()).acquire() as con:
+            await con.execute("TRUNCATE decisions")
+        await repo.save_decision(_injectable("dec-101", summary="keep me"))
+        await repo.save_decision(_injectable("dec-102", status="draft", summary="hidden draft"))
+        await repo.save_decision(
+            _injectable("dec-103", status="superseded", summary="old decision")
+        )
+        await repo.save_decision(
+            _injectable("dec-104", status="deprecated", summary="retired decision")
+        )
+        await repo.save_decision(_injectable("dec-105", status="draft", summary="second draft"))
+        await repo.save_decision(
+            _injectable("dec-106", repo="other", summary="other repo")
+        )
+
+        found = await repo.find_injectable("axon")
+
+        assert [d.id for d in found.active] == ["dec-101"]
+        assert all(d.status == "active" for d in found.active)
+        assert found.draft_count == 2
+        assert "hidden draft" not in [d.summary for d in found.active]
+    finally:
+        await repo.close()
+
+
+async def test_find_injectable_matches_the_file_exactly(pg_dsn) -> None:
+    from axon.store.pg_decision_repository import PostgresDecisionRepository
+
+    repo = PostgresDecisionRepository(dsn=pg_dsn)
+    try:
+        await repo.ensure_schema()
+        async with (await repo._ensure_pool()).acquire() as con:
+            await con.execute("TRUNCATE decisions")
+        await repo.save_decision(
+            _injectable("dec-201", files=["src/a.py", "src/b.py"], summary="both")
+        )
+        await repo.save_decision(_injectable("dec-202", files=["src/b.py"], summary="only b"))
+        await repo.save_decision(
+            _injectable("dec-203", files=["src/a.py.bak"], summary="prefix lookalike")
+        )
+        await repo.save_decision(
+            _injectable("dec-204", status="draft", files=["src/a.py"], summary="draft on a")
+        )
+
+        found = await repo.find_injectable("axon", file="src/a.py")
+
+        assert [d.id for d in found.active] == ["dec-201"]
+        assert found.draft_count == 1
+        lookalike = await repo.find_injectable("axon", file=Path("src/a.py.bak"))
+        assert [d.id for d in lookalike.active] == ["dec-203"]
+    finally:
+        await repo.close()
+
+
+async def test_find_injectable_orders_by_recency(pg_dsn) -> None:
+    from axon.store.pg_decision_repository import PostgresDecisionRepository
+
+    repo = PostgresDecisionRepository(dsn=pg_dsn)
+    try:
+        await repo.ensure_schema()
+        async with (await repo._ensure_pool()).acquire() as con:
+            await con.execute("TRUNCATE decisions")
+        await repo.save_decision(
+            _injectable("dec-301", when=datetime(2026, 1, 1, tzinfo=UTC), summary="older")
+        )
+        await repo.save_decision(
+            _injectable("dec-302", when=datetime(2026, 6, 1, tzinfo=UTC), summary="newer")
+        )
+
+        found = await repo.find_injectable("axon")
+
+        assert [d.id for d in found.active] == ["dec-302", "dec-301"]
     finally:
         await repo.close()
