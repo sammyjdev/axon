@@ -19,8 +19,9 @@ def test_versioning_check_runs():
     result = check.run()
 
     assert isinstance(result, dict)
-    assert "glyph_eval_dependency_free" in result
-    assert "glyph_pin_in_axon" in result
+    # ECO-01: the retired GLYPH checks are not part of the report.
+    assert "glyph_eval_dependency_free" not in result
+    assert "glyph_pin_in_axon" not in result
     assert "forge_axon_dep" in result
 
     for metric_name, metric_value in result.items():
