@@ -125,6 +125,20 @@ def test_init_does_not_treat_a_comment_as_the_axon_ignore(monkeypatch, tmp_path)
     assert ignore.read_text(encoding="utf-8").splitlines() == ["# .axon/", ".axon/"]
 
 
+def test_init_keeps_crlf_line_endings_in_gitignore(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "axon.hooks.git_installer.install_hooks",
+        lambda repo_path=".": [],
+    )
+    ignore = tmp_path / ".gitignore"
+    ignore.write_bytes(b"node_modules/\r\n*.log\r\n")
+
+    result = runner.invoke(app, ["init", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert ignore.read_bytes() == b"node_modules/\r\n*.log\r\n.axon/\r\n"
+
+
 def test_serve_starts_mcp_server(monkeypatch):
     called = {"ran": False}
 

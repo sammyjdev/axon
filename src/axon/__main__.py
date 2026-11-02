@@ -93,7 +93,11 @@ def ensure_axon_gitignored(repo: Path) -> None:
     once, both leave a single entry. Other lines are preserved.
     """
     ignore = repo / ".gitignore"
-    existing = ignore.read_text(encoding="utf-8") if ignore.is_file() else ""
+    existing = ""
+    if ignore.is_file():
+        with ignore.open(encoding="utf-8", newline="") as fh:
+            existing = fh.read()
+    newline = "\r\n" if "\r\n" in existing else "\n"
     kept: list[str] = []
     seen = False
     for line in existing.splitlines():
@@ -104,12 +108,13 @@ def ensure_axon_gitignored(repo: Path) -> None:
         kept.append(line)
     if not seen:
         kept.append(_AXON_GITIGNORE_LINE)
-    text = "\n".join(kept)
+    text = newline.join(kept)
     if text:
-        text += "\n"
+        text += newline
     if text == existing:
         return
-    ignore.write_text(text, encoding="utf-8")
+    with ignore.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
 
 
 @app.command()
