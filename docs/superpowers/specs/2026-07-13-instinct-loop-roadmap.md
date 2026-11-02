@@ -23,6 +23,7 @@ stands, mechanics rewritten. Binding changes:
   per deny" duplicated data and never reached recall (`axon_get_context`
   returns decisions only). Implemented 2026-07-16 as
   `observability/friction.py` + file_bridge section.
+  (Removed in PR #235: `aggregate_friction` had no remaining caller.)
 - **IL-2 leaves this roadmap**: it is onboarding UX, not learning, and the
   original premise was wrong (`pb hooks install` only manages git hooks).
   Zero-code replacement: a SessionStart hook snippet in
