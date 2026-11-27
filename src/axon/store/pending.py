@@ -30,6 +30,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 _GIT_TIMEOUT_S = 10
+# Variables that point git somewhere other than the directory asked about. Git
+# hooks export some of them; inherited, they make the proof answer for the wrong
+# repository, or for none.
+_GIT_LOCATION_VARS = (
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_NAMESPACE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_WORK_TREE",
+)
 
 
 class _Unproven(Exception):
@@ -84,6 +96,8 @@ def _warnings_log() -> Path:
 
 
 def _run_git(parent: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_VARS}
+    env["LC_ALL"] = "C"  # "not a git repository" is matched in English
     try:
         return subprocess.run(  # noqa: S603
             ["git", "-C", str(parent), *args],  # noqa: S607
@@ -94,6 +108,7 @@ def _run_git(parent: Path, *args: str) -> subprocess.CompletedProcess[str]:
             errors="replace",
             timeout=_GIT_TIMEOUT_S,
             shell=False,
+            env=env,
         )
     except FileNotFoundError:
         raise _Unproven("git not found") from None

@@ -117,3 +117,37 @@ async def test_write_pending_refuses_when_a_spool_file_is_tracked(tmp_path, monk
 
     assert "tracked" in str(refused.value)
     assert [p.name for p in (repo / ".axon" / "pending").iterdir()] == ["old.json"]
+
+
+@pytest.mark.parametrize("form", ["absolute", "relative"])
+async def test_quarantine_refuses_when_check_ignore_fails(tmp_path, monkeypatch, form):
+    """Criterion 5: the rules are present but a later negation undoes them."""
+    repo = _repo(tmp_path, monkeypatch)
+    (repo / ".axon" / "pending").mkdir(parents=True)
+    (repo / ".axon" / ".gitignore").write_text(
+        "pending/\n!pending/\npending-quarantine/\n!pending-quarantine/\n", encoding="utf-8"
+    )
+    _data_root_form(repo, monkeypatch, form)
+    paths = _pending_paths()
+    source = paths.pending_dir / "bad.json"
+    source.write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(pending.SpoolNotIgnoredError):
+        await pending.quarantine_invalid(source, reason="bad", paths=paths)
+
+    assert source.exists(), "the payload was moved into a directory git can stage"
+    assert list((repo / ".axon").glob("pending-quarantine/*")) == []
+
+
+async def test_inherited_git_dir_does_not_fail_open(tmp_path, monkeypatch):
+    """Git hooks export GIT_DIR; a relative one would make rev-parse answer
+    "not a git repository" from the data root and read as outside."""
+    repo = _repo(tmp_path, monkeypatch)
+    _commit_tracked_spool_file(repo)
+    monkeypatch.setenv("GIT_DIR", ".git")
+
+    with pytest.raises(pending.SpoolNotIgnoredError) as refused:
+        await _write()
+
+    assert "tracked" in str(refused.value)
+    assert [p.name for p in (repo / ".axon" / "pending").iterdir()] == ["old.json"]
