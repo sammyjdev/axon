@@ -209,3 +209,99 @@ async def test_write_error_with_proven_ignore_writes_and_reports(tmp_path, monke
     ]
     assert len(lines) == 1
     assert lines[0].endswith(f"git already ignores {repo / '.axon' / 'pending'}")
+
+
+class _Killed(BaseException):
+    """The process dies midway. KeyboardInterrupt would stop pytest itself."""
+
+
+def _stageable(repo: Path) -> str:
+    return _git(repo, "status", "--porcelain", "--untracked-files=all", "--", ".axon/pending")
+
+
+def _refuse_replace_onto(monkeypatch, name: str) -> None:
+    real_replace = os.replace
+
+    def replace(src, dst):
+        if Path(dst).name == name:
+            _read_only_replace()
+        real_replace(src, dst)
+
+    monkeypatch.setattr("axon.store.pending.os.replace", replace)
+
+
+def _die_midway(monkeypatch, error: BaseException) -> None:
+    """The payload's temp write leaves half a file and raises."""
+    real_write_text = Path.write_text
+
+    def write_text(self, data, *args, **kwargs):
+        if self.name.endswith(".json.tmp"):
+            real_write_text(self, data[: len(data) // 2], *args, **kwargs)
+            raise error
+        return real_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", write_text)
+
+
+@pytest.mark.parametrize("case", ["negation", "root_json_rule"])
+async def test_write_pending_refuses_when_the_temp_name_is_not_ignored(
+    tmp_path, monkeypatch, case
+):
+    """The payload is written to `<name>.json.tmp` first: that name needs the proof too."""
+    repo = _repo(tmp_path, monkeypatch)
+    if case == "negation":
+        (repo / ".axon").mkdir()
+        (repo / ".axon" / ".gitignore").write_text("pending/*\n!*.tmp\n", encoding="utf-8")
+    else:
+        (repo / ".gitignore").write_text("*.json\n", encoding="utf-8")
+        _refuse_replace_onto(monkeypatch, ".gitignore")
+    _die_midway(monkeypatch, _Killed())
+
+    with pytest.raises(pending.SpoolNotIgnoredError) as refused:
+        await _write()
+
+    assert ".json.tmp" in refused.value.reason
+    assert list((repo / ".axon" / "pending").iterdir()) == []
+    assert _stageable(repo) == ""
+
+
+@pytest.mark.parametrize("step", ["write", "rename"])
+async def test_failed_payload_write_leaves_no_temp_file(tmp_path, monkeypatch, step):
+    repo = _repo(tmp_path, monkeypatch)
+    if step == "write":
+        _die_midway(monkeypatch, OSError(28, "No space left on device"))
+    else:
+        real_replace = os.replace
+
+        def replace(src, dst):
+            if str(src).endswith(".json.tmp"):
+                _read_only_replace()
+            real_replace(src, dst)
+
+        monkeypatch.setattr("axon.store.pending.os.replace", replace)
+
+    with pytest.raises(OSError):
+        await _write()
+
+    assert list((repo / ".axon" / "pending").iterdir()) == []
+
+
+@pytest.mark.parametrize("form", ["parameters", "count"])
+async def test_injected_git_config_does_not_pass_the_proof(tmp_path, monkeypatch, form):
+    """`git -c core.excludesFile=...` reaches hooks through the environment; a plain
+    `git add -A` does not have that rule."""
+    repo = _repo(tmp_path, monkeypatch)
+    excludes = tmp_path / "injected-excludes"
+    excludes.write_text(".axon/\n", encoding="utf-8")
+    _refuse_replace_onto(monkeypatch, ".gitignore")
+    if form == "parameters":
+        monkeypatch.setenv("GIT_CONFIG_PARAMETERS", f"'core.excludesFile'='{excludes.as_posix()}'")
+    else:
+        monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+        monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.excludesFile")
+        monkeypatch.setenv("GIT_CONFIG_VALUE_0", excludes.as_posix())
+
+    with pytest.raises(pending.SpoolNotIgnoredError):
+        await _write()
+
+    assert list((repo / ".axon").glob("pending/*")) == []

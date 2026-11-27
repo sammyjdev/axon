@@ -43,6 +43,10 @@ _GIT_LOCATION_VARS = (
     "GIT_OBJECT_DIRECTORY",
     "GIT_WORK_TREE",
 )
+# Config injected for one process tree (`git -c` exports it to hooks). A later
+# plain `git add -A` does not have it, so the proof must not either.
+_GIT_CONFIG_VARS = ("GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS")
+_GIT_CONFIG_PREFIXES = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 
 
 class _Unproven(Exception):
@@ -97,7 +101,12 @@ def _warnings_log() -> Path:
 
 
 def _run_git(parent: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_VARS}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in _GIT_LOCATION_VARS + _GIT_CONFIG_VARS
+        and not k.startswith(_GIT_CONFIG_PREFIXES)
+    }
     env["LC_ALL"] = "C"  # "not a git repository" is matched in English
     try:
         return subprocess.run(  # noqa: S603
@@ -321,8 +330,14 @@ async def write_pending(
     final = paths.pending_dir / f"{safe_hash}-{ts_ns}-{uuid.uuid4().hex[:8]}.json"
     assert_spool_path_ignored(final)
     tmp = final.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, final)
+    assert_spool_path_ignored(tmp)  # the payload lands under this name first
+    try:
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, final)
+    except BaseException:  # drain never reads a leftover temp file
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        raise
     return final
 
 
