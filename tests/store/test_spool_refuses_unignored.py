@@ -7,6 +7,7 @@ fixture isolates the global git config, so nothing is ignored by accident.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -181,3 +182,30 @@ async def test_partial_name_negation_is_refused(tmp_path, monkeypatch):
 
     porcelain = _git(repo, "status", "--porcelain", "--untracked-files=all")
     assert ".axon/pending/" not in porcelain
+
+
+async def test_write_error_with_proven_ignore_writes_and_reports(tmp_path, monkeypatch, capsys):
+    """Criterion 14: the write failed, but git's answer is what decides."""
+    repo = _repo(tmp_path, monkeypatch)
+    (repo / ".gitignore").write_text(".axon/\n", encoding="utf-8")
+
+    real_replace = os.replace
+
+    def refuse_the_ignore_file(src, dst):
+        if Path(dst).name == ".gitignore":
+            _read_only_replace()
+        real_replace(src, dst)
+
+    monkeypatch.setattr("axon.store.pending.os.replace", refuse_the_ignore_file)
+
+    written = await _write()
+
+    assert written.is_file()
+    assert len(list(written.parent.glob("*.json"))) == 1
+    lines = [
+        line
+        for line in capsys.readouterr().err.splitlines()
+        if line.startswith("[axon] spool ignore rule not written (OSError:")
+    ]
+    assert len(lines) == 1
+    assert lines[0].endswith(f"git already ignores {repo / '.axon' / 'pending'}")

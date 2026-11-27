@@ -22,6 +22,7 @@ import contextlib
 import json
 import os
 import subprocess
+import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -131,10 +132,14 @@ def _in_work_tree(parent: Path) -> bool:
     raise _Unproven(f"git rev-parse failed: {probe.stderr.strip() or probe.returncode}")
 
 
-def _prove_dir_ignored(parent: Path, name: str) -> None:
-    """Raise unless git provably cannot stage anything under ``parent/name``."""
+def _prove_dir_ignored(parent: Path, name: str) -> bool:
+    """Raise unless git provably cannot stage anything under ``parent/name``.
+
+    Returns False when ``parent`` is outside any work tree, True when it is
+    inside one that ignores ``name``.
+    """
     if not _in_work_tree(parent):
-        return
+        return False
     # The child is named relative to -C: a relative data root must not be doubled.
     tracked = _run_git(parent, "ls-files", "--", name)
     if tracked.returncode != 0:
@@ -143,6 +148,7 @@ def _prove_dir_ignored(parent: Path, name: str) -> None:
         raise _Unproven("files in the spool directory are tracked by git")
     if _run_git(parent, "check-ignore", "-q", f"{name}/probe.json").returncode != 0:
         raise _Unproven("git does not ignore the spool directory")
+    return True
 
 
 def _refusal(directory: Path, reason: str, write_error: str = "") -> SpoolNotIgnoredError:
@@ -226,11 +232,18 @@ def _ensure_spool_ignored(paths: PendingPaths) -> None:
                 with contextlib.suppress(OSError):
                     tmp.unlink(missing_ok=True)
 
+        inside = False
         for child in children:
             try:
-                _prove_dir_ignored(parent, child.name)
+                inside = _prove_dir_ignored(parent, child.name)
             except _Unproven as exc:
                 raise _refusal(child, str(exc), write_error) from None
+        if write_error and inside:
+            print(
+                f"[axon] spool ignore rule not written ({write_error}); "
+                f"git already ignores {children[0]}",
+                file=sys.stderr,
+            )
 
 
 async def write_pending(
