@@ -97,6 +97,19 @@ async def test_unwritable_record_does_not_change_the_refusal(tmp_path, monkeypat
     assert list(repo.rglob("*.json")) == []
 
 
+async def test_failed_record_replace_leaves_no_temp_file(tmp_path, monkeypatch):
+    _unignorable_repo(tmp_path, monkeypatch)
+
+    def full_disk(*_a, **_kw):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("axon.store.pending.os.replace", full_disk)
+
+    await _refused()
+
+    assert list(_record_path().parent.glob("spool-refusals*")) == []
+
+
 def _memory():
     from axon.store.session_store import SessionMemory
 

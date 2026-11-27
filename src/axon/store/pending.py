@@ -163,6 +163,7 @@ def spool_refusals_path(data_root: Path | None = None) -> Path:
 
 def record_spool_refusal(directory: Path, reason: str) -> None:
     """Count one refused spool write. Paths and error text only, never payload."""
+    tmp: Path | None = None
     try:
         record = spool_refusals_path()
         count = 0
@@ -179,6 +180,9 @@ def record_spool_refusal(directory: Path, reason: str) -> None:
         tmp.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, record)
     except Exception as exc:  # best effort: the refusal itself must still be raised
+        if tmp is not None:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
         print(f"[axon] could not record spool refusal: {exc}", file=sys.stderr)
 
 
