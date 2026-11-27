@@ -18,14 +18,27 @@ The contract is intentionally narrow:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import subprocess
 import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+
+_GIT_TIMEOUT_S = 10
+
+
+class SpoolNotIgnoredError(RuntimeError):
+    """Git could stage the spool, or that could not be ruled out: nothing is written."""
+
+    def __init__(self, directory: Path, reason: str) -> None:
+        super().__init__(f"spool not ignored: {directory}: {reason}")
+        self.directory = directory
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -66,14 +79,42 @@ def _warnings_log() -> Path:
     return data_root() / "capture-warnings.jsonl"
 
 
+def _run_git(parent: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603
+        ["git", "-C", str(parent), *args],  # noqa: S607
+        cwd=None,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=_GIT_TIMEOUT_S,
+        shell=False,
+    )
+
+
+def _in_work_tree(parent: Path) -> bool:
+    return _run_git(parent, "rev-parse", "--is-inside-work-tree").stdout.strip() == "true"
+
+
+def _prove_dir_ignored(parent: Path, name: str) -> str | None:
+    """Why git could stage ``parent/name``, or None when it provably cannot."""
+    if not _in_work_tree(parent):
+        return None
+    if _run_git(parent, "check-ignore", "-q", f"{name}/probe.json").returncode != 0:
+        return "git does not ignore the spool directory"
+    return None
+
+
 def _ensure_spool_ignored(paths: PendingPaths) -> None:
-    """Ensure spool directories are ignored by git in their parent .gitignore."""
+    """Write the spool ignore rules, then prove git ignores the spool or raise."""
     dirs = [paths.pending_dir, paths.quarantine_dir]
     by_parent: dict[Path, list[Path]] = {}
     for d in dirs:
         by_parent.setdefault(d.parent, []).append(d)
 
     for parent, children in by_parent.items():
+        write_error = ""
+        tmp: Path | None = None
         try:
             parent.mkdir(parents=True, exist_ok=True)
             ignore_file = parent / ".gitignore"
@@ -114,8 +155,18 @@ def _ensure_spool_ignored(paths: PendingPaths) -> None:
                 tmp = ignore_file.with_name(f".gitignore.{uuid.uuid4().hex[:8]}.tmp")
                 tmp.write_text(content + prefix + "\n".join(to_add) + "\n", encoding="utf-8")
                 os.replace(tmp, ignore_file)
-        except OSError:
-            pass
+        except OSError as exc:
+            write_error = f"{type(exc).__name__}: {exc}"
+            if tmp is not None:
+                with contextlib.suppress(OSError):
+                    tmp.unlink(missing_ok=True)
+
+        for child in children:
+            reason = _prove_dir_ignored(parent, child.name)
+            if reason is not None:
+                if write_error:
+                    reason = f"{reason}; ignore rule not written ({write_error})"
+                raise SpoolNotIgnoredError(child, reason)
 
 
 async def write_pending(
