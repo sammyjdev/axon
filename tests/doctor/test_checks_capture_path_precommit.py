@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from axon.config.runtime import load_runtime_config
 from axon.doctor import CheckStatus
@@ -21,7 +25,8 @@ _DRIVER = "#!/usr/bin/env bash\nARGS=(hook-impl --config={cfg} --hook-type=post-
 def _suggestion(cfg: str) -> str:
     return (
         "Fix the interpreter in the entry of axon-post-commit and axon-post-merge in "
-        f"{cfg}, then run: pre-commit install --hook-type post-commit --hook-type post-merge"
+        f"{cfg}, then run: pre-commit install --config {cfg} "
+        "--hook-type post-commit --hook-type post-merge"
     )
 
 
@@ -154,3 +159,51 @@ def test_unparseable_precommit_config_is_reported_not_raised(
     assert "1 unparseable: odd-app" in result.detail
     assert result.suggestion == _suggestion(_CFG)
     assert "axon install-hooks" not in result.suggestion
+
+
+def test_following_the_suggestion_in_a_yml_repo_yields_a_working_hook(
+    tmp_path: Path, dev_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    monkeypatch.setenv("PRE_COMMIT_HOME", str(tmp_path / "pre-commit-home"))
+    scripts = Path(sys.executable).parent
+    monkeypatch.setenv("PATH", f"{scripts}{os.pathsep}{os.environ['PATH']}")
+
+    repo = (tmp_path / "yml-app").resolve()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+
+    def write_config(entry: str) -> None:
+        hook = {
+            "id": "axon-post-commit",
+            "name": "capture",
+            "entry": entry,
+            "language": "system",
+            "stages": ["post-commit"],
+            "always_run": True,
+            "pass_filenames": False,
+        }
+        config = {"repos": [{"repo": "local", "hooks": [hook]}]}
+        (repo / _YML).write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    def run(*command: str) -> None:
+        subprocess.run(command, cwd=repo, check=True, capture_output=True)
+
+    write_config("/nonexistent/python -m axon.hooks.git_event commit")
+    run("pre-commit", "install", "--config", _YML, "--hook-type", "post-commit")
+    registry = load_runtime_config().data_root / "onboarded_repos.json"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(json.dumps([str(repo)]))
+
+    result = check_hook_interpreters(dev_root=dev_root)
+    assert result.status is CheckStatus.FAIL
+
+    # Do what the suggestion says: fix the entry, then run its command as written.
+    write_config(shlex.join([sys.executable, "-c", "open('captured', 'w')"]))
+    run(*shlex.split(result.suggestion.split("then run: ", 1)[1]))
+    run(
+        "git", "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+        "commit", "-q", "--allow-empty", "-m", "x",
+    )
+
+    assert (repo / "captured").exists()

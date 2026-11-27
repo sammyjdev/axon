@@ -89,7 +89,8 @@ Fail first: at f898c82d the included cases are excluded; the two excluded cases 
 Proof: run feature | test_broken_precommit_interpreter_fails_with_precommit_suggestion[entry-before-id] PASSED
 Proof: run feature | test_broken_precommit_interpreter_fails_with_precommit_suggestion[double-quoted] PASSED
 Proof: run feature | test_broken_mix_shows_both_suggestions PASSED
-Fail first: at f898c82d the check says `skipped: no onboarded repos`.
+Proof: run feature | test_following_the_suggestion_in_a_yml_repo_yields_a_working_hook PASSED
+Fail first: at f898c82d the check says `skipped: no onboarded repos`. The amended command (`--config`, see plan.md) was red first at `cd77294`: following the suggestion in a `.yml`-only repo left a hook that did not run the entry.
 
 **C17** - Invalid YAML, a non-UTF-8 byte or a hook without `entry`: `_hook_interpreter` returns `None` without raising and the repo is listed as unparseable with the pre-commit suggestion, without `axon install-hooks` (AC 17)
 Proof: run feature | test_unparseable_precommit_config_is_reported_not_raised[invalid-yaml] PASSED
@@ -133,7 +134,7 @@ Fail first: at f898c82d the preview never mentions `pre-commit install`; the `--
 
 ## Handoff
 
-- **Settled mid-build:** none
+- **Settled mid-build:** C10 / AC 10 amended. 2026-11-27 - Sammy (via Parker 2057651e, relayed by Otto): "Sim, mudar (Recommended)", answering "mudar o critério AC10 do plano F0.1 para o doctor sugerir `pre-commit install --config <arquivo> --hook-type post-commit --hook-type post-merge`?"
 - **Dispatched:** none (no Verifier sub-agent; review and acceptance happen on the pull request)
 - **Boundary:** C1-C18 closed at `0b39982`; built and run on Windows, Python 3.12, real `pre-commit`
 - **Red at base:** the final test files run on `f898c82d` sources gave 32 failed, 29 passed, 3 skipped. Green there, as

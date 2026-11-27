@@ -2,6 +2,8 @@
 
 **Approved**: 2026-11-26 - user: "Aprovo (Recommended)" - Sammy (via Otto, a4a62eae-a414-454f-9930-0ee38b7c18d3; Parker db40fbe8), answering "aprova a construção pelo Dani, com PR em rascunho e revisão da Rita?"
 
+**Amended** (criterion 10): 2026-11-27 - Sammy (via Parker 2057651e, relayed by Otto): "Sim, mudar (Recommended)", answering "mudar o critério AC10 do plano F0.1 para o doctor sugerir `pre-commit install --config <arquivo> --hook-type post-commit --hook-type post-merge`?". The suggested command gained `--config <config file name>` (`.pre-commit-config.yaml` before `.yml`): without it a `.yml`-only repo got a driver pointing at a missing file. Criterion 17 reuses the same text.
+
 - What: plan r2, chain 20261126-axon-competitive, roadmap item F0.1 (issue sammyjdev/axon#200). Owner: Pietro. Status: r2 after Vera's critic review (FAIL, 8 findings), for her delta check, then Otto, then Sammy. Changed since r1: see Revision 2 delta at the end.
 - SHA-256: in the result to Otto and in Pietro's work/20261126-axon-competitive/RESULT.md.
 - Repo: `sammyjdev/axon` (covered on ClaudeBot `main`). Base: `master` at `f898c82d9746f28c309247416c98f771a201dbc2`. Proposed branch: `fix/200-precommit-hooks-install`. Draft PR; merge is Sammy's.
@@ -146,7 +148,7 @@ None - no HTTP route or consumed API changes. The CLI output and exit codes this
    - Examples: only the .yml file -> included; a `.git/hooks/post-commit` without `--hook-type=post-commit` -> excluded; a config without `axon-post-commit` -> excluded.
    - Verify: new `tests/doctor/test_checks_capture_path_precommit.py::test_precommit_repo_is_onboarded` (parametrized over the examples).
    - Red at f898c82d: excluded, because `_has_axon_hook` requires the marker block (`capture_path.py:74-81`).
-10. WHEN such a repo's `axon-post-commit` `entry` names an interpreter that cannot `import axon.hooks.git_event` (`/nonexistent/python`) THEN `check_hook_interpreters` SHALL return FAIL with the repo name in `detail`, and its `suggestion` SHALL be `Fix the interpreter in the entry of axon-post-commit and axon-post-merge in <config file name>, then run: pre-commit install --hook-type post-commit --hook-type post-merge` and SHALL NOT contain `axon install-hooks` when every failing repo is a pre-commit repo (a mix shows both texts)
+10. WHEN such a repo's `axon-post-commit` `entry` names an interpreter that cannot `import axon.hooks.git_event` (`/nonexistent/python`) THEN `check_hook_interpreters` SHALL return FAIL with the repo name in `detail`, and its `suggestion` SHALL be `Fix the interpreter in the entry of axon-post-commit and axon-post-merge in <config file name>, then run: pre-commit install --config <config file name> --hook-type post-commit --hook-type post-merge` and SHALL NOT contain `axon install-hooks` when every failing repo is a pre-commit repo (a mix shows both texts)
     - Examples: `entry` before `id` in the hook mapping -> found; `entry` in YAML double quotes -> found.
     - Verify: new `test_checks_capture_path_precommit.py::test_broken_precommit_interpreter_fails_with_precommit_suggestion` (parametrized over the examples).
     - Red at f898c82d: the repo is skipped and the check says `skipped: no onboarded repos`.

@@ -24,7 +24,7 @@ import yaml
 from axon.config.runtime import load_runtime_config
 from axon.doctor import CheckResult, CheckStatus
 from axon.hooks.git_installer import _BEGIN, _END
-from axon.hooks.precommit_integration import local_hooks
+from axon.hooks.precommit_integration import install_command, local_hooks
 
 _SKIP_NO_REPOS = "skipped: no onboarded repos"
 _PROBE_TIMEOUT_S = 15
@@ -149,7 +149,7 @@ def _repair_suggestion(repos: list[Path], marker_text: str) -> str:
     configs = [_precommit_config(repo) for repo in repos]
     texts = [
         f"Fix the interpreter in the entry of axon-post-commit and axon-post-merge in {name}, "
-        "then run: pre-commit install --hook-type post-commit --hook-type post-merge"
+        f"then run: {' '.join(install_command(name))}"
         for name in sorted({config.name for config in configs if config is not None})
     ]
     if None in configs:
