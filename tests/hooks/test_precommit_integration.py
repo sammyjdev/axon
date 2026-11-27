@@ -87,3 +87,57 @@ class TestMergeInto:
         assert merge_into(cfg) is False
         assert cfg.read_text() == old_config
 
+
+    def test_inserts_before_a_trailing_top_level_key(self, tmp_path: Path) -> None:
+        cfg = tmp_path / ".pre-commit-config.yaml"
+        cfg.write_bytes(b"repos:\n  - repo: existing\n    hooks: []\nexclude: '^vendor/'\n")
+
+        assert merge_into(cfg) is True
+
+        text = cfg.read_text(encoding="utf-8")
+        assert (
+            text.index("    hooks: []\n")
+            < text.index("id: axon-post-commit")
+            < text.index("exclude:")
+        )
+        loaded = yaml.safe_load(text)
+        assert len(loaded["repos"]) == 2
+        assert loaded["exclude"] == "^vendor/"
+
+    @pytest.mark.parametrize(
+        "before",
+        [
+            b"repos:\n- repo: existing\n  hooks: []\n",
+            b"repos:\n    - repo: existing\n      hooks: []\n\n# about ci\nci: {}\n",
+            b"# top\r\nrepos: []  # none yet\r\n",
+        ],
+        ids=["items-at-column-0", "indented-then-comment", "crlf-empty-flow"],
+    )
+    def test_keeps_the_layout_of_the_users_file(self, tmp_path: Path, before: bytes) -> None:
+        cfg = tmp_path / ".pre-commit-config.yaml"
+        cfg.write_bytes(before)
+        old = yaml.safe_load(before)
+
+        assert merge_into(cfg) is True
+
+        after = cfg.read_bytes()
+        loaded = yaml.safe_load(after)
+        assert loaded["repos"][:-1] == old["repos"]
+        assert [hook["id"] for hook in loaded["repos"][-1]["hooks"]] == [
+            "axon-post-commit",
+            "axon-post-merge",
+        ]
+        assert (b"\r\n" in after) is (b"\r\n" in before)
+        assert after.count(b"\r\n") in (0, after.count(b"\n"))
+        if b"# about ci" in before:
+            assert after.index(b"axon-post-merge") < after.index(b"# about ci")
+
+    def test_refuses_a_flow_list_and_writes_nothing(self, tmp_path: Path) -> None:
+        cfg = tmp_path / ".pre-commit-config.yaml"
+        before = b"repos: [{repo: x, hooks: []}]\n"
+        cfg.write_bytes(before)
+
+        with pytest.raises(ValueError, match="cannot add AXON entries"):
+            merge_into(cfg)
+
+        assert cfg.read_bytes() == before

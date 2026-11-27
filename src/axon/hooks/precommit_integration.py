@@ -7,9 +7,15 @@ their pipeline. Idempotent: re-running produces the same block.
 
 from __future__ import annotations
 
+import re
 import shlex
 import sys
 from pathlib import Path
+
+import yaml
+
+_COMMIT_ID = "axon-post-commit"
+_MERGE_ID = "axon-post-merge"
 
 
 def _entry_scalar(event: str) -> str:
@@ -53,13 +59,94 @@ def dry_run_message(config_path: Path) -> str:
     )
 
 
-def merge_into(config_path: Path) -> bool:
-    """Append the AXON entry to the pre-commit config if not already present.
+def load_precommit_config(config_path: Path) -> dict:
+    """The parsed config, which must be a mapping whose ``repos`` is a list."""
+    try:
+        data = yaml.safe_load(config_path.read_bytes().decode("utf-8-sig"))
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise ValueError(_refusal(config_path, "it is not valid YAML")) from exc
+    if not isinstance(data, dict) or not isinstance(data.get("repos"), list):
+        raise ValueError(_refusal(config_path, "it has no `repos` list"))
+    return data
 
-    Returns True if the file was modified, False if it already contained
-    AXON entries. This is intentionally a simple append-if-missing — full
-    YAML re-serialisation would require PyYAML, which AXON does not
-    depend on by default.
+
+def _refusal(config_path: Path, reason: str) -> str:
+    return f"cannot add AXON entries to {config_path.name}: {reason}"
+
+
+def local_hooks(data: object) -> list[dict]:
+    """Every hook mapping under a ``repo: local`` item of a parsed config."""
+    repos = data.get("repos") if isinstance(data, dict) else None
+    return [
+        hook
+        for repo in (repos if isinstance(repos, list) else [])
+        if isinstance(repo, dict) and repo.get("repo") == "local"
+        for hook in (repo.get("hooks") if isinstance(repo.get("hooks"), list) else [])
+        if isinstance(hook, dict)
+    ]
+
+
+def has_axon_entries(data: object) -> bool:
+    return any(hook.get("id") == _COMMIT_ID for hook in local_hooks(data))
+
+
+def _insert_entry(text: str, config_path: Path) -> str:
+    """``text`` (LF endings) with AXON's item at the end of the ``repos`` list.
+
+    Edits lines rather than re-serialising, so the user's comments and layout stay.
+    """
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    for start, line in enumerate(lines):
+        match = re.match(r"repos[ \t]*:(?:[ \t]+(.*))?$", line)
+        if match:
+            break
+    else:
+        raise ValueError(_refusal(config_path, "no top-level `repos:` line"))
+
+    value, _, comment = (match.group(1) or "").partition("#")
+    if value.strip() == "[]":
+        lines[start] = "repos:" + (f"  #{comment}" if comment else "")
+        end, indent = start + 1, 2
+    elif not value.strip():
+        # The list ends at the next top-level key or document marker.
+        end = next(
+            (
+                i
+                for i in range(start + 1, len(lines))
+                if re.match(r"(---|\.\.\.)(\s|$)|[^\s#-]", lines[i])
+            ),
+            len(lines),
+        )
+        item = next(
+            (m for m in (re.match(r"( *)-(\s|$)", ln) for ln in lines[start + 1 : end]) if m),
+            None,
+        )
+        indent = len(item.group(1)) if item else 2
+        # Blank lines and comments just above the next key belong to that key.
+        while end > start + 1:
+            previous = lines[end - 1].lstrip(" ")
+            outdented = len(lines[end - 1]) - len(previous) <= indent
+            if previous and not (previous.startswith("#") and outdented):
+                break
+            end -= 1
+    else:
+        raise ValueError(_refusal(config_path, "`repos` is not a block list or `[]`"))
+
+    entry = [
+        " " * indent + ln[2:] for ln in axon_repo_entry().rstrip("\n").split("\n")
+    ]
+    lines[end:end] = entry
+    return "\n".join(lines) + "\n"
+
+
+def merge_into(config_path: Path) -> bool:
+    """Add AXON's entry to the config's ``repos`` list if it is not there.
+
+    Returns True if the file was modified, False if it is missing or already holds
+    the entry. Raises ``ValueError``, writing nothing, when the entry cannot be
+    added without changing anything else in the config.
 
     An `axon-pre-push` entry an older AXON wrote is left in place on purpose:
     it sends the `push` event, which now does nothing, while editing the
@@ -67,10 +154,23 @@ def merge_into(config_path: Path) -> bool:
     """
     if not config_path.exists():
         return False
-    text = config_path.read_text(encoding="utf-8")
-    if "id: axon-post-commit" in text:
+    old = load_precommit_config(config_path)
+    if has_axon_entries(old):
         return False
-    if not text.endswith("\n"):
-        text += "\n"
-    config_path.write_text(text + axon_repo_entry(), encoding="utf-8")
+
+    raw = config_path.read_bytes().decode("utf-8")
+    bom = "\ufeff" if raw.startswith("\ufeff") else ""
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    merged = _insert_entry(raw.removeprefix(bom).replace("\r\n", "\n"), config_path)
+
+    try:
+        new = yaml.safe_load(merged)
+    except yaml.YAMLError as exc:
+        raise ValueError(_refusal(config_path, "the result is not valid YAML")) from exc
+    added = new["repos"][-1] if isinstance(new, dict) and new.get("repos") else None
+    ids = {hook.get("id") for hook in local_hooks({"repos": [added]})}
+    if not {_COMMIT_ID, _MERGE_ID} <= ids or new != {**old, "repos": [*old["repos"], added]}:
+        raise ValueError(_refusal(config_path, "the result would change other settings"))
+
+    config_path.write_bytes((bom + merged.replace("\n", newline)).encode("utf-8"))
     return True
