@@ -61,7 +61,8 @@ def _repo(
     cfg_name: str = _CFG,
     driver: str = _DRIVER,
 ) -> Path:
-    repo = (tmp_path / name).resolve()
+    # Three levels deep: doctor's two-level glob in a later test must not find it.
+    repo = (tmp_path / "repos" / name).resolve()
     (repo / ".git" / "hooks").mkdir(parents=True)
     (repo / ".git" / "hooks" / "post-commit").write_text(driver.format(cfg=cfg_name))
     (repo / cfg_name).write_bytes(config)
@@ -170,7 +171,7 @@ def test_following_the_suggestion_in_a_yml_repo_yields_a_working_hook(
     scripts = Path(sys.executable).parent
     monkeypatch.setenv("PATH", f"{scripts}{os.pathsep}{os.environ['PATH']}")
 
-    repo = (tmp_path / "yml-app").resolve()
+    repo = (tmp_path / "repos" / "yml-app").resolve()
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
 
     def write_config(entry: str) -> None:

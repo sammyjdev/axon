@@ -49,8 +49,9 @@ def _isolated_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    root = (tmp_path / "repo").resolve()
-    root.mkdir()
+    # Three levels deep: doctor's two-level glob in a later test must not find it.
+    root = (tmp_path / "repos" / "repo").resolve()
+    root.mkdir(parents=True)
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     (root / _CFG).write_bytes(b"repos: []\n")
     return root
