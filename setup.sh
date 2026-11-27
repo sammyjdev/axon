@@ -195,10 +195,6 @@ elif [[ "$SETUP_MODE" == "minimal" ]]; then
     echo "    Docker local será ignorado."
 elif [[ "$PLAN_START_LOCAL_STACK" == "1" ]]; then
     echo ""
-    echo "==> Criando diretórios de dados..."
-    mkdir -p data/ollama
-
-    echo ""
     echo "==> Subindo Postgres (docker compose up -d axon-postgres)"
     docker compose up -d axon-postgres
 

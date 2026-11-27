@@ -85,6 +85,7 @@ def test_setup_defaults_to_recommended_hybrid_local_mode_on_mac(tmp_path: Path) 
 
     assert "AXON_RUNTIME_MODE=hybrid-local" in env_payload
     _assert_starts_only_postgres(result, log_output)
+    assert not (workspace / "data" / "ollama").exists()
     assert "ollama " not in log_output
 
 
@@ -167,6 +168,7 @@ def test_setup_full_local_without_nvidia_starts_only_postgres(tmp_path: Path) ->
 
     assert "AXON_RUNTIME_MODE=full-local" in env_payload
     _assert_starts_only_postgres(result, log_output)
+    assert not (workspace / "data" / "ollama").exists()
     assert ":6333" not in log_output
     assert "ollama " not in log_output
 
