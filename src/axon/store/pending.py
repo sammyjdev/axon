@@ -151,10 +151,40 @@ def _prove_dir_ignored(parent: Path, name: str) -> bool:
     return True
 
 
+def spool_refusals_path(data_root: Path | None = None) -> Path:
+    """The refusal record: under the engine data root, never beside the spool,
+    which may be unwritable in the very case being reported."""
+    if data_root is None:
+        from axon.config.runtime import load_runtime_config
+
+        data_root = load_runtime_config().data_root
+    return data_root / "spool-refusals.json"
+
+
+def record_spool_refusal(directory: Path, reason: str) -> None:
+    """Count one refused spool write. Paths and error text only, never payload."""
+    record = spool_refusals_path()
+    count = 0
+    if record.exists():
+        count = json.loads(record.read_text(encoding="utf-8"))["count"]
+    entry = {
+        "count": count + 1,
+        "last_at": datetime.now(UTC).isoformat(),
+        "last_dir": os.path.abspath(directory),
+        "last_reason": reason[:500],
+    }
+    record.parent.mkdir(parents=True, exist_ok=True)
+    tmp = record.with_name(f"spool-refusals.{uuid.uuid4().hex[:8]}.tmp")
+    tmp.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, record)
+
+
 def _refusal(directory: Path, reason: str, write_error: str = "") -> SpoolNotIgnoredError:
+    """Record the refusal, then build the error the caller raises."""
     if write_error:
         reason = f"{reason}; ignore rule not written ({write_error})"
     reason = " ".join(reason.splitlines())  # hooks report a refusal on one line
+    record_spool_refusal(directory, reason)
     return SpoolNotIgnoredError(directory, reason)
 
 
