@@ -19,9 +19,12 @@ from subprocess import (
     TimeoutExpired,  # direct import: survives capture_path.subprocess being monkeypatched
 )
 
+import yaml
+
 from axon.config.runtime import load_runtime_config
 from axon.doctor import CheckResult, CheckStatus
 from axon.hooks.git_installer import _BEGIN, _END
+from axon.hooks.precommit_integration import local_hooks
 
 _SKIP_NO_REPOS = "skipped: no onboarded repos"
 _PROBE_TIMEOUT_S = 15
@@ -71,17 +74,58 @@ def _repo_label(repo: Path, dev_root: Path) -> str:
         return repo.name
 
 
+def _precommit_config(repo: Path) -> Path | None:
+    """The config whose AXON entry a pre-commit post-commit driver runs, else None."""
+    try:
+        driver = (repo / ".git" / "hooks" / "post-commit").read_bytes()
+        if b"--hook-type=post-commit" not in driver:
+            return None
+        config = repo / ".pre-commit-config.yaml"
+        if not config.exists():
+            config = repo / ".pre-commit-config.yml"
+        if not config.exists():
+            return None
+    except OSError:
+        return None
+    try:
+        # Bytes: a config that is not valid text is still ours, and gets reported.
+        return config if b"axon-post-commit" in config.read_bytes() else None
+    except OSError:
+        return config
+
+
 def _has_axon_hook(repo: Path) -> bool:
+    if _precommit_config(repo) is not None:
+        return True
     hook = repo / ".git" / "hooks" / "post-commit"
     if not hook.is_file():
         return False
     try:
         return _BEGIN in hook.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return False
 
 
+def _precommit_interpreter(config: Path) -> str | None:
+    """The interpreter pre-commit would run: the first word of the entry."""
+    try:
+        data = yaml.safe_load(config.read_text(encoding="utf-8"))
+        for hook in local_hooks(data):
+            entry = hook.get("entry")
+            if hook.get("id") == "axon-post-commit" and isinstance(entry, str):
+                # POSIX split, as pre-commit does it.
+                tokens = shlex.split(entry)
+                return tokens[0] if tokens else None
+    except (OSError, ValueError, yaml.YAMLError):  # ValueError covers decode errors
+        return None
+    return None
+
+
 def _hook_interpreter(repo: Path) -> str | None:
+    # The driver wins over a marker block: anything appended after its `exec` is dead.
+    config = _precommit_config(repo)
+    if config is not None:
+        return _precommit_interpreter(config)
     hook = repo / ".git" / "hooks" / "post-commit"
     text = hook.read_text(encoding="utf-8")
     in_block = False
@@ -100,6 +144,19 @@ def _hook_interpreter(repo: Path) -> str | None:
     return None
 
 
+def _repair_suggestion(repos: list[Path], marker_text: str) -> str:
+    """How to repair these repos; a pre-commit repo must not get `axon install-hooks`."""
+    configs = [_precommit_config(repo) for repo in repos]
+    texts = [
+        f"Fix the interpreter in the entry of axon-post-commit and axon-post-merge in {name}, "
+        "then run: pre-commit install --hook-type post-commit --hook-type post-merge"
+        for name in sorted({config.name for config in configs if config is not None})
+    ]
+    if None in configs:
+        texts.append(marker_text)
+    return " ".join(texts)
+
+
 def check_hook_interpreters(*, dev_root: Path | None = None) -> CheckResult:
     resolved_dev_root = dev_root if dev_root is not None else _dev_root()
     repos = _onboarded_repos(resolved_dev_root)
@@ -110,12 +167,16 @@ def check_hook_interpreters(*, dev_root: Path | None = None) -> CheckResult:
 
     repos_by_interpreter: dict[str, list[str]] = {}
     malformed: list[str] = []
+    malformed_repos: list[Path] = []
+    paths_by_interpreter: dict[str, list[Path]] = {}
     for repo in repos:
         interp = _hook_interpreter(repo)
         if interp is None:
             malformed.append(repo.name)
+            malformed_repos.append(repo)
             continue
         repos_by_interpreter.setdefault(interp, []).append(repo.name)
+        paths_by_interpreter.setdefault(interp, []).append(repo)
 
     broken: dict[str, str] = {}
     for interp in repos_by_interpreter:
@@ -141,14 +202,17 @@ def check_hook_interpreters(*, dev_root: Path | None = None) -> CheckResult:
             parts.append(f"{names}: interpreter {interp} broken ({stderr_line})")
         if malformed:
             parts.append(
-                f"{', '.join(malformed)}: hook block malformed (no -m axon.hooks.git_event line)"
+                f"{', '.join(malformed)}: hook block malformed (no -m axon.hooks.git_event line "
+                "or axon-post-commit entry)"
             )
         return CheckResult(
             name="capture.hook_interpreter",
             status=CheckStatus.FAIL,
             detail="; ".join(parts),
-            suggestion=(
-                "Re-run `axon install-hooks` in each affected repo to rebake the interpreter."
+            suggestion=_repair_suggestion(
+                [repo for interp in broken for repo in paths_by_interpreter[interp]]
+                + malformed_repos,
+                "Re-run `axon install-hooks` in each affected repo to rebake the interpreter.",
             ),
         )
 
@@ -161,8 +225,9 @@ def check_hook_interpreters(*, dev_root: Path | None = None) -> CheckResult:
                 f"{probed} onboarded repo(s) healthy, "
                 f"{len(malformed)} unparseable: {', '.join(malformed)}"
             ),
-            suggestion=(
-                "Re-run `axon install-hooks` in the affected repo(s) to rebake the hook block."
+            suggestion=_repair_suggestion(
+                malformed_repos,
+                "Re-run `axon install-hooks` in the affected repo(s) to rebake the hook block.",
             ),
         )
 
