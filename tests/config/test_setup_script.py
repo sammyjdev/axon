@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CORE_TOOLS = ("bash", "cat", "dirname", "head", "mktemp", "mv", "timeout", "tr")
+CORE_TOOLS = ("bash", "cat", "dirname", "head", "mkdir", "mktemp", "mv", "timeout", "tr")
 TIL_HINT = "Optional TIL hook: install Ollama (https://ollama.com) and run: ollama pull gemma4:e4b"
 BANNER = "==> Subindo Postgres (docker compose up -d axon-postgres)"
 
