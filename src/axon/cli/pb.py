@@ -87,14 +87,18 @@ def _prompt_configure_value(
     *,
     allowed: tuple[str, ...],
     optional: bool = False,
+    default: object = None,
 ) -> str | None:
+    if default is None or default is ...:
+        # No default: typer 0.29 infers the answer type from it, so Ellipsis breaks the prompt.
+        default = "" if optional else None
     allowed_values = "|".join(allowed)
     prompt_text = f"{prompt} [{allowed_values}]"
     if optional:
         prompt_text = f"{prompt_text} (enter to skip)"
 
     while True:
-        value = typer.prompt(prompt_text, default="" if optional else ..., show_default=False)
+        value = typer.prompt(prompt_text, default=default, show_default=False)
         normalized = value.strip().lower()
         if optional and not normalized:
             return None
