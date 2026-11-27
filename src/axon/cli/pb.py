@@ -1093,10 +1093,31 @@ def hooks_install(
 
 def _install_precommit(repo_root: Path, cfg: Path) -> None:
     from axon.hooks.git_installer import register_repo
-    from axon.hooks.precommit_integration import install_precommit_drivers, merge_into
+    from axon.hooks.precommit_integration import (
+        install_precommit_drivers,
+        load_precommit_config,
+        merge_into,
+    )
+
+    # Preflight: nothing is written until all of this holds.
+    refusal = None
+    if (repo_root / ".git").is_file():
+        refusal = "git worktrees are not supported by hooks install yet"
+    elif shutil.which("pre-commit") is None:
+        refusal = "pre-commit not found on PATH; install it (pip install pre-commit) and re-run"
+    else:
+        try:
+            load_precommit_config(cfg)
+        except (OSError, ValueError) as exc:
+            refusal = str(exc)
+    if refusal:
+        typer.echo(f"[axon] hooks install failed: preflight: {refusal}", err=True)
+        raise typer.Exit(1)
 
     if merge_into(cfg):
         typer.echo(f"\n[axon] AXON entries added to {cfg.name}")
+    else:
+        typer.echo(f"\n[axon] AXON entries already in {cfg.name}")
     install_precommit_drivers(repo_root, cfg.name)
     register_repo(repo_root)
     typer.echo("[axon] pre-commit drivers installed: post-commit, post-merge; repo registered")

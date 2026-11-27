@@ -20,6 +20,7 @@ from typer.testing import CliRunner
 
 from axon.cli.pb import app
 from axon.config.runtime import load_runtime_config
+from axon.hooks.precommit_integration import axon_repo_entry
 
 runner = CliRunner()
 
@@ -90,6 +91,14 @@ def _appendix_a() -> bytes:
 """.encode()
 
 
+def _files(root: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
 def test_apply_installs_drivers_and_registers_repo(repo: Path) -> None:
     result = _run(repo, "--apply")
 
@@ -106,3 +115,84 @@ def test_apply_installs_drivers_and_registers_repo(repo: Path) -> None:
     assert f"--config={_CFG}" in commit_driver
     assert "--hook-type=post-merge" in _hook(repo, "post-merge").read_text(encoding="utf-8")
     assert _registered() == [str(repo)]
+
+
+def test_rerun_with_entries_present_installs_missing_drivers(repo: Path) -> None:
+    before = ("repos:\n" + axon_repo_entry()).encode()
+    (repo / _CFG).write_bytes(before)
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 0, result.output
+    assert f"[axon] AXON entries already in {_CFG}" in result.stdout
+    assert "nada a fazer" not in result.output
+    assert (repo / _CFG).read_bytes() == before
+    for hook_type in _HOOK_TYPES:
+        assert f"--hook-type={hook_type}" in _hook(repo, hook_type).read_text(encoding="utf-8")
+    assert _registered() == [str(repo)]
+
+
+def test_yml_config_is_passed_by_name(repo: Path) -> None:
+    (repo / _CFG).rename(repo / ".pre-commit-config.yml")
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 0, result.output
+    driver = _hook(repo, "post-commit").read_text(encoding="utf-8")
+    assert "--config=.pre-commit-config.yml" in driver
+    assert str(repo) not in driver
+    assert repo.as_posix() not in driver
+
+
+def test_yaml_wins_when_both_exist(repo: Path) -> None:
+    (repo / ".pre-commit-config.yml").write_bytes(b"repos: []\n")
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 0, result.output
+    assert f"--config={_CFG}" in _hook(repo, "post-commit").read_text(encoding="utf-8")
+    assert (repo / ".pre-commit-config.yml").read_bytes() == b"repos: []\n"
+
+
+def test_missing_binary_exits_1_before_writing(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 1
+    assert "pre-commit not found" in result.stderr
+    assert (repo / _CFG).read_bytes() == b"repos: []\n"
+
+
+def test_worktree_is_refused_before_writing(tmp_path: Path) -> None:
+    root = tmp_path / "worktree"
+    root.mkdir()
+    (root / ".git").write_bytes(b"gitdir: /elsewhere/.git/worktrees/x\n")
+    (root / _CFG).write_bytes(b"repos: []\n")
+    before = _files(root)
+
+    result = _run(root, "--apply")
+
+    assert result.exit_code == 1
+    assert "git worktrees are not supported by hooks install yet" in result.stderr
+    assert _files(root) == before
+    assert not _registry_file().exists()
+
+
+@pytest.mark.parametrize(
+    "config",
+    [b"exclude: x\n", b"repos: [{repo: x, hooks: []}]\n", b"repos: [\n"],
+    ids=["no-repos-key", "flow-list", "invalid-yaml"],
+)
+def test_unmergeable_config_exits_1(repo: Path, config: bytes) -> None:
+    (repo / _CFG).write_bytes(config)
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 1
+    assert f"cannot add AXON entries to {_CFG}" in result.stderr
+    assert (repo / _CFG).read_bytes() == config
+    assert not _hook(repo, "post-commit").exists()
+    assert not _registry_file().exists()
