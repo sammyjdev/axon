@@ -152,5 +152,8 @@ Red: deliberate break: remove the unlink, see the temp file, revert.
 
 - **Settled mid-build:** Q1 answered before the build, Sammy: "Seguir com aviso (Recommended)".
 - **Dispatched:** none - the independent review is Rita's and Vera's, dispatched by Otto.
-- **Boundary:** C1-C22 open at f898c82d
+- **Boundary:** C1-C22 closed at the commit before this one
+- **Red at f898c82d:** the new test files run against the original source (plus a stub `SpoolNotIgnoredError` class that nothing raises, so the files import): 29 failed, 14 passed. The passing ones are existing tests and the C6 guard.
+- **Deliberate breaks (seen red, then reverted):** C1 rule write replaced by deleting the temp file; C5 `check-ignore` on the directory skipped; C6 `false` and `not a git repository` each treated as a failure; C10 `ingest_events` swallowing the spool error.
 - **Abandoned:** none
+- **Host:** Windows, no Docker; Postgres-backed tests and the Linux runs are CI's.
