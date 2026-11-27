@@ -203,3 +203,18 @@ async def test_spool_payload_carries_session_id_only_when_set(
     assert payload.get("session_id") == session_id
     assert ("session_id" in payload) is (session_id is not None)
     assert payload["created_at"] == mem.created_at.isoformat()
+
+
+async def test_a_migration_lock_timeout_is_retried_not_quarantined(tmp_path, monkeypatch):
+    """#187: the bounded migration wait can now surface inside a drain."""
+    from asyncpg.exceptions import LockNotAvailableError
+
+    data_root = tmp_path / ".axon"
+    monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
+    _spool(data_root, _session_payload())
+
+    repo = _Repo(exc=LockNotAvailableError("canceling statement due to lock timeout"))
+    result = await _store_with(repo).drain_pending()
+
+    assert (result.retried, result.quarantined) == (1, 0)
+    assert len(list((data_root / "pending").glob("*.json"))) == 1

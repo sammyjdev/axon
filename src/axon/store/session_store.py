@@ -293,6 +293,8 @@ class SessionStore:
                         asyncpg.PostgresConnectionError,
                         asyncpg.CannotConnectNowError,
                         asyncpg.TooManyConnectionsError,
+                        # a bounded migration wait (55P03): try again later
+                        asyncpg.exceptions.LockNotAvailableError,
                     ),
                 ):
                     return True
