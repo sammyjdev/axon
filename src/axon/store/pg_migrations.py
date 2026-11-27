@@ -23,6 +23,12 @@ import asyncpg
 # SQLite migrations one directory up.
 PG_MIGRATIONS_DIR = Path(__file__).parent / "migrations" / "pg"
 
+# Serializes concurrent initializers (#187).
+_MIGRATION_LOCK_KEY = 7101870187
+# Bounds each lock wait, the advisory one included, so it must come first in the
+# transaction. A longer wait raises LockNotAvailableError and records nothing.
+_SET_LOCK_TIMEOUT = "SET LOCAL lock_timeout = '5s'"
+
 
 async def apply_pg_migrations(
     con: asyncpg.Connection, migrations_dir: Path = PG_MIGRATIONS_DIR
@@ -32,12 +38,15 @@ async def apply_pg_migrations(
     Tracks applied versions in ``schema_version`` (version = file stem). Already
     applied versions are skipped, so calling this repeatedly is safe. Each
     migration runs inside a transaction together with its bookkeeping insert so a
-    failure leaves no half-applied version recorded.
+    failure leaves no half-applied version recorded. One process at a time applies
+    a file, and no lock is waited on for more than 5 seconds.
     """
-    await con.execute(
-        "CREATE TABLE IF NOT EXISTS schema_version ("
-        " version text PRIMARY KEY, applied_at timestamptz NOT NULL)"
-    )
+    async with con.transaction():
+        await con.execute(_SET_LOCK_TIMEOUT)
+        await con.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version ("
+            " version text PRIMARY KEY, applied_at timestamptz NOT NULL)"
+        )
     rows = await con.fetch("SELECT version FROM schema_version")
     applied = {r["version"] for r in rows}
 
@@ -46,6 +55,11 @@ async def apply_pg_migrations(
             continue
         sql = path.read_text(encoding="utf-8")
         async with con.transaction():
+            await con.execute(_SET_LOCK_TIMEOUT)
+            await con.execute("SELECT pg_advisory_xact_lock($1)", _MIGRATION_LOCK_KEY)
+            # another process may have applied it while this one waited
+            if await con.fetchval("SELECT 1 FROM schema_version WHERE version = $1", path.stem):
+                continue
             await con.execute(sql)
             await con.execute(
                 "INSERT INTO schema_version (version, applied_at) VALUES ($1, $2)",

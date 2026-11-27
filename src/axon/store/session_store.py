@@ -3,10 +3,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from axon.core.decision import Decision
 from axon.store.pending import DrainResult, _pending_paths
+from axon.store.session_id import normalize_session_id
 
 if TYPE_CHECKING:
     # pg_decision_repository imports ADR from this module.
@@ -40,6 +41,13 @@ class SessionMemory(BaseModel):
     raw_turns: int
     id: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # the harness session: with one, the repository keeps a single row for it
+    session_id: str | None = None
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def _normalized_session_id(cls, value: object) -> str | None:
+        return normalize_session_id(value)
 
 
 class SessionNote(BaseModel):
@@ -91,6 +99,10 @@ class SessionStore:
     async def get_session_memories(self, project: str, limit: int = 3) -> list[SessionMemory]:
         repo = await self._sessions()
         return await repo.get_session_memories(project, limit)
+
+    async def duplicate_session_memories(self) -> list[tuple[str, int, list[int]]]:
+        repo = await self._sessions()
+        return await repo.duplicate_session_memories()
 
     # ── Session Note ──────────────────────────────────────────────────────────
 
@@ -262,6 +274,8 @@ class SessionStore:
                         summary=payload["summary"],
                         raw_turns=payload["raw_turns"],
                         created_at=datetime.fromisoformat(payload["created_at"]),
+                        # the model normalizes it: a malformed key drains unkeyed
+                        session_id=payload.get("session_id"),
                     )
                 )
             else:
@@ -279,6 +293,8 @@ class SessionStore:
                         asyncpg.PostgresConnectionError,
                         asyncpg.CannotConnectNowError,
                         asyncpg.TooManyConnectionsError,
+                        # a bounded migration wait (55P03): try again later
+                        asyncpg.exceptions.LockNotAvailableError,
                     ),
                 ):
                     return True

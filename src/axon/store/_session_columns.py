@@ -15,7 +15,9 @@ from axon.store.session_store import CodeChange, SessionMemory, SessionNote
 
 # ── Column name tuples (INSERT order) ────────────────────────────────────────
 
-SESSION_MEMORY_COLS: tuple[str, ...] = ("project", "summary", "raw_turns", "created_at")
+SESSION_MEMORY_COLS: tuple[str, ...] = (
+    "project", "summary", "raw_turns", "created_at", "session_id"
+)
 SESSION_MEMORY_SELECT: tuple[str, ...] = ("id",) + SESSION_MEMORY_COLS
 
 SESSION_NOTE_COLS: tuple[str, ...] = ("project", "body", "created_at")
@@ -40,6 +42,7 @@ def row_to_session_memory(r: Any) -> SessionMemory:
         summary=r["summary"],
         raw_turns=r["raw_turns"],
         created_at=r["created_at"],
+        session_id=r["session_id"],
     )
 
 

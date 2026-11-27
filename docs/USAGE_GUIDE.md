@@ -194,6 +194,34 @@ Default-off on purpose: real-data validation suppressed false positives but has
 not yet measured recall on reworded revisions. See
 [`docs/decisions/dec-115-supersession-ranking-penalty.md`](decisions/dec-115-supersession-ranking-penalty.md).
 
+## Upgrading past migration 0008
+
+Migration `0008_session_memory_session_id` is forward-only. It is applied by the
+first upgraded AXON command that initializes the session store. After that, an
+older AXON that uses the same database can no longer save session memory: its
+insert fails because the unique index it relies on is now partial.
+
+Before upgrading:
+
+1. Stop the older writers (hooks and servers) of every installation that shares
+   the database.
+2. Upgrade all of those installations to code that knows migration 0008 before
+   they write again.
+3. Do not downgrade the code alone afterwards.
+
+If an older installation already tried to save, or you rolled the code back:
+
+- Redeploy the upgraded code. Keep the spool: do not delete `pending/` or
+  `pending-quarantine/` under `.axon/` (or `$AXON_DATA_ROOT`).
+- In each place that has such files, run `axon pending recover` if
+  `pending-quarantine/` is not empty (older code quarantines these failures when
+  it drains), then `axon pending drain`.
+
+A true downgrade needs its own approved database recovery plan, a tested backup
+taken before the upgrade, and a decision about the writes made after that backup.
+Do not recreate the full unique index: two sessions may now hold identical
+content, so it can fail, and deleting or merging those rows loses data.
+
 ## When Something Looks Wrong
 
 Check these first:

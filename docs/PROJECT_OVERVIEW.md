@@ -52,7 +52,7 @@ scaffold, formerly `pb init`), `setup`, `configure`, `note`, `session-save`,
 `why <commit|file>` (the sessions, last typed prompts and decisions behind a
 commit, or behind a file's last five commits). Sub-apps:
 `axon adr {list,add,sync}`, `axon hooks {install,status}`,
-`axon pending {drain,recover}`, `axon session {note,save}`,
+`axon pending {drain,recover}`, `axon session {note,save,duplicates}`,
 `axon profile {list,use,show,create,export}`,
 `axon activity {run,import,collect,export,search,show,backfill,link-commits}` (dec-136
 operational activity history; `link-commits [--session ID | --all]` records which
