@@ -7,26 +7,36 @@ their pipeline. Idempotent: re-running produces the same block.
 
 from __future__ import annotations
 
+import shlex
 import sys
 from pathlib import Path
 
 
+def _entry_scalar(event: str) -> str:
+    """The hook's ``entry`` as a YAML double-quoted scalar.
+
+    pre-commit runs ``shlex.split(entry)``, so the interpreter is shell-quoted;
+    the backslash and quote escapes only matter to YAML (a Windows path).
+    """
+    command = f"{shlex.quote(sys.executable)} -m axon.hooks.git_event {event}"
+    return '"' + command.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def axon_repo_entry() -> str:
     """The ``- repo: local`` block users paste into pre-commit config."""
-    py = sys.executable
     return (
         "  - repo: local\n"
         "    hooks:\n"
         "      - id: axon-post-commit\n"
         "        name: AXON post-commit capture\n"
-        "        entry: " + py + " -m axon.hooks.git_event commit\n"
+        "        entry: " + _entry_scalar("commit") + "\n"
         "        language: system\n"
         "        stages: [post-commit]\n"
         "        always_run: true\n"
         "        pass_filenames: false\n"
         "      - id: axon-post-merge\n"
         "        name: AXON post-merge capture pulled signal commits\n"
-        "        entry: " + py + " -m axon.hooks.git_event post-merge\n"
+        "        entry: " + _entry_scalar("post-merge") + "\n"
         "        language: system\n"
         "        stages: [post-merge]\n"
         "        always_run: true\n"

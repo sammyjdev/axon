@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import shlex
+import sys
 from pathlib import Path
+
+import pytest
+import yaml
 
 from axon.hooks.precommit_integration import (
     axon_repo_entry,
@@ -26,6 +31,18 @@ class TestEntry:
 
     def test_entry_always_runs(self) -> None:
         assert "always_run: true" in axon_repo_entry()
+
+    def test_entry_survives_a_space_in_the_interpreter_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "executable", "/opt/my env/bin/python")
+        text = "repos:\n" + axon_repo_entry()
+        assert (
+            """        entry: "'/opt/my env/bin/python' -m axon.hooks.git_event commit"\n"""
+            in text
+        )
+        for hook in yaml.safe_load(text)["repos"][0]["hooks"]:
+            assert shlex.split(hook["entry"])[0] == "/opt/my env/bin/python"
 
 
 class TestDryRun:
