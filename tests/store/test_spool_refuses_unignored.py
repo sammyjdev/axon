@@ -69,3 +69,21 @@ async def test_unclassified_rev_parse_result_refuses(tmp_path, monkeypatch, case
 
     assert expected in str(refused.value)
     assert list(repo.rglob("*.json")) == []
+
+
+async def test_refuses_when_git_is_missing(tmp_path, monkeypatch):
+    """Criterion 11: a guard that cannot run must not report success."""
+    repo = _repo(tmp_path, monkeypatch)
+
+    def missing(*_a, **_kw):
+        raise FileNotFoundError(2, "No such file or directory", "git")
+
+    monkeypatch.setattr(subprocess, "run", missing)
+
+    with pytest.raises(pending.SpoolNotIgnoredError) as refused:
+        pending._ensure_spool_ignored(_pending_paths())
+
+    assert "git not found" in str(refused.value)
+    with pytest.raises(pending.SpoolNotIgnoredError):
+        await _write()
+    assert list(repo.rglob("*.json")) == []

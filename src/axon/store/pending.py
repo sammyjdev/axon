@@ -95,6 +95,10 @@ def _run_git(parent: Path, *args: str) -> subprocess.CompletedProcess[str]:
             timeout=_GIT_TIMEOUT_S,
             shell=False,
         )
+    except FileNotFoundError:
+        raise _Unproven("git not found") from None
+    except OSError as exc:
+        raise _Unproven(f"git could not run: {type(exc).__name__}: {exc}") from None
     except subprocess.TimeoutExpired:
         raise _Unproven(f"git timed out after {_GIT_TIMEOUT_S}s") from None
 
