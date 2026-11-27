@@ -1,6 +1,7 @@
 services:
   # Single backend since dec-121 (Qdrant, Redis and SQLite retired).
   axon-postgres:
+    # Kept on purpose: volumes created before dec-138 hold the pgvector "vector" extension and the retired "embeddings" table, which plain postgres:16 cannot load. F1.1 makes Postgres optional; the image changes with it.
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: axon
