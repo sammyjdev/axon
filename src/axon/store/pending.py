@@ -32,6 +32,10 @@ from pathlib import Path
 _GIT_TIMEOUT_S = 10
 
 
+class _Unproven(Exception):
+    """One git proof failed; the message is the reason."""
+
+
 class SpoolNotIgnoredError(RuntimeError):
     """Git could stage the spool, or that could not be ruled out: nothing is written."""
 
@@ -80,29 +84,47 @@ def _warnings_log() -> Path:
 
 
 def _run_git(parent: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603
-        ["git", "-C", str(parent), *args],  # noqa: S607
-        cwd=None,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        errors="replace",
-        timeout=_GIT_TIMEOUT_S,
-        shell=False,
-    )
+    try:
+        return subprocess.run(  # noqa: S603
+            ["git", "-C", str(parent), *args],  # noqa: S607
+            cwd=None,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=_GIT_TIMEOUT_S,
+            shell=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise _Unproven(f"git timed out after {_GIT_TIMEOUT_S}s") from None
 
 
 def _in_work_tree(parent: Path) -> bool:
-    return _run_git(parent, "rev-parse", "--is-inside-work-tree").stdout.strip() == "true"
+    """Only a plain yes or no counts; any other answer is unproven."""
+    if not parent.is_dir():
+        raise _Unproven(f"{parent} is not a directory")
+    probe = _run_git(parent, "rev-parse", "--is-inside-work-tree")
+    answer = probe.stdout.strip()
+    if probe.returncode == 0 and answer in ("true", "false"):
+        return answer == "true"
+    if probe.returncode == 128 and "not a git repository" in probe.stderr:
+        return False
+    raise _Unproven(f"git rev-parse failed: {probe.stderr.strip() or probe.returncode}")
 
 
-def _prove_dir_ignored(parent: Path, name: str) -> str | None:
-    """Why git could stage ``parent/name``, or None when it provably cannot."""
+def _prove_dir_ignored(parent: Path, name: str) -> None:
+    """Raise unless git provably cannot stage anything under ``parent/name``."""
     if not _in_work_tree(parent):
-        return None
+        return
     if _run_git(parent, "check-ignore", "-q", f"{name}/probe.json").returncode != 0:
-        return "git does not ignore the spool directory"
-    return None
+        raise _Unproven("git does not ignore the spool directory")
+
+
+def _refusal(directory: Path, reason: str, write_error: str = "") -> SpoolNotIgnoredError:
+    if write_error:
+        reason = f"{reason}; ignore rule not written ({write_error})"
+    reason = " ".join(reason.splitlines())  # hooks report a refusal on one line
+    return SpoolNotIgnoredError(directory, reason)
 
 
 def _ensure_spool_ignored(paths: PendingPaths) -> None:
@@ -162,11 +184,10 @@ def _ensure_spool_ignored(paths: PendingPaths) -> None:
                     tmp.unlink(missing_ok=True)
 
         for child in children:
-            reason = _prove_dir_ignored(parent, child.name)
-            if reason is not None:
-                if write_error:
-                    reason = f"{reason}; ignore rule not written ({write_error})"
-                raise SpoolNotIgnoredError(child, reason)
+            try:
+                _prove_dir_ignored(parent, child.name)
+            except _Unproven as exc:
+                raise _refusal(child, str(exc), write_error) from None
 
 
 async def write_pending(

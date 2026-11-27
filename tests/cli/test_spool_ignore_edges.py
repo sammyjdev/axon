@@ -19,7 +19,6 @@ exit code; it is observed through the payload's absence.
 
 from __future__ import annotations
 
-
 from tests.cli.test_spool_not_committable import (
     _git,
     _pending_json,

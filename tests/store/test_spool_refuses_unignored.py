@@ -47,3 +47,25 @@ async def test_write_pending_refuses_when_ignore_write_fails(tmp_path, monkeypat
     assert str(refused.value).endswith(refused.value.reason)
     assert list((repo / ".axon" / "pending").glob("*.json")) == []
     assert list((repo / ".axon").glob(".gitignore.*.tmp")) == []
+
+
+@pytest.mark.parametrize("case", ["axon_is_a_file", "git_timeout"])
+async def test_unclassified_rev_parse_result_refuses(tmp_path, monkeypatch, case):
+    """Criterion 12: any rev-parse answer that is not a plain yes or no refuses."""
+    repo = _repo(tmp_path, monkeypatch)
+    if case == "axon_is_a_file":
+        (repo / ".axon").write_text("not a directory", encoding="utf-8")
+        expected = "FileExistsError"
+    else:
+
+        def timeout(cmd, **_kw):
+            raise subprocess.TimeoutExpired(cmd, 10)
+
+        monkeypatch.setattr(subprocess, "run", timeout)
+        expected = "git timed out after 10s"
+
+    with pytest.raises(pending.SpoolNotIgnoredError) as refused:
+        await _write()
+
+    assert expected in str(refused.value)
+    assert list(repo.rglob("*.json")) == []
