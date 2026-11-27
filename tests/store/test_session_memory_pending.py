@@ -150,3 +150,56 @@ async def test_session_memory_missing_fields_is_quarantined_not_retried(tmp_path
     assert result.quarantined == 1
     assert result.retried == 0
     assert list((data_root / "pending").glob("*.json")) == []
+
+
+@pytest.mark.asyncio
+async def test_legacy_payload_without_session_id_drains(tmp_path, monkeypatch):
+    """#187: payloads spooled before the change have no key."""
+    data_root = tmp_path / ".axon"
+    monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
+    _spool(data_root, _session_payload())
+    _spool(data_root, _session_payload(session_id="abc"), name="session-2.json")
+
+    repo = _Repo()
+    result = await _store_with(repo).drain_pending()
+
+    assert result.processed == 2
+    assert sorted(str(m.session_id) for m in repo.saved) == ["None", "abc"]
+
+
+@pytest.mark.asyncio
+async def test_malformed_spooled_session_id_drains_without_key(tmp_path, monkeypatch):
+    data_root = tmp_path / ".axon"
+    monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
+    _spool(data_root, _session_payload(session_id=123))
+
+    repo = _Repo()
+    result = await _store_with(repo).drain_pending()
+
+    assert (result.processed, result.quarantined) == (1, 0)
+    assert [m.session_id for m in repo.saved] == [None]
+
+
+@pytest.mark.parametrize("session_id", ["abc", None], ids=["keyed", "unkeyed"])
+async def test_spool_payload_carries_session_id_only_when_set(
+    tmp_path, monkeypatch, session_id
+):
+    from axon.cli import pb
+
+    data_root = tmp_path / ".axon"
+    monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
+
+    class _Down(SessionStore):
+        async def save_session_memory(self, mem):
+            raise OSError(61, "Connect call failed")
+
+    monkeypatch.setattr("axon.store.session_store.SessionStore", _Down)
+    mem = SessionMemory(project="axon", summary="s", raw_turns=2, session_id=session_id)
+
+    await pb._save_session_memory_with_spool(mem)
+
+    [spooled] = (data_root / "pending").glob("*.json")
+    payload = json.loads(spooled.read_text(encoding="utf-8"))
+    assert payload.get("session_id") == session_id
+    assert ("session_id" in payload) is (session_id is not None)
+    assert payload["created_at"] == mem.created_at.isoformat()

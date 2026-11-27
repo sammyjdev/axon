@@ -270,6 +270,8 @@ class SessionStore:
                         summary=payload["summary"],
                         raw_turns=payload["raw_turns"],
                         created_at=datetime.fromisoformat(payload["created_at"]),
+                        # the model normalizes it: a malformed key drains unkeyed
+                        session_id=payload.get("session_id"),
                     )
                 )
             else:

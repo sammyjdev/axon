@@ -699,6 +699,8 @@ async def _save_session_memory_with_spool(
                 "raw_turns": mem.raw_turns,
                 "created_at": mem.created_at.isoformat(),
             }
+            if mem.session_id is not None:
+                payload["session_id"] = mem.session_id
             await write_pending(
                 payload=payload,
                 commit_hash="session",
