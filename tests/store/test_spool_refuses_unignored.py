@@ -87,3 +87,33 @@ async def test_refuses_when_git_is_missing(tmp_path, monkeypatch):
     with pytest.raises(pending.SpoolNotIgnoredError):
         await _write()
     assert list(repo.rglob("*.json")) == []
+
+
+def _commit_tracked_spool_file(repo: Path) -> None:
+    spool = repo / ".axon" / "pending"
+    spool.mkdir(parents=True)
+    (repo / ".axon" / ".gitignore").write_text("/pending/\n", encoding="utf-8")
+    (spool / "old.json").write_text("{}", encoding="utf-8")
+    _git(repo, "add", "-f", ".axon/pending/old.json")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "old")
+
+
+def _data_root_form(repo: Path, monkeypatch, form: str) -> None:
+    """`relative` is the default: AXON_DATA_ROOT unset, cwd the repo."""
+    if form == "relative":
+        monkeypatch.delenv("AXON_DATA_ROOT")
+        monkeypatch.chdir(repo)
+
+
+@pytest.mark.parametrize("form", ["absolute", "relative"])
+async def test_write_pending_refuses_when_a_spool_file_is_tracked(tmp_path, monkeypatch, form):
+    """Criterion 4: ignore rules do not apply to a file git already tracks."""
+    repo = _repo(tmp_path, monkeypatch)
+    _commit_tracked_spool_file(repo)
+    _data_root_form(repo, monkeypatch, form)
+
+    with pytest.raises(pending.SpoolNotIgnoredError) as refused:
+        await _write()
+
+    assert "tracked" in str(refused.value)
+    assert [p.name for p in (repo / ".axon" / "pending").iterdir()] == ["old.json"]
