@@ -178,6 +178,19 @@ def test_setup_full_local_without_nvidia_starts_only_postgres(tmp_path: Path) ->
     assert TIL_HINT in result.stdout.splitlines()
 
 
+def test_setup_fails_when_compose_fails(tmp_path: Path) -> None:
+    result, _, log_path = _run_setup(
+        tmp_path,
+        extra_env={"OSTYPE": "darwin23", "AXON_RUNTIME_MODE": "hybrid-local"},
+        sysctl_bytes=34 * 1024 * 1024 * 1024,
+        docker_exit_code=1,
+    )
+
+    assert "docker compose" in log_path.read_text(encoding="utf-8")
+    assert result.returncode != 0
+    assert "Setup concluído" not in result.stdout
+
+
 def test_setup_has_no_profile_or_model_residue() -> None:
     patterns = (
         "COMPOSE_PROFILE",
@@ -222,6 +235,7 @@ def _run_setup(
     extra_env: dict[str, str],
     sysctl_bytes: int,
     present: frozenset[str] | set[str] = frozenset(),
+    docker_exit_code: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -241,7 +255,8 @@ def _run_setup(
 
     _write_executable(
         fake_bin / "docker",
-        "#!/usr/bin/env bash\nprintf '%s\\n' \"docker $*\" >> \"$TEST_LOG\"\n",
+        "#!/usr/bin/env bash\nprintf '%s\\n' \"docker $*\" >> \"$TEST_LOG\"\n"
+        f"exit {docker_exit_code}\n",
     )
     if "ollama" in present:
         _write_executable(
