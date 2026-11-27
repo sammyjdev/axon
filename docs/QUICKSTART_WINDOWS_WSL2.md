@@ -34,8 +34,7 @@ pipx install --editable .
 ```
 
 In this mode `setup.sh` checks Postgres on `$AXON_INFRA_HOST:5433`, writes
-`.env.local` and skips the local Docker stack. It also probes Ollama on port
-11434 of that host; AXON no longer uses it, so a warning there is harmless.
+`.env.local` and skips the local Docker stack.
 
 ## 3. Load the environment
 
