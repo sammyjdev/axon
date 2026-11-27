@@ -4,6 +4,8 @@
 - ``check_quarantine_size``: warn when ``.axon/pending-quarantine/`` grows
 - ``check_warnings_log``: warn when ``capture-warnings.jsonl`` shows
   recent persistent contention
+- ``check_spool_refusals``: warn when a payload was dropped because the spool
+  was not provably ignored by git
 """
 
 from __future__ import annotations
