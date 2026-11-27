@@ -4,6 +4,13 @@
 --
 -- A keyed row keeps the greatest compact summary and the greatest digest it has
 -- received; summary, raw_turns and created_at show the one picked from the two.
+--
+-- NOT backward compatible with older writers. The natural index becomes partial,
+-- so the older "ON CONFLICT (project, md5(summary), raw_turns, created_at)", with
+-- no predicate, no longer matches it: code from before this file fails every
+-- session_memory save once it is applied. Do not downgrade the code only, and do
+-- not recreate the full unique index. Upgrade and recovery steps:
+-- docs/USAGE_GUIDE.md, "Upgrading past migration 0008".
 
 ALTER TABLE session_memory
     ADD COLUMN IF NOT EXISTS session_id text,

@@ -287,3 +287,30 @@ async def test_0008_on_1062_rows_is_short(pg_dsn, tmp_path: Path) -> None:
         assert elapsed < 5
     finally:
         await con.close()
+
+
+async def test_0008_rejects_the_old_insert_and_accepts_the_current_one(
+    pg_dsn, tmp_path: Path
+) -> None:
+    """The documented compatibility limit, measured: forward-only for old writers."""
+    # the insert of the code before 0008: no predicate on the conflict target
+    old_insert = (
+        "INSERT INTO session_memory (project, summary, raw_turns, created_at)"
+        " VALUES ($1, $2, $3, $4)"
+        " ON CONFLICT (project, md5(summary), raw_turns, created_at) DO NOTHING"
+        " RETURNING id"
+    )
+    current_insert = old_insert.replace(" DO NOTHING", " WHERE session_id IS NULL DO NOTHING")
+    row = ("p", "summary", 1, datetime(2026, 1, 1, tzinfo=UTC))
+    con = await asyncpg.connect(pg_dsn)
+    try:
+        await _schema_before_0008(con, tmp_path)
+        assert await con.fetchval(old_insert, *row) is not None
+
+        await apply_pg_migrations(con, PG_MIGRATIONS_DIR)
+
+        with pytest.raises(asyncpg.exceptions.InvalidColumnReferenceError):
+            await con.fetchval(old_insert, "p", "another", 1, row[3])
+        assert await con.fetchval(current_insert, "p", "another", 1, row[3]) is not None
+    finally:
+        await con.close()
