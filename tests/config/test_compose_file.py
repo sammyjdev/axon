@@ -28,6 +28,7 @@ def _compose_runs() -> bool:
 
 def _compose_config(*args: str) -> str:
     """Resolve the committed compose file only: `-f` keeps a local override out."""
+    assert _compose_runs(), "docker compose v2 not available"
     result = subprocess.run(
         [shutil.which("docker") or "docker", "compose", "-f", "docker-compose.yml", *args],
         cwd=REPO_ROOT,
@@ -97,3 +98,12 @@ def test_compose_config_keeps_postgres_unchanged() -> None:
     assert service["image"] == IMAGE
     assert service["environment"] == ENVIRONMENT
     assert service["restart"] == "unless-stopped"
+
+
+def test_ci_never_skips_compose(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("CI", "1")
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert not _compose_runs()
+    with pytest.raises(AssertionError, match="docker compose"):
+        _compose_config("config", "--services")
