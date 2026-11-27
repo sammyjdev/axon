@@ -16,25 +16,28 @@ resolve_setup_mode() {
 import shutil
 import sys
 
-from axon.config.platform import build_doctor_report, detect_platform
+from axon.config.platform import detect_platform
 from axon.config.runtime import get_runtime_sources, load_runtime_config
 
 remote_host = sys.argv[1].strip()
 runtime = load_runtime_config()
-sources = get_runtime_sources()
+source = get_runtime_sources().get("mode", "default")
 platform_config = detect_platform()
-report = build_doctor_report(
-    runtime,
-    platform_config,
-    docker_available=shutil.which("docker") is not None,
-    ollama_available=shutil.which("docker") is not None,
-    sources=sources,
-)
-source = sources.get("mode", "default")
-selected_mode = runtime.mode if source in {"env", "toml"} else report.recommended_mode
-if remote_host and source == "default":
-    selected_mode = "remote-infra"
-print(f"{selected_mode}\t{source}\t{report.recommended_mode}")
+has_docker = shutil.which("docker") is not None
+has_gpu = "CUDAExecutionProvider" in platform_config.embedding_providers
+
+# Not `axon doctor`'s recommendation: neither ollama nor an old
+# AXON_OLLAMA_REMOTE_HOST in .env.local decides what setup starts.
+if remote_host:
+    recommended = "remote-infra"
+elif has_docker and has_gpu and platform_config.max_models >= 2:
+    recommended = "full-local"
+elif has_docker:
+    recommended = "hybrid-local"
+else:
+    recommended = "minimal"
+selected_mode = runtime.mode if source in {"env", "toml"} else recommended
+print(f"{selected_mode}\t{source}\t{recommended}")
 PY
 }
 
@@ -126,9 +129,14 @@ echo ""
 echo "==> Gerando .env.local a partir da plataforma..."
 GENERATED_ENV="$(mktemp)"
 PYTHONPATH="$PYTHONPATH_PREFIX" python3 - <<'PY' > "$GENERATED_ENV"
+import re
+
 from axon.config.platform import _to_dotenv, detect_platform
 
-print(_to_dotenv(detect_platform()), end="")
+retired = re.compile(r"^(OLLAMA_[A-Z_]+|AXON_OLLAMA_(LOCAL|REMOTE)_HOST|LANGFUSE_HOST)=")
+for line in _to_dotenv(detect_platform()).splitlines():
+    if not retired.match(line):
+        print(line)
 PY
 
 merge_env_file() {

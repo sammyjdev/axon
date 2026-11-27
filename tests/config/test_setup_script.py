@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -225,6 +226,37 @@ def test_no_docker_with_ollama_is_minimal(tmp_path: Path) -> None:
     assert "docker " not in log_path.read_text(encoding="utf-8")
 
 
+def test_env_local_has_no_generated_ollama_keys(tmp_path: Path) -> None:
+    result, workspace, _ = _run_setup(
+        tmp_path,
+        extra_env={"OSTYPE": "linux-gnu", "AXON_INFRA_HOST": "desktop.local"},
+        sysctl_bytes=34 * 1024 * 1024 * 1024,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = (workspace / ".env.local").read_text(encoding="utf-8").splitlines()
+    dropped = re.compile(r"^(OLLAMA_[A-Z_]+|AXON_OLLAMA_LOCAL_HOST|LANGFUSE_HOST)=")
+    assert "AXON_INFRA_HOST=desktop.local" in lines
+    assert [line for line in lines if dropped.match(line)] == []
+    assert [line for line in lines if re.match(r"^AXON_OLLAMA_REMOTE_HOST=.+", line)] == []
+
+
+def test_existing_env_local_keys_are_kept(tmp_path: Path) -> None:
+    # Only the old key is seeded: a saved AXON_RUNTIME_MODE would count as an explicit mode.
+    kept = "AXON_OLLAMA_REMOTE_HOST=http://old:11434"
+    result, workspace, _ = _run_setup(
+        tmp_path,
+        extra_env={"OSTYPE": "linux-gnu"},
+        sysctl_bytes=34 * 1024 * 1024 * 1024,
+        env_local=f"{kept}\n",
+    )
+
+    lines = (workspace / ".env.local").read_text(encoding="utf-8").splitlines()
+    assert kept in lines
+    assert "AXON_RUNTIME_MODE=hybrid-local" in lines
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_setup_has_no_profile_or_model_residue() -> None:
     patterns = (
         "COMPOSE_PROFILE",
@@ -272,12 +304,15 @@ def _run_setup(
     docker_exit_code: int = 0,
     absent: frozenset[str] | set[str] = frozenset(),
     nvidia_vram_mb: int | None = None,
+    env_local: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     shutil.copy2(REPO_ROOT / "setup.sh", workspace / "setup.sh")
     shutil.copy2(REPO_ROOT / ".env.example", workspace / ".env.example")
     os.symlink(REPO_ROOT / "src", workspace / "src")
+    if env_local is not None:
+        (workspace / ".env.local").write_text(env_local, encoding="utf-8")
 
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
