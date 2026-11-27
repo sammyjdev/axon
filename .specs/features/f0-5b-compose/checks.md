@@ -61,7 +61,7 @@ Red at base: the line is absent.
 
 **C8** - When `docker compose up -d axon-postgres` exits 1, setup.sh exits non-zero and does not print `Setup concluído` (AC 8)
 Proof: run tests | test_setup_fails_when_compose_fails PASSED
-Red at base: passes through `set -e` (guard). Deliberate break: `docker compose up -d axon-postgres || true` turns it red.
+Red at base: none, it passes through `set -e` (guard). Deliberate break: `docker compose up -d axon-postgres || true` turns it red.
 
 **C10** - With no mode configured and no `ollama`, Linux with Docker gets `full-local` for a fake `nvidia-smi` of `24576` MB and `hybrid-local` for a failing `nvidia-smi` (AC 10)
 Proof: run tests | test_default_mode_ignores_ollama[24576-full-local] PASSED
@@ -111,5 +111,5 @@ Red at base: the first grep prints 2, 1 and 1.
 
 - **Settled mid-build:** none
 - **Dispatched:** none - review and acceptance are dispatched by Otto
-- **Boundary:** none closed yet
-- **Abandoned:** none
+- **Boundary:** C1-C13 closed at `a71958d`; red on CI with the base production files at `f4f927d` (temporary commit `1c20241`, reverted)
+- **Abandoned:** an isolated test `PATH` without `mkdir` made base runs die early; `mkdir` was added
