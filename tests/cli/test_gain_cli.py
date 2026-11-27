@@ -68,8 +68,19 @@ def test_gain_empty_summary(monkeypatch):
     monkeypatch.setattr("axon.observability.gain.load_gain", fake_load_gain)
     result = runner.invoke(app, ["gain"])
     assert result.exit_code == 0
-    assert "No compression telemetry yet" in result.stdout
-    assert "Run some compressions first" in result.stdout
+    assert "No compression records: compression was removed in dec-138, so none are written." in result.stdout
+    assert "Run some compressions first" not in result.stdout
+
+
+def test_gain_help_says_compression_was_removed():
+    """Gain help states that compression was removed in dec-138."""
+    import typer
+
+    cmd = typer.main.get_command(app).commands["gain"]
+    assert cmd.help is not None
+    assert "dec-138" in cmd.help
+    result = runner.invoke(app, ["gain", "--help"])
+    assert result.exit_code == 0
 
 
 def test_gain_json_output(monkeypatch):

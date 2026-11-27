@@ -1,5 +1,7 @@
 # Vault Setup
 
+> **Stale (2026-11-26):** this page describes commands that no longer exist (pb index, pb search, pb ask, pb watch). It is kept for reference until it is rewritten; the current plan is [ROADMAP.md](ROADMAP.md).
+
 This guide bootstraps the external Markdown vault used by AXON. The vault
 is your data layer. This repository is only the engine.
 

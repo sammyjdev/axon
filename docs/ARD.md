@@ -18,11 +18,13 @@ excluded from the public repository.
 
 ## ARD-003: Structure-aware chunking
 
+- Status: retired by dec-138 (AXON no longer chunks or indexes code).
 - Chunking must follow language structure, not raw file slicing.
 - Chunker changes must keep the fixture suite green.
 
 ## ARD-004: Budget-aware routing
 
+- Status: retired by dec-138 (the router package and its provider calls were removed).
 - The router must enforce budget limits before provider calls.
 - Model fallback must remain deterministic under budget pressure.
 - The router must enforce per-provider rate limits before provider calls
@@ -43,6 +45,7 @@ excluded from the public repository.
 
 ## ARD-007: Validated compression output
 
+- Status: retired by dec-138 (the caveman compressor was removed; see ADR-010).
 - CLI and MCP must send complete retrieval chunks into the compression
   pipeline.
 - Compression output must be rejected if it drops required anchors or contains
@@ -51,6 +54,7 @@ excluded from the public repository.
 
 ## ARD-008: Bounded retrieval
 
+- Status: partly retired by dec-138 (dependency traversal was removed; token and scope bounds still apply to lesson and conversation search).
 - Retrieval must support bounded output through token and scope constraints.
 - Dependency traversal must stay budget-aware to avoid context bloat.
 

@@ -216,13 +216,13 @@ def health() -> None:
 def gain(
     json_out: bool = typer.Option(False, "--json", help="Emit raw GainSummary as JSON."),
 ) -> None:
-    """Show compression-gain statistics: windows, saved tokens, and daily trend."""
+    """Show historical compression statistics. Compression was removed in dec-138; no new records are written."""
     from axon.observability.gain import load_gain
 
     summary = load_gain()
 
     if summary.windows == 0:
-        typer.echo("No compression telemetry yet. Run some compressions first.")
+        typer.echo("No compression records: compression was removed in dec-138, so none are written.")
         return
 
     if json_out:
