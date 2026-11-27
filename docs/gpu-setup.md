@@ -1,5 +1,7 @@
 # GPU Setup for AXON Embedding Acceleration
 
+> **Stale (2026-11-26):** this page describes the embedder, which no longer exists (axon.embedder, fastembed). It is kept for reference until it is rewritten; the current plan is [ROADMAP.md](ROADMAP.md).
+
 Per-machine embedding dependencies. **DO NOT add these to `pyproject.toml`** -
 they are machine-specific (a CUDA wheel installed on a Mac, or vice versa,
 breaks `import onnxruntime`). Install them directly into the active venv on

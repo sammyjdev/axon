@@ -23,12 +23,9 @@ there is no backport policy yet.
 
 ## Scope
 
-AXON runs locally and integrates with cloud LLM providers (DeepInfra and
-OpenRouter for the routing tiers, Groq for the classifier; see dec-128) via API
-keys supplied through environment variables. Relevant
-security surface includes:
+AXON runs locally. No commit and no MCP tool calls an LLM (dec-138); the one exception is the optional vault TIL hook, which calls a local Ollama server. Relevant security surface includes:
 
-- Secret handling (`.env`, provider API keys)
+- Secret handling (.env, AXON_HTTP_TOKEN)
 - The `ctx=work` restricted-context isolation (see `docs/decisions/dec-109-*.md`)
 - MCP tool risk gating (`read` / `write` / `destructive`, see ADR-013)
 - HTTP surface authentication (`axon serve-http`): every route except

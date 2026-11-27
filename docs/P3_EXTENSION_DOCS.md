@@ -1,5 +1,7 @@
 # P3 Extension Docs
 
+> **Stale (2026-11-26):** this page describes modules that no longer exist (see tests/test_code_vectors_retired.py). It is kept for reference until it is rewritten; the current plan is [ROADMAP.md](ROADMAP.md).
+
 This page documents the current extension surfaces that already exist in the
 codebase:
 

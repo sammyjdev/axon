@@ -1,7 +1,6 @@
 # `docs/` index
 
-Navigation aid for this directory. See the watch-out at the bottom on why moving a file
-under `docs/` has a measurable side effect on the pack-quality ruler.
+Navigation aid for this directory.
 
 `CLAUDE.md`'s own Entry Points section names five files: `README.md`, `VAULT_SETUP.md`,
 `USAGE_GUIDE.md`, `ADR.md`, `ARD.md`. `PROJECT_OVERVIEW.md` is a *global* entry point — the
@@ -87,23 +86,23 @@ promises the rollback; the dead flags themselves are still #217.
 | `ADR.md` | Public summary of active ADRs | current, entry point |
 | `ARD.md` | Active architectural requirements | current, entry point |
 | `AUDIT_EXCEPTIONS.md` | Catalog of bare `except Exception:` (Phase 0.4) | stale — counts no longer match the tree, unclear if the narrowing follow-up landed; needs a read, not a move |
-| `METRICS.md` | Metrics manifest with source/command | current, actively maintained (through 2026-08-07) — golden-corpus file, do not move without re-measuring |
+| `METRICS.md` | Metrics manifest with source/command | current - only current measured claims (2026-11-26) |
 | `MIGRATION_LOGGING.md` | stdlib→structlog logging plan | stale — target module exists but plan detail unverified; needs a read, not a move |
-| `P3_EXTENSION_DOCS.md` | Docs for the P3 extension surfaces | current — all cited modules confirmed present |
+| `P3_EXTENSION_DOCS.md` | Docs for the P3 extension surfaces | stale - describes modules that no longer exist (see tests/test_code_vectors_retired.py) |
 | `PROFILES.md` | Operating-mode profiles in `axon.toml` | current - provider profiles removed with dec-138 (2026-10-21) |
 | `PROJECT_OVERVIEW.md` | Single-page map of the engine | current, global entry point (see intro above), Branch state curated 2026-10-21 |
 | `QUICKSTART_LINUX.md` | Linux setup | current — rewritten in this pass (dead `pb` commands, wrong provider-profile keys) |
 | `QUICKSTART_MACOS.md` | macOS setup | current — rewritten in this pass (same defects as Linux) |
 | `QUICKSTART_WINDOWS_WSL2.md` | Windows/WSL2 setup | current - rewritten 2026-10-21 for dec-138: the remote host needs only `axon-postgres` |
-| `ROADMAP.md` | Product roadmap (state as of 2026-06-20) | stale — self-declared active but 3+ months behind, not clearly finished so not archived |
+| ROADMAP.md | Public roadmap F0-F3 (2026-11-26) | current |
 | `SUPPORT_MATRIX.md` | Support matrix by mode/platform | current — rewritten in this pass (dead `pb` commands, wrong provider-profile keys, fabricated rate-limit defaults) |
-| `TIL_AUTOMATION.md` | TIL automation | current (one incidental "qdrant" tag example, not an architecture claim) |
+| `TIL_AUTOMATION.md` | TIL automation | stale - describes removed commands (pb til, pb deep suggest) |
 | `USAGE_GUIDE.md` | Day-to-day usage guide | current, entry point — rewritten against the current CLI and D4 |
-| `VAULT_SETUP.md` | External vault bootstrap | current, entry point |
-| `adoption-diagnosis-2026-08-07.md` | Measured low-adoption diagnosis | historical, measured data — cited 2x in the pack-quality golden corpus, do not move without re-measuring |
-| `agent-backlog.md` | Agentic builder loop backlog (18 items, 11 ready / 5 done) | current, actively referenced — cited 10x in the pack-quality golden corpus, do not move without re-measuring |
+| `VAULT_SETUP.md` | External vault bootstrap | stale - describes removed pb commands; not an entry point until rewritten |
+| `adoption-diagnosis-2026-08-07.md` | Measured low-adoption diagnosis | historical, measured data |
+| `agent-backlog.md` | Agentic builder loop backlog (18 items, 11 ready / 5 done) | current, actively referenced |
 | `ai-engineering-gap-review.md` | AI-engineering gap review | current — recovered from stash 2026-09-23 (PR #214), undated in the file itself |
-| `gpu-setup.md` | Per-machine GPU acceleration setup | current — referenced by the archived `MIGRATION.md` as an active precondition |
+| `gpu-setup.md` | Per-machine GPU acceleration setup | stale - describes the removed embedder (axon.embedder, fastembed) |
 
 **Archived out of the repo (2026-09-23):** `CAPTURE_ROBUSTNESS.md`, `COGNITIVE_AUDIT.md`,
 `MIGRATION.md`, `MIGRATION_PYDANTIC.md`, `P3_PLAN.md`, `GLYPH_INTEGRATION_FOLLOWUPS.md`,
@@ -116,8 +115,8 @@ tombstone `WHY.md` naming the evidence per file is one level up, at
 
 | Path | What it is | Note |
 |---|---|---|
-| `decisions/` (35 files) | The ADR corpus | Indexed by `ADR.md`, do not touch its index separately |
-| `superpowers/specs/` | Design specs | Indexed by the embedder pipeline |
+| `decisions/` (37 files) | The ADR corpus | Indexed by `ADR.md`, do not touch its index separately |
+| `superpowers/specs/` | Design specs | Historical design specs; the embedder pipeline that indexed them was removed by dec-138 |
 | `superpowers/plans/` | Eval-run plans | Deliberately excluded from the index — indexing eval artifacts would leak answers into the measurement instrument |
 | `plans/` (2 files) | Live and reference task plans | See table below |
 | `mockups/` | UI mockups (HTML) | `promotion-workbench-style-comparison.html`, pending design, no live promotion view yet |
@@ -144,23 +143,6 @@ cited by merged commit messages, which is closer to an architecture decision log
 working draft. Not revisited unless the directory starts accumulating live, uncommitted-style
 specs again.
 
-## Watch-out: this index does not change the pack-quality ruler
+## Retired: the pack-quality ruler
 
-18 of the 111 golden pack-quality cases expect a file under `docs/` (`agent-backlog.md`
-leads with 10, `ADR.md` with 4, `decisions/` with 3, `adoption-diagnosis-2026-08-07.md` with
-2, `METRICS.md` with 1). The fixture generator drops a case whose expected files left the
-tree, so moving or deleting any of those files silently shrinks the corpus and moves the
-baseline. Re-measure with `python3 scripts/eval_pack_quality.py` and record the new number in
-the same commit as any such move — this pass did:
-
-| | cases | hit rate | coverage |
-|---|---|---|---|
-| baseline (PR #213) | 111 | 0.640 | 0.429 |
-| after archiving 12 files, none golden-referenced | 111 | 0.640 | 0.433 |
-
-The 0.429→0.433 coverage delta is store drift since PR #213 (more decisions indexed), not an
-effect of this reorg — the case count and hit rate are unchanged, and none of the archived
-files appear in the golden set. Content edits (this file, `agent-backlog.md`, `ADR.md`, the
-quickstarts, dec-105, open-items.md) don't move or delete anything, so they cannot change the
-case count either — the store only re-embeds a file on the next `axon index-vault` /
-`axon index-dev`, which this pass did not run.
+The pack-quality ruler and the index-vault / index-dev commands it relied on were removed by dec-138. The former section and its numbers are in the git history: git show f898c82d:docs/README.md.

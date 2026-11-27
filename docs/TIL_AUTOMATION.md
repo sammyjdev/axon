@@ -1,5 +1,7 @@
 # TIL Automation
 
+> **Stale (2026-11-26):** this page describes commands that no longer exist (pb til, pb deep suggest). It is kept for reference until it is rewritten; the current plan is [ROADMAP.md](ROADMAP.md).
+
 Status: active workflow guidance
 
 This document isolates the TIL and HOW-TO automation story from the broader

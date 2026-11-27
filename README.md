@@ -202,16 +202,9 @@ Postgres full-text search. Measured on 2026-10-15 over the 41 real lessons:
 The `embeddings` table held 578 MB of a 610 MB database. dec-138 removes it, and
 with it the need for a provider key and a pgvector image.
 
-Test suite: 1,525 passed, 3 skipped (`pytest tests/ -q`, 2026-11-02; 1,527 collected).
+Test suite: 1528 passed, 3 skipped (python3 -m pytest -q, CI full-suite job, 2026-11-27).
 
-### Historical: token savings from code search
-
-Until 2026-10-15 AXON served code search (`search_code`) and compressed the
-results, and GNOMON measured both. The best-known figure, a 90.7% token reduction
-against reading the same files in full (330,590 vs 3,537,838 tokens, n=333),
-describes that retired subsystem, not AXON today. Code search was retired because
-agents rarely used it and went back to grep when they did. The measurements stay
-in [`docs/METRICS.md`](docs/METRICS.md) and the git history for provenance.
+Older figures describe retired subsystems; they are in the git history (git show f898c82d:docs/METRICS.md).
 
 ---
 
@@ -224,7 +217,7 @@ in [`docs/METRICS.md`](docs/METRICS.md) and the git history for provenance.
 | [`docs/METRICS.md`](docs/METRICS.md) | Recomputed performance metrics manifest (dated) |
 | [`docs/ARD.md`](docs/ARD.md) | Architectural requirements |
 | [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) | CLI workflows |
-| [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap |
+| [`docs/VAULT_SETUP.md`](docs/VAULT_SETUP.md) | Obsidian vault bootstrap (stale: describes removed pb commands) |
 | [`docs/decisions/`](docs/decisions/) | Individual decision records (dec-100 to dec-138) |
 | [`docs/decisions/dec-138-stop-code-vectors.md`](docs/decisions/dec-138-stop-code-vectors.md) | Code vectorization stopped; AXON is the memory of agent work |
 | [`docs/decisions/dec-109-tool-tracing-and-risk-gating.md`](docs/decisions/dec-109-tool-tracing-and-risk-gating.md) | Tool risk classes, policy gate, tracing middleware |
