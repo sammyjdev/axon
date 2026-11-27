@@ -76,6 +76,7 @@ def test_setup_defaults_to_recommended_hybrid_local_mode_on_mac(tmp_path: Path) 
         tmp_path,
         extra_env={"OSTYPE": "darwin23"},
         sysctl_bytes=34 * 1024 * 1024 * 1024,
+        present={"ollama"},
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -84,6 +85,7 @@ def test_setup_defaults_to_recommended_hybrid_local_mode_on_mac(tmp_path: Path) 
 
     assert "AXON_RUNTIME_MODE=hybrid-local" in env_payload
     _assert_starts_only_postgres(result, log_output)
+    assert "ollama " not in log_output
 
 
 def test_setup_honors_minimal_mode_and_skips_local_bootstrap(tmp_path: Path) -> None:
@@ -94,6 +96,7 @@ def test_setup_honors_minimal_mode_and_skips_local_bootstrap(tmp_path: Path) -> 
             "AXON_RUNTIME_MODE": "minimal",
         },
         sysctl_bytes=34 * 1024 * 1024 * 1024,
+        present={"ollama"},
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -102,8 +105,8 @@ def test_setup_honors_minimal_mode_and_skips_local_bootstrap(tmp_path: Path) -> 
 
     assert "AXON_RUNTIME_MODE=minimal" in env_payload
     assert "docker compose" not in log_output
-    assert "ollama pull" not in log_output
     assert "curl " not in log_output
+    assert "ollama " not in log_output
 
 
 def test_setup_remote_infra_mode_requires_remote_host(tmp_path: Path) -> None:
@@ -130,6 +133,7 @@ def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None
             "AXON_INFRA_HOST": "desktop.local",
         },
         sysctl_bytes=34 * 1024 * 1024 * 1024,
+        present={"ollama"},
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -138,12 +142,12 @@ def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None
 
     assert "AXON_RUNTIME_MODE=remote-infra" in env_payload
     assert "docker compose" not in log_output
-    assert "ollama pull" not in log_output
     # dec-121: Postgres is the only backend; Qdrant/Langfuse are no longer probed.
     assert "Postgres" in result.stdout
     assert ":6333" not in log_output
     assert ":3000" not in log_output
     assert "11434" not in log_output
+    assert "ollama " not in log_output
 
 
 def test_setup_full_local_without_nvidia_starts_only_postgres(tmp_path: Path) -> None:
@@ -154,6 +158,7 @@ def test_setup_full_local_without_nvidia_starts_only_postgres(tmp_path: Path) ->
             "AXON_RUNTIME_MODE": "full-local",
         },
         sysctl_bytes=34 * 1024 * 1024 * 1024,
+        present={"ollama"},
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -163,6 +168,27 @@ def test_setup_full_local_without_nvidia_starts_only_postgres(tmp_path: Path) ->
     assert "AXON_RUNTIME_MODE=full-local" in env_payload
     _assert_starts_only_postgres(result, log_output)
     assert ":6333" not in log_output
+    assert "ollama " not in log_output
+
+
+def test_setup_has_no_profile_or_model_residue() -> None:
+    patterns = (
+        "COMPOSE_PROFILE",
+        "PULL_MODELS",
+        "check_service",
+        "gemma4:26b",
+        "pull de modelos",
+        "com profile",
+    )
+    result = subprocess.run(
+        ["grep", "-c", *(part for p in patterns for part in ("-e", p)), "setup.sh"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.stdout.strip() == "0"
 
 
 def _assert_starts_only_postgres(
@@ -188,6 +214,7 @@ def _run_setup(
     *,
     extra_env: dict[str, str],
     sysctl_bytes: int,
+    present: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -209,10 +236,11 @@ def _run_setup(
         fake_bin / "docker",
         "#!/usr/bin/env bash\nprintf '%s\\n' \"docker $*\" >> \"$TEST_LOG\"\n",
     )
-    _write_executable(
-        fake_bin / "ollama",
-        "#!/usr/bin/env bash\nprintf '%s\\n' \"ollama $*\" >> \"$TEST_LOG\"\n",
-    )
+    if "ollama" in present:
+        _write_executable(
+            fake_bin / "ollama",
+            "#!/usr/bin/env bash\nprintf '%s\\n' \"ollama $*\" >> \"$TEST_LOG\"\n",
+        )
     _write_executable(
         fake_bin / "curl",
         "#!/usr/bin/env bash\nprintf '%s\\n' \"curl $*\" >> \"$TEST_LOG\"\n",

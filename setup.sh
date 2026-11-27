@@ -56,12 +56,10 @@ plan = build_setup_plan(
     platform_config=detect_platform(),
     remote_infra_host=remote_host,
 )
-compose_profile = plan.compose_profile or "-"
 start_local_stack = "1" if plan.start_local_stack else "0"
 validate_remote = "1" if plan.validate_remote_services else "0"
-pull_models = ",".join(plan.pull_models)
 
-print(f"{compose_profile}\t{start_local_stack}\t{validate_remote}\t{pull_models}")
+print(f"{start_local_stack}\t{validate_remote}")
 PY
 }
 
@@ -95,38 +93,25 @@ PY
 }
 
 IFS=$'\t' read -r SETUP_MODE MODE_SOURCE RECOMMENDED_MODE <<< "$(resolve_setup_mode "${REMOTE_INFRA_HOST:-}")"
-IFS=$'\t' read -r PLAN_COMPOSE_PROFILE PLAN_START_LOCAL_STACK PLAN_VALIDATE_REMOTE PLAN_PULL_MODELS <<< "$(resolve_setup_plan "$SETUP_MODE" "${REMOTE_INFRA_HOST:--}")"
+IFS=$'\t' read -r PLAN_START_LOCAL_STACK PLAN_VALIDATE_REMOTE <<< "$(resolve_setup_plan "$SETUP_MODE" "${REMOTE_INFRA_HOST:--}")"
 
 echo "==> Detectando plataforma..."
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    PLATFORM="mac"
-    COMPOSE_PROFILE="cpu"
     MEM_BYTES=$(sysctl -n hw.memsize)
     MEM_GB=$((MEM_BYTES / 1024 / 1024 / 1024))
     echo "    Mac detectado — ${MEM_GB}GB memória unificada"
 else
-    PLATFORM="pc"
-    COMPOSE_PROFILE="gpu"
     if command -v nvidia-smi &>/dev/null; then
         if VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' '); then
             VRAM_GB=$((VRAM_MB / 1024))
             echo "    PC detectado — ${VRAM_GB}GB VRAM (NVIDIA)"
         else
             echo "    PC detectado — nvidia-smi falhou, usando CPU fallback"
-            COMPOSE_PROFILE="cpu"
         fi
     else
         echo "    PC detectado — nvidia-smi não encontrado, usando CPU fallback"
-        COMPOSE_PROFILE="cpu"
     fi
-fi
-
-if [[ "$SETUP_MODE" == "hybrid-local" ]]; then
-    COMPOSE_PROFILE="cpu"
-fi
-if [[ "$PLAN_COMPOSE_PROFILE" != "-" ]]; then
-    COMPOSE_PROFILE="$PLAN_COMPOSE_PROFILE"
 fi
 
 echo ""
@@ -178,16 +163,6 @@ mv "$GENERATED_ENV" .env.local
 echo "    .env.local gerado"
 
 # Verificação básica de acessibilidade
-check_service() {
-    local name=$1
-    local url=$2
-    if curl -sf "$url" &>/dev/null; then
-        echo "    [OK] $name"
-    else
-        echo "    [WARN] $name não respondeu em $url — pode ainda estar iniciando"
-    fi
-}
-
 # Postgres is not HTTP; probe the port with bash's /dev/tcp (dec-121 backend).
 check_tcp() {
     local name=$1
@@ -217,7 +192,7 @@ if [[ "$SETUP_MODE" == "remote-infra" ]]; then
 elif [[ "$SETUP_MODE" == "minimal" ]]; then
     echo ""
     echo "==> Modo minimal selecionado"
-    echo "    Docker local, validação remota e pull de modelos serão ignorados."
+    echo "    Docker local será ignorado."
 elif [[ "$PLAN_START_LOCAL_STACK" == "1" ]]; then
     echo ""
     echo "==> Criando diretórios de dados..."
@@ -236,23 +211,6 @@ elif [[ "$PLAN_START_LOCAL_STACK" == "1" ]]; then
     else
         echo "    [WARN] Postgres (axon-postgres) não respondeu - pode ainda estar iniciando"
     fi
-    check_service "Ollama"   "http://localhost:11434/api/tags"
-
-    echo ""
-    echo "==> Puxando modelos Ollama necessários..."
-    IFS=',' read -r -a MODELS_TO_PULL <<< "$PLAN_PULL_MODELS"
-    for model in "${MODELS_TO_PULL[@]}"; do
-        [[ -n "$model" ]] || continue
-        if [[ "$model" == "gemma4:26b" ]] && ! {
-            { [[ "$PLATFORM" == "pc" ]] && [[ "${VRAM_GB:-0}" -ge 16 ]]; } ||
-            { [[ "$PLATFORM" == "mac" ]] && [[ "${MEM_GB:-0}" -ge 32 ]]; }
-        }; then
-            echo "    Hardware insuficiente para gemma4:26b — usando gemma4:e4b como fallback"
-            continue
-        fi
-        echo "    Puxando $model..."
-        ollama pull "$model"
-    done
 else
     echo ""
     echo "==> Nenhuma ação de stack local foi planejada para este modo."
