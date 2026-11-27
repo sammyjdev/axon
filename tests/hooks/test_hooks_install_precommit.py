@@ -21,11 +21,18 @@ from typer.testing import CliRunner
 from axon.cli.pb import app
 from axon.config.runtime import load_runtime_config
 from axon.hooks.precommit_integration import axon_repo_entry
+from tests.hooks.test_hooks_cli import WRITES_DRIVERS, stub_precommit
 
 runner = CliRunner()
 
 _CFG = ".pre-commit-config.yaml"
 _HOOK_TYPES = ("post-commit", "post-merge")
+_BLOCK = (
+    b"# >>> AXON git hook >>>\n"
+    b"python -m axon.hooks.git_event commit\n"
+    b"# <<< AXON git hook <<<\n"
+)
+_USER_HOOK = b"#!/bin/sh\necho mine\n"
 
 
 @pytest.fixture(autouse=True)
@@ -97,6 +104,19 @@ def _files(root: Path) -> dict[str, bytes]:
         for path in root.rglob("*")
         if path.is_file()
     }
+
+
+def _hook_files(repo: Path) -> dict[str, tuple[bytes, int]]:
+    return {
+        path.name: (path.read_bytes(), path.stat().st_mode)
+        for path in (repo / ".git" / "hooks").iterdir()
+        if not path.name.endswith(".sample")
+    }
+
+
+def _write_hook(repo: Path, name: str, content: bytes) -> None:
+    _hook(repo, name).write_bytes(content)
+    _hook(repo, name).chmod(0o755)
 
 
 def test_apply_installs_drivers_and_registers_repo(repo: Path) -> None:
@@ -196,3 +216,124 @@ def test_unmergeable_config_exits_1(repo: Path, config: bytes) -> None:
     assert (repo / _CFG).read_bytes() == config
     assert not _hook(repo, "post-commit").exists()
     assert not _registry_file().exists()
+
+
+@pytest.mark.parametrize("name", ["post-commit", "post-commit.legacy"])
+def test_legacy_axon_block_is_stripped_before_install(repo: Path, name: str) -> None:
+    _write_hook(repo, name, b"#!/usr/bin/env bash\n" + _BLOCK)
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 0, result.output
+    for hook in ("post-commit", "post-commit.legacy", "post-merge", "post-merge.legacy"):
+        file = _hook(repo, hook)
+        assert not file.exists() or b"# >>> AXON git hook >>>" not in file.read_bytes()
+    assert not _hook(repo, "post-commit.legacy").exists()
+
+
+def test_pre_commit_install_failure_restores_and_exits_1(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_precommit(
+        tmp_path / "bin",
+        monkeypatch,
+        "import pathlib, sys\n"
+        "pathlib.Path('.git/hooks/post-merge').write_text('half installed')\n"
+        "sys.exit('Cowardly refusing to install hooks with core.hooksPath set')\n",
+    )
+    _write_hook(repo, "post-commit", _USER_HOOK + _BLOCK)
+    _write_hook(repo, "post-commit.legacy", _USER_HOOK + _BLOCK)
+    _write_hook(repo, "post-merge.legacy", _USER_HOOK)
+    _registry_file().parent.mkdir(parents=True, exist_ok=True)
+    _registry_file().write_bytes(b'["/other/repo"]')
+    before = _hook_files(repo)
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 1
+    lines = result.stderr.splitlines()
+    assert any("pre-commit install failed" in line for line in lines)
+    assert "Cowardly refusing to install hooks with core.hooksPath set" in result.stderr
+    assert any(line.startswith("[axon] restored:") for line in lines)
+    assert (repo / _CFG).read_bytes() == b"repos: []\n"
+    assert _hook_files(repo) == before
+    assert not _hook(repo, "post-merge").exists()
+    assert _registry_file().read_bytes() == b'["/other/repo"]'
+
+
+@pytest.mark.parametrize("kind", ["json-object", "directory"])
+def test_registry_write_failure_restores_and_exits_1(repo: Path, kind: str) -> None:
+    _registry_file().parent.mkdir(parents=True, exist_ok=True)
+    if kind == "directory":
+        _registry_file().mkdir()
+    else:
+        _registry_file().write_bytes(b'{"not": "a list"}')
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 1
+    assert any("onboarded_repos.json" in line for line in result.stderr.splitlines())
+    if kind == "directory":
+        assert _registry_file().is_dir()
+        assert not list(_registry_file().iterdir())
+    else:
+        assert _registry_file().read_bytes() == b'{"not": "a list"}'
+    assert (repo / _CFG).read_bytes() == b"repos: []\n"
+    assert _hook_files(repo) == {}
+
+
+def test_verify_fails_when_stub_writes_no_driver(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_precommit(tmp_path / "bin", monkeypatch, "")
+    _write_hook(repo, "post-commit", _USER_HOOK + _BLOCK)
+    before = _hook_files(repo)
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 1
+    assert any("post-merge driver missing" in line for line in result.stderr.splitlines())
+    assert str(repo) not in _registered()
+    assert (repo / _CFG).read_bytes() == b"repos: []\n"
+    assert _hook_files(repo) == before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="no POSIX executable bit on Windows")
+def test_non_executable_driver_fails(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_precommit(tmp_path / "bin", monkeypatch, WRITES_DRIVERS.replace("0o755", "0o644"))
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 1
+    assert any(
+        "post-commit driver not executable" in line for line in result.stderr.splitlines()
+    )
+    assert (repo / _CFG).read_bytes() == b"repos: []\n"
+    assert _hook_files(repo) == {}
+    assert str(repo) not in _registered()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_symlinked_hook_is_restored_as_a_symlink(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_precommit(
+        tmp_path / "bin",
+        monkeypatch,
+        "import os, sys\n"
+        "os.replace('.git/hooks/post-commit', '.git/hooks/post-commit.legacy')\n"
+        "sys.exit(1)\n",
+    )
+    script = tmp_path / "my-hook.sh"
+    script.write_bytes(_USER_HOOK)
+    _hook(repo, "post-commit").symlink_to(script)
+
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 1
+    assert _hook(repo, "post-commit").is_symlink()
+    assert os.readlink(_hook(repo, "post-commit")) == str(script)
+    assert not os.path.lexists(_hook(repo, "post-commit.legacy"))
+    assert script.read_bytes() == _USER_HOOK

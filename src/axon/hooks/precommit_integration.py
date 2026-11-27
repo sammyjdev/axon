@@ -7,18 +7,29 @@ their pipeline. Idempotent: re-running produces the same block.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
 
 import yaml
 
-from axon.hooks.git_installer import HOOKS
+from axon.hooks.git_installer import (
+    HOOKS,
+    _strip_hooks,
+    register_repo,
+    registered_repos,
+    registry_path,
+)
 
 _INSTALL_TIMEOUT_S = 120
+
+# The drivers pre-commit writes, plus where it moves a hook it replaces.
+_HOOK_FILES = tuple(name + suffix for name in HOOKS for suffix in ("", ".legacy"))
 
 _COMMIT_ID = "axon-post-commit"
 _MERGE_ID = "axon-post-merge"
@@ -205,3 +216,111 @@ def install_precommit_drivers(repo: Path, cfg_name: str) -> None:
     if done.returncode != 0:
         output = (done.stderr + done.stdout).strip()
         raise RuntimeError(f"pre-commit install failed (exit {done.returncode}): {output}")
+
+
+def verify_precommit_drivers(repo: Path, cfg_name: str) -> None:
+    problems: list[str] = []
+    for hook_type in HOOKS:
+        driver = repo / ".git" / "hooks" / hook_type
+        if not driver.is_file():
+            problems.append(f"{hook_type} driver missing")
+            continue
+        text = driver.read_text(encoding="utf-8", errors="replace")
+        for flag in (f"--hook-type={hook_type}", f"--config={cfg_name}"):
+            if flag not in text:
+                problems.append(f"{hook_type} driver lacks {flag}")
+        if os.name != "nt" and not driver.stat().st_mode & stat.S_IXUSR:
+            problems.append(f"{hook_type} driver not executable")
+    if problems:
+        raise RuntimeError(", ".join(problems))
+
+
+def verify_registry(repo: Path) -> None:
+    if str(repo.resolve()) not in registered_repos():
+        raise RuntimeError(f"{registry_path()} does not list the repo")
+
+
+# None: no file there. str: a symlink's target. Else the file's bytes and mode.
+Snapshot = dict[Path, "tuple[bytes, int] | str | None"]
+
+
+def _state(path: Path) -> tuple[bytes, int] | str | None:
+    if path.is_symlink():
+        return os.readlink(path)
+    if path.is_file():
+        return path.read_bytes(), stat.S_IMODE(path.stat().st_mode)
+    return None
+
+
+def snapshot_repo_state(repo: Path, config_path: Path) -> Snapshot:
+    """Every file the install writes."""
+    hooks_dir = repo / ".git" / "hooks"
+    paths = [config_path, *(hooks_dir / name for name in _HOOK_FILES), registry_path()]
+    return {path: _state(path) for path in paths}
+
+
+def restore_repo_state(snapshot: Snapshot) -> tuple[list[str], list[str]]:
+    """Put every changed file back. Returns ``(restored, could_not_restore)``."""
+    restored: list[str] = []
+    failed: list[str] = []
+    for path, before in snapshot.items():
+        try:
+            if _state(path) == before:
+                continue
+            if path.is_symlink() or path.is_file():
+                if before is None or isinstance(before, str) or path.is_symlink():
+                    path.unlink()
+            if isinstance(before, str):
+                os.symlink(before, path)
+            elif before is not None:
+                content, mode = before
+                path.write_bytes(content)
+                path.chmod(mode)
+            restored.append(path.name)
+        except OSError as exc:
+            failed.append(f"{path}: {exc}")
+    return restored, failed
+
+
+class InstallError(RuntimeError):
+    """The install failed and the snapshot was restored."""
+
+    def __init__(
+        self, step: str, reason: str, restored: list[str], not_restored: list[str]
+    ) -> None:
+        super().__init__(f"{step}: {reason}")
+        self.restored = restored
+        self.not_restored = not_restored
+
+
+def install_into_repo(repo: Path, config_path: Path) -> bool:
+    """Add the entries, install and verify the drivers, register the repo.
+
+    All or nothing: any failure restores the files and raises ``InstallError``.
+    Returns True if the config was changed.
+    """
+    snapshot = snapshot_repo_state(repo, config_path)
+    step = "merge config"
+    try:
+        added = merge_into(config_path)
+        # A leftover AXON block would run capture twice: pre-commit keeps running
+        # the hook it replaces ("migration mode").
+        step = "strip old AXON hooks"
+        _strip_hooks(repo / ".git" / "hooks", _HOOK_FILES)
+        step = "pre-commit install"
+        install_precommit_drivers(repo, config_path.name)
+        step = "verify drivers"
+        verify_precommit_drivers(repo, config_path.name)
+        step = "register repo"
+        register_repo(repo)
+        step = "verify registry"
+        verify_registry(repo)
+    except BaseException as exc:
+        restored, not_restored = restore_repo_state(snapshot)
+        if not isinstance(exc, Exception):
+            raise  # Ctrl-C: restore, then let it through
+        reason = str(exc)
+        if step == "register repo":
+            reason = f"cannot write {registry_path()}: {reason}"
+        raise InstallError(step, reason, restored, not_restored) from exc
+    return added

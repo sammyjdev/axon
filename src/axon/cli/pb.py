@@ -1092,11 +1092,10 @@ def hooks_install(
 
 
 def _install_precommit(repo_root: Path, cfg: Path) -> None:
-    from axon.hooks.git_installer import register_repo
     from axon.hooks.precommit_integration import (
-        install_precommit_drivers,
+        InstallError,
+        install_into_repo,
         load_precommit_config,
-        merge_into,
     )
 
     # Preflight: nothing is written until all of this holds.
@@ -1114,12 +1113,18 @@ def _install_precommit(repo_root: Path, cfg: Path) -> None:
         typer.echo(f"[axon] hooks install failed: preflight: {refusal}", err=True)
         raise typer.Exit(1)
 
-    if merge_into(cfg):
+    try:
+        added = install_into_repo(repo_root, cfg)
+    except InstallError as exc:
+        typer.echo(f"[axon] hooks install failed: {exc}", err=True)
+        typer.echo(f"[axon] restored: {', '.join(exc.restored) or 'nothing changed'}", err=True)
+        for failure in exc.not_restored:
+            typer.echo(f"[axon] could not restore {failure}", err=True)
+        raise typer.Exit(1) from exc
+    if added:
         typer.echo(f"\n[axon] AXON entries added to {cfg.name}")
     else:
         typer.echo(f"\n[axon] AXON entries already in {cfg.name}")
-    install_precommit_drivers(repo_root, cfg.name)
-    register_repo(repo_root)
     typer.echo("[axon] pre-commit drivers installed: post-commit, post-merge; repo registered")
 
 
