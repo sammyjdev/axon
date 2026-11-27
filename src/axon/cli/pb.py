@@ -1019,9 +1019,6 @@ def hooks_install(
     from axon.hooks.precommit_integration import (
         dry_run_message as pc_msg,
     )
-    from axon.hooks.precommit_integration import (
-        merge_into as pc_merge,
-    )
     from axon.hooks.toolchain_detector import Toolchain, detect
 
     repo_root = Path(path or os.getcwd())
@@ -1051,10 +1048,7 @@ def hooks_install(
             cfg = repo_root / ".pre-commit-config.yml"
         typer.echo(pc_msg(cfg))
         if apply:
-            if pc_merge(cfg):
-                typer.echo(f"\n[axon] Entries adicionados em {cfg}")
-            else:
-                typer.echo("\n[axon] AXON entries já presentes — nada a fazer.")
+            _install_precommit(repo_root, cfg)
         return
 
     if toolchain is Toolchain.HUSKY:
@@ -1095,6 +1089,17 @@ def hooks_install(
         typer.echo(f"[axon] Installed: {', '.join(installed) or '(none new)'}")
     else:
         typer.echo("Run again with --apply to write to .git/hooks/.")
+
+
+def _install_precommit(repo_root: Path, cfg: Path) -> None:
+    from axon.hooks.git_installer import register_repo
+    from axon.hooks.precommit_integration import install_precommit_drivers, merge_into
+
+    if merge_into(cfg):
+        typer.echo(f"\n[axon] AXON entries added to {cfg.name}")
+    install_precommit_drivers(repo_root, cfg.name)
+    register_repo(repo_root)
+    typer.echo("[axon] pre-commit drivers installed: post-commit, post-merge; repo registered")
 
 
 @hooks_app.command("status")

@@ -9,10 +9,16 @@ from __future__ import annotations
 
 import re
 import shlex
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import yaml
+
+from axon.hooks.git_installer import HOOKS
+
+_INSTALL_TIMEOUT_S = 120
 
 _COMMIT_ID = "axon-post-commit"
 _MERGE_ID = "axon-post-merge"
@@ -174,3 +180,28 @@ def merge_into(config_path: Path) -> bool:
 
     config_path.write_bytes((bom + merged.replace("\n", newline)).encode("utf-8"))
     return True
+
+
+def install_command(cfg_name: str) -> list[str]:
+    """The `pre-commit` call, run with ``cwd=<repo>`` so the driver stays relative."""
+    command = ["pre-commit", "install", "--config", cfg_name]
+    for hook_type in HOOKS:
+        command += ["--hook-type", hook_type]
+    return command
+
+
+def install_precommit_drivers(repo: Path, cfg_name: str) -> None:
+    command = install_command(cfg_name)
+    command[0] = shutil.which(command[0]) or command[0]
+    done = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        command,
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=_INSTALL_TIMEOUT_S,
+        check=False,
+    )
+    if done.returncode != 0:
+        output = (done.stderr + done.stdout).strip()
+        raise RuntimeError(f"pre-commit install failed (exit {done.returncode}): {output}")

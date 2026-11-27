@@ -116,29 +116,39 @@ def install_hooks(repo_path: Path | str = ".") -> list[str]:
         installed.append(hook_name)
     _strip_hooks(hooks_dir, RETIRED_HOOKS)
     try:
-        from axon.config.runtime import load_runtime_config
-
-        registry_file = load_runtime_config().data_root / "onboarded_repos.json"
-        resolved_repo_str = str(Path(repo_path).resolve())
-        registry_file.parent.mkdir(parents=True, exist_ok=True)
-        entries: list[str] = []
-        if registry_file.is_file():
-            try:
-                raw = registry_file.read_text(encoding="utf-8")
-                parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    entries = parsed
-                else:
-                    return installed
-            except (OSError, ValueError):
-                return installed
-        if resolved_repo_str not in entries:
-            entries.append(resolved_repo_str)
-            registry_file.write_text(json.dumps(entries), encoding="utf-8")
+        register_repo(repo_path)
     except (OSError, ValueError):
-        pass
+        pass  # best effort: a failing registry write never breaks the install
 
     return installed
+
+
+def registry_path() -> Path:
+    """The list of onboarded repos that doctor reads."""
+    from axon.config.runtime import load_runtime_config
+
+    return load_runtime_config().data_root / "onboarded_repos.json"
+
+
+def registered_repos() -> list[str]:
+    """Raises ``ValueError``/``OSError`` on a registry that cannot be read as a list."""
+    registry_file = registry_path()
+    if not registry_file.is_file():
+        return []
+    entries = json.loads(registry_file.read_text(encoding="utf-8"))
+    if not isinstance(entries, list):
+        raise ValueError(f"{registry_file} is not a JSON list")
+    return entries
+
+
+def register_repo(repo_path: Path | str) -> None:
+    """Record the repo root in the registry. An invalid registry is never rewritten."""
+    registry_file = registry_path()
+    registry_file.parent.mkdir(parents=True, exist_ok=True)
+    entries = registered_repos()
+    resolved = str(Path(repo_path).resolve())
+    if resolved not in entries:
+        registry_file.write_text(json.dumps([*entries, resolved]), encoding="utf-8")
 
 
 def uninstall_hooks(repo_path: Path | str = ".") -> list[str]:
