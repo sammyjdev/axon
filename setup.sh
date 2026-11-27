@@ -214,6 +214,7 @@ fi
 
 echo ""
 echo "==> Setup concluído."
+echo "Optional TIL hook: install Ollama (https://ollama.com) and run: ollama pull gemma4:e4b"
 echo ""
 echo "    Próximos passos:"
 echo "      1. Preencha ANTHROPIC_API_KEY em .env.local"

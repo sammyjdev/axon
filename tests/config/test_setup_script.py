@@ -12,6 +12,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_TOOLS = ("bash", "cat", "dirname", "head", "mktemp", "mv", "timeout", "tr")
+TIL_HINT = "Optional TIL hook: install Ollama (https://ollama.com) and run: ollama pull gemma4:e4b"
 BANNER = "==> Subindo Postgres (docker compose up -d axon-postgres)"
 
 
@@ -87,6 +88,7 @@ def test_setup_defaults_to_recommended_hybrid_local_mode_on_mac(tmp_path: Path) 
     _assert_starts_only_postgres(result, log_output)
     assert not (workspace / "data" / "ollama").exists()
     assert "ollama " not in log_output
+    assert TIL_HINT in result.stdout.splitlines()
 
 
 def test_setup_honors_minimal_mode_and_skips_local_bootstrap(tmp_path: Path) -> None:
@@ -108,6 +110,7 @@ def test_setup_honors_minimal_mode_and_skips_local_bootstrap(tmp_path: Path) -> 
     assert "docker compose" not in log_output
     assert "curl " not in log_output
     assert "ollama " not in log_output
+    assert TIL_HINT in result.stdout.splitlines()
 
 
 def test_setup_remote_infra_mode_requires_remote_host(tmp_path: Path) -> None:
@@ -149,6 +152,7 @@ def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None
     assert ":3000" not in log_output
     assert "11434" not in log_output
     assert "ollama " not in log_output
+    assert TIL_HINT in result.stdout.splitlines()
 
 
 def test_setup_full_local_without_nvidia_starts_only_postgres(tmp_path: Path) -> None:
@@ -171,6 +175,7 @@ def test_setup_full_local_without_nvidia_starts_only_postgres(tmp_path: Path) ->
     assert not (workspace / "data" / "ollama").exists()
     assert ":6333" not in log_output
     assert "ollama " not in log_output
+    assert TIL_HINT in result.stdout.splitlines()
 
 
 def test_setup_has_no_profile_or_model_residue() -> None:
