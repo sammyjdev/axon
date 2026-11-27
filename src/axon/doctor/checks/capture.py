@@ -8,13 +8,12 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from axon.config.data_root import data_root
 from axon.doctor import CheckResult, CheckStatus
-from axon.store.pending import spool_refusals_path
+from axon.store.pending import read_spool_refusals, spool_refusals_path
 
 _BACKLOG_WARN_COUNT = 50
 _BACKLOG_FAIL_COUNT = 500
@@ -104,16 +103,28 @@ def check_quarantine_size(*, data_root: Path | None = None) -> CheckResult:
     )
 
 
-def check_spool_refusals() -> CheckResult:
-    """Warn when a payload was dropped because the spool was not provably ignored."""
-    record = spool_refusals_path()
-    if not record.exists():
+def check_spool_refusals(*, data_root: Path | None = None) -> CheckResult:
+    """Warn when a payload was dropped because the spool was not provably ignored.
+
+    Without an override the record is read from the engine data root, not from
+    the repo's ``.axon``.
+    """
+    record = spool_refusals_path(data_root)
+    try:
+        entry = read_spool_refusals(record)
+    except (OSError, ValueError) as exc:
+        return CheckResult(
+            name="capture.spool_refusals",
+            status=CheckStatus.WARN,
+            detail=f"unreadable refusal record: {type(exc).__name__}",
+            suggestion=f"Inspect, then delete {record}",
+        )
+    if entry is None:
         return CheckResult(
             name="capture.spool_refusals",
             status=CheckStatus.OK,
             detail="no spool refusals",
         )
-    entry = json.loads(record.read_text(encoding="utf-8"))
     return CheckResult(
         name="capture.spool_refusals",
         status=CheckStatus.WARN,

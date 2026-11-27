@@ -5,9 +5,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from typer.testing import CliRunner
+
+from axon.__main__ import app
 from axon.config.runtime import load_runtime_config
 from axon.doctor import run_all_checks
 from axon.doctor.formatters.human import format_results as human_format
+from axon.store.pending import SpoolNotIgnoredError, _pending_paths, write_pending
+from tests.cli.test_spool_not_committable import _git
+
+runner = CliRunner()
 
 _RECORD = {
     "count": 2,
@@ -45,3 +53,30 @@ def test_doctor_ok_without_record():
     out = human_format(run_all_checks()).splitlines()
 
     assert f"[ ok ] {'capture.spool_refusals':<32} no spool refusals" in out
+
+
+def test_doctor_reads_the_given_data_root(tmp_path):
+    record = _write_record(tmp_path / "elsewhere")
+
+    out = human_format(run_all_checks(data_root=record.parent))
+
+    assert "2 spool refusal(s)" in out
+    assert str(record) in out
+
+
+@pytest.mark.parametrize("text", ["{not json", "[]", '{"count": 2}'])
+async def test_corrupt_record_is_reported_and_rewritten(tmp_path, monkeypatch, text):
+    record = _write_record(load_runtime_config().data_root, text)
+
+    out = human_format(run_all_checks())
+
+    assert f"[warn] {'capture.spool_refusals':<32} unreadable refusal record" in out
+    status = runner.invoke(app, ["status", "--repo", "x"])
+    assert status.output.splitlines()[0].startswith("spool refusals: unreadable (")
+
+    monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))
+    _git(tmp_path, "init")
+    (tmp_path / ".axon" / ".gitignore").mkdir(parents=True)
+    with pytest.raises(SpoolNotIgnoredError):
+        await write_pending(payload={}, commit_hash="s", paths=_pending_paths())
+    assert json.loads(record.read_text(encoding="utf-8"))["count"] == 1

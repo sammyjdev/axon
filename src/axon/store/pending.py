@@ -161,14 +161,29 @@ def spool_refusals_path(data_root: Path | None = None) -> Path:
     return data_root / "spool-refusals.json"
 
 
+def read_spool_refusals(record: Path) -> dict | None:
+    """The refusal record, None without one; OSError or ValueError if unreadable."""
+    if not record.exists():
+        return None
+    entry = json.loads(record.read_text(encoding="utf-8"))
+    if not (
+        isinstance(entry, dict)
+        and isinstance(entry.get("count"), int)
+        and {"last_at", "last_dir", "last_reason"} <= entry.keys()
+    ):
+        raise ValueError("not a refusal record")
+    return entry
+
+
 def record_spool_refusal(directory: Path, reason: str) -> None:
     """Count one refused spool write. Paths and error text only, never payload."""
     tmp: Path | None = None
     try:
         record = spool_refusals_path()
-        count = 0
-        if record.exists():
-            count = json.loads(record.read_text(encoding="utf-8"))["count"]
+        previous = None
+        with contextlib.suppress(OSError, ValueError):  # unreadable: start over
+            previous = read_spool_refusals(record)
+        count = previous["count"] if previous else 0
         entry = {
             "count": count + 1,
             "last_at": datetime.now(UTC).isoformat(),

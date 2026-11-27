@@ -51,7 +51,7 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_pending_backlog(data_root=data_root),
         check_quarantine_size(data_root=data_root),
         check_warnings_log(data_root=data_root),
-        check_spool_refusals(),
+        check_spool_refusals(data_root=data_root),
         check_telemetry_freshness(data_root=data_root),
         check_install_branch(),
         check_commitlint_compat(),
