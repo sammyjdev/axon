@@ -143,7 +143,7 @@ def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None
     assert "Postgres" in result.stdout
     assert ":6333" not in log_output
     assert ":3000" not in log_output
-    assert "curl -sf http://desktop.local:11434/api/tags" in log_output
+    assert "11434" not in log_output
 
 
 def test_setup_full_local_without_nvidia_starts_only_postgres(tmp_path: Path) -> None:

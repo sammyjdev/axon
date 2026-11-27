@@ -210,11 +210,10 @@ if [[ "$SETUP_MODE" == "remote-infra" ]]; then
     fi
     echo ""
     echo "==> Modo infra remota: $REMOTE_INFRA_HOST"
-    echo "    Docker local e pull de modelos serão ignorados."
+    echo "    Docker local será ignorado."
     echo ""
     echo "==> Validando serviços remotos..."
     check_tcp     "Postgres" "$REMOTE_INFRA_HOST" 5433
-    check_service "Ollama"   "http://${REMOTE_INFRA_HOST}:11434/api/tags"
 elif [[ "$SETUP_MODE" == "minimal" ]]; then
     echo ""
     echo "==> Modo minimal selecionado"
