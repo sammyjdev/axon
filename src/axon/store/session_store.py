@@ -100,6 +100,10 @@ class SessionStore:
         repo = await self._sessions()
         return await repo.get_session_memories(project, limit)
 
+    async def duplicate_session_memories(self) -> list[tuple[str, int, list[int]]]:
+        repo = await self._sessions()
+        return await repo.duplicate_session_memories()
+
     # ── Session Note ──────────────────────────────────────────────────────────
 
     async def save_note(self, note: SessionNote) -> int:

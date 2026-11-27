@@ -67,6 +67,20 @@ class PostgresSessionRepository:
             )
         return [row_to_session_memory(r) for r in rows]
 
+    async def duplicate_session_memories(self) -> list[tuple[str, int, list[int]]]:
+        """(project, kept id, extra ids) per group of rows with no session id that
+        share project, raw_turns and the exact summary text. Reads only: such a
+        row says nothing reliable about which session wrote it (#187)."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as con:
+            rows = await con.fetch(
+                "SELECT project, array_agg(id ORDER BY created_at DESC, id DESC) AS ids"
+                " FROM session_memory WHERE session_id IS NULL"
+                " GROUP BY project, raw_turns, summary HAVING count(*) > 1"
+                " ORDER BY project, min(id)"
+            )
+        return [(r["project"], r["ids"][0], list(r["ids"][1:])) for r in rows]
+
     async def save_note(self, note: SessionNote) -> int:
         pool = await self._ensure_pool()
         async with pool.acquire() as con:

@@ -629,11 +629,14 @@ def configure(
 
 @session_app.callback(invoke_without_command=True)
 def session_root(
+    context: typer.Context,
     ctx_name: Annotated[str | None, typer.Option("--ctx", help=_CTX_HELP)] = None,
 ) -> None:
     """Inicia ou exibe sessão ativa."""
     if ctx_name is None:
-        typer.echo("Nenhuma sessão ativa. Use: axon session --ctx <contexto>")
+        # `duplicates` prints a report and nothing else
+        if context.invoked_subcommand != "duplicates":
+            typer.echo("Nenhuma sessão ativa. Use: axon session --ctx <contexto>")
         return
 
     resolved = _resolve_ctx(ctx_name)
@@ -663,6 +666,31 @@ def session_note(
         typer.echo(f"Nota salva em '{project}': {text[:60]}{'...' if len(text) > 60 else ''}")
 
     asyncio.run(_note())
+
+
+@session_app.command("duplicates")
+def session_duplicates() -> None:
+    """Lista memórias de sessão repetidas sem session_id. Não altera nenhuma linha."""
+    from axon.store.session_store import SessionStore
+
+    async def _report() -> list[tuple[str, int, list[int]]]:
+        store = SessionStore(_get_db_path())
+        try:
+            await store.init()
+            return await store.duplicate_session_memories()
+        finally:
+            await store.close()
+
+    try:
+        groups = asyncio.run(_report())
+    except Exception as exc:
+        typer.echo(f"cannot reach the session store: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    for project, keep, extra in groups:
+        typer.echo(f"{project}  keep {keep}  extra {','.join(map(str, extra))}")
+    rows = sum(len(extra) for _, _, extra in groups)
+    typer.echo(f"{len(groups)} duplicate group(s), {rows} extra row(s); nothing changed")
 
 
 @app.command("note")
