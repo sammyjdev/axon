@@ -191,6 +191,25 @@ def test_setup_fails_when_compose_fails(tmp_path: Path) -> None:
     assert "Setup concluído" not in result.stdout
 
 
+@pytest.mark.parametrize(
+    ("nvidia_vram_mb", "expected_mode"), [(24576, "full-local"), (None, "hybrid-local")]
+)
+def test_default_mode_ignores_ollama(
+    tmp_path: Path, nvidia_vram_mb: int | None, expected_mode: str
+) -> None:
+    result, workspace, _ = _run_setup(
+        tmp_path,
+        extra_env={"OSTYPE": "linux-gnu"},
+        sysctl_bytes=34 * 1024 * 1024 * 1024,
+        absent={"ollama"},
+        nvidia_vram_mb=nvidia_vram_mb,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    env_payload = (workspace / ".env.local").read_text(encoding="utf-8")
+    assert f"AXON_RUNTIME_MODE={expected_mode}" in env_payload.splitlines()
+
+
 def test_no_docker_with_ollama_is_minimal(tmp_path: Path) -> None:
     result, workspace, log_path = _run_setup(
         tmp_path,
@@ -252,6 +271,7 @@ def _run_setup(
     present: frozenset[str] | set[str] = frozenset(),
     docker_exit_code: int = 0,
     absent: frozenset[str] | set[str] = frozenset(),
+    nvidia_vram_mb: int | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -284,7 +304,8 @@ def _run_setup(
         fake_bin / "curl",
         "#!/usr/bin/env bash\nprintf '%s\\n' \"curl $*\" >> \"$TEST_LOG\"\n",
     )
-    _write_executable(fake_bin / "nvidia-smi", "#!/usr/bin/env bash\nexit 1\n")
+    nvidia_smi = "exit 1" if nvidia_vram_mb is None else f"echo {nvidia_vram_mb}"
+    _write_executable(fake_bin / "nvidia-smi", f"#!/usr/bin/env bash\n{nvidia_smi}\n")
     _write_executable(fake_bin / "sleep", "#!/usr/bin/env bash\nexit 0\n")
     _write_executable(
         fake_bin / "sysctl",
