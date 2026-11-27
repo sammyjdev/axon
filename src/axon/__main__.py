@@ -294,9 +294,25 @@ def status(
     """Show the current repo, its decision count, and the latest decision."""
     from axon.cli.pb import _get_db_path
     from axon.core.repo_identity import repo_identity
+    from axon.store.pending import read_spool_refusals, spool_refusals_path
     from axon.store.session_store import SessionStore
 
     repo_name = repo or repo_identity()
+
+    # First, and before the store is touched: it must show when the store is down.
+    record = spool_refusals_path()
+    try:
+        refusals = read_spool_refusals(record)
+    except (OSError, ValueError):
+        typer.echo(f"spool refusals: unreadable ({record})")
+    else:
+        if refusals is None:
+            typer.echo("spool refusals: 0")
+        else:
+            typer.echo(
+                f"spool refusals: {refusals['count']} "
+                f"(last {refusals['last_at']}: {refusals['last_reason']})"
+            )
 
     async def _decisions():
         store = SessionStore(_get_db_path())

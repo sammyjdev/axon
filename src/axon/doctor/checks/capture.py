@@ -4,6 +4,8 @@
 - ``check_quarantine_size``: warn when ``.axon/pending-quarantine/`` grows
 - ``check_warnings_log``: warn when ``capture-warnings.jsonl`` shows
   recent persistent contention
+- ``check_spool_refusals``: warn when a payload was dropped because the spool
+  was not provably ignored by git
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from pathlib import Path
 
 from axon.config.data_root import data_root
 from axon.doctor import CheckResult, CheckStatus
+from axon.store.pending import read_spool_refusals, spool_refusals_path
 
 _BACKLOG_WARN_COUNT = 50
 _BACKLOG_FAIL_COUNT = 500
@@ -99,6 +102,38 @@ def check_quarantine_size(*, data_root: Path | None = None) -> CheckResult:
         suggestion=(
             "Inspect `.axon/quarantine.jsonl`; `axon pending recover` to retry."
         ) if status is CheckStatus.WARN else "",
+    )
+
+
+def check_spool_refusals(*, data_root: Path | None = None) -> CheckResult:
+    """Warn when a payload was dropped because the spool was not provably ignored.
+
+    Without an override the record is read from the engine data root, not from
+    the repo's ``.axon``.
+    """
+    record = spool_refusals_path(data_root)
+    try:
+        entry = read_spool_refusals(record)
+    except (OSError, ValueError) as exc:
+        return CheckResult(
+            name="capture.spool_refusals",
+            status=CheckStatus.WARN,
+            detail=f"unreadable refusal record: {type(exc).__name__}",
+            suggestion=f"Inspect, then delete {record}",
+        )
+    if entry is None:
+        return CheckResult(
+            name="capture.spool_refusals",
+            status=CheckStatus.OK,
+            detail="no spool refusals",
+        )
+    return CheckResult(
+        name="capture.spool_refusals",
+        status=CheckStatus.WARN,
+        detail=(
+            f"{entry['count']} spool refusal(s); last {entry['last_at']}: {entry['last_reason']}"
+        ),
+        suggestion=f"Fix the git ignore rule for the spool, then delete {record}",
     )
 
 

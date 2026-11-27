@@ -8,20 +8,16 @@ ignore path:
   rules to a newline-less ``.gitignore`` glues them onto the user's last
   rule (``local-only.txtpending/``), which both corrupts that rule and
   leaves the spooled session committable.
-- EXCEPTION_SWALLOW_IGNORE_WRITE: with ``except OSError: raise``, any
-  OSError while writing the ignore file (``.gitignore`` existing as a
-  directory makes ``os.replace`` raise) propagates out of
-  ``write_pending`` before the payload is written, and the spooled
-  session is lost - the exact data loss the spool exists to prevent.
+- An OSError while writing the ignore file used to be swallowed and the
+  payload written anyway (axon #202). It now refuses the spool unless git
+  already ignores the directory.
 
 The session-hook CLI swallows every exception by design ("a hook must
-never interrupt the agent"), so the OSError mutation cannot be observed
-through the exit code; it is observed through the payload's absence.
+never interrupt the agent"), so the refusal cannot be observed through the
+exit code; it is observed through the payload's absence.
 """
 
 from __future__ import annotations
-
-import json
 
 from tests.cli.test_spool_not_committable import (
     _git,
@@ -73,12 +69,10 @@ def test_spooling_appends_ignore_rule_with_newline_when_gitignore_lacks_trailing
     )
 
 
-def test_ignore_file_write_oserror_is_swallowed_during_session_hook_spool(
-    tmp_path, monkeypatch
-):
-    """An OSError while writing the ignore file must not take the payload
-    down with it: ``.gitignore`` existing as a directory makes the ignore
-    write fail, and the session must still be spooled to ``pending/``."""
+def test_ignore_file_write_oserror_refuses_the_session_hook_spool(tmp_path, monkeypatch):
+    """``.gitignore`` existing as a directory makes the ignore write fail and
+    nothing else ignores the spool: no payload may land, and ``git add -A``
+    must have nothing of it to stage."""
     repo = tmp_path
     monkeypatch.setenv("AXON_DATA_ROOT", str(repo / ".axon"))
     _git(repo, "init")
@@ -89,9 +83,7 @@ def test_ignore_file_write_oserror_is_swallowed_during_session_hook_spool(
 
     _spool_a_session_through_the_hook(repo, monkeypatch)
 
-    files = _pending_json(repo)
-    assert len(files) == 1, (
-        "the ignore-write failure took the spool down: the session was lost"
-    )
-    payload = json.loads(files[0].read_text(encoding="utf-8"))
-    assert payload["kind"] == "session_memory"
+    assert _pending_json(repo) == [], "a payload landed in a spool git does not ignore"
+    staged = _staged(repo)
+    assert "t.jsonl" in staged, "control: git add -A staged ordinary files"
+    assert not [p for p in staged if p.startswith(".axon/pending/")]

@@ -330,3 +330,25 @@ def test_a_failing_spool_write_prints_and_returns_without_raising(tmp_path, monk
     # the spool fail - printing and returning is the whole contract.
     pb.session_save(cwd=str(tmp_path), transcript=str(path))
     pb._save_compact_summary(project=tmp_path.name, summary="compact summary")
+
+
+@pytest.mark.parametrize("hook", ["session-hook", "compact-hook"])
+def test_hook_reports_refused_spool_and_exits_0(tmp_path, monkeypatch, hook):
+    """axon #202 criterion 9: store down and no provable ignore rule. The
+    payload is dropped, said on one stderr line, and the hook still exits 0."""
+    data_root = tmp_path / ".axon"
+    monkeypatch.setenv("AXON_DATA_ROOT", str(data_root))
+    (data_root / ".gitignore").mkdir(parents=True)
+    monkeypatch.setattr("axon.store.session_store.SessionStore", _StoreDown)
+    if hook == "session-hook":
+        path = _transcript(tmp_path, ("user", "a"), ("assistant", "b"))
+    else:
+        path = _compact_transcript(tmp_path, "compact summary")
+
+    result = runner.invoke(
+        app, [hook], input=_payload(transcript_path=str(path), cwd=str(tmp_path))
+    )
+
+    assert result.exit_code == 0
+    assert len([ln for ln in result.stderr.splitlines() if "spool not ignored:" in ln]) == 1
+    assert _spool_files(data_root) == []
