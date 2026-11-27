@@ -31,7 +31,7 @@ cd ~/dev/axon
 pipx install --editable .
 ```
 
-setup.sh writes .env.local and starts the local Postgres container (docker compose up -d axon-postgres). It pulls no model. The optional vault TIL hook needs Ollama on the host: install it from https://ollama.com and run ollama pull gemma4:e4b. If an older setup started the Ollama containers, they keep host port 11434 busy until you run docker compose up -d --remove-orphans; that removes them, while the downloaded models stay in ./data/ollama until you delete that folder. Older .env.local files may still hold OLLAMA_\*, AXON_OLLAMA_\* and LANGFUSE_HOST lines that AXON no longer needs; you can delete them.
+`setup.sh` writes `.env.local` and starts the local Postgres container (`docker compose up -d axon-postgres`). It pulls no model. The optional vault TIL hook needs Ollama on the host: install it from https://ollama.com and run `ollama pull gemma4:e4b`. If an older setup started the Ollama containers, they keep host port 11434 busy until you run `docker compose up -d --remove-orphans`; that removes them, while the downloaded models stay in `./data/ollama` until you delete that folder. Older `.env.local` files may still hold `OLLAMA_*`, `AXON_OLLAMA_*` and `LANGFUSE_HOST` lines that AXON no longer needs; you can delete them. If a local `docker-compose.override.yml` still names `ollama` or `ollama-cpu`, delete those entries before you run `setup.sh`; otherwise Compose rejects the project.
 
 ## 3. Load the environment
 
