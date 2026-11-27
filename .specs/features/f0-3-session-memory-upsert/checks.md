@@ -6,9 +6,9 @@ Run local: `python3 -m pytest tests/store/test_session_id_normalize.py tests/sto
 Run hooks: `python3 -m pytest tests/hooks/test_session_end.py tests/cli/test_agent_hooks.py tests/cli/test_session_memory_repo_key.py tests/cli/test_session_memory_repo_key_gaps.py -v`
 Plan: `.specs/features/f0-3-session-memory-upsert/plan.md`
 
-30 checks in 4 slices · 3 one-way doors · 0 open, of which 0 block
+31 checks in 4 slices · 3 one-way doors · 0 open, of which 0 block
 
-Check ids follow the plan's criterion numbers. Criteria 12-14 apply only under Q2-B; Sammy chose Q2-A, so there is no C12, C13 or C14. C29-C33 come from the plan's Builder notes and Assumptions.
+Check ids follow the plan's criterion numbers. Criteria 12-14 apply only under Q2-B; Sammy chose Q2-A, so there is no C12, C13 or C14. C29-C33 come from the plan's Builder notes and Assumptions. C34 was added during the build.
 
 The `pg` group needs Docker (testcontainers). This build host has none and no other database may be used, so the `pg` group is seen red and green only in the CI full-suite job.
 
@@ -118,6 +118,10 @@ Proof: run local | test_legacy_payload_without_session_id_drains PASSED
 Proof: run local | test_malformed_spooled_session_id_drains_without_key PASSED
 Red: late drain in the tests-only CI commit; local ones before the drain passes the key.
 
+**C34** - A lock timeout (55P03) raised during a drain leaves the payload in `pending/` for a retry, never in quarantine (door 3: "the save path spools as today")
+Proof: run local | test_a_migration_lock_timeout_is_retried_not_quarantined PASSED
+Red: seen locally before `LockNotAvailableError` was added to the retryable errors.
+
 ### S3 - legacy duplicates are reported
 
 **C8** - The report prints one line per exact-text group and the count line, exits 0 and changes no row (AC 8)
@@ -158,7 +162,7 @@ Red: before the field exists.
 | Set (size) | Member -> proof | Unproven |
 | --- | --- | --- |
 | acceptance criteria under Q2-A (25) | `1` C1 · `2` C2 · `3` C3 · `4` C4 · `5` C5 · `6` C6 · `7` C7 · `8` C8 · `9` C9 · `10` C10 · `11` C11 · `15` C15 · `16` C16 · `17` C17 · `18` C18 · `19` C19 · `20` C20 · `21` C21 · `22` C22 · `23` C23 · `24` C24 · `25` C25 · `26` C26 · `27` C27 · `28` C28 | - |
-| one-way doors (3) | `upsert and pick` C1, C26 · `natural key for NULL only` C4, C21 · `serialized bounded migration` C23, C28 | - |
+| one-way doors (3) | `upsert and pick` C1, C26 · `natural key for NULL only` C4, C21 · `serialized bounded migration` C23, C28, C34 | - |
 | `session_id` input values (7) | `"  abc "` C20 · `""` C20 · `"   "` C20 · `123` C20 · `{}` C20 · `absent` C20 · `201 chars` C20 | - |
 | report command exits (3) | `0` C8 · `1` C11 · `2` C11 | - |
 | report group rule, AC 8 (3 examples) | `different raw_turns` C8 · `trailing space` C8 · `keyed row` C8 | - |
@@ -168,7 +172,7 @@ Red: before the field exists.
 ## Swept
 
 - validation: C20, C30
-- failure modes: C7, C23, C28
+- failure modes: C7, C23, C28, C34
 - idempotency: C2, C4, C17
 - authorization: C19
 - concurrency: C22, C23
@@ -185,5 +189,6 @@ Not captured live: a real SessionEnd and PostCompact payload needs a real provid
 
 - **Settled mid-build:** none
 - **Dispatched:** none
-- **Boundary:** none yet
+- **Boundary:** C1-C11, C15-C34 built at `e289b81`
+- **Red run:** `e200c14` (tests only), CI full suite: 34 failed (all new Postgres tests), 1527 passed, 3 skipped. Local red runs: C20, C30 (10 failed), C5/C6 (2 failed), C7 (2 failed), C8/C11/C32 (3 failed), C34 (1 failed); deliberate breaks seen red: C31 (no reset), C25 (third `STEPS` argument), C24 golden (changed line)
 - **Abandoned:** none
