@@ -163,20 +163,23 @@ def spool_refusals_path(data_root: Path | None = None) -> Path:
 
 def record_spool_refusal(directory: Path, reason: str) -> None:
     """Count one refused spool write. Paths and error text only, never payload."""
-    record = spool_refusals_path()
-    count = 0
-    if record.exists():
-        count = json.loads(record.read_text(encoding="utf-8"))["count"]
-    entry = {
-        "count": count + 1,
-        "last_at": datetime.now(UTC).isoformat(),
-        "last_dir": os.path.abspath(directory),
-        "last_reason": reason[:500],
-    }
-    record.parent.mkdir(parents=True, exist_ok=True)
-    tmp = record.with_name(f"spool-refusals.{uuid.uuid4().hex[:8]}.tmp")
-    tmp.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, record)
+    try:
+        record = spool_refusals_path()
+        count = 0
+        if record.exists():
+            count = json.loads(record.read_text(encoding="utf-8"))["count"]
+        entry = {
+            "count": count + 1,
+            "last_at": datetime.now(UTC).isoformat(),
+            "last_dir": os.path.abspath(directory),
+            "last_reason": reason[:500],
+        }
+        record.parent.mkdir(parents=True, exist_ok=True)
+        tmp = record.with_name(f"spool-refusals.{uuid.uuid4().hex[:8]}.tmp")
+        tmp.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, record)
+    except Exception as exc:  # best effort: the refusal itself must still be raised
+        print(f"[axon] could not record spool refusal: {exc}", file=sys.stderr)
 
 
 def _refusal(directory: Path, reason: str, write_error: str = "") -> SpoolNotIgnoredError:

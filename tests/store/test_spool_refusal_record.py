@@ -73,3 +73,31 @@ async def test_each_refusal_updates_the_record(tmp_path, monkeypatch):
         "last_reason": second.reason,
     }
     assert "literal user prompt" not in _record_path().read_text(encoding="utf-8")
+
+
+async def test_unwritable_record_does_not_change_the_refusal(tmp_path, monkeypatch, capsys):
+    """Criterion 16: the record is best effort."""
+    from axon.cli import pb
+    from tests.cli.test_hook_spool import _StoreDown
+
+    repo = _unignorable_repo(tmp_path, monkeypatch)
+    _record_path().mkdir(parents=True)
+
+    await _refused()
+
+    lines = capsys.readouterr().err.splitlines()
+    assert len([ln for ln in lines if ln.startswith("[axon] could not record spool refusal:")]) == 1
+
+    monkeypatch.setattr("axon.store.session_store.SessionStore", _StoreDown)
+    await pb._save_session_memory_with_spool(_memory())
+
+    err = capsys.readouterr().err
+    assert "[axon] could not record spool refusal:" in err
+    assert "spool not ignored:" in err
+    assert list(repo.rglob("*.json")) == []
+
+
+def _memory():
+    from axon.store.session_store import SessionMemory
+
+    return SessionMemory(project="axon", summary="literal user prompt", raw_turns=0)
