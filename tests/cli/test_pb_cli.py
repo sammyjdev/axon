@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 
+import pytest
 from typer.testing import CliRunner
 
 from axon.cli import pb
@@ -589,3 +590,18 @@ def test_profile_export_prints_toml_snippet(monkeypatch, tmp_path) -> None:
     assert result.exit_code == 0
     assert "[profiles.team-dev]" in result.stdout
     assert 'mode = "remote-infra"' in result.stdout
+
+
+@pytest.mark.parametrize("default", [..., None])
+def test_prompt_configure_value_treats_ellipsis_and_none_as_no_default(monkeypatch, default) -> None:
+    seen = []
+
+    def fake_prompt(text, **kwargs):
+        seen.append(kwargs["default"])
+        return "team"
+
+    monkeypatch.setattr(pb.typer, "prompt", fake_prompt)
+    value = pb._prompt_configure_value("Caso de uso", allowed=("solo", "team"), default=default)
+
+    assert value == "team"
+    assert seen == [None]
