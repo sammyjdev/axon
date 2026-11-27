@@ -18,7 +18,7 @@ def _compose_runs() -> bool:
     if docker is None:
         return False
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             [docker, "compose", "version"], capture_output=True, check=False, timeout=30
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -29,7 +29,7 @@ def _compose_runs() -> bool:
 def _compose_config(*args: str) -> str:
     """Resolve the committed compose file only: `-f` keeps a local override out."""
     assert _compose_runs(), "docker compose v2 not available"
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603
         [shutil.which("docker") or "docker", "compose", "-f", "docker-compose.yml", *args],
         cwd=REPO_ROOT,
         capture_output=True,
