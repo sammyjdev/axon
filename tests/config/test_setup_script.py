@@ -191,6 +191,21 @@ def test_setup_fails_when_compose_fails(tmp_path: Path) -> None:
     assert "Setup concluído" not in result.stdout
 
 
+def test_no_docker_with_ollama_is_minimal(tmp_path: Path) -> None:
+    result, workspace, log_path = _run_setup(
+        tmp_path,
+        extra_env={"OSTYPE": "linux-gnu"},
+        sysctl_bytes=34 * 1024 * 1024 * 1024,
+        absent={"docker"},
+        present={"ollama"},
+    )
+
+    env_payload = (workspace / ".env.local").read_text(encoding="utf-8")
+    assert "AXON_RUNTIME_MODE=minimal" in env_payload.splitlines()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "docker " not in log_path.read_text(encoding="utf-8")
+
+
 def test_setup_has_no_profile_or_model_residue() -> None:
     patterns = (
         "COMPOSE_PROFILE",
@@ -236,6 +251,7 @@ def _run_setup(
     sysctl_bytes: int,
     present: frozenset[str] | set[str] = frozenset(),
     docker_exit_code: int = 0,
+    absent: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -253,11 +269,12 @@ def _run_setup(
         fake_bin / "python3", f'#!/usr/bin/env bash\nexec "{sys.executable}" "$@"\n'
     )
 
-    _write_executable(
-        fake_bin / "docker",
-        "#!/usr/bin/env bash\nprintf '%s\\n' \"docker $*\" >> \"$TEST_LOG\"\n"
-        f"exit {docker_exit_code}\n",
-    )
+    if "docker" not in absent:
+        _write_executable(
+            fake_bin / "docker",
+            "#!/usr/bin/env bash\nprintf '%s\\n' \"docker $*\" >> \"$TEST_LOG\"\n"
+            f"exit {docker_exit_code}\n",
+        )
     if "ollama" in present:
         _write_executable(
             fake_bin / "ollama",

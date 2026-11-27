@@ -27,7 +27,7 @@ report = build_doctor_report(
     runtime,
     platform_config,
     docker_available=shutil.which("docker") is not None,
-    ollama_available=shutil.which("ollama") is not None,
+    ollama_available=False,
     sources=sources,
 )
 source = sources.get("mode", "default")
