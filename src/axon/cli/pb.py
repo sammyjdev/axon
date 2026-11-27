@@ -1109,6 +1109,7 @@ def hooks_status() -> None:
 @pending_app.command("drain")
 def pending_drain() -> None:
     """Drain .axon/pending/ into the SessionStore (dec-112)."""
+    from axon.store.pending import SpoolNotIgnoredError
     from axon.store.session_store import SessionStore
 
     async def _drain() -> None:
@@ -1123,7 +1124,11 @@ def pending_drain() -> None:
         finally:
             await store.close()
 
-    asyncio.run(_drain())
+    try:
+        asyncio.run(_drain())
+    except SpoolNotIgnoredError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from None
 
 
 @app.command("seed-lessons")
