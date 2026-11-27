@@ -134,4 +134,17 @@ Fail first: at f898c82d the preview never mentions `pre-commit install`; the `--
 ## Handoff
 
 - **Settled mid-build:** none
-- **Dispatched:** none
+- **Dispatched:** none (no Verifier sub-agent; review and acceptance happen on the pull request)
+- **Boundary:** C1-C18 closed at `0b39982`; built and run on Windows, Python 3.12, real `pre-commit`
+- **Red at base:** the final test files run on `f898c82d` sources gave 32 failed, 29 passed, 3 skipped. Green there, as
+  guards: the C9 excluded cases, `TestDryRun`, the older `TestMergeInto` tests, `tests/doctor/..._registry.py` (C11), and
+  `test_apply_in_tty_mutates_pre_commit_config` (the second C1 proof, with its stub; C1's red is the first proof)
+- **Deliberate breaks, reverted:** C11 - without the `try` around `register_repo`, 2 registry tests fail. C3 - passing
+  `str(cfg)` to the install left `test_yml_config_is_passed_by_name` green: pre-commit 4.7.0 itself makes `--config`
+  repo-relative (`pre_commit/main.py:178,191`), so the driver holds the file name either way; C3's red is the base run
+- **Not run locally:** C16 and the symlink restore test skip on Windows; CI (ubuntu) proves them. The C16 proof line has
+  no pass marker, so read the CI log, not a local SKIPPED line. `check_proofs.py` was not run for that reason
+- **Beyond the checks:** the user's list indentation, line endings and trailing comments are kept; a symlinked hook is
+  restored as a symlink
+- **Abandoned:** none
+- **Walked:** n/a - no screen
