@@ -1176,13 +1176,25 @@ def pending_recover(
     if not files:
         typer.echo(f"Nenhum match para --id={id_!r}")
         return
-    from axon.store.pending import _ensure_spool_ignored, _pending_paths
+    from axon.store.pending import (
+        SpoolNotIgnoredError,
+        _ensure_spool_ignored,
+        _pending_paths,
+        assert_spool_path_ignored,
+    )
 
     paths = _pending_paths()
-    _ensure_spool_ignored(paths)
+    moves = [(f, pending_dir / f.name.rsplit(".", 1)[0]) for f in files]
+    try:
+        _ensure_spool_ignored(paths)
+        # Every target is proven before any file moves.
+        for _, target in moves:
+            assert_spool_path_ignored(target)
+    except SpoolNotIgnoredError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from None
     pending_dir.mkdir(parents=True, exist_ok=True)
-    for f in files:
-        target = pending_dir / f.name.rsplit(".", 1)[0]
+    for f, target in moves:
         os.replace(f, target)
         typer.echo(f"recovered: {f.name} → {target.name}")
     typer.echo(f"Recovered {len(files)} file(s); run `axon pending drain`.")

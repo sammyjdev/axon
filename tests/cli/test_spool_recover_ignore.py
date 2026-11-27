@@ -197,3 +197,52 @@ def test_recover_without_a_quarantine_dir_is_a_pure_noop(tmp_path, monkeypatch):
         "recover created .axon/ (and its .gitignore) on a read-only no-op path: "
         "the ignore call belongs next to the payload move, after the early return"
     )
+
+
+def _refused_recover(monkeypatch):
+    def read_only(*_a, **_kw):
+        raise OSError(30, "Read-only file system")
+
+    # recover moves with os.replace too: with the rule write failing, any move
+    # that did happen would surface as a traceback instead of the refusal.
+    monkeypatch.setattr("axon.store.pending.os.replace", read_only)
+    return runner.invoke(app, ["pending", "recover"])
+
+
+def test_recover_refuses_and_exits_1_when_ignore_cannot_be_proven(tmp_path, monkeypatch):
+    """axon #202 criterion 7."""
+    repo = tmp_path
+    monkeypatch.setenv("AXON_DATA_ROOT", str(repo / ".axon"))
+    _git(repo, "init")
+    _plant_quarantined(repo, "sess-a.json.111")
+
+    result = _refused_recover(monkeypatch)
+
+    assert result.exit_code == 1
+    refusals = [ln for ln in result.stderr.splitlines() if ln.startswith("spool not ignored:")]
+    assert len(refusals) == 1
+    assert "OSError" in refusals[0]
+    assert (repo / ".axon" / "pending-quarantine" / "sess-a.json.111").exists()
+    assert list((repo / ".axon").glob("pending/*")) == []
+
+
+def test_recover_checks_every_target_before_moving_any(tmp_path, monkeypatch):
+    """A refusal on the second target must not leave the first one moved."""
+    repo = tmp_path
+    monkeypatch.setenv("AXON_DATA_ROOT", str(repo / ".axon"))
+    _git(repo, "init")
+    _plant_quarantined(repo, "sess-a.json.111")
+    _plant_quarantined(repo, "sess-b.json.222")
+    (repo / ".axon" / ".gitignore").write_text(
+        "pending/*\n!pending/sess-b.json\npending-quarantine/\n", encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["pending", "recover"])
+
+    assert result.exit_code == 1
+    assert "spool not ignored:" in result.stderr
+    assert sorted(p.name for p in (repo / ".axon" / "pending-quarantine").iterdir()) == [
+        "sess-a.json.111",
+        "sess-b.json.222",
+    ]
+    assert list((repo / ".axon").glob("pending/*")) == []
