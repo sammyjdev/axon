@@ -1,7 +1,6 @@
 # `docs/` index
 
-Navigation aid for this directory. See the watch-out at the bottom on why moving a file
-under `docs/` has a measurable side effect on the pack-quality ruler.
+Navigation aid for this directory.
 
 `CLAUDE.md`'s own Entry Points section names five files: `README.md`, `VAULT_SETUP.md`,
 `USAGE_GUIDE.md`, `ADR.md`, `ARD.md`. `PROJECT_OVERVIEW.md` is a *global* entry point — the
@@ -100,8 +99,8 @@ promises the rollback; the dead flags themselves are still #217.
 | `TIL_AUTOMATION.md` | TIL automation | stale - describes removed commands (pb til, pb deep suggest) |
 | `USAGE_GUIDE.md` | Day-to-day usage guide | current, entry point — rewritten against the current CLI and D4 |
 | `VAULT_SETUP.md` | External vault bootstrap | stale - describes removed pb commands; not an entry point until rewritten |
-| `adoption-diagnosis-2026-08-07.md` | Measured low-adoption diagnosis | historical, measured data — cited 2x in the pack-quality golden corpus, do not move without re-measuring |
-| `agent-backlog.md` | Agentic builder loop backlog (18 items, 11 ready / 5 done) | current, actively referenced — cited 10x in the pack-quality golden corpus, do not move without re-measuring |
+| `adoption-diagnosis-2026-08-07.md` | Measured low-adoption diagnosis | historical, measured data |
+| `agent-backlog.md` | Agentic builder loop backlog (18 items, 11 ready / 5 done) | current, actively referenced |
 | `ai-engineering-gap-review.md` | AI-engineering gap review | current — recovered from stash 2026-09-23 (PR #214), undated in the file itself |
 | `gpu-setup.md` | Per-machine GPU acceleration setup | stale - describes the removed embedder (axon.embedder, fastembed) |
 
