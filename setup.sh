@@ -225,8 +225,8 @@ elif [[ "$PLAN_START_LOCAL_STACK" == "1" ]]; then
     mkdir -p data/ollama
 
     echo ""
-    echo "==> Subindo stack Docker com profile: $COMPOSE_PROFILE"
-    docker compose --profile "$COMPOSE_PROFILE" up -d
+    echo "==> Subindo Postgres (docker compose up -d axon-postgres)"
+    docker compose up -d axon-postgres
 
     echo ""
     echo "==> Aguardando serviços ficarem healthy..."

@@ -4,12 +4,15 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CORE_TOOLS = ("bash", "cat", "dirname", "head", "mktemp", "mv", "timeout", "tr")
+BANNER = "==> Subindo Postgres (docker compose up -d axon-postgres)"
 
 
 def _python3_runs() -> bool:
@@ -80,10 +83,7 @@ def test_setup_defaults_to_recommended_hybrid_local_mode_on_mac(tmp_path: Path) 
     log_output = log_path.read_text(encoding="utf-8")
 
     assert "AXON_RUNTIME_MODE=hybrid-local" in env_payload
-    assert "docker compose --profile cpu up -d" in log_output
-    assert "ollama pull phi3:mini" in log_output
-    assert "ollama pull gemma4:e4b" in log_output
-    assert "ollama pull gemma4:26b" not in log_output
+    _assert_starts_only_postgres(result, log_output)
 
 
 def test_setup_honors_minimal_mode_and_skips_local_bootstrap(tmp_path: Path) -> None:
@@ -146,7 +146,7 @@ def test_setup_uses_remote_infra_when_host_is_configured(tmp_path: Path) -> None
     assert "curl -sf http://desktop.local:11434/api/tags" in log_output
 
 
-def test_setup_full_local_without_nvidia_keeps_small_models_only(tmp_path: Path) -> None:
+def test_setup_full_local_without_nvidia_starts_only_postgres(tmp_path: Path) -> None:
     result, workspace, log_path = _run_setup(
         tmp_path,
         extra_env={
@@ -161,12 +161,26 @@ def test_setup_full_local_without_nvidia_keeps_small_models_only(tmp_path: Path)
     log_output = log_path.read_text(encoding="utf-8")
 
     assert "AXON_RUNTIME_MODE=full-local" in env_payload
-    assert "docker compose --profile cpu up -d" in log_output
-    assert "docker compose exec -T axon-postgres pg_isready" in log_output
+    _assert_starts_only_postgres(result, log_output)
     assert ":6333" not in log_output
-    assert "ollama pull phi3:mini" in log_output
-    assert "ollama pull gemma4:e4b" in log_output
-    assert "ollama pull gemma4:26b" not in log_output
+
+
+def _assert_starts_only_postgres(
+    result: subprocess.CompletedProcess[str], log_output: str
+) -> None:
+    assert "docker compose up -d axon-postgres" in log_output
+    assert "docker compose exec -T axon-postgres pg_isready" in log_output
+    assert "--profile" not in log_output
+    assert BANNER in result.stdout
+
+
+def _link_core_tools(tool_dir: Path) -> None:
+    """Link only the tools setup.sh needs, so a real docker or ollama is never found."""
+    tool_dir.mkdir()
+    for name in CORE_TOOLS:
+        real = shutil.which(name)
+        if real:
+            os.symlink(real, tool_dir / name)
 
 
 def _run_setup(
@@ -185,6 +199,11 @@ def _run_setup(
     fake_bin.mkdir()
     log_path = tmp_path / "commands.log"
     log_path.write_text("", encoding="utf-8")
+    tool_dir = tmp_path / "tools"
+    _link_core_tools(tool_dir)
+    _write_executable(
+        fake_bin / "python3", f'#!/usr/bin/env bash\nexec "{sys.executable}" "$@"\n'
+    )
 
     _write_executable(
         fake_bin / "docker",
@@ -219,12 +238,18 @@ def _run_setup(
     )
 
     env = os.environ.copy()
-    env.pop("AXON_INFRA_HOST", None)
-    env.pop("AXON_DESKTOP_HOST", None)
+    for name in (
+        "AXON_INFRA_HOST",
+        "AXON_DESKTOP_HOST",
+        "AXON_RUNTIME_MODE",
+        "AXON_OLLAMA_REMOTE_HOST",
+        "AXON_CONFIG",
+    ):
+        env.pop(name, None)
     env.update(
         {
             "HOME": str(tmp_path / "home"),
-            "PATH": f"{fake_bin}:{env['PATH']}",
+            "PATH": f"{fake_bin}{os.pathsep}{tool_dir}",
             "TEST_LOG": str(log_path),
             "AXON_ENGINE": str(workspace),
             "AXON_VAULT": str(tmp_path / "vault"),
@@ -246,5 +271,5 @@ def _run_setup(
 
 
 def _write_executable(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="\n")
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
