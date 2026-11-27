@@ -8,11 +8,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from axon.config.data_root import data_root
 from axon.doctor import CheckResult, CheckStatus
+from axon.store.pending import spool_refusals_path
 
 _BACKLOG_WARN_COUNT = 50
 _BACKLOG_FAIL_COUNT = 500
@@ -99,6 +101,26 @@ def check_quarantine_size(*, data_root: Path | None = None) -> CheckResult:
         suggestion=(
             "Inspect `.axon/quarantine.jsonl`; `axon pending recover` to retry."
         ) if status is CheckStatus.WARN else "",
+    )
+
+
+def check_spool_refusals() -> CheckResult:
+    """Warn when a payload was dropped because the spool was not provably ignored."""
+    record = spool_refusals_path()
+    if not record.exists():
+        return CheckResult(
+            name="capture.spool_refusals",
+            status=CheckStatus.OK,
+            detail="no spool refusals",
+        )
+    entry = json.loads(record.read_text(encoding="utf-8"))
+    return CheckResult(
+        name="capture.spool_refusals",
+        status=CheckStatus.WARN,
+        detail=(
+            f"{entry['count']} spool refusal(s); last {entry['last_at']}: {entry['last_reason']}"
+        ),
+        suggestion=f"Fix the git ignore rule for the spool, then delete {record}",
     )
 
 

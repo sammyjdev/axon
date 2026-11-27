@@ -36,6 +36,7 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
     from axon.doctor.checks.capture import (
         check_pending_backlog,
         check_quarantine_size,
+        check_spool_refusals,
         check_warnings_log,
     )
     from axon.doctor.checks.capture_path import (
@@ -50,6 +51,7 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_pending_backlog(data_root=data_root),
         check_quarantine_size(data_root=data_root),
         check_warnings_log(data_root=data_root),
+        check_spool_refusals(),
         check_telemetry_freshness(data_root=data_root),
         check_install_branch(),
         check_commitlint_compat(),
