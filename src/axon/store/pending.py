@@ -152,6 +152,24 @@ def _refusal(directory: Path, reason: str, write_error: str = "") -> SpoolNotIgn
     return SpoolNotIgnoredError(directory, reason)
 
 
+def assert_spool_path_ignored(path: Path) -> None:
+    """Raise unless git ignores this exact payload name.
+
+    A negation such as ``!pending/sess-*.json`` leaves the directory probe
+    ignored and the real file stageable.
+    """
+    directory = path.parent
+    parent = directory.parent
+    try:
+        if not _in_work_tree(parent):
+            return
+        name = f"{directory.name}/{path.name}"
+        if _run_git(parent, "check-ignore", "-q", name).returncode != 0:
+            raise _Unproven(f"git does not ignore {path.name}")
+    except _Unproven as exc:
+        raise _refusal(directory, str(exc)) from None
+
+
 def _ensure_spool_ignored(paths: PendingPaths) -> None:
     """Write the spool ignore rules, then prove git ignores the spool or raise."""
     dirs = [paths.pending_dir, paths.quarantine_dir]
@@ -236,6 +254,7 @@ async def write_pending(
     # first pending payload (data loss). Drain orders by st_mtime_ns, not name,
     # so the extra suffix does not affect replay order.
     final = paths.pending_dir / f"{safe_hash}-{ts_ns}-{uuid.uuid4().hex[:8]}.json"
+    assert_spool_path_ignored(final)
     tmp = final.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, final)
@@ -253,6 +272,7 @@ async def quarantine_invalid(
     paths.quarantine_dir.mkdir(parents=True, exist_ok=True)
     ts_ns = time.time_ns()
     dest = paths.quarantine_dir / f"{src.name}.{ts_ns}"
+    assert_spool_path_ignored(dest)
     os.replace(src, dest)
     entry = {
         "original_path": str(src),

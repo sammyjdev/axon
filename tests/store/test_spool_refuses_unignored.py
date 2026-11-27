@@ -151,3 +151,33 @@ async def test_inherited_git_dir_does_not_fail_open(tmp_path, monkeypatch):
 
     assert "tracked" in str(refused.value)
     assert [p.name for p in (repo / ".axon" / "pending").iterdir()] == ["old.json"]
+
+
+@pytest.mark.parametrize("case", ["tmp_dir", "under_dot_git"])
+async def test_write_pending_outside_a_work_tree_writes(tmp_path, monkeypatch, case):
+    """Criterion 6: where git can stage nothing, spooling works as before."""
+    if case == "under_dot_git":
+        _git(tmp_path, "init")
+        monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".git" / "axon"))
+    else:
+        monkeypatch.setenv("AXON_DATA_ROOT", str(tmp_path / ".axon"))
+
+    written = await _write()
+
+    assert written.is_file()
+    assert len(list(written.parent.glob("*.json"))) == 1
+
+
+async def test_partial_name_negation_is_refused(tmp_path, monkeypatch):
+    """Criterion 13: the probe is ignored, the payload's real name is not."""
+    repo = _repo(tmp_path, monkeypatch)
+    (repo / ".axon").mkdir()
+    (repo / ".axon" / ".gitignore").write_text(
+        "pending/*\n!pending/sess-*.json\n", encoding="utf-8"
+    )
+
+    with pytest.raises(pending.SpoolNotIgnoredError):
+        await _write("sess")
+
+    porcelain = _git(repo, "status", "--porcelain", "--untracked-files=all")
+    assert ".axon/pending/" not in porcelain
