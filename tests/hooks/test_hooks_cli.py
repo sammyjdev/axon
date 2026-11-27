@@ -12,6 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from axon.cli.pb import app
+from axon.hooks.precommit_integration import dry_run_message
 
 runner = CliRunner()
 
@@ -56,9 +57,17 @@ class TestHooksInstall:
         assert result.exit_code == 0
         assert "pre-commit framework" in result.stdout
         assert "axon-post-commit" in result.stdout
+        cfg = tmp_path / ".pre-commit-config.yaml"
+        preview = dry_run_message(cfg) + "\n"
+        assert preview in result.stdout
+        assert (
+            "would run: pre-commit install --config .pre-commit-config.yaml "
+            "--hook-type post-commit --hook-type post-merge\n"
+        ) in result.stdout.split(preview)[1]
+        assert "already in" not in result.stdout
         # No mutation without --apply
-        text = (tmp_path / ".pre-commit-config.yaml").read_text()
-        assert "axon-post-commit" not in text
+        assert cfg.read_bytes() == b"repos: []" + os.linesep.encode()
+        assert not list((tmp_path / ".git" / "hooks").iterdir())
 
     def test_apply_in_non_tty_refuses(self, tmp_path: Path) -> None:
         _init_git(tmp_path)

@@ -337,3 +337,23 @@ def test_a_symlinked_hook_is_restored_as_a_symlink(
     assert os.readlink(_hook(repo, "post-commit")) == str(script)
     assert not os.path.lexists(_hook(repo, "post-commit.legacy"))
     assert script.read_bytes() == _USER_HOOK
+
+
+def test_dry_run_reports_entries_already_present(repo: Path) -> None:
+    (repo / _CFG).write_bytes(("repos:\n" + axon_repo_entry()).encode())
+    before = _files(repo)
+
+    result = _run(repo)
+
+    assert result.exit_code == 0, result.output
+    assert f"[axon] AXON entries already in {_CFG}" in result.stdout
+    assert f"would run: pre-commit install --config {_CFG} " in result.stdout
+    assert _files(repo) == before
+
+
+def test_apply_output_has_no_would_run_line(repo: Path) -> None:
+    result = _run(repo, "--apply")
+
+    assert result.exit_code == 0, result.output
+    assert "would run:" not in result.output
+    assert "use --apply" not in result.output

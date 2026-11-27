@@ -267,9 +267,8 @@ def restore_repo_state(snapshot: Snapshot) -> tuple[list[str], list[str]]:
         try:
             if _state(path) == before:
                 continue
-            if path.is_symlink() or path.is_file():
-                if before is None or isinstance(before, str) or path.is_symlink():
-                    path.unlink()
+            if path.is_symlink() or (path.is_file() and not isinstance(before, tuple)):
+                path.unlink()
             if isinstance(before, str):
                 os.symlink(before, path)
             elif before is not None:

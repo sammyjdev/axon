@@ -1046,9 +1046,23 @@ def hooks_install(
         cfg = repo_root / ".pre-commit-config.yaml"
         if not cfg.exists():
             cfg = repo_root / ".pre-commit-config.yml"
-        typer.echo(pc_msg(cfg))
         if apply:
             _install_precommit(repo_root, cfg)
+            return
+        from axon.hooks.precommit_integration import (
+            has_axon_entries,
+            install_command,
+            load_precommit_config,
+        )
+
+        typer.echo(pc_msg(cfg))
+        typer.echo(f"would run: {' '.join(install_command(cfg.name))}")
+        try:
+            present = has_axon_entries(load_precommit_config(cfg))
+        except (OSError, ValueError):
+            present = False  # `--apply` reports an unusable config
+        if present:
+            typer.echo(f"[axon] AXON entries already in {cfg.name}")
         return
 
     if toolchain is Toolchain.HUSKY:
