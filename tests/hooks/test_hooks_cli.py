@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,12 +12,41 @@ import pytest
 from typer.testing import CliRunner
 
 from axon.cli.pb import app
+from axon.hooks.precommit_integration import dry_run_message
 
 runner = CliRunner()
 
 
 def _init_git(root: Path) -> None:
     (root / ".git" / "hooks").mkdir(parents=True, exist_ok=True)
+
+
+def stub_precommit(bin_dir: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> None:
+    """Put a ``pre-commit`` that runs ``script`` (Python, cwd = the repo) first on PATH."""
+    bin_dir.mkdir()
+    body = bin_dir / "stub.py"
+    body.write_text(script, encoding="utf-8")
+    if os.name == "nt":
+        (bin_dir / "pre-commit.cmd").write_text(f'@"{sys.executable}" "{body}" %*\n')
+    else:
+        launcher = bin_dir / "pre-commit"
+        launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{body}" "$@"\n')
+        launcher.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+
+# Writes the two lines of a real driver that AXON verifies.
+WRITES_DRIVERS = """
+import pathlib, sys
+config = sys.argv[sys.argv.index("--config") + 1]
+for flag, hook_type in zip(sys.argv, sys.argv[1:]):
+    if flag == "--hook-type":
+        driver = pathlib.Path(".git", "hooks", hook_type)
+        driver.write_text(
+            f"#!/bin/sh\\nARGS=(hook-impl --config={config} --hook-type={hook_type})\\n"
+        )
+        driver.chmod(0o755)
+"""
 
 
 class TestHooksInstall:
@@ -26,9 +57,17 @@ class TestHooksInstall:
         assert result.exit_code == 0
         assert "pre-commit framework" in result.stdout
         assert "axon-post-commit" in result.stdout
+        cfg = tmp_path / ".pre-commit-config.yaml"
+        preview = dry_run_message(cfg) + "\n"
+        assert preview in result.stdout
+        assert (
+            "would run: pre-commit install --config .pre-commit-config.yaml "
+            "--hook-type post-commit --hook-type post-merge\n"
+        ) in result.stdout.split(preview)[1]
+        assert "already in" not in result.stdout
         # No mutation without --apply
-        text = (tmp_path / ".pre-commit-config.yaml").read_text()
-        assert "axon-post-commit" not in text
+        assert cfg.read_bytes() == b"repos: []" + os.linesep.encode()
+        assert not list((tmp_path / ".git" / "hooks").iterdir())
 
     def test_apply_in_non_tty_refuses(self, tmp_path: Path) -> None:
         _init_git(tmp_path)
@@ -42,7 +81,10 @@ class TestHooksInstall:
         assert result.exit_code == 1
         assert "TTY" in result.stderr
 
-    def test_apply_in_tty_mutates_pre_commit_config(self, tmp_path: Path) -> None:
+    def test_apply_in_tty_mutates_pre_commit_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stub_precommit(tmp_path / "bin", monkeypatch, WRITES_DRIVERS)
         _init_git(tmp_path)
         (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n")
         with patch("os.isatty", return_value=True):

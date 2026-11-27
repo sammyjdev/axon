@@ -1023,9 +1023,6 @@ def hooks_install(
     from axon.hooks.precommit_integration import (
         dry_run_message as pc_msg,
     )
-    from axon.hooks.precommit_integration import (
-        merge_into as pc_merge,
-    )
     from axon.hooks.toolchain_detector import Toolchain, detect
 
     repo_root = Path(path or os.getcwd())
@@ -1053,12 +1050,23 @@ def hooks_install(
         cfg = repo_root / ".pre-commit-config.yaml"
         if not cfg.exists():
             cfg = repo_root / ".pre-commit-config.yml"
-        typer.echo(pc_msg(cfg))
         if apply:
-            if pc_merge(cfg):
-                typer.echo(f"\n[axon] Entries adicionados em {cfg}")
-            else:
-                typer.echo("\n[axon] AXON entries já presentes — nada a fazer.")
+            _install_precommit(repo_root, cfg)
+            return
+        from axon.hooks.precommit_integration import (
+            has_axon_entries,
+            install_command,
+            load_precommit_config,
+        )
+
+        typer.echo(pc_msg(cfg))
+        typer.echo(f"would run: {' '.join(install_command(cfg.name))}")
+        try:
+            present = has_axon_entries(load_precommit_config(cfg))
+        except (OSError, ValueError):
+            present = False  # `--apply` reports an unusable config
+        if present:
+            typer.echo(f"[axon] AXON entries already in {cfg.name}")
         return
 
     if toolchain is Toolchain.HUSKY:
@@ -1099,6 +1107,43 @@ def hooks_install(
         typer.echo(f"[axon] Installed: {', '.join(installed) or '(none new)'}")
     else:
         typer.echo("Run again with --apply to write to .git/hooks/.")
+
+
+def _install_precommit(repo_root: Path, cfg: Path) -> None:
+    from axon.hooks.precommit_integration import (
+        InstallError,
+        install_into_repo,
+        load_precommit_config,
+    )
+
+    # Preflight: nothing is written until all of this holds.
+    refusal = None
+    if (repo_root / ".git").is_file():
+        refusal = "git worktrees are not supported by hooks install yet"
+    elif shutil.which("pre-commit") is None:
+        refusal = "pre-commit not found on PATH; install it (pip install pre-commit) and re-run"
+    else:
+        try:
+            load_precommit_config(cfg)
+        except (OSError, ValueError) as exc:
+            refusal = str(exc)
+    if refusal:
+        typer.echo(f"[axon] hooks install failed: preflight: {refusal}", err=True)
+        raise typer.Exit(1)
+
+    try:
+        added = install_into_repo(repo_root, cfg)
+    except InstallError as exc:
+        typer.echo(f"[axon] hooks install failed: {exc}", err=True)
+        typer.echo(f"[axon] restored: {', '.join(exc.restored) or 'nothing changed'}", err=True)
+        for failure in exc.not_restored:
+            typer.echo(f"[axon] could not restore {failure}", err=True)
+        raise typer.Exit(1) from exc
+    if added:
+        typer.echo(f"\n[axon] AXON entries added to {cfg.name}")
+    else:
+        typer.echo(f"\n[axon] AXON entries already in {cfg.name}")
+    typer.echo("[axon] pre-commit drivers installed: post-commit, post-merge; repo registered")
 
 
 @hooks_app.command("status")
