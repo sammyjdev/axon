@@ -726,6 +726,7 @@ def session_save(
     from axon.core.repo_identity import is_git_repo, repo_identity
     from axon.memory.digest import digest_turns
     from axon.memory.transcript import parse_transcript_turns
+    from axon.store.session_id import current_hook_session_id
     from axon.store.session_store import SessionMemory
 
     cwd = cwd or os.getcwd()
@@ -759,7 +760,12 @@ def session_save(
             typer.echo("[axon] Nada a gravar, skip.", err=True)
             return
 
-        mem = SessionMemory(project=project, summary=summary, raw_turns=len(turns))
+        mem = SessionMemory(
+            project=project,
+            summary=summary,
+            raw_turns=len(turns),
+            session_id=current_hook_session_id.get(),
+        )
         await _save_session_memory_with_spool(
             mem,
             success_msg=f"[axon] Session memory salva: {project} ({len(turns)} turns)",
@@ -926,10 +932,16 @@ def adr_sync(
 
 def _save_compact_summary(*, project: str, summary: str) -> None:
     """Persist a harness-produced compact summary as SessionMemory."""
+    from axon.store.session_id import current_hook_session_id
     from axon.store.session_store import SessionMemory
 
     async def _save() -> None:
-        mem = SessionMemory(project=project, summary=summary, raw_turns=0)
+        mem = SessionMemory(
+            project=project,
+            summary=summary,
+            raw_turns=0,
+            session_id=current_hook_session_id.get(),
+        )
         await _save_session_memory_with_spool(mem)
 
     asyncio.run(_save())
@@ -940,6 +952,7 @@ def compact_hook() -> None:
     """PostCompact hook: persist the harness's own compact summary (stdin payload)."""
     from axon.core.repo_identity import repo_identity
     from axon.memory.transcript import last_compact_summary
+    from axon.store.session_id import current_hook_session_id, normalize_session_id
 
     try:
         payload = json.loads(sys.stdin.read() or "{}")
@@ -960,7 +973,11 @@ def compact_hook() -> None:
             typer.echo("[axon] compact-hook: sem compact summary, skip.", err=True)
             return
         project = repo_identity(cwd)
-        _save_compact_summary(project=project, summary=summary)
+        token = current_hook_session_id.set(normalize_session_id(payload.get("session_id")))
+        try:
+            _save_compact_summary(project=project, summary=summary)
+        finally:
+            current_hook_session_id.reset(token)
         typer.echo(f"[axon] Compact summary salvo: {project}", err=True)
     except Exception as exc:  # a hook must never interrupt the agent
         typer.echo(f"[axon] compact-hook: {exc}", err=True)
@@ -994,8 +1011,13 @@ def session_hook() -> None:
         typer.echo(f"[axon] session-hook: sem transcript ({transcript_path!r}).", err=True)
         return
     from axon.hooks.session_end import run_session_end
+    from axon.store.session_id import current_hook_session_id, normalize_session_id
 
-    run_session_end(transcript_path, cwd)
+    token = current_hook_session_id.set(normalize_session_id(payload.get("session_id")))
+    try:
+        run_session_end(transcript_path, cwd)
+    finally:
+        current_hook_session_id.reset(token)
 
 
 @hooks_app.command("install")
